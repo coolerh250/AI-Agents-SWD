@@ -101,7 +101,10 @@ async def final_node(state: WorkflowState) -> dict:
     if state["approval_required"]:
         return {
             "stage": "waiting_approval",
-            "execution_result": {"status": "blocked_pending_approval", "production_executed": False},
+            "execution_result": {
+                "status": "blocked_pending_approval",
+                "production_executed": False,
+            },
         }
     return {
         "stage": "completed",
