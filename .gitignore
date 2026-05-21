@@ -1,0 +1,42 @@
+# ===== Python =====
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+
+# ===== Node.js =====
+node_modules/
+
+# ===== Build artifacts =====
+dist/
+build/
+
+# ===== Logs =====
+*.log
+logs/
+
+# ===== Environment & local secrets (never commit secrets) =====
+.env
+.env.*
+*.env
+!.env.example
+secrets/
+*.secret
+*.key
+*.pem
+*.p12
+credentials.json
+
+# ===== Docker local volumes / runtime data =====
+volumes/
+docker-data/
+.docker/
+
+# ===== OS / editor cruft =====
+.DS_Store
+Thumbs.db
+.idea/
+*.swp
