@@ -144,3 +144,34 @@ issues & blockers, and next-step suggestions.
   1. Implement orchestrator logic and shared libraries (`shared/sdk`, `shared/models`).
   2. Wire the orchestrator to postgres/redis once real functionality exists, using non-`trust` credentials supplied via env / a secrets manager.
   3. Add the remaining services and agents and extend the compose runtime.
+
+---
+
+## Stage 5 — PostgreSQL Migration & Redis Streams Initialization (Step 4)
+
+- **Execution time:** 2026-05-21 21:43–21:45 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `97a1e86`. Step 4 produced three commits:
+  - `b8ca097` — migration SQL + 3 runtime shell scripts
+  - `d91c369` — fix: correct Redis stream enumeration in the runtime scripts
+  - this Stage 5 progress entry is committed on top.
+- **Modified files:**
+  - Added: `migrations/001_init_core_tables.sql`, `scripts/init_redis_streams.sh`, `scripts/init_local_runtime.sh`, `scripts/check_runtime_state.sh` (the 3 scripts committed executable, mode 755)
+  - Modified: `README.md` (database & streams initialization section); `source/progress.md` (this entry); `scripts/init_local_runtime.sh` and `scripts/check_runtime_state.sh` were further modified by the fix commit `d91c369`
+  - Deleted: `migrations/.gitkeep`, `scripts/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — database and Redis initialization validation (no application deployed, no production resources).
+- **PostgreSQL migration result:** `migrations/001_init_core_tables.sql` applied via `psql -v ON_ERROR_STOP=1`. 8 core tables created — UUID primary keys; every table has `created_at`; `updated_at` on the 6 mutable tables; JSONB on `workflow_states.state` and `audit_logs.artifact_refs`; `CREATE EXTENSION IF NOT EXISTS "uuid-ossp"`.
+- **PostgreSQL table list:** `agent_executions`, `approval_requests`, `audit_logs`, `deployment_records`, `incident_records`, `prompt_versions`, `tasks`, `workflow_states` — 8 tables (`public` schema count = 8).
+- **Migration idempotency test:** migration re-run a second time → every object reported `already exists, skipping`, transaction committed, exit 0 — **PASS** (re-run does not fail).
+- **Redis Streams init result:** `scripts/init_redis_streams.sh` created 10 consumer groups across 9 streams — **PASS**.
+- **Redis stream / group list:** `stream.tasks` (orchestrator-group, intake-agent-group), `stream.requirements` (requirement-agent-group), `stream.development` (development-agent-group), `stream.qa` (qa-agent-group), `stream.deployments` (devops-agent-group), `stream.approvals` (approval-group), `stream.audit` (audit-group), `stream.notifications` (notification-group), `stream.incidents` (incident-group) — 9 streams, 10 groups.
+- **Redis init idempotency test:** init re-run → all 10 groups reported `exists` (BUSYGROUP handled), exit 0 — **PASS** (re-run does not fail).
+- **Runtime state check result** (`check_runtime_state.sh`): 4 containers Up (orchestrator/postgres/redis healthy, vault up); 8 PostgreSQL tables; 9 Redis streams / 10 consumer groups; orchestrator `/health` → `{"service":"orchestrator","status":"ok"}` — **PASS**.
+- **Issues & blockers:** none outstanding.
+- **Risks / notes:**
+  - One bug was found and fixed during verification: a `docker compose exec` inside a `while read` pipe consumed the loop's stdin, so the stream check listed only the first stream. Fixed in commit `d91c369` (read the stream list into a variable, then iterate). Migration and stream creation were never affected — only the check display; re-verified with all 9 streams listed.
+  - Local Docker is not installed on the dev machine; shell scripts were syntax-checked with `bash -n` locally; full validation ran on the test server.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only choices, never for production.
+- **Next-step suggestions:**
+  1. Implement orchestrator logic and shared libraries that use the new schema and streams.
+  2. Establish a migration versioning convention for future migrations (`002_*.sql`, ...).
+  3. Add `updated_at` auto-update triggers if application code will not maintain that column.
