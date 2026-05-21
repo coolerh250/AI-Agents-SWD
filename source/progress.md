@@ -78,3 +78,31 @@ issues & blockers, and next-step suggestions.
   1. Define the application with its `Dockerfile` / `compose.yaml` in the repo.
   2. Establish the deploy flow on 10.0.1.31: `git pull` latest `main`, then `docker compose up` (per project rule 5).
   3. Confirm the intended contents of `provisioning/cloud-init/`.
+
+---
+
+## Stage 3 — Monorepo Base Skeleton (Step 2)
+
+- **Execution time:** 2026-05-21 18:14–18:17 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `1ed9e98`. Step 2 produced two commits:
+  - `4c973a1cb560d144bc0657ba107e8ae6fc090469` — monorepo skeleton (directories, `.gitkeep`, README, `.gitignore`)
+  - this Stage 3 progress entry is committed on top.
+- **Modified files:**
+  - Added: `.gitignore`; 25 × `<directory>/.gitkeep` placeholders under `apps/`, `agents/`, `shared/`, `infra/`, `migrations/`, `scripts/`, `tests/`
+  - Modified: `README.md` (expanded to the full project README); `source/progress.md` (this entry)
+  - Deleted: none
+- **Deployment target:** test server `10.0.1.31` — **pull verification only** (no application deployed, no `docker compose` started, no production resources created).
+- **Test results:**
+  - Directory skeleton: 26 directories present (25 created with `.gitkeep` + the pre-existing `source/`).
+  - `README.md`: rewritten with project name, purpose, repository structure, local/test deployment principle, test server, production restriction, and no-secrets policy.
+  - `.gitignore`: created (Python / Node / build artifacts / logs / env & local secrets / docker local volumes / OS cruft).
+  - Commit `4c973a1` pushed to `origin/main` (27 files changed).
+  - Test server: `git clone` into `/home/itadmin/AI-Agents-SWD`; HEAD `4c973a1` on `main`; all 26 directories verified present (`DIR_VERIFY: PASS`); `README.md`, `.gitignore`, `source/progress.md` present.
+- **Issues & blockers:** none.
+- **Risks / notes:**
+  - All directories are empty placeholders (`.gitkeep` only) — no application code yet.
+  - The pre-existing empty `provisioning/cloud-init/` is outside this skeleton and remains untracked (not part of Step 2 scope).
+- **Next-step suggestions:**
+  1. Begin implementing services/agents — start with `shared/` (sdk, models) so apps and agents have a dependency base.
+  2. Add `infra/docker-compose/` definitions for local/test runs.
+  3. Establish the deploy flow on 10.0.1.31: `git pull` → build → `docker compose up` (test only).
