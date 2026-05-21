@@ -96,6 +96,39 @@ Notes:
   only, so no credentials are stored in the repository.
 - All service ports bind to `127.0.0.1` on the host.
 
+## Database & Streams Initialization
+
+After the runtime is up, initialize the PostgreSQL schema and Redis Streams.
+All commands run from the repository root on the test server.
+
+One-shot setup (start runtime + apply migration + initialize streams):
+
+```
+./scripts/init_local_runtime.sh
+```
+
+Apply the PostgreSQL migration only:
+
+```
+docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
+  psql -U postgres -d aiagents -v ON_ERROR_STOP=1 < migrations/001_init_core_tables.sql
+```
+
+Initialize the Redis Streams consumer groups only:
+
+```
+./scripts/init_redis_streams.sh
+```
+
+Check runtime state (containers, tables, streams, orchestrator health):
+
+```
+./scripts/check_runtime_state.sh
+```
+
+The PostgreSQL migration and the Redis Streams initialization are both
+idempotent — safe to run repeatedly.
+
 ## Production Restriction
 
 **No production deployment is performed without explicit human approval.**
