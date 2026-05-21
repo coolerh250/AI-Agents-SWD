@@ -175,3 +175,37 @@ issues & blockers, and next-step suggestions.
   1. Implement orchestrator logic and shared libraries that use the new schema and streams.
   2. Establish a migration versioning convention for future migrations (`002_*.sql`, ...).
   3. Add `updated_at` auto-update triggers if application code will not maintain that column.
+
+---
+
+## Stage 6 — Shared SDK & Base Agent (Step 5)
+
+- **Execution time:** 2026-05-21 22:00–22:07 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `199e612`. Step 5 produced four commits:
+  - `fe13fab` — shared SDK packages, tests, `pyproject.toml`, `requirements.txt`, `run_tests.sh`
+  - `fca19ae` — type `AuditClient.event_bus` for mypy correctness
+  - `795fb38` — apply black formatting
+  - this Stage 6 progress entry is committed on top.
+- **Modified files:**
+  - Added: `shared/` SDK packages — `base_agent/base.py`, `event_bus/redis_streams.py`, `audit/client.py`, `policy/client.py`, `models/workflow.py`, `models/events.py`, `models/audit.py`, plus 7 `__init__.py`; `tests/` — 5 test files; `pyproject.toml`; `requirements.txt`; `scripts/run_tests.sh` (executable)
+  - Modified: `README.md` (Shared SDK + Testing sections); `source/progress.md` (this entry)
+  - Deleted: `shared/sdk/.gitkeep`, `shared/models/.gitkeep`, `tests/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — SDK test validation (no application deployed, no production resources).
+- **Test results:** `pytest` — **22 passed** (0.13s). `ruff check` — all checks passed. `black --check` — all 20 files clean. `mypy` — success, no issues in 14 source files.
+  - BaseAgent (7 tests): abstract class cannot be instantiated directly; `DummyAgent` subclass instantiates and runs `receive_task`/`analyze`/`execute`; `request_approval` returns allowed for non-restricted and approval-required for restricted actions; `write_audit` and `report` work — PASS.
+  - PolicyClient (4 tests): all 8 restricted actions blocked (`allowed=false`, `approval_required=true`); non-restricted and unknown actions allowed — PASS.
+  - AuditClient (3 tests): `build_audit_event` produces a valid `AuditEvent` with all required fields; defaults applied; `write_audit_event` returns None without an event bus — PASS.
+  - Redis Streams (4 tests): `REDIS_URL` env / default / explicit-override resolution; live publish→consume→ack cycle — PASS.
+  - Pydantic models (4 tests): `WorkflowState`, `AgentEvent`, `TaskCreatedEvent`, `AuditEvent` build and JSON round-trip — PASS.
+- **Redis integration result:** the integration test ran against the live test Redis (`REDIS_URL=redis://localhost:6379`): `ensure_group` (idempotent), `publish_event`, `consume_events`, and `ack_event` verified against a temporary `test.stream.*` stream which was deleted afterward — PASS.
+- **Runtime state:** `check_runtime_state.sh` — 4 containers Up (orchestrator/postgres/redis healthy, vault up); 8 PostgreSQL tables; 9 Redis streams / 10 groups; orchestrator `/health` OK.
+- **Issues & blockers:** none outstanding.
+- **Risks / notes:**
+  - The test server lacked `python3-venv`; it was installed (`apt-get install python3-venv python3.12-venv`) so the venv could be created, as required by the task's venv step.
+  - The first test run flagged 4 files via `black --check` (line-wrapping at the 100-char limit); fixed in commit `795fb38` and re-verified fully green. `pytest`, `ruff`, and `mypy` passed from the first run.
+  - Local Docker and Python dependencies are not installed on the dev machine; the local check was `py_compile` only; the full test run executed on the test server inside a venv.
+  - No real LLM, GitHub, or Slack calls; no secrets committed; PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Implement a concrete agent (e.g. intake-agent) on top of `BaseAgent`.
+  2. Wire the orchestrator to the SDK (event bus, audit, policy clients).
+  3. Add a CI workflow that runs `scripts/run_tests.sh` automatically.
