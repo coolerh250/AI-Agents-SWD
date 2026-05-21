@@ -106,3 +106,41 @@ issues & blockers, and next-step suggestions.
   1. Begin implementing services/agents — start with `shared/` (sdk, models) so apps and agents have a dependency base.
   2. Add `infra/docker-compose/` definitions for local/test runs.
   3. Establish the deploy flow on 10.0.1.31: `git pull` → build → `docker compose up` (test only).
+
+---
+
+## Stage 4 — Docker Compose Local/Test Runtime (Step 3)
+
+- **Execution time:** 2026-05-21 18:27 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `952a189`. Step 3 produced two commits:
+  - `919630b8db3f73440ea4b2d06984835e4f0999da` — Docker Compose runtime + orchestrator placeholder
+  - this Stage 4 progress entry is committed on top.
+- **Modified files:**
+  - Added: `infra/docker-compose/docker-compose.yml`, `apps/orchestrator/Dockerfile`, `apps/orchestrator/requirements.txt`, `apps/orchestrator/src/main.py`
+  - Modified: `README.md` (local/test runtime instructions), `.gitignore` (ignore `.claude/`), `source/progress.md` (this entry)
+  - Deleted: `apps/orchestrator/.gitkeep`, `infra/docker-compose/.gitkeep` (directories now contain real files)
+- **Deployment target:** test server `10.0.1.31` — Docker Compose runtime validation (`up -d` of postgres, redis, vault, orchestrator). No application logic deployed, no production resources created.
+- **Docker Compose config result:** `docker compose -f infra/docker-compose/docker-compose.yml config` → **valid** (exit 0); rendered project `aiagents-test` with 4 services. Local Docker is not installed on the dev machine, so config was validated on the test server.
+- **Container status** (`docker compose ps`):
+  - `aiagents-test-orchestrator-1` — Up (healthy) — `127.0.0.1:8000->8000`
+  - `aiagents-test-postgres-1` — Up (healthy) — `127.0.0.1:5432->5432`
+  - `aiagents-test-redis-1` — Up (healthy) — `127.0.0.1:6379->6379`
+  - `aiagents-test-vault-1` — Up — `127.0.0.1:8200->8200` (no healthcheck defined)
+- **Health check result:** `curl http://localhost:8000/health` → `{"service":"orchestrator","status":"ok"}` — **PASS**.
+- **Logs summary:**
+  - orchestrator — uvicorn startup complete; `GET /health` → `200 OK`.
+  - postgres — PostgreSQL 16.14 initialised; "database system is ready to accept connections" (`trust` auth, expected warning).
+  - redis — Redis 7.4.9 "Ready to accept connections" (benign kernel `vm.overcommit_memory` warning).
+  - vault — dev mode; core unsealed; running. Vault dev mode prints an ephemeral root token / unseal key to its own container log — intentionally **not recorded here** (no-secrets rule); it is regenerated on every restart.
+- **Image versions:** postgres 16.14, redis 7.4.9, hashicorp/vault 1.17.6; orchestrator built on `python:3.12-slim` with fastapi 0.136.1 + uvicorn 0.47.0.
+- **Issues & blockers:** none — all four containers started and the orchestrator health check passed on the first deployment.
+- **Risks / notes:**
+  - Local Docker is not installed on the Windows dev machine; compose validation and image builds run on the test server only.
+  - PostgreSQL uses `POSTGRES_HOST_AUTH_METHOD=trust` and Vault runs in dev mode — local/test-only choices, never for production.
+  - Vault dev mode is in-memory (ephemeral); all data and tokens are lost on restart.
+  - All service ports bind to `127.0.0.1` on the test server (not exposed to the wider network).
+  - The runtime is left running on 10.0.1.31; stop it with `docker compose -f infra/docker-compose/docker-compose.yml down`.
+- **Next-step suggestions:**
+  1. Implement orchestrator logic and shared libraries (`shared/sdk`, `shared/models`).
+  2. Wire the orchestrator to postgres/redis once real functionality exists, using non-`trust` credentials supplied via env / a secrets manager.
+  3. Add the remaining services and agents and extend the compose runtime.
