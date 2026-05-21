@@ -57,6 +57,45 @@ source/                    Project progress log and source notes
 - Host: `10.0.1.31`
 - Access: SSH with key-based authentication.
 
+## Local / Test Runtime
+
+A Docker Compose runtime for local/test use is defined in
+`infra/docker-compose/docker-compose.yml`. It provides PostgreSQL 16, Redis 7,
+Vault (dev mode), and the `orchestrator` placeholder service.
+
+Validate the compose configuration:
+
+```
+docker compose -f infra/docker-compose/docker-compose.yml config
+```
+
+Start the runtime (on the test server `10.0.1.31`):
+
+```
+docker compose -f infra/docker-compose/docker-compose.yml up -d postgres redis vault orchestrator
+docker compose -f infra/docker-compose/docker-compose.yml ps
+```
+
+Check the orchestrator health endpoint:
+
+```
+curl http://localhost:8000/health
+# {"service":"orchestrator","status":"ok"}
+```
+
+Stop the runtime:
+
+```
+docker compose -f infra/docker-compose/docker-compose.yml down
+```
+
+Notes:
+
+- Vault runs in **dev mode** (in-memory, ephemeral) — for local/test only, never production.
+- PostgreSQL uses `POSTGRES_HOST_AUTH_METHOD=trust` for this local/test runtime
+  only, so no credentials are stored in the repository.
+- All service ports bind to `127.0.0.1` on the host.
+
 ## Production Restriction
 
 **No production deployment is performed without explicit human approval.**

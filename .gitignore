@@ -40,3 +40,6 @@ docker-data/
 Thumbs.db
 .idea/
 *.swp
+
+# ===== Local tooling config =====
+.claude/
