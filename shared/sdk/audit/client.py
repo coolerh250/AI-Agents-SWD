@@ -1,4 +1,9 @@
+from typing import TYPE_CHECKING
+
 from shared.models.audit import AuditEvent
+
+if TYPE_CHECKING:
+    from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 
 
 class AuditClient:
@@ -6,7 +11,7 @@ class AuditClient:
 
     AUDIT_STREAM = "stream.audit"
 
-    def __init__(self, event_bus=None) -> None:
+    def __init__(self, event_bus: "RedisStreamEventBus | None" = None) -> None:
         self.event_bus = event_bus
 
     def build_audit_event(
