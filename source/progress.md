@@ -209,3 +209,38 @@ issues & blockers, and next-step suggestions.
   1. Implement a concrete agent (e.g. intake-agent) on top of `BaseAgent`.
   2. Wire the orchestrator to the SDK (event bus, audit, policy clients).
   3. Add a CI workflow that runs `scripts/run_tests.sh` automatically.
+
+---
+
+## Stage 7 — LangGraph Orchestrator Workflow Skeleton (Step 6)
+
+- **Execution time:** 2026-05-21 22:17–22:20 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `5f46410`. Step 6 produced three commits:
+  - `55a23b5` — LangGraph workflow skeleton, API endpoints, tests, Docker/compose updates
+  - `d4813ca` — apply black formatting to workflow.py
+  - this Stage 7 progress entry is committed on top.
+- **Modified files:**
+  - Added: `apps/orchestrator/src/workflow.py`, `tests/test_orchestrator_workflow.py`, `tests/test_orchestrator_api.py`, `.dockerignore`
+  - Modified: `apps/orchestrator/src/main.py`, `apps/orchestrator/requirements.txt`, `apps/orchestrator/Dockerfile`, `infra/docker-compose/docker-compose.yml`, `pyproject.toml`, `requirements.txt`, `scripts/check_runtime_state.sh`, `scripts/run_tests.sh`, `README.md`, `source/progress.md`
+  - Deleted: none
+- **Deployment target:** test server `10.0.1.31` — orchestrator workflow validation (no production resources; no production action executed).
+- **WorkflowState schema:** TypedDict with 12 fields — `task_id`, `source`, `request`, `stage`, `artifacts`, `assigned_agents`, `approval_required`, `approval_status`, `retry_count`, `audit_refs`, `risk_level`, `execution_result`.
+- **LangGraph nodes:** `intake → requirement → policy → approval → audit → final` (6 nodes; linear graph compiled via `langgraph` 1.2.0).
+- **API endpoints:** `GET /health`, `POST /workflow/test`, `POST /workflow/policy-test`, `GET /workflow/schema`.
+- **Unit/API test results:** `pytest` — **34 passed** (22 SDK/model tests + 12 new orchestrator tests). `ruff` — all checks passed. `black --check` — all 23 files clean. `mypy` — success, no issues in 14 source files.
+- **Docker rebuild result:** orchestrator image rebuilt from the repo-root build context (so the `shared` package is importable in the container); `langgraph` 1.2.0 and dependencies installed; container recreated and healthy.
+- **Runtime smoke test result** (`check_runtime_state.sh`): 4 containers Up; 8 PostgreSQL tables; 9 Redis streams / 10 groups; `/health` OK; `/workflow/schema` returns all 12 fields; NON_PROD_SMOKE PASS; PROD_APPROVAL_SMOKE PASS.
+- **Policy / approval behavior:**
+  - `/workflow/test` non-production (`dev.test`) → `stage: completed`, `approval_required: false`, `production_executed: false`.
+  - `/workflow/test` `production.deploy` → `stage: waiting_approval`, `approval_required: true`, `approval_status: pending`, `risk_level: high`, `execution_result: blocked_pending_approval`, `production_executed: false`. **No production action was executed.**
+- **Audit stream publish result:** `stream.audit` grew from 0 to 10 entries during verification — the workflow `audit_node` published audit events for both the non-production and the production.deploy runs. (Audit events carry task_id / agent / decision / summary only; no secrets or tokens.)
+- **Issues & blockers:** none outstanding.
+- **Risks / notes:**
+  - The first test run flagged `workflow.py` via `black --check` (one dict line at 101 chars); fixed in commit `d4813ca` and re-verified fully green. `pytest`, `ruff`, and `mypy` passed from the first run.
+  - The orchestrator build context is now the repository root; `.dockerignore` excludes `.venv`, caches, and `.git` from the image.
+  - The workflow skeleton performs no LLM calls, no GitHub/Slack calls, and no production actions; `production.deploy` only reaches `waiting_approval`.
+  - PostgreSQL `trust` auth, Vault dev mode, and the placeholder `DATABASE_URL` remain local/test-only.
+- **Next-step suggestions:**
+  1. Implement real approval handling (consume `stream.approvals` and resume the workflow).
+  2. Connect the workflow to PostgreSQL (persist `workflow_states` rows).
+  3. Implement concrete agents and dispatch tasks over the Redis Streams event bus.
