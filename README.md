@@ -129,6 +129,47 @@ Check runtime state (containers, tables, streams, orchestrator health):
 The PostgreSQL migration and the Redis Streams initialization are both
 idempotent — safe to run repeatedly.
 
+## Shared SDK
+
+`shared/` provides libraries used by both apps and agents:
+
+```
+shared/sdk/base_agent/    BaseAgent abstract class
+shared/sdk/event_bus/     RedisStreamEventBus (async Redis Streams)
+shared/sdk/audit/         AuditClient
+shared/sdk/policy/        PolicyClient
+shared/models/            Pydantic models (WorkflowState, AgentEvent,
+                          TaskCreatedEvent, AuditEvent)
+```
+
+- **BaseAgent** (`abc.ABC`) — concrete agents implement `receive_task`,
+  `analyze`, and `execute`; the base class provides `request_approval`,
+  `write_audit`, and `report`. It performs no LLM calls, no production
+  operations, and reads/writes no secrets.
+- **RedisStreamEventBus** — async event bus over Redis Streams:
+  `publish_event`, `consume_events`, `ack_event`, and `ensure_group`
+  (idempotent BUSYGROUP handling). The Redis URL is read from the `REDIS_URL`
+  environment variable, defaulting to `redis://localhost:6379`.
+- **PolicyClient** — `evaluate_policy(action)` returns `allowed` and
+  `approval_required`. Restricted actions (e.g. `production.deploy`,
+  `secret.rotation`) require human approval.
+- **AuditClient** — `build_audit_event()` / `write_audit_event()`; audit
+  events are published to the `stream.audit` Redis stream.
+
+## Testing
+
+Python dependencies are listed in `requirements.txt`; pytest configuration is
+in `pyproject.toml`. Run the test suite from the repository root:
+
+```
+./scripts/run_tests.sh
+```
+
+This runs `pytest` and, when installed, `ruff`, `black --check`, and `mypy`.
+Redis Streams integration tests use a local/test Redis (`REDIS_URL`, default
+`redis://localhost:6379`) and are skipped automatically when no Redis is
+reachable.
+
 ## Production Restriction
 
 **No production deployment is performed without explicit human approval.**
