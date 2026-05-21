@@ -1,2 +1,8 @@
 fastapi
 uvicorn
+langgraph
+pydantic
+redis
+asyncpg
+pytest
+pytest-asyncio

@@ -38,4 +38,33 @@ else
 fi
 
 echo
+echo "=== orchestrator /workflow/schema ==="
+curl -sS -m 10 http://localhost:8000/workflow/schema || echo "(schema unavailable)"
+echo
+
+echo
+echo "=== /workflow/test (non-production smoke) ==="
+np=$(curl -sS -m 20 -X POST http://localhost:8000/workflow/test \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-dev","source":"check","request":{"type":"dev.test"}}' || echo '{}')
+echo "$np"
+if echo "$np" | grep -q '"stage": *"completed"'; then
+  echo "NON_PROD_SMOKE: PASS"
+else
+  echo "NON_PROD_SMOKE: CHECK"
+fi
+
+echo
+echo "=== /workflow/test (production.deploy approval smoke) ==="
+pd=$(curl -sS -m 20 -X POST http://localhost:8000/workflow/test \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-prod","source":"check","request":{"type":"production.deploy"}}' || echo '{}')
+echo "$pd"
+if echo "$pd" | grep -q '"stage": *"waiting_approval"'; then
+  echo "PROD_APPROVAL_SMOKE: PASS"
+else
+  echo "PROD_APPROVAL_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

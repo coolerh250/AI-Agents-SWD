@@ -2,6 +2,8 @@ fastapi
 uvicorn
 pydantic
 redis
+httpx
+langgraph
 pytest
 pytest-asyncio
 ruff

@@ -1,5 +1,5 @@
 [tool.pytest.ini_options]
-pythonpath = ["."]
+pythonpath = [".", "apps/orchestrator/src"]
 testpaths = ["tests"]
 asyncio_mode = "auto"
 

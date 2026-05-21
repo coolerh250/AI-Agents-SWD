@@ -6,9 +6,10 @@ set -euo pipefail
 echo "### run_tests start: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "python: $(python3 --version 2>&1)"
 
-if ! python3 -c "import pytest" >/dev/null 2>&1; then
-  echo "pytest not found - installing dependencies from requirements.txt"
+if ! python3 -c "import pytest, httpx, langgraph" >/dev/null 2>&1; then
+  echo "test dependencies missing - installing requirements"
   python3 -m pip install -r requirements.txt
+  python3 -m pip install -r apps/orchestrator/requirements.txt
 fi
 
 echo

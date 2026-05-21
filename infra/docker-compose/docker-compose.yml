@@ -39,8 +39,11 @@ services:
 
   orchestrator:
     build:
-      context: ../../apps/orchestrator
-      dockerfile: Dockerfile
+      context: ../..
+      dockerfile: apps/orchestrator/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
     ports:
       - "127.0.0.1:8000:8000"
     healthcheck:
@@ -48,7 +51,7 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 5s
+      start_period: 15s
 
 volumes:
   postgres-data:

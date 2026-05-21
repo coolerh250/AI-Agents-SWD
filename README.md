@@ -156,6 +156,35 @@ shared/models/            Pydantic models (WorkflowState, AgentEvent,
 - **AuditClient** — `build_audit_event()` / `write_audit_event()`; audit
   events are published to the `stream.audit` Redis stream.
 
+## Orchestrator Workflow
+
+The `orchestrator` service runs a LangGraph workflow skeleton
+(`apps/orchestrator/src/workflow.py`) with six nodes:
+`intake → requirement → policy → approval → audit → final`. It wires in the
+shared SDK's `PolicyClient`, `AuditClient`, and `RedisStreamEventBus`.
+
+API endpoints:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET  | `/health` | Liveness check |
+| POST | `/workflow/test` | Run the mock workflow for a request |
+| POST | `/workflow/policy-test` | Evaluate an action against the policy |
+| GET  | `/workflow/schema` | Describe the `WorkflowState` fields |
+
+Run the mock workflow:
+
+```
+curl -X POST http://localhost:8000/workflow/test \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"mock-1","source":"manual","request":{"type":"dev.test"}}'
+```
+
+A non-production request runs through to `stage: completed`. A
+`production.deploy` request is flagged by the policy node and ends at
+`stage: waiting_approval` — **the workflow never executes a production
+action**; it only records that human approval is required.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
