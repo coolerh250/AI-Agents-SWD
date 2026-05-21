@@ -51,9 +51,7 @@ async def test_request_approval_restricted():
 
 async def test_write_audit_without_event_bus():
     agent = DummyAgent()
-    await agent.write_audit(
-        {"decision_type": "test", "summary": "s", "result": "ok"}
-    )
+    await agent.write_audit({"decision_type": "test", "summary": "s", "result": "ok"})
 
 
 async def test_report_stores_last_result():

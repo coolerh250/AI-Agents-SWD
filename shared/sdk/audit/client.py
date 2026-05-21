@@ -35,6 +35,4 @@ class AuditClient:
     async def write_audit_event(self, event: AuditEvent) -> str | None:
         if self.event_bus is None:
             return None
-        return await self.event_bus.publish_event(
-            self.AUDIT_STREAM, event.model_dump(mode="json")
-        )
+        return await self.event_bus.publish_event(self.AUDIT_STREAM, event.model_dump(mode="json"))

@@ -44,9 +44,7 @@ async def test_redis_integration_publish_consume_ack():
         await bus.ensure_group(stream, group)  # idempotent: must not raise
         message_id = await bus.publish_event(stream, {"hello": "world"})
         assert message_id
-        events = await bus.consume_events(
-            stream, group, consumer, count=10, block_ms=1000
-        )
+        events = await bus.consume_events(stream, group, consumer, count=10, block_ms=1000)
         assert len(events) == 1
         assert events[0]["event"] == {"hello": "world"}
         acked = await bus.ack_event(stream, group, events[0]["id"])
