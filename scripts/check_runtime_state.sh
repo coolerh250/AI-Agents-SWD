@@ -21,9 +21,9 @@ echo "public table count: $tcount"
 
 echo
 echo "=== Redis streams & consumer groups ==="
-$COMPOSE exec -T redis redis-cli --scan --pattern 'stream.*' 2>/dev/null | sort | while read -r s; do
-  [ -z "$s" ] && continue
-  grp=$($COMPOSE exec -T redis redis-cli XINFO GROUPS "$s" 2>/dev/null | grep -cF 'name' || true)
+streams=$($COMPOSE exec -T redis redis-cli --scan --pattern 'stream.*' </dev/null 2>/dev/null | sort)
+for s in $streams; do
+  grp=$($COMPOSE exec -T redis redis-cli XINFO GROUPS "$s" </dev/null 2>/dev/null | grep -cF 'name' || true)
   echo "  $s  ->  $grp consumer group(s)"
 done
 
