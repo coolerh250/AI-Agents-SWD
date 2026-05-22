@@ -491,3 +491,74 @@ issues & blockers, and next-step suggestions.
   2. Add a notification consumer that turns `stream.notifications` events into
      real channel deliveries (Slack / Discord / Telegram) behind a feature flag.
   3. Add workflow retry / failure handling and persist `retry_count` transitions.
+
+---
+
+## Stage 11 — Concrete Agents: Intake Agent & Requirement Agent (Step 10)
+
+- **Execution time:** 2026-05-22 13:43–13:55 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `d0e280b`. Step 10 produced two commits:
+  - `bd6b34b0d31e02ae80a40978abfe0c91211950ca` — intake-agent and requirement-agent
+    services, stream pipeline, gateway publish_to_stream, docker-compose, tests,
+    runtime checks, README
+  - this Stage 11 progress entry is committed on top.
+- **Modified files:**
+  - Added: `agents/intake-agent/{src/agent.py,src/main.py,Dockerfile,requirements.txt}`,
+    `agents/requirement-agent/{src/agent.py,src/main.py,Dockerfile,requirements.txt}`,
+    `tests/{test_intake_agent.py,test_requirement_agent.py,test_agent_stream_flow.py}`
+  - Modified: `apps/communication-gateway/src/main.py`,
+    `infra/docker-compose/docker-compose.yml`, `tests/conftest.py`,
+    `scripts/check_runtime_state.sh`, `README.md`, `source/progress.md`
+  - Deleted: `agents/intake-agent/.gitkeep`, `agents/requirement-agent/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — agent stream-pipeline
+  validation (no production resources; no production action executed).
+- **Agent ports:** intake-agent `8010`, requirement-agent `8011` — both bound to
+  `127.0.0.1`. (Platform services remain `8000`–`8004`.)
+- **Agent service result:** both agents are standalone FastAPI services that
+  subclass the shared `BaseAgent`, run a Redis Streams consumer-group loop in
+  their lifespan, and expose `GET /health` and `GET /status`. After the flow run
+  each agent's `/status` reported `running: true` with the processed count and
+  the last task id (`step10-flow-001`).
+- **Redis stream flow result:** verified end-to-end —
+  `stream.tasks → intake-agent → stream.requirements → requirement-agent →
+  stream.development`. For `step10-flow-001`: `stream.requirements` carried a
+  `task.intake_completed` event (`normalized_by: intake-agent`);
+  `stream.development` carried a `requirement.completed` event with a
+  `requirement_spec` artifact (`produced_by: requirement-agent`). The chain
+  reached `stream.development` within ~2s.
+- **Audit / notification result:** both agents wrote to `stream.audit` —
+  `intake-agent` (`decision_type: intake`) and `requirement-agent`
+  (`decision_type: requirement`) — and published to `stream.notifications` —
+  `agent.intake_completed` and `requirement.completed`. Final stream lengths:
+  `stream.tasks` 5, `stream.requirements` 5, `stream.development` 5,
+  `stream.audit` 159, `stream.notifications` 101.
+- **Test results:** `run_tests.sh` — `pytest` **91 passed** (8.74s); `ruff` all
+  checks passed; `black --check` 55 files clean; `mypy` no issues in 22 files.
+  - intake-agent (4 tests): health; status; `receive_task` normalization;
+    `analyze` request-type extraction — PASS.
+  - requirement-agent (4 tests): health; status; `receive_task`; `analyze`
+    summary — PASS.
+  - agent stream flow (3 tests): intake-agent forwards to `stream.requirements`;
+    requirement-agent emits `requirement.completed` to `stream.development`;
+    both agents write audit events and publish notifications — PASS.
+- **Runtime smoke test:** `check_runtime_state.sh` — 10 containers Up; intake-agent
+  and requirement-agent HEALTH PASS; AGENT_STREAM_FLOW_SMOKE PASS
+  (`stream.requirements` and `stream.development` both grew), alongside the
+  existing health / approval / audit / persistence / replay / resume / gateway /
+  notification smoke tests.
+- **Issues & blockers:** none — all build, test, and verification steps passed on
+  the first run; no fix commit was required.
+- **Risks / notes:**
+  - The agents perform no LLM / GitHub / Slack calls; the `requirement_spec` is a
+    mock artifact (`mock: true`). No production action is executed.
+  - Each agent runs a Redis consumer group (`XREADGROUP BLOCK`) — no polling; a
+    bad message is logged and skipped so the loop keeps running.
+  - The communication-gateway `/intake/mock` keeps its default orchestrator mode;
+    `publish_to_stream: true` is opt-in for the agent pipeline.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Add the development / QA / DevOps agents to extend the pipeline
+     (`stream.development → stream.qa → stream.deployments`).
+  2. Wire the orchestrator workflow to dispatch real tasks onto `stream.tasks`
+     instead of running every stage in-process.
+  3. Persist agent executions to the `agent_executions` table for traceability.
