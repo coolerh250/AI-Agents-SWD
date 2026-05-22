@@ -72,3 +72,18 @@ def intake_agent():
 @pytest.fixture
 def requirement_agent():
     return _load_agent_module("requirement-agent")
+
+
+@pytest.fixture
+def development_agent():
+    return _load_agent_module("development-agent")
+
+
+@pytest.fixture
+def qa_agent():
+    return _load_agent_module("qa-agent")
+
+
+@pytest.fixture
+def devops_agent():
+    return _load_agent_module("devops-agent")

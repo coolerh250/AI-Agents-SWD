@@ -16,22 +16,15 @@ def test_status(intake_agent):
     assert body["output_stream"] == "stream.requirements"
     assert body["group"] == "intake-agent-group"
     assert body["processed_count"] == 0
+    assert body["failed_count"] == 0
 
 
-async def test_receive_task_normalizes(intake_agent):
+def test_build_message_normalizes(intake_agent):
     agent = intake_agent.IntakeAgent()
-    normalized = await agent.receive_task(
+    message = agent.build_message(
         {"task_id": "t-1", "source": "test", "request": {"type": "dev.test"}}
     )
-    assert normalized["task_id"] == "t-1"
-    assert normalized["normalized"] is True
-    assert normalized["received_by"] == "intake-agent"
-
-
-async def test_analyze_extracts_request_type(intake_agent):
-    agent = intake_agent.IntakeAgent()
-    analysis = await agent.analyze(
-        {"task_id": "t-1", "request": {"type": "production.deploy", "description": "d"}}
-    )
-    assert analysis["request_type"] == "production.deploy"
-    assert analysis["description"] == "d"
+    assert message["event"] == "task.intake_completed"
+    assert message["task_id"] == "t-1"
+    assert message["request_type"] == "dev.test"
+    assert message["normalized_by"] == "intake-agent"

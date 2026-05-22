@@ -5,6 +5,7 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.notifications.client import NotificationClient
 
@@ -110,3 +111,18 @@ async def list_notifications(count: int = 20) -> dict:
     finally:
         await client.close()
     return {"count": len(notifications), "notifications": notifications}
+
+
+@app.get("/executions")
+async def list_executions(
+    task_id: str | None = None,
+    agent: str | None = None,
+    status: str | None = None,
+) -> dict:
+    try:
+        executions = await AgentExecutionStore().list_executions(
+            task_id=task_id, agent=agent, status=status
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
+    return {"count": len(executions), "executions": executions}

@@ -63,7 +63,8 @@ A Docker Compose runtime for local/test use is defined in
 `infra/docker-compose/docker-compose.yml`. It provides PostgreSQL 16, Redis 7,
 Vault (dev mode), the platform services (`orchestrator`, `policy-engine`,
 `approval-engine`, `audit-service`, `communication-gateway`), and the agent
-services (`intake-agent`, `requirement-agent`).
+pipeline (`intake-agent`, `requirement-agent`, `development-agent`, `qa-agent`,
+`devops-agent`).
 
 Validate the compose configuration:
 
@@ -299,27 +300,45 @@ environment.
 ## Agent Services
 
 Concrete agents are standalone services under `agents/`. Each subclasses the
-shared `BaseAgent`, runs a Redis Streams consumer group, and exposes
-`GET /health` and `GET /status`. They make no LLM / GitHub / Slack calls and
-execute no production actions.
+shared `StreamAgent` (itself a `BaseAgent`), runs a Redis Streams consumer
+group, and exposes `GET /health` and `GET /status`. They make no LLM / GitHub /
+Slack / Kubernetes / cloud calls and execute no production actions.
 
 | Agent | Port | Consumes | Produces |
 |-------|------|----------|----------|
-| `intake-agent` | 8010 | `stream.tasks` / `intake-agent-group` | `stream.requirements` |
-| `requirement-agent` | 8011 | `stream.requirements` / `requirement-agent-group` | `stream.development` |
+| `intake-agent` | 8010 | `stream.tasks` | `stream.requirements` |
+| `requirement-agent` | 8011 | `stream.requirements` | `stream.development` |
+| `development-agent` | 8012 | `stream.development` | `stream.qa` |
+| `qa-agent` | 8013 | `stream.qa` | `stream.deployments` |
+| `devops-agent` | 8014 | `stream.deployments` | — (writes `deployment_records`) |
 
-**Agent stream flow** — a task placed on `stream.tasks` flows through the
+**Agent pipeline** — a task placed on `stream.tasks` flows through the full
 pipeline:
 
 ```
-stream.tasks → intake-agent → stream.requirements → requirement-agent → stream.development
+stream.tasks → intake-agent → stream.requirements → requirement-agent →
+stream.development → development-agent → stream.qa → qa-agent →
+stream.deployments → devops-agent → deployment_records
 ```
 
-- `intake-agent` normalizes the raw task and forwards it to `stream.requirements`.
-- `requirement-agent` produces a mock `requirement_spec` artifact and publishes a
-  `requirement.completed` event to `stream.development`.
-- Each agent writes an audit event to `stream.audit` and publishes a notification
-  to `stream.notifications`.
+- `intake-agent` normalizes the raw task; `requirement-agent` produces a mock
+  `requirement_spec`; `development-agent` produces a mock `code_change`;
+  `qa-agent` produces a mock `test_report`; `devops-agent` produces a mock
+  `deployment_record` (`environment: test`, `status: simulated`,
+  `production_executed: false`) — **no production deployment is performed**.
+- Every agent records an `agent_executions` row (`started` → `completed` /
+  `failed`), writes an audit event to `stream.audit`, and publishes a
+  notification to `stream.notifications`.
+
+**Agent execution persistence** — `shared/sdk/agent_execution/store.py`
+(`AgentExecutionStore`, asyncpg) persists every message an agent processes to the
+`agent_executions` table (`migrations/004_agent_execution_persistence.sql`).
+Query executions through the communication-gateway:
+
+```
+curl "http://localhost:8004/executions?task_id=demo-1"
+curl "http://localhost:8004/executions?agent=devops-agent&status=completed"
+```
 
 Place a task on `stream.tasks` through the communication-gateway:
 
@@ -331,8 +350,8 @@ curl -X POST http://localhost:8004/intake/mock \
 
 With `publish_to_stream: true` the gateway writes to `stream.tasks` for the
 agents to process; the default (`false`) runs the workflow directly through the
-orchestrator. `scripts/check_runtime_state.sh` runs an end-to-end agent stream
-flow smoke test.
+orchestrator. `scripts/check_runtime_state.sh` runs an end-to-end agent pipeline
+smoke test and checks `agent_executions` and `deployment_records`.
 
 ## Testing
 

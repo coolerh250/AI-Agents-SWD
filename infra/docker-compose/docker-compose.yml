@@ -122,6 +122,7 @@ services:
     environment:
       ORCHESTRATOR_URL: http://orchestrator:8000
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
     ports:
       - "127.0.0.1:8004:8004"
     depends_on:
@@ -139,9 +140,12 @@ services:
       dockerfile: agents/intake-agent/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
     ports:
       - "127.0.0.1:8010:8010"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
@@ -157,13 +161,79 @@ services:
       dockerfile: agents/requirement-agent/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
     ports:
       - "127.0.0.1:8011:8011"
     depends_on:
+      postgres:
+        condition: service_healthy
       redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8011/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  development-agent:
+    build:
+      context: ../..
+      dockerfile: agents/development-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+    ports:
+      - "127.0.0.1:8012:8012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8012/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  qa-agent:
+    build:
+      context: ../..
+      dockerfile: agents/qa-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+    ports:
+      - "127.0.0.1:8013:8013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8013/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  devops-agent:
+    build:
+      context: ../..
+      dockerfile: agents/devops-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+    ports:
+      - "127.0.0.1:8014:8014"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8014/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

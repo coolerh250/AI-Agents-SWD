@@ -18,19 +18,13 @@ def test_status(requirement_agent):
     assert body["processed_count"] == 0
 
 
-async def test_receive_task_extracts_request_type(requirement_agent):
+def test_build_artifact_produces_requirement_spec(requirement_agent):
     agent = requirement_agent.RequirementAgent()
-    received = await agent.receive_task(
-        {"task_id": "t-2", "request_type": "dev.test", "request": {"type": "dev.test"}}
+    artifact = agent.build_artifact(
+        {"task_id": "t-2", "request": {"type": "dev.test", "description": "build it"}}
     )
-    assert received["task_id"] == "t-2"
-    assert received["request_type"] == "dev.test"
-
-
-async def test_analyze_produces_summary(requirement_agent):
-    agent = requirement_agent.RequirementAgent()
-    analysis = await agent.analyze(
-        {"task_id": "t-2", "request_type": "dev.test", "request": {"description": "build it"}}
-    )
-    assert analysis["task_id"] == "t-2"
-    assert analysis["summary"] == "build it"
+    assert artifact["type"] == "requirement_spec"
+    assert artifact["task_id"] == "t-2"
+    assert artifact["summary"] == "build it"
+    assert artifact["mock"] is True
+    assert len(artifact["acceptance_criteria"]) >= 1
