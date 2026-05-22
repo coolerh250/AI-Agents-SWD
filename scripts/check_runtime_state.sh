@@ -114,4 +114,50 @@ else
 fi
 
 echo
+echo "=== workflow persistence smoke (run -> GET /workflow/{id}) ==="
+wf_task="smoke-persist-$$"
+curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$wf_task\",\"source\":\"check\",\"request\":{\"type\":\"dev.test\"}}" \
+  >/dev/null 2>&1 || true
+persisted=$(curl -sS -m 10 "http://localhost:8000/workflow/$wf_task" || echo '{}')
+echo "$persisted"
+if echo "$persisted" | grep -q "\"task_id\":\"$wf_task\""; then
+  echo "WORKFLOW_PERSISTENCE_SMOKE: PASS"
+else
+  echo "WORKFLOW_PERSISTENCE_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow replay smoke (GET /workflow/replay/{id}) ==="
+replay=$(curl -sS -m 10 "http://localhost:8000/workflow/replay/$wf_task" || echo '{}')
+echo "$replay"
+if echo "$replay" | grep -q '"executed":false'; then
+  echo "WORKFLOW_REPLAY_SMOKE: PASS"
+else
+  echo "WORKFLOW_REPLAY_SMOKE: CHECK"
+fi
+
+echo
+echo "=== approval resume smoke (production.deploy -> approve -> resume) ==="
+rs_task="smoke-resume-$$"
+rs_wf=$(curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$rs_task\",\"source\":\"check\",\"request\":{\"type\":\"production.deploy\"}}" \
+  || echo '{}')
+echo "$rs_wf"
+rs_req=$(echo "$rs_wf" | sed -n 's/.*"approval_request_id": *"\([^"]*\)".*/\1/p')
+if [ -n "$rs_req" ]; then
+  curl -sS -m 15 -X POST http://localhost:8002/approval/approve -H "Content-Type: application/json" \
+    -d "{\"request_id\":\"$rs_req\",\"decided_by\":\"check-runtime\"}" >/dev/null 2>&1 || true
+  rs_resumed=$(curl -sS -m 15 -X POST "http://localhost:8000/workflow/resume/$rs_task" || echo '{}')
+  echo "$rs_resumed"
+  if echo "$rs_resumed" | grep -q '"stage": *"completed"'; then
+    echo "APPROVAL_RESUME_SMOKE: PASS"
+  else
+    echo "APPROVAL_RESUME_SMOKE: CHECK"
+  fi
+else
+  echo "APPROVAL_RESUME_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

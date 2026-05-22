@@ -174,6 +174,10 @@ API endpoints:
 | POST | `/workflow/test` | Run the mock workflow for a request |
 | POST | `/workflow/policy-test` | Evaluate an action against the policy |
 | GET  | `/workflow/schema` | Describe the `WorkflowState` fields |
+| GET  | `/workflow` | List persisted workflows (optional `?status=`) |
+| GET  | `/workflow/{task_id}` | Get one persisted workflow state |
+| GET  | `/workflow/replay/{task_id}` | Replay a persisted workflow state (no execution) |
+| POST | `/workflow/resume/{task_id}` | Resume an approved workflow |
 
 Run the mock workflow:
 
@@ -225,6 +229,41 @@ table and published to the `stream.audit` Redis stream. `GET /audit/events/{task
 returns all audit events recorded for a task.
 
 The governance columns are added by `migrations/002_governance_tables.sql`.
+
+## Workflow Persistence & Resume
+
+The orchestrator persists every workflow so it survives a restart and can be
+resumed after an approval decision.
+
+**Persistence** — `shared/sdk/workflow_store/store.py` (`WorkflowStore`, asyncpg)
+writes one row per workflow into the PostgreSQL `workflow_states` table
+(`migrations/003_workflow_persistence.sql`). The workflow `create`s the row at
+start and `update`s it after every node transition; the full LangGraph state is
+stored in the `state` JSONB column, with the governance fields mirrored into
+dedicated columns for listing and filtering. The `DATABASE_URL` environment
+variable selects the database.
+
+**Resume engine** — `apps/orchestrator/src/resume_engine.py` (`ResumeEngine`):
+
+- `resume_workflow(task_id)` — resume a workflow once its approval is granted.
+- `resume_approved_workflows()` — startup recovery: reconcile every
+  `waiting_approval` workflow against the approval-engine.
+- `replay_workflow_state(task_id)` — return the persisted state without
+  executing anything.
+
+Resuming is **mock-safe**: it only updates workflow bookkeeping (stage,
+`execution_result`, audit trail). It never executes a production action — a
+resumed `production.deploy` reaches `completed` with `production_executed: false`.
+
+**Approval resume flow** — on startup the orchestrator opens a Redis consumer
+group on `stream.approvals` (`XREADGROUP BLOCK` — no polling). When the
+approval-engine publishes `approval.approved`, the workflow is resumed to
+`completed`; `approval.rejected` moves it to `rejected`. Workflows approved while
+the orchestrator was down are recovered by the startup scan.
+
+**Restart survivability** — because workflow state lives in PostgreSQL, restarting
+the orchestrator container loses nothing: `GET /workflow/{task_id}` and
+`GET /workflow/replay/{task_id}` keep returning the persisted state.
 
 ## Testing
 

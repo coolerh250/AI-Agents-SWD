@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
+from shared.sdk.workflow_store.store import WorkflowStore
 
 
 class WorkflowState(TypedDict):
@@ -40,8 +41,27 @@ REQUIRED_STATE_FIELDS = [
 ]
 
 
+async def _persist(state: WorkflowState, update: dict) -> None:
+    """Best-effort persistence of the post-node state to workflow_states."""
+    merged: dict = {**state, **update}
+    try:
+        await WorkflowStore().update_workflow_state(
+            merged["task_id"],
+            stage=merged["stage"],
+            state=merged,
+            approval_required=merged["approval_required"],
+            approval_status=merged["approval_status"],
+            risk_level=merged["risk_level"],
+            execution_result=merged["execution_result"],
+        )
+    except Exception:  # persistence failure must not break the workflow
+        pass
+
+
 async def intake_node(state: WorkflowState) -> dict:
-    return {"stage": "requirement_analysis"}
+    update = {"stage": "requirement_analysis"}
+    await _persist(state, update)
+    return update
 
 
 async def requirement_node(state: WorkflowState) -> dict:
@@ -50,11 +70,13 @@ async def requirement_node(state: WorkflowState) -> dict:
         "request_type": state["request"].get("type", "unknown"),
         "summary": state["request"].get("description", "no description provided"),
     }
-    return {
+    update = {
         "artifacts": state["artifacts"] + [spec],
         "assigned_agents": ["requirement-agent"],
         "stage": "policy_check",
     }
+    await _persist(state, update)
+    return update
 
 
 async def policy_node(state: WorkflowState) -> dict:
@@ -67,17 +89,21 @@ async def policy_node(state: WorkflowState) -> dict:
     except Exception:  # fail-safe: require approval if the policy engine is down
         approval_required = True
         risk_level = "unknown"
-    return {
+    update = {
         "approval_required": approval_required,
         "risk_level": risk_level,
         "stage": "approval",
     }
+    await _persist(state, update)
+    return update
 
 
 async def approval_node(state: WorkflowState) -> dict:
     """Create an approval request via the approval-engine when one is required."""
     if not state["approval_required"]:
-        return {"stage": "audit", "approval_status": "not_required"}
+        update = {"stage": "audit", "approval_status": "not_required"}
+        await _persist(state, update)
+        return update
     try:
         result = await ApprovalHttpClient().request_approval(
             task_id=state["task_id"],
@@ -90,11 +116,13 @@ async def approval_node(state: WorkflowState) -> dict:
     except Exception:  # degrade gracefully if the approval engine is down
         request_id = f"approval-local:{state['task_id']}"
         status = "pending"
-    return {
+    update = {
         "stage": "waiting_approval",
         "approval_status": status,
         "approval_request_id": request_id,
     }
+    await _persist(state, update)
+    return update
 
 
 async def audit_node(state: WorkflowState) -> dict:
@@ -112,22 +140,31 @@ async def audit_node(state: WorkflowState) -> dict:
         ref = str(result.get("audit_id") or ref)
     except Exception:  # degrade gracefully if the audit service is down
         pass
-    return {"audit_refs": state["audit_refs"] + [ref]}
+    update = {"audit_refs": state["audit_refs"] + [ref]}
+    await _persist(state, update)
+    return update
 
 
 async def final_node(state: WorkflowState) -> dict:
     if state["approval_required"]:
-        return {
+        update = {
             "stage": "waiting_approval",
             "execution_result": {
                 "status": "blocked_pending_approval",
                 "production_executed": False,
             },
         }
-    return {
-        "stage": "completed",
-        "execution_result": {"status": "completed", "production_executed": False, "mock": True},
-    }
+    else:
+        update = {
+            "stage": "completed",
+            "execution_result": {
+                "status": "completed",
+                "production_executed": False,
+                "mock": True,
+            },
+        }
+    await _persist(state, update)
+    return update
 
 
 def build_workflow():
@@ -167,8 +204,15 @@ def _initial_state(request: dict) -> WorkflowState:
 
 
 async def run_mock_workflow(request: dict) -> dict:
+    initial = _initial_state(request)
+    try:
+        await WorkflowStore().create_workflow_state(
+            initial["task_id"], dict(initial["request"]), stage="intake"
+        )
+    except Exception:  # persistence failure must not break the workflow
+        pass
     workflow = build_workflow()
-    final_state = await workflow.ainvoke(_initial_state(request))
+    final_state = await workflow.ainvoke(initial)
     return dict(final_state)
 
 
