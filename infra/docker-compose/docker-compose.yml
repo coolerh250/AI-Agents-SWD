@@ -115,5 +115,23 @@ services:
       retries: 5
       start_period: 15s
 
+  communication-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/communication-gateway/Dockerfile
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "127.0.0.1:8004:8004"
+    depends_on:
+      - orchestrator
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 volumes:
   postgres-data:

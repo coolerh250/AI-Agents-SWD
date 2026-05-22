@@ -1,5 +1,6 @@
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
+from shared.sdk.notifications.client import send_notification
 from shared.sdk.workflow_store.store import WorkflowStore
 
 
@@ -82,6 +83,7 @@ class ResumeEngine:
         )
         if updated is None:
             raise ResumeError(f"workflow not found: {task_id}")
+        await send_notification(task_id, "workflow.rejected", f"workflow {task_id} was rejected")
         return updated
 
     async def _apply_approved(self, task_id: str) -> dict:
@@ -112,6 +114,9 @@ class ResumeEngine:
         )
         if updated is None:
             raise ResumeError(f"workflow not found: {task_id}")
+        await send_notification(
+            task_id, "workflow.resumed", f"workflow {task_id} resumed and completed"
+        )
         return updated
 
     async def _approval_granted(self, workflow: dict) -> bool:

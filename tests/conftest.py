@@ -35,3 +35,8 @@ def approval_engine_app():
 @pytest.fixture
 def audit_service_app():
     return _load_service_module("audit-service").app
+
+
+@pytest.fixture
+def communication_gateway_app():
+    return _load_service_module("communication-gateway").app

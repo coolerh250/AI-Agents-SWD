@@ -160,4 +160,47 @@ else
 fi
 
 echo
+echo "=== communication-gateway /health ==="
+if curl -sS -m 10 http://localhost:8004/health >/dev/null 2>&1; then
+  echo "  communication-gateway (:8004)  ->  HEALTH: PASS"
+else
+  echo "  communication-gateway (:8004)  ->  HEALTH: FAIL"
+fi
+
+echo
+echo "=== /intake/mock non-production smoke ==="
+gw_dev=$(curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-gw-dev","request":{"type":"dev.test"}}' || echo '{}')
+echo "$gw_dev"
+if echo "$gw_dev" | grep -q '"stage": *"completed"'; then
+  echo "INTAKE_NONPROD_SMOKE: PASS"
+else
+  echo "INTAKE_NONPROD_SMOKE: CHECK"
+fi
+
+echo
+echo "=== /intake/mock production.deploy smoke ==="
+gw_prod=$(curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-gw-prod","request":{"type":"production.deploy"}}' || echo '{}')
+echo "$gw_prod"
+if echo "$gw_prod" | grep -q '"stage": *"waiting_approval"'; then
+  echo "INTAKE_PROD_SMOKE: PASS"
+else
+  echo "INTAKE_PROD_SMOKE: CHECK"
+fi
+
+echo
+echo "=== /notifications/test + /notifications smoke ==="
+nt=$(curl -sS -m 15 -X POST http://localhost:8004/notifications/test -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-gw-notif","event_type":"runtime.smoke","message":"runtime check"}' || echo '{}')
+echo "$nt"
+notif=$(curl -sS -m 15 "http://localhost:8004/notifications?count=20" || echo '{}')
+echo "$notif"
+if echo "$notif" | grep -q 'smoke-gw-notif'; then
+  echo "NOTIFICATIONS_SMOKE: PASS"
+else
+  echo "NOTIFICATIONS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

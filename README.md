@@ -62,7 +62,7 @@ source/                    Project progress log and source notes
 A Docker Compose runtime for local/test use is defined in
 `infra/docker-compose/docker-compose.yml`. It provides PostgreSQL 16, Redis 7,
 Vault (dev mode), and the platform services: `orchestrator`, `policy-engine`,
-`approval-engine`, and `audit-service`.
+`approval-engine`, `audit-service`, and `communication-gateway`.
 
 Validate the compose configuration:
 
@@ -264,6 +264,36 @@ the orchestrator was down are recovered by the startup scan.
 **Restart survivability** — because workflow state lives in PostgreSQL, restarting
 the orchestrator container loses nothing: `GET /workflow/{task_id}` and
 `GET /workflow/replay/{task_id}` keep returning the persisted state.
+
+## Communication Gateway
+
+`communication-gateway` (port `8004`) is the entry point for mock user requests
+and notifications — the foundation for future Slack / Discord / Telegram
+integrations. It makes **no real external calls**.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET  | `/health` | Liveness check |
+| POST | `/intake/mock` | Submit a mock request; runs it through the orchestrator |
+| GET  | `/tasks/{task_id}` | Get a persisted workflow state via the orchestrator |
+| POST | `/notifications/test` | Publish a test notification |
+| GET  | `/notifications` | Read recent notifications |
+
+**Mock intake flow** — `POST /intake/mock` takes a mock request, calls the
+orchestrator `POST /workflow/test`, and returns `task_id`, `stage`,
+`approval_required`, and the full `workflow_result`. A `production.deploy`
+request still stops at `waiting_approval` — no production action is executed.
+
+**Notification flow** — notifications are published to the `stream.notifications`
+Redis stream by `shared/sdk/notifications/client.py` (`NotificationClient`). The
+orchestrator publishes a notification when a workflow reaches `completed` or
+`waiting_approval`, and the resume engine publishes one when a workflow is
+`resumed` or `rejected`. `GET /notifications` reads recent entries with
+`XREVRANGE`; `POST /notifications/test` publishes a test notification. Each
+notification carries `task_id`, `event_type`, `message`, and `created_at`.
+
+The `communication-gateway` reads `ORCHESTRATOR_URL` and `REDIS_URL` from the
+environment.
 
 ## Testing
 

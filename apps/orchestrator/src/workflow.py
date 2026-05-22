@@ -5,6 +5,7 @@ from langgraph.graph import END, START, StateGraph
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
+from shared.sdk.notifications.client import send_notification
 from shared.sdk.workflow_store.store import WorkflowStore
 
 
@@ -146,6 +147,7 @@ async def audit_node(state: WorkflowState) -> dict:
 
 
 async def final_node(state: WorkflowState) -> dict:
+    task_id = state["task_id"]
     if state["approval_required"]:
         update = {
             "stage": "waiting_approval",
@@ -154,6 +156,10 @@ async def final_node(state: WorkflowState) -> dict:
                 "production_executed": False,
             },
         }
+        await _persist(state, update)
+        await send_notification(
+            task_id, "workflow.waiting_approval", f"workflow {task_id} is waiting for approval"
+        )
     else:
         update = {
             "stage": "completed",
@@ -163,7 +169,8 @@ async def final_node(state: WorkflowState) -> dict:
                 "mock": True,
             },
         }
-    await _persist(state, update)
+        await _persist(state, update)
+        await send_notification(task_id, "workflow.completed", f"workflow {task_id} completed")
     return update
 
 
