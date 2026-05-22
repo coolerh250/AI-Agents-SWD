@@ -413,3 +413,81 @@ issues & blockers, and next-step suggestions.
   2. Implement concrete agents that consume `stream.tasks` and report progress.
   3. Add workflow retry / failure handling and persist `retry_count`
      transitions.
+
+---
+
+## Stage 10 — Communication Gateway & Notification Flow (Step 9)
+
+- **Execution time:** 2026-05-22 13:18–13:30 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `7bc219d`. Step 9 produced two commits:
+  - `85292184040406f8a573242cd71457437aaacd67` — communication-gateway service,
+    notification client, orchestrator notification publishing, docker-compose,
+    tests, runtime checks, README
+  - this Stage 10 progress entry is committed on top.
+- **Modified files:**
+  - Added: `apps/communication-gateway/{src/main.py,Dockerfile,requirements.txt}`,
+    `shared/sdk/notifications/{__init__.py,client.py}`,
+    `tests/{test_notification_client.py,test_communication_gateway.py,test_notification_flow.py}`
+  - Modified: `apps/orchestrator/src/{workflow.py,resume_engine.py}`,
+    `infra/docker-compose/docker-compose.yml`, `tests/conftest.py`,
+    `scripts/check_runtime_state.sh`, `README.md`, `source/progress.md`
+  - Deleted: `apps/communication-gateway/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — communication-gateway /
+  notification validation (no production resources; no production action executed).
+- **Service ports:** orchestrator `8000`, policy-engine `8001`, approval-engine
+  `8002`, audit-service `8003`, communication-gateway `8004` — all bound to
+  `127.0.0.1`.
+- **Service integration result:** `communication-gateway` (port 8004) is the
+  entry point for mock intake and notifications. `POST /intake/mock` forwards to
+  the orchestrator `POST /workflow/test`; `GET /tasks/{task_id}` proxies the
+  orchestrator `GET /workflow/{task_id}`. The `ORCHESTRATOR_URL` and `REDIS_URL`
+  are read from the environment. No real Slack / Discord / Telegram / GitHub /
+  LLM calls are made.
+- **Notification stream result:** notifications are published to the
+  `stream.notifications` Redis stream via `NotificationClient`
+  (`shared/sdk/notifications/client.py`). After verification `stream.notifications`
+  XLEN = 47. Each notification carries `task_id`, `event_type`, `message`,
+  `created_at`. `GET /notifications` reads recent entries with `XREVRANGE`.
+- **Mock intake result:**
+  - `/intake/mock` non-production (`step9-dev-001`, `dev.test`) → `stage:
+    completed`, `approval_required: false`, `production_executed: false`.
+  - `/intake/mock` `production.deploy` (`step9-prod-001`) → `stage:
+    waiting_approval`, `approval_required: true`, `production_executed: false`.
+    **No production action executed.**
+  - `GET /tasks/step9-prod-001` returned the persisted workflow state.
+- **Production approval notification result:** the orchestrator publishes a
+  notification at every workflow outcome — verified `workflow.completed`
+  (`step9-dev-001`), `workflow.waiting_approval` (`step9-prod-001`),
+  `workflow.resumed` and `workflow.rejected` (resume-engine paths) all present in
+  `stream.notifications`.
+- **Test results:** `run_tests.sh` — `pytest` **80 passed** (6.45s); `ruff` all
+  checks passed; `black --check` 48 files clean; `mypy` no issues in 22 files.
+  - notification client (3 tests): build / publish+list / `send_notification`
+    helper — PASS.
+  - communication gateway (5 tests): health; mock intake non-production and
+    `production.deploy`; `/tasks/{id}`; `/notifications/test` + `/notifications`
+    — PASS.
+  - notification flow (3 tests): intake completion publishes
+    `workflow.completed`; `production.deploy` publishes `workflow.waiting_approval`
+    with `production_executed: false`; `/notifications/test` reaches the stream —
+    PASS.
+- **Runtime smoke test:** `check_runtime_state.sh` — 8 containers Up;
+  communication-gateway HEALTH PASS; INTAKE_NONPROD_SMOKE / INTAKE_PROD_SMOKE /
+  NOTIFICATIONS_SMOKE all PASS, alongside the existing health / approval / audit /
+  persistence / replay / resume smoke tests.
+- **Issues & blockers:** none — all build, test, and verification steps passed on
+  the first run; no fix commit was required.
+- **Risks / notes:**
+  - The communication-gateway is a mock entry point — it performs no real
+    external messaging; `/notifications` only reads a Redis stream.
+  - Notification publishing from the orchestrator is best-effort: a Redis outage
+    is swallowed so the workflow still completes.
+  - `production.deploy` continues to stop at `waiting_approval`; no production
+    action is executed anywhere in the intake → notification path.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Implement concrete agents that consume `stream.tasks` and report progress
+     back through the event bus.
+  2. Add a notification consumer that turns `stream.notifications` events into
+     real channel deliveries (Slack / Discord / Telegram) behind a feature flag.
+  3. Add workflow retry / failure handling and persist `retry_count` transitions.
