@@ -244,3 +244,85 @@ issues & blockers, and next-step suggestions.
   1. Implement real approval handling (consume `stream.approvals` and resume the workflow).
   2. Connect the workflow to PostgreSQL (persist `workflow_states` rows).
   3. Implement concrete agents and dispatch tasks over the Redis Streams event bus.
+
+---
+
+## Stage 8 — Approval / Policy / Audit Service Split (Step 7)
+
+- **Execution time:** 2026-05-22 09:55–10:09 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `f808124`. Step 7 produced two commits:
+  - `a242ea95ff615297ec7119970ca6f4a0d90a1214` — governance service split, HTTP
+    clients, orchestrator integration, migration, compose, tests, scripts, README
+  - this Stage 8 progress entry is committed on top.
+- **Modified files:**
+  - Added: `apps/policy-engine/{src/main.py,Dockerfile,requirements.txt}`,
+    `apps/approval-engine/{src/main.py,Dockerfile,requirements.txt}`,
+    `apps/audit-service/{src/main.py,Dockerfile,requirements.txt}`,
+    `shared/sdk/http_clients/{__init__.py,policy_http_client.py,approval_http_client.py,audit_http_client.py}`,
+    `migrations/002_governance_tables.sql`,
+    `tests/{conftest.py,test_policy_engine.py,test_approval_engine.py,test_audit_service.py,test_orchestrator_service_integration.py}`
+  - Modified: `apps/orchestrator/src/{workflow.py,main.py}`,
+    `apps/orchestrator/requirements.txt`, `infra/docker-compose/docker-compose.yml`,
+    `requirements.txt`, `scripts/check_runtime_state.sh`,
+    `scripts/init_local_runtime.sh`, `tests/{test_orchestrator_workflow.py,test_orchestrator_api.py}`,
+    `README.md`, `source/progress.md`
+  - Deleted: `apps/policy-engine/.gitkeep`, `apps/approval-engine/.gitkeep`,
+    `apps/audit-service/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — governance service validation
+  (no production resources; no production action executed).
+- **Service ports:** orchestrator `8000`, policy-engine `8001`, approval-engine
+  `8002`, audit-service `8003` — all bound to `127.0.0.1`.
+- **Service integration result:** the orchestrator workflow no longer uses local
+  mock logic — `policy`, `approval`, and `audit` nodes call the governance
+  services over HTTP via `PolicyHttpClient` / `ApprovalHttpClient` /
+  `AuditHttpClient` (URLs from `POLICY_ENGINE_URL` / `APPROVAL_ENGINE_URL` /
+  `AUDIT_SERVICE_URL`, localhost fallback). Verified end-to-end: the
+  `production.deploy` smoke run created an `approval_requests` row with
+  `requested_by = orchestrator` and an `audit_logs` row with `agent = orchestrator`.
+- **PostgreSQL persistence result:** `migrations/002_governance_tables.sql` applied
+  (11 × `ALTER TABLE`, 2 × `CREATE INDEX`) — idempotent, re-run safe. After
+  verification: `approval_requests` = 11 rows, `audit_logs` = 15 rows.
+  `production.deploy` task `step7-prod-001` persisted as
+  `action = production.deploy`, `risk_level = high`, `status = pending`.
+- **Redis stream result:** `stream.approvals` XLEN = 14, `stream.audit` XLEN = 31.
+  approval-engine publishes `approval.requested` / `approval.approved` /
+  `approval.rejected`; audit-service publishes `audit.recorded`.
+- **Test results:** `run_tests.sh` — `pytest` **49 passed** (1.65s); `ruff` all
+  checks passed; `black --check` 35 files clean; `mypy` no issues in 18 files.
+  - policy-engine (4 tests): restricted actions → `approval_required: true`,
+    `risk_level: high`; non-restricted → `allowed: true`, `risk_level: low` — PASS.
+  - approval-engine (6 tests): health; request create → `pending`; get; approve →
+    `approved`; reject → `rejected`; unknown id → 404 — PASS.
+  - audit-service (3 tests): health; event insert → query by task_id with
+    `artifact_refs` round-trip; unknown task → `count: 0` — PASS.
+  - orchestrator integration (3 tests): non-production routes through the live
+    services to `completed`; `production.deploy` creates a queryable
+    `approval_requests` row; both Redis streams grow — PASS.
+- **Runtime smoke test:** `check_runtime_state.sh` — 7 containers Up
+  (orchestrator/policy/approval/audit/postgres/redis healthy, vault up); governance
+  `/health` all PASS; APPROVAL_SMOKE PASS (request → approve); AUDIT_SMOKE PASS
+  (insert → query). Orchestrator workflow smoke:
+  - `step7-dev-001` (`dev.test`) → `stage: completed`, `approval_required: false`,
+    `production_executed: false`.
+  - `step7-prod-001` (`production.deploy`) → `stage: waiting_approval`,
+    `approval_required: true`, `approval_status: pending`,
+    `approval_request_id: dbb6cdbc-…`, `risk_level: high`,
+    `execution_result: blocked_pending_approval`. **No production action executed.**
+- **Issues & blockers:** none — all build, migration, test, and verification steps
+  passed on the first run; no fix commit was required.
+- **Risks / notes:**
+  - The orchestrator HTTP clients fail safe: if the policy-engine is unreachable
+    the workflow requires approval; if the approval/audit services are unreachable
+    it degrades to a local reference. The dependency-bound tests skip gracefully
+    when their service / database / Redis is not reachable.
+  - `migrations/002` relaxes the `approval_requests.task_id` foreign key to `TEXT`
+    so mock/test task ids are accepted; `audit_logs.action` is made nullable.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only choices.
+  - No real LLM / GitHub / Slack calls; no secrets committed; `production.deploy`
+    only reaches `waiting_approval`.
+- **Next-step suggestions:**
+  1. Implement approval resumption — consume `stream.approvals` so an approved
+     request resumes the blocked workflow.
+  2. Persist `workflow_states` rows so workflow progress survives a restart.
+  3. Add a communication-gateway service and wire notifications
+     (`stream.notifications`).
