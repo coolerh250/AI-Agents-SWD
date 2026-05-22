@@ -326,3 +326,90 @@ issues & blockers, and next-step suggestions.
   2. Persist `workflow_states` rows so workflow progress survives a restart.
   3. Add a communication-gateway service and wire notifications
      (`stream.notifications`).
+
+---
+
+## Stage 9 — Workflow Persistence & Resume Engine (Step 8)
+
+- **Execution time:** 2026-05-22 12:55–13:09 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `3408c0f`. Step 8 produced two commits:
+  - `fddd1cb5958338ef499999c2a0f250943abf4276` — workflow persistence layer,
+    resume engine, approval-resume listener, persistence/replay API, migration,
+    tests, runtime checks, README
+  - this Stage 9 progress entry is committed on top.
+- **Modified files:**
+  - Added: `shared/sdk/workflow_store/{__init__.py,store.py}`,
+    `apps/orchestrator/src/resume_engine.py`,
+    `migrations/003_workflow_persistence.sql`,
+    `tests/{test_workflow_store.py,test_resume_engine.py,test_workflow_persistence.py,test_approval_resume_flow.py}`
+  - Modified: `apps/orchestrator/src/{workflow.py,main.py}`,
+    `scripts/check_runtime_state.sh`, `README.md`, `source/progress.md`
+  - Deleted: none
+- **Deployment target:** test server `10.0.1.31` — workflow persistence / resume
+  validation (no production resources; no production action executed).
+- **Workflow persistence result:** `migrations/003_workflow_persistence.sql`
+  applied (9 × `ALTER TABLE`, 2 × `CREATE INDEX`) — idempotent. `WorkflowStore`
+  (asyncpg) writes one row per workflow into `workflow_states`; the workflow
+  creates the row at start and updates it after every node transition. Verified:
+  `GET /workflow/step8-prod-001` returns the full persisted state; the `state`
+  JSONB column carries the complete LangGraph state.
+- **Resume engine result:** `ResumeEngine.resume_workflow` transitions an
+  approved `waiting_approval` workflow to `completed` — mock-safe: only
+  bookkeeping is updated (`execution_result.resumed = true`,
+  `production_executed = false`); no production action runs.
+  `resume_approved_workflows` reconciles `waiting_approval` workflows against the
+  approval-engine on startup.
+- **Replay API result:** `GET /workflow/replay/step8-prod-001` returns the
+  persisted state with `executed: false` — no workflow execution is triggered.
+  `GET /workflow` lists all persisted workflows; `GET /workflow/{task_id}`
+  returns one.
+- **Approval resume flow result:**
+  - API path — `POST /workflow/resume/step8-prod-001` after approval →
+    `stage: completed`, `resumed: true`, `production_executed: false`. An
+    unapproved workflow returns `409`.
+  - Redis path — the orchestrator opens consumer group
+    `orchestrator-resume-group` on `stream.approvals` (`XREADGROUP BLOCK`, no
+    polling). `step8-listener-001` was approved and the listener resumed it to
+    `completed` within ~4s. The consumer group reported `entries-read: 42`,
+    `pending: 0`, `lag: 0` — every approval event consumed and acked.
+- **PostgreSQL workflow_states query:** 34 rows. `step8-prod-001` and
+  `step8-listener-001` → `completed / approved`; `step8-dev-001` → `completed /
+  not_required`; `smoke-prod` → `waiting_approval / pending`.
+- **Redis approval event handling:** `stream.approvals` XLEN = 42,
+  `stream.audit` XLEN = 69. Consumer group `orchestrator-resume-group` active
+  with 1 consumer, fully caught up.
+- **Restart survivability result:** `docker compose restart orchestrator` —
+  orchestrator healthy after restart; `GET /workflow/replay/step8-prod-001` and
+  `GET /workflow/replay/step8-listener-001` both still return the full persisted
+  state. Workflow state is held in PostgreSQL, so nothing is lost on restart.
+- **Test results:** `run_tests.sh` — `pytest` **69 passed** (5.61s); `ruff` all
+  checks passed; `black --check` 42 files clean; `mypy` no issues in 20 files.
+  - workflow store (5 tests): create/get/update/list/filter; append_artifact /
+    append_audit_ref — PASS.
+  - resume engine (6 tests): replay; unapproved/unknown → `ResumeError`;
+    approved → `completed`; `on_approval_event` approved/rejected — PASS.
+  - workflow persistence (4 tests): non-production and `waiting_approval`
+    workflows persisted; full state stored; replay matches — PASS.
+  - approval resume flow (5 tests): `on_approval_event` approve/reject; resume
+    API rejects unapproved (409) and resumes approved; Redis listener resumes
+    after approval — PASS.
+- **Runtime smoke test:** `check_runtime_state.sh` — 7 containers Up;
+  WORKFLOW_PERSISTENCE_SMOKE / WORKFLOW_REPLAY_SMOKE / APPROVAL_RESUME_SMOKE all
+  PASS, alongside the existing health / approval / audit smoke tests.
+- **Issues & blockers:** none — all build, migration, test, and verification
+  steps passed on the first run; no fix commit was required.
+- **Risks / notes:**
+  - Persistence is best-effort inside the workflow: a database outage is logged
+    and swallowed so the workflow still runs; resume/replay then require the
+    database and surface `503` when it is unreachable.
+  - Resume is mock-safe — a resumed `production.deploy` reaches `completed` with
+    `production_executed: false`; no production action is ever executed.
+  - The approval listener uses a Redis consumer group (`XREADGROUP BLOCK`); the
+    startup scan recovers approvals that landed before the group existed.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Add a communication-gateway service and emit notifications on resume /
+     reject (`stream.notifications`).
+  2. Implement concrete agents that consume `stream.tasks` and report progress.
+  3. Add workflow retry / failure handling and persist `retry_count`
+     transitions.
