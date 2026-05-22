@@ -5,9 +5,11 @@ import httpx
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.notifications.client import NotificationClient
 
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://localhost:8000").rstrip("/")
+TASKS_STREAM = "stream.tasks"
 
 app = FastAPI(title="communication-gateway")
 
@@ -15,6 +17,7 @@ app = FastAPI(title="communication-gateway")
 class IntakeRequest(BaseModel):
     task_id: str | None = None
     request: dict = Field(default_factory=dict)
+    publish_to_stream: bool = False
 
 
 class TestNotification(BaseModel):
@@ -31,6 +34,28 @@ def health() -> dict:
 @app.post("/intake/mock")
 async def intake_mock(payload: IntakeRequest) -> dict:
     task_id = payload.task_id or f"intake-{uuid.uuid4().hex[:12]}"
+    if payload.publish_to_stream:
+        # Stream mode: hand the task to stream.tasks for the intake-agent to consume.
+        bus = RedisStreamEventBus()
+        try:
+            message = {
+                "event": "task.created",
+                "task_id": task_id,
+                "source": "communication-gateway",
+                "request": payload.request,
+            }
+            published_id = await bus.publish_event(TASKS_STREAM, message)
+        except Exception as exc:
+            raise HTTPException(status_code=503, detail=f"redis unavailable: {exc}") from exc
+        finally:
+            await bus.close()
+        return {
+            "task_id": task_id,
+            "mode": "stream",
+            "stream": TASKS_STREAM,
+            "published_id": published_id,
+        }
+    # Default mode: run the workflow directly through the orchestrator.
     body = {"task_id": task_id, "source": "communication-gateway", "request": payload.request}
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
@@ -41,6 +66,7 @@ async def intake_mock(payload: IntakeRequest) -> dict:
         raise HTTPException(status_code=502, detail=f"orchestrator unavailable: {exc}") from exc
     return {
         "task_id": result.get("task_id", task_id),
+        "mode": "orchestrator",
         "stage": result.get("stage"),
         "approval_required": result.get("approval_required"),
         "workflow_result": result,

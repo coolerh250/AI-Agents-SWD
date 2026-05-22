@@ -61,8 +61,9 @@ source/                    Project progress log and source notes
 
 A Docker Compose runtime for local/test use is defined in
 `infra/docker-compose/docker-compose.yml`. It provides PostgreSQL 16, Redis 7,
-Vault (dev mode), and the platform services: `orchestrator`, `policy-engine`,
-`approval-engine`, `audit-service`, and `communication-gateway`.
+Vault (dev mode), the platform services (`orchestrator`, `policy-engine`,
+`approval-engine`, `audit-service`, `communication-gateway`), and the agent
+services (`intake-agent`, `requirement-agent`).
 
 Validate the compose configuration:
 
@@ -294,6 +295,44 @@ notification carries `task_id`, `event_type`, `message`, and `created_at`.
 
 The `communication-gateway` reads `ORCHESTRATOR_URL` and `REDIS_URL` from the
 environment.
+
+## Agent Services
+
+Concrete agents are standalone services under `agents/`. Each subclasses the
+shared `BaseAgent`, runs a Redis Streams consumer group, and exposes
+`GET /health` and `GET /status`. They make no LLM / GitHub / Slack calls and
+execute no production actions.
+
+| Agent | Port | Consumes | Produces |
+|-------|------|----------|----------|
+| `intake-agent` | 8010 | `stream.tasks` / `intake-agent-group` | `stream.requirements` |
+| `requirement-agent` | 8011 | `stream.requirements` / `requirement-agent-group` | `stream.development` |
+
+**Agent stream flow** — a task placed on `stream.tasks` flows through the
+pipeline:
+
+```
+stream.tasks → intake-agent → stream.requirements → requirement-agent → stream.development
+```
+
+- `intake-agent` normalizes the raw task and forwards it to `stream.requirements`.
+- `requirement-agent` produces a mock `requirement_spec` artifact and publishes a
+  `requirement.completed` event to `stream.development`.
+- Each agent writes an audit event to `stream.audit` and publishes a notification
+  to `stream.notifications`.
+
+Place a task on `stream.tasks` through the communication-gateway:
+
+```
+curl -X POST http://localhost:8004/intake/mock \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"demo-1","request":{"type":"dev.test"},"publish_to_stream":true}'
+```
+
+With `publish_to_stream: true` the gateway writes to `stream.tasks` for the
+agents to process; the default (`false`) runs the workflow directly through the
+orchestrator. `scripts/check_runtime_state.sh` runs an end-to-end agent stream
+flow smoke test.
 
 ## Testing
 

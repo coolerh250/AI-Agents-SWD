@@ -203,4 +203,39 @@ else
 fi
 
 echo
+echo "=== agent services /health ==="
+for entry in intake-agent:8010 requirement-agent:8011; do
+  name="${entry%%:*}"
+  port="${entry##*:}"
+  if curl -sS -m 10 "http://localhost:${port}/health" >/dev/null 2>&1; then
+    echo "  ${name} (:${port})  ->  HEALTH: PASS"
+  else
+    echo "  ${name} (:${port})  ->  HEALTH: FAIL"
+  fi
+done
+
+echo
+echo "=== mock agent stream flow smoke (tasks -> intake -> requirements -> development) ==="
+req_before=$($COMPOSE exec -T redis redis-cli XLEN stream.requirements | tr -d '[:space:]')
+dev_before=$($COMPOSE exec -T redis redis-cli XLEN stream.development | tr -d '[:space:]')
+flow=$(curl -sS -m 20 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-agent-flow","request":{"type":"dev.test"},"publish_to_stream":true}' \
+  || echo '{}')
+echo "$flow"
+dev_after="${dev_before:-0}"
+for i in $(seq 1 12); do
+  dev_after=$($COMPOSE exec -T redis redis-cli XLEN stream.development | tr -d '[:space:]')
+  if [ "${dev_after:-0}" -gt "${dev_before:-0}" ]; then break; fi
+  sleep 2
+done
+req_after=$($COMPOSE exec -T redis redis-cli XLEN stream.requirements | tr -d '[:space:]')
+echo "stream.requirements: before=${req_before:-0} after=${req_after:-0}"
+echo "stream.development:  before=${dev_before:-0} after=${dev_after:-0}"
+if [ "${dev_after:-0}" -gt "${dev_before:-0}" ]; then
+  echo "AGENT_STREAM_FLOW_SMOKE: PASS"
+else
+  echo "AGENT_STREAM_FLOW_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

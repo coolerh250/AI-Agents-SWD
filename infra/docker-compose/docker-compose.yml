@@ -133,5 +133,41 @@ services:
       retries: 5
       start_period: 15s
 
+  intake-agent:
+    build:
+      context: ../..
+      dockerfile: agents/intake-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "127.0.0.1:8010:8010"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  requirement-agent:
+    build:
+      context: ../..
+      dockerfile: agents/requirement-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+    ports:
+      - "127.0.0.1:8011:8011"
+    depends_on:
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8011/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
 volumes:
   postgres-data:

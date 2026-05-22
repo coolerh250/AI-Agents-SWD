@@ -1,4 +1,5 @@
 import importlib.util
+import sys
 from pathlib import Path
 from types import ModuleType
 
@@ -40,3 +41,34 @@ def audit_service_app():
 @pytest.fixture
 def communication_gateway_app():
     return _load_service_module("communication-gateway").app
+
+
+def _load_agent_module(agent: str) -> ModuleType:
+    """Load an agent's agents/<agent>/src/main.py for in-process testing.
+
+    main.py does ``from agent import ...``; agent.py is loaded first under the
+    module name ``agent`` so that import resolves without a shared sys.path entry.
+    """
+    src = _REPO_ROOT / "agents" / agent / "src"
+    agent_spec = importlib.util.spec_from_file_location("agent", src / "agent.py")
+    assert agent_spec is not None and agent_spec.loader is not None
+    agent_module = importlib.util.module_from_spec(agent_spec)
+    sys.modules["agent"] = agent_module
+    agent_spec.loader.exec_module(agent_module)
+
+    main_name = f"{agent.replace('-', '_')}_main"
+    main_spec = importlib.util.spec_from_file_location(main_name, src / "main.py")
+    assert main_spec is not None and main_spec.loader is not None
+    main_module = importlib.util.module_from_spec(main_spec)
+    main_spec.loader.exec_module(main_module)
+    return main_module
+
+
+@pytest.fixture
+def intake_agent():
+    return _load_agent_module("intake-agent")
+
+
+@pytest.fixture
+def requirement_agent():
+    return _load_agent_module("requirement-agent")
