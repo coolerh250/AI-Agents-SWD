@@ -562,3 +562,90 @@ issues & blockers, and next-step suggestions.
   2. Wire the orchestrator workflow to dispatch real tasks onto `stream.tasks`
      instead of running every stage in-process.
   3. Persist agent executions to the `agent_executions` table for traceability.
+
+---
+
+## Stage 12 — Agent Execution Persistence & Development / QA / DevOps Pipeline (Step 11)
+
+- **Execution time:** 2026-05-22 14:10–14:22 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `977c53d`. Step 11 produced two commits:
+  - `6dbfd8458ea17c3bc4f8213ea539dd5c35402df3` — agent execution persistence,
+    StreamAgent base, development/QA/DevOps agents, migration, gateway endpoint,
+    compose, tests, runtime checks, README
+  - this Stage 12 progress entry is committed on top.
+- **Modified files:**
+  - Added: `migrations/004_agent_execution_persistence.sql`,
+    `shared/sdk/agent_execution/{__init__.py,store.py}`,
+    `shared/sdk/base_agent/stream_agent.py`,
+    `agents/development-agent/`, `agents/qa-agent/`, `agents/devops-agent/`
+    (each `src/agent.py`, `src/main.py`, `Dockerfile`, `requirements.txt`),
+    `tests/{test_agent_execution_store.py,test_development_agent.py,test_qa_agent.py,test_devops_agent.py,test_full_agent_pipeline.py}`
+  - Modified: `agents/intake-agent/{src/agent.py,requirements.txt}`,
+    `agents/requirement-agent/{src/agent.py,requirements.txt}`,
+    `apps/communication-gateway/{src/main.py,requirements.txt}`,
+    `infra/docker-compose/docker-compose.yml`, `tests/conftest.py`,
+    `tests/{test_intake_agent.py,test_requirement_agent.py}`,
+    `scripts/check_runtime_state.sh`, `README.md`, `source/progress.md`
+  - Deleted: `agents/qa-agent/.gitkeep`, `agents/devops-agent/.gitkeep`
+- **Deployment target:** test server `10.0.1.31` — agent pipeline + execution
+  persistence validation (no production resources; no production deploy executed).
+- **Agent ports:** intake-agent `8010`, requirement-agent `8011`,
+  development-agent `8012`, qa-agent `8013`, devops-agent `8014` — all bound to
+  `127.0.0.1`.
+- **Agent service result:** intake-agent and requirement-agent were refactored
+  onto the new shared `StreamAgent` base; development-agent, qa-agent, and
+  devops-agent were added. All five subclass `StreamAgent` (a `BaseAgent`), run a
+  Redis consumer-group loop, and expose `GET /health` and `GET /status`. After
+  the pipeline run each `/status` reported `running: true`, `failed_count: 0`,
+  and the last task id.
+- **Redis stream flow result:** verified end-to-end —
+  `stream.tasks → intake-agent → stream.requirements → requirement-agent →
+  stream.development → development-agent → stream.qa → qa-agent →
+  stream.deployments → devops-agent`. Task `step11-flow-001` reached
+  `stream.deployments` within ~2s. Final stream lengths: tasks / requirements /
+  development / qa / deployments all 13; `stream.audit` 253;
+  `stream.notifications` 200.
+- **Execution persistence result:** `migrations/004_agent_execution_persistence.sql`
+  applied (idempotent). `AgentExecutionStore` (asyncpg) records one
+  `agent_executions` row per message. For `step11-flow-001` all five agents
+  (intake / requirement / development / qa / devops) have a `completed` row with
+  `started_at` and `completed_at` set. `GET /executions?task_id=step11-flow-001`
+  returned 5 executions; `GET /executions?agent=devops-agent&status=completed`
+  filtered correctly.
+- **Deployment mock result:** the devops-agent wrote one `deployment_records`
+  row for `step11-flow-001` — `environment: test`, `status: simulated`,
+  `production_executed: false`, `mock: true`. **No production deployment was
+  performed and no Kubernetes / cloud / GitHub API was called.**
+- **Audit / notification result:** every agent wrote an audit event to
+  `stream.audit` and published a notification to `stream.notifications`
+  (`agent.intake_completed`, `requirement.completed`, `development.completed`,
+  `qa.completed`, `devops.deployment_simulated`).
+- **Test results:** `run_tests.sh` — `pytest` **106 passed** (12.99s); `ruff`
+  all checks passed; `black --check` 69 files clean; `mypy` no issues in 25 files.
+  - agent execution store (5 tests): create / complete / fail / update+get /
+    list with filters — PASS.
+  - development / qa / devops agents (3 tests each): health; status; the mock
+    artifact builder — PASS.
+  - full agent pipeline (3 tests): task reaches `stream.qa` and
+    `stream.deployments`; all five agents record `completed` executions; the
+    devops execution metadata is mock-safe (`production_executed: false`) — PASS.
+- **Runtime smoke test:** `check_runtime_state.sh` — 13 containers Up; all five
+  agents HEALTH PASS; FULL_PIPELINE_SMOKE PASS; AGENT_EXECUTIONS_SMOKE PASS
+  (5 completed rows); DEPLOYMENT_RECORD_SMOKE PASS — alongside the existing
+  health / approval / audit / persistence / replay / resume / gateway /
+  notification smoke tests.
+- **Issues & blockers:** none — all build, migration, test, and verification
+  steps passed on the first run; no fix commit was required.
+- **Risks / notes:**
+  - The agents make no LLM / GitHub / Slack / Kubernetes / cloud calls; every
+    artifact (`code_change`, `test_report`, `deployment_record`) is a mock
+    (`mock: true`). The devops-agent never deploys to production.
+  - Execution / audit / notification writes are best-effort: a database or Redis
+    outage is swallowed so the consumer loop keeps running.
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Wire the orchestrator workflow to dispatch real tasks onto `stream.tasks`
+     so the LangGraph workflow and the agent pipeline are one flow.
+  2. Add retry / dead-letter handling for messages an agent fails to process.
+  3. Surface `agent_executions` and `deployment_records` in an observability
+     dashboard or a consolidated status endpoint.
