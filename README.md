@@ -61,7 +61,8 @@ source/                    Project progress log and source notes
 
 A Docker Compose runtime for local/test use is defined in
 `infra/docker-compose/docker-compose.yml`. It provides PostgreSQL 16, Redis 7,
-Vault (dev mode), and the `orchestrator` placeholder service.
+Vault (dev mode), and the platform services: `orchestrator`, `policy-engine`,
+`approval-engine`, and `audit-service`.
 
 Validate the compose configuration:
 
@@ -72,7 +73,7 @@ docker compose -f infra/docker-compose/docker-compose.yml config
 Start the runtime (on the test server `10.0.1.31`):
 
 ```
-docker compose -f infra/docker-compose/docker-compose.yml up -d postgres redis vault orchestrator
+docker compose -f infra/docker-compose/docker-compose.yml up -d
 docker compose -f infra/docker-compose/docker-compose.yml ps
 ```
 
@@ -160,8 +161,10 @@ shared/models/            Pydantic models (WorkflowState, AgentEvent,
 
 The `orchestrator` service runs a LangGraph workflow skeleton
 (`apps/orchestrator/src/workflow.py`) with six nodes:
-`intake → requirement → policy → approval → audit → final`. It wires in the
-shared SDK's `PolicyClient`, `AuditClient`, and `RedisStreamEventBus`.
+`intake → requirement → policy → approval → audit → final`. The `policy`,
+`approval`, and `audit` nodes call the dedicated governance services over HTTP
+via the shared SDK's `PolicyHttpClient`, `ApprovalHttpClient`, and
+`AuditHttpClient` — the orchestrator no longer embeds policy/audit logic.
 
 API endpoints:
 
@@ -184,6 +187,44 @@ A non-production request runs through to `stage: completed`. A
 `production.deploy` request is flagged by the policy node and ends at
 `stage: waiting_approval` — **the workflow never executes a production
 action**; it only records that human approval is required.
+
+## Governance Services
+
+Governance is split into three standalone FastAPI services. The orchestrator
+calls them over HTTP; each service URL is read from an environment variable
+(with a `localhost` fallback for tests).
+
+| Service | Port | Env variable | Responsibility |
+|---------|------|--------------|----------------|
+| `orchestrator`    | 8000 | —                    | Runs the LangGraph workflow |
+| `policy-engine`   | 8001 | `POLICY_ENGINE_URL`  | Evaluates actions against policy |
+| `approval-engine` | 8002 | `APPROVAL_ENGINE_URL`| Creates / decides approval requests |
+| `audit-service`   | 8003 | `AUDIT_SERVICE_URL`  | Persists and serves audit events |
+
+All service ports bind to `127.0.0.1` on the host.
+
+**policy-engine** — `POST /policy/evaluate` takes `{"action": "..."}` and returns
+`allowed`, `approval_required`, `risk_level`, and `reason`. Restricted actions
+(e.g. `production.deploy`, `secret.rotation`) return `approval_required: true`.
+
+**approval-engine** — endpoints `POST /approval/request`, `POST /approval/approve`,
+`POST /approval/reject`, and `GET /approval/{request_id}`. Approval flow:
+
+1. The orchestrator's `approval` node calls `POST /approval/request` for a
+   restricted action.
+2. The request is persisted to the PostgreSQL `approval_requests` table with
+   `status: pending` and published to the `stream.approvals` Redis stream.
+3. `POST /approval/approve` / `POST /approval/reject` update the row and publish
+   an `approval.approved` / `approval.rejected` event. **No production action is
+   executed** — `production.deploy` stays at `waiting_approval`.
+
+**audit-service** — endpoints `POST /audit/events` and
+`GET /audit/events/{task_id}`. Audit flow: the orchestrator's `audit` node calls
+`POST /audit/events`; the event is persisted to the PostgreSQL `audit_logs`
+table and published to the `stream.audit` Redis stream. `GET /audit/events/{task_id}`
+returns all audit events recorded for a task.
+
+The governance columns are added by `migrations/002_governance_tables.sql`.
 
 ## Testing
 

@@ -2,9 +2,9 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
-from shared.sdk.audit.client import AuditClient
-from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
-from shared.sdk.policy.client import PolicyClient
+from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
+from shared.sdk.http_clients.audit_http_client import AuditHttpClient
+from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 
 
 class WorkflowState(TypedDict):
@@ -16,6 +16,7 @@ class WorkflowState(TypedDict):
     assigned_agents: list[str]
     approval_required: bool
     approval_status: str
+    approval_request_id: str
     retry_count: int
     audit_refs: list[str]
     risk_level: str
@@ -31,13 +32,12 @@ REQUIRED_STATE_FIELDS = [
     "assigned_agents",
     "approval_required",
     "approval_status",
+    "approval_request_id",
     "retry_count",
     "audit_refs",
     "risk_level",
     "execution_result",
 ]
-
-_policy_client = PolicyClient()
 
 
 async def intake_node(state: WorkflowState) -> dict:
@@ -58,42 +58,60 @@ async def requirement_node(state: WorkflowState) -> dict:
 
 
 async def policy_node(state: WorkflowState) -> dict:
-    decision = _policy_client.evaluate_policy({"type": state["request"].get("type", "")})
+    """Delegate the policy decision to the policy-engine service over HTTP."""
+    action = state["request"].get("type", "")
+    try:
+        decision = await PolicyHttpClient().evaluate(action)
+        approval_required = bool(decision.get("approval_required"))
+        risk_level = str(decision.get("risk_level", "low"))
+    except Exception:  # fail-safe: require approval if the policy engine is down
+        approval_required = True
+        risk_level = "unknown"
     return {
-        "approval_required": decision["approval_required"],
-        "risk_level": "high" if decision["approval_required"] else "low",
+        "approval_required": approval_required,
+        "risk_level": risk_level,
         "stage": "approval",
     }
 
 
 async def approval_node(state: WorkflowState) -> dict:
-    if state["approval_required"]:
-        return {"stage": "waiting_approval", "approval_status": "pending"}
-    return {"stage": "audit", "approval_status": "not_required"}
+    """Create an approval request via the approval-engine when one is required."""
+    if not state["approval_required"]:
+        return {"stage": "audit", "approval_status": "not_required"}
+    try:
+        result = await ApprovalHttpClient().request_approval(
+            task_id=state["task_id"],
+            action=state["request"].get("type", ""),
+            risk_level=state["risk_level"],
+            reason="restricted action requires human approval",
+        )
+        request_id = str(result.get("request_id", ""))
+        status = str(result.get("status", "pending"))
+    except Exception:  # degrade gracefully if the approval engine is down
+        request_id = f"approval-local:{state['task_id']}"
+        status = "pending"
+    return {
+        "stage": "waiting_approval",
+        "approval_status": status,
+        "approval_request_id": request_id,
+    }
 
 
 async def audit_node(state: WorkflowState) -> dict:
-    bus = RedisStreamEventBus()
-    audit_client = AuditClient(event_bus=bus)
-    event = audit_client.build_audit_event(
-        agent="orchestrator",
-        decision_type="workflow",
-        summary=f"workflow {state['task_id']} reached stage {state['stage']}",
-        result=state["approval_status"],
-        task_id=state["task_id"],
-        artifact_refs={"artifacts": state["artifacts"]},
-    )
-    published_id = None
+    """Record a workflow audit event via the audit-service."""
+    ref = f"audit-local:{state['task_id']}"
     try:
-        published_id = await audit_client.write_audit_event(event)
-    except Exception:
-        published_id = None
-    finally:
-        try:
-            await bus.close()
-        except Exception:
-            pass
-    ref = published_id or f"audit-local:{state['task_id']}"
+        result = await AuditHttpClient().record_event(
+            task_id=state["task_id"],
+            agent="orchestrator",
+            decision_type="workflow",
+            summary=f"workflow {state['task_id']} reached stage {state['stage']}",
+            result=state["approval_status"],
+            artifact_refs={"artifacts": state["artifacts"]},
+        )
+        ref = str(result.get("audit_id") or ref)
+    except Exception:  # degrade gracefully if the audit service is down
+        pass
     return {"audit_refs": state["audit_refs"] + [ref]}
 
 
@@ -140,6 +158,7 @@ def _initial_state(request: dict) -> WorkflowState:
         "assigned_agents": [],
         "approval_required": False,
         "approval_status": "none",
+        "approval_request_id": "",
         "retry_count": 0,
         "audit_refs": [],
         "risk_level": "unknown",
@@ -163,6 +182,7 @@ def workflow_state_schema() -> dict:
         "assigned_agents": "array - agents assigned to the task",
         "approval_required": "boolean - whether human approval is required",
         "approval_status": "string - none | pending | not_required",
+        "approval_request_id": "string - approval-engine request id, when created",
         "retry_count": "integer - number of workflow retries",
         "audit_refs": "array - references to emitted audit events",
         "risk_level": "string - low | high | unknown",

@@ -1,3 +1,5 @@
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from main import app
@@ -6,6 +8,21 @@ from workflow import REQUIRED_STATE_FIELDS, build_workflow, run_mock_workflow, w
 client = TestClient(app)
 
 
+def _policy_engine_up() -> bool:
+    try:
+        return httpx.get("http://localhost:8001/health", timeout=3).status_code == 200
+    except Exception:
+        return False
+
+
+# The workflow delegates the policy decision to the policy-engine service over
+# HTTP; tests that assert a specific decision need that service reachable.
+requires_policy_engine = pytest.mark.skipif(
+    not _policy_engine_up(), reason="policy-engine not reachable on localhost:8001"
+)
+
+
+@requires_policy_engine
 async def test_non_production_workflow_completes():
     result = await run_mock_workflow(
         {
@@ -33,6 +50,7 @@ async def test_production_deploy_waits_for_approval():
     assert result["execution_result"]["production_executed"] is False
 
 
+@requires_policy_engine
 async def test_policy_node_flags_restricted_action():
     result = await run_mock_workflow(
         {"task_id": "wf-sec", "source": "test", "request": {"type": "secret.rotation"}}

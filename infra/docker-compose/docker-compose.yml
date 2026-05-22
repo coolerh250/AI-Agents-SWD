@@ -37,6 +37,61 @@ services:
     ports:
       - "127.0.0.1:8200:8200"
 
+  policy-engine:
+    build:
+      context: ../..
+      dockerfile: apps/policy-engine/Dockerfile
+    ports:
+      - "127.0.0.1:8001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  approval-engine:
+    build:
+      context: ../..
+      dockerfile: apps/approval-engine/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+    ports:
+      - "127.0.0.1:8002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  audit-service:
+    build:
+      context: ../..
+      dockerfile: apps/audit-service/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+    ports:
+      - "127.0.0.1:8003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   orchestrator:
     build:
       context: ../..
@@ -44,8 +99,15 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      POLICY_ENGINE_URL: http://policy-engine:8001
+      APPROVAL_ENGINE_URL: http://approval-engine:8002
+      AUDIT_SERVICE_URL: http://audit-service:8003
     ports:
       - "127.0.0.1:8000:8000"
+    depends_on:
+      - policy-engine
+      - approval-engine
+      - audit-service
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

@@ -1,10 +1,9 @@
 from fastapi import FastAPI
 
-from shared.sdk.policy.client import PolicyClient
+from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from workflow import run_mock_workflow, workflow_state_schema
 
 app = FastAPI(title="orchestrator")
-_policy = PolicyClient()
 
 
 @app.get("/health")
@@ -18,8 +17,8 @@ async def workflow_test(payload: dict):
 
 
 @app.post("/workflow/policy-test")
-def workflow_policy_test(action: dict):
-    return _policy.evaluate_policy(action)
+async def workflow_policy_test(action: dict):
+    return await PolicyHttpClient().evaluate(action.get("type", ""))
 
 
 @app.get("/workflow/schema")

@@ -9,7 +9,7 @@ echo "### init_local_runtime start: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 echo
 echo "=== [1] start docker compose runtime ==="
-$COMPOSE up -d postgres redis vault orchestrator
+$COMPOSE up -d
 
 echo
 echo "=== [2] wait for PostgreSQL ==="
@@ -38,9 +38,12 @@ done
 [ "$redis_ok" -eq 1 ] || { echo "ERROR: redis not ready"; exit 1; }
 
 echo
-echo "=== [4] apply PostgreSQL migration: migrations/001_init_core_tables.sql ==="
-$COMPOSE exec -T postgres psql -U postgres -d aiagents -v ON_ERROR_STOP=1 < migrations/001_init_core_tables.sql
-echo "migration applied successfully"
+echo "=== [4] apply PostgreSQL migrations ==="
+for migration in migrations/*.sql; do
+  echo "-- applying $migration"
+  $COMPOSE exec -T postgres psql -U postgres -d aiagents -v ON_ERROR_STOP=1 < "$migration"
+done
+echo "migrations applied successfully"
 
 echo
 echo "=== [5] initialize Redis Streams ==="

@@ -67,4 +67,51 @@ else
 fi
 
 echo
+echo "=== governance services /health ==="
+for entry in policy-engine:8001 approval-engine:8002 audit-service:8003; do
+  name="${entry%%:*}"
+  port="${entry##*:}"
+  if curl -sS -m 10 "http://localhost:${port}/health" >/dev/null 2>&1; then
+    echo "  ${name} (:${port})  ->  HEALTH: PASS"
+  else
+    echo "  ${name} (:${port})  ->  HEALTH: FAIL"
+  fi
+done
+
+echo
+echo "=== approval-engine flow smoke (request -> approve) ==="
+appr=$(curl -sS -m 15 -X POST http://localhost:8002/approval/request \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-approval","action":"production.deploy","risk_level":"high","reason":"runtime smoke test","requested_by":"check-runtime"}' || echo '{}')
+echo "$appr"
+rid=$(echo "$appr" | sed -n 's/.*"request_id": *"\([^"]*\)".*/\1/p')
+if [ -n "$rid" ]; then
+  appr2=$(curl -sS -m 15 -X POST http://localhost:8002/approval/approve \
+    -H "Content-Type: application/json" \
+    -d "{\"request_id\":\"$rid\",\"decided_by\":\"check-runtime\"}" || echo '{}')
+  echo "$appr2"
+  if echo "$appr2" | grep -q '"status": *"approved"'; then
+    echo "APPROVAL_SMOKE: PASS"
+  else
+    echo "APPROVAL_SMOKE: CHECK"
+  fi
+else
+  echo "APPROVAL_SMOKE: CHECK"
+fi
+
+echo
+echo "=== audit-service insert smoke (insert -> query) ==="
+aud=$(curl -sS -m 15 -X POST http://localhost:8003/audit/events \
+  -H "Content-Type: application/json" \
+  -d '{"task_id":"smoke-audit","agent":"check-runtime","decision_type":"smoke","summary":"runtime smoke test","result":"ok","artifact_refs":{}}' || echo '{}')
+echo "$aud"
+aud2=$(curl -sS -m 15 http://localhost:8003/audit/events/smoke-audit || echo '{}')
+echo "$aud2"
+if echo "$aud2" | grep -q '"count"'; then
+  echo "AUDIT_SMOKE: PASS"
+else
+  echo "AUDIT_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

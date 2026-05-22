@@ -1,8 +1,22 @@
+import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from main import app
 
 client = TestClient(app)
+
+
+def _policy_engine_up() -> bool:
+    try:
+        return httpx.get("http://localhost:8001/health", timeout=3).status_code == 200
+    except Exception:
+        return False
+
+
+requires_policy_engine = pytest.mark.skipif(
+    not _policy_engine_up(), reason="policy-engine not reachable on localhost:8001"
+)
 
 
 def test_health():
@@ -11,6 +25,7 @@ def test_health():
     assert response.json() == {"service": "orchestrator", "status": "ok"}
 
 
+@requires_policy_engine
 def test_workflow_test_non_production():
     response = client.post(
         "/workflow/test",
@@ -42,6 +57,7 @@ def test_workflow_test_production_deploy():
     assert body["stage"] != "completed"
 
 
+@requires_policy_engine
 def test_workflow_policy_test():
     restricted = client.post("/workflow/policy-test", json={"type": "production.deploy"})
     assert restricted.status_code == 200
