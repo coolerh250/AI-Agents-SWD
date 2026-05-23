@@ -38,7 +38,7 @@ class RequirementAgent(StreamAgent):
         task_id = artifact["task_id"]
         message = {
             "event": "requirement.completed",
-            "task_id": task_id,
+            **self.correlation_ids(payload),
             "artifact": artifact,
             "produced_by": self.name,
         }

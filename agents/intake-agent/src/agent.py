@@ -14,12 +14,14 @@ class IntakeAgent(StreamAgent):
     consumer = "intake-agent-1"
 
     def build_message(self, payload: dict) -> dict:
-        """Normalize a raw task into the standard requirement-stage message."""
-        task_id = str(payload.get("task_id", "unknown"))
+        """Normalize a raw task into the standard requirement-stage message.
+
+        The task_id and workflow_id correlation ids are carried forward.
+        """
         request = payload.get("request", {})
         return {
             "event": "task.intake_completed",
-            "task_id": task_id,
+            **self.correlation_ids(payload),
             "source": payload.get("source", "unknown"),
             "request": request,
             "request_type": request.get("type", "unknown"),

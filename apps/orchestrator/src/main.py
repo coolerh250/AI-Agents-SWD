@@ -4,11 +4,14 @@ from collections.abc import AsyncIterator
 
 from fastapi import FastAPI, HTTPException
 
+from progress import build_progress
 from resume_engine import ResumeEngine, ResumeError
+from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.workflow_store.store import WorkflowStore
 from workflow import run_mock_workflow, workflow_state_schema
+from workflow_events import WorkflowEventConsumer
 
 APPROVALS_STREAM = "stream.approvals"
 RESUME_GROUP = "orchestrator-resume-group"
@@ -52,12 +55,15 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         await ResumeEngine().resume_approved_workflows()
     stop_event = asyncio.Event()
     listener = asyncio.create_task(_approval_listener(stop_event))
+    events_consumer = WorkflowEventConsumer()
+    events_task = asyncio.create_task(events_consumer.run(stop_event))
     try:
         yield
     finally:
         stop_event.set()
         listener.cancel()
-        await asyncio.gather(listener, return_exceptions=True)
+        events_task.cancel()
+        await asyncio.gather(listener, events_task, return_exceptions=True)
 
 
 app = FastAPI(title="orchestrator", lifespan=lifespan)
@@ -100,6 +106,21 @@ async def resume_workflow(task_id: str):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+
+
+@app.get("/workflow/progress/{task_id}")
+async def workflow_progress(task_id: str):
+    try:
+        workflow = await WorkflowStore().get_workflow_state(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    try:
+        executions = await AgentExecutionStore().list_executions(task_id=task_id)
+    except Exception:  # progress is still useful without the execution detail
+        executions = []
+    return build_progress(workflow, executions)
 
 
 @app.get("/workflow/replay/{task_id}")

@@ -11,15 +11,17 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5
 class DevOpsAgent(StreamAgent):
     """Consumes test reports from stream.deployments and produces a mock
     deployment record. It writes a dev/test deployment row to deployment_records,
-    records an agent execution, an audit event, and a notification.
+    publishes a devops.deployment_simulated event to stream.devops for the
+    orchestrator, and records an agent execution, an audit event, and a
+    notification.
 
     Mock-safe: it never deploys to production and makes no Kubernetes / cloud /
-    GitHub calls. It is the final stage of the pipeline (no output stream).
+    GitHub calls. The deployment record carries the workflow_id for correlation.
     """
 
     name = "devops-agent"
     input_stream = "stream.deployments"
-    output_stream = ""
+    output_stream = "stream.devops"
     group = "devops-agent-group"
     consumer = "devops-agent-1"
 
@@ -29,6 +31,7 @@ class DevOpsAgent(StreamAgent):
         return {
             "artifact_type": "deployment_record",
             "task_id": task_id,
+            "workflow_id": payload.get("workflow_id", ""),
             "environment": "test",
             "status": "simulated",
             "production_executed": False,
@@ -36,36 +39,50 @@ class DevOpsAgent(StreamAgent):
             "mock": True,
         }
 
-    async def _persist_deployment_record(self, record: dict) -> None:
-        """Best-effort write of a mock deployment record to deployment_records."""
+    async def _persist_deployment_record(self, record: dict) -> str | None:
+        """Best-effort write of a mock deployment record; returns its row id."""
         try:
             conn = await asyncpg.connect(dsn=DATABASE_URL, timeout=5)
         except Exception:
-            return
+            return None
         try:
-            await conn.execute(
+            row = await conn.fetchrow(
                 "INSERT INTO deployment_records (task_id, environment, status, metadata) "
-                "VALUES ($1, $2, $3, $4::jsonb)",
+                "VALUES ($1, $2, $3, $4::jsonb) RETURNING id",
                 record["task_id"],
                 record["environment"],
                 record["status"],
                 json.dumps(record),
             )
+            return str(row["id"]) if row else None
         except Exception:
-            pass
+            return None
         finally:
             await conn.close()
 
     async def handle(self, payload: dict) -> dict:
         record = self.build_deployment_record(payload)
         task_id = record["task_id"]
-        await self._persist_deployment_record(record)
+        deployment_record_id = await self._persist_deployment_record(record)
+        record["deployment_record_id"] = deployment_record_id
+        message = {
+            "event": "devops.deployment_simulated",
+            **self.correlation_ids(payload),
+            "deployment_record_id": deployment_record_id,
+            "artifact": record,
+            "produced_by": self.name,
+        }
+        await self.bus.publish_event(self.output_stream, message)
         return {
             "task_id": task_id,
             "decision_type": "deployment",
             "summary": f"devops-agent simulated a test deployment for {task_id}",
             "result": "deployment.simulated",
-            "artifact_refs": {"environment": "test", "production_executed": False},
+            "artifact_refs": {
+                "environment": "test",
+                "production_executed": False,
+                "deployment_record_id": deployment_record_id,
+            },
             "event_type": "devops.deployment_simulated",
             "message": f"devops-agent simulated a test deployment for {task_id}",
             "execution_metadata": record,

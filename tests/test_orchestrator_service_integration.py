@@ -35,9 +35,9 @@ async def test_non_production_workflow_routes_through_services():
             "request": {"type": "dev.test", "description": "integration non-production"},
         }
     )
-    # policy-engine answered: a non-restricted action runs to completion.
+    # policy-engine answered: a non-restricted action is dispatched to the agents.
     assert result["approval_required"] is False
-    assert result["stage"] == "completed"
+    assert result["stage"] == "dispatched"
     # audit-service recorded the event (real audit id, not the local fallback).
     assert len(result["audit_refs"]) >= 1
     assert not result["audit_refs"][0].startswith("audit-local:")

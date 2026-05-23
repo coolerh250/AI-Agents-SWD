@@ -1,7 +1,9 @@
+import uuid
 from typing import Any, TypedDict
 
 from langgraph.graph import END, START, StateGraph
 
+from dispatch import dispatch_task
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
@@ -11,6 +13,7 @@ from shared.sdk.workflow_store.store import WorkflowStore
 
 class WorkflowState(TypedDict):
     task_id: str
+    workflow_id: str
     source: str
     request: dict[str, Any]
     stage: str
@@ -27,6 +30,7 @@ class WorkflowState(TypedDict):
 
 REQUIRED_STATE_FIELDS = [
     "task_id",
+    "workflow_id",
     "source",
     "request",
     "stage",
@@ -146,31 +150,46 @@ async def audit_node(state: WorkflowState) -> dict:
     return update
 
 
-async def final_node(state: WorkflowState) -> dict:
+async def dispatch_node(state: WorkflowState) -> dict:
+    """Dispatch the task to the agent pipeline, unless it is blocked on approval.
+
+    A restricted action that has not been approved is never dispatched — it stays
+    at ``waiting_approval``. Otherwise the node publishes a task.created event to
+    stream.tasks; the agent pipeline then runs and the orchestrator's workflow
+    event consumer drives the workflow to ``completed``. No production action is
+    executed here.
+    """
     task_id = state["task_id"]
-    if state["approval_required"]:
+    if state["approval_required"] and state["approval_status"] != "approved":
         update = {
             "stage": "waiting_approval",
             "execution_result": {
                 "status": "blocked_pending_approval",
                 "production_executed": False,
+                "dispatched": False,
             },
         }
         await _persist(state, update)
         await send_notification(
             task_id, "workflow.waiting_approval", f"workflow {task_id} is waiting for approval"
         )
-    else:
-        update = {
-            "stage": "completed",
-            "execution_result": {
-                "status": "completed",
-                "production_executed": False,
-                "mock": True,
-            },
-        }
-        await _persist(state, update)
-        await send_notification(task_id, "workflow.completed", f"workflow {task_id} completed")
+        return update
+    dispatched = await dispatch_task(
+        task_id, state["workflow_id"], dict(state["request"]), state["source"]
+    )
+    update = {
+        "stage": "dispatched",
+        "execution_result": {
+            "status": "awaiting_agents",
+            "production_executed": False,
+            "dispatched": dispatched,
+            "mock": True,
+        },
+    }
+    await _persist(state, update)
+    await send_notification(
+        task_id, "workflow.dispatched", f"workflow {task_id} dispatched to the agent pipeline"
+    )
     return update
 
 
@@ -181,20 +200,21 @@ def build_workflow():
     graph.add_node("policy", policy_node)
     graph.add_node("approval", approval_node)
     graph.add_node("audit", audit_node)
-    graph.add_node("final", final_node)
+    graph.add_node("dispatch", dispatch_node)
     graph.add_edge(START, "intake")
     graph.add_edge("intake", "requirement")
     graph.add_edge("requirement", "policy")
     graph.add_edge("policy", "approval")
     graph.add_edge("approval", "audit")
-    graph.add_edge("audit", "final")
-    graph.add_edge("final", END)
+    graph.add_edge("audit", "dispatch")
+    graph.add_edge("dispatch", END)
     return graph.compile()
 
 
 def _initial_state(request: dict) -> WorkflowState:
     return {
         "task_id": request.get("task_id", "unknown"),
+        "workflow_id": request.get("workflow_id") or f"wf-{uuid.uuid4().hex[:12]}",
         "source": request.get("source", "unknown"),
         "request": request.get("request", {}),
         "stage": "intake",
@@ -226,6 +246,7 @@ async def run_mock_workflow(request: dict) -> dict:
 def workflow_state_schema() -> dict:
     return {
         "task_id": "string - unique task identifier",
+        "workflow_id": "string - orchestrator workflow run id",
         "source": "string - origin of the request",
         "request": "object - the original mock request payload",
         "stage": "string - current workflow stage",

@@ -50,14 +50,14 @@ def _approve(request_id: str) -> None:
     assert response.json()["status"] == "approved"
 
 
-def _poll_stage(task_id: str, expected: str, timeout: int = 30) -> dict | None:
+def _poll_stages(task_id: str, expected: set[str], timeout: int = 30) -> dict | None:
     deadline = time.time() + timeout
     last: dict | None = None
     while time.time() < deadline:
         response = httpx.get(f"{ORCHESTRATOR}/workflow/{task_id}", timeout=5)
         if response.status_code == 200:
             last = response.json()
-            if last.get("stage") == expected:
+            if last.get("stage") in expected:
                 return last
         time.sleep(2)
     return last
@@ -68,7 +68,7 @@ async def test_on_approval_event_approved_resumes_workflow():
     await _start_production_workflow(task_id)
     resumed = await ResumeEngine().on_approval_event(task_id, "approved")
     assert resumed is not None
-    assert resumed["stage"] == "completed"
+    assert resumed["stage"] == "dispatched"
     assert resumed["execution_result"]["production_executed"] is False
     assert resumed["execution_result"]["resumed"] is True
 
@@ -96,7 +96,7 @@ async def test_resume_api_resumes_after_approval():
     response = httpx.post(f"{ORCHESTRATOR}/workflow/resume/{task_id}", timeout=10)
     assert response.status_code == 200
     body = response.json()
-    assert body["stage"] == "completed"
+    assert body["stage"] == "dispatched"
     assert body["execution_result"]["production_executed"] is False
 
 
@@ -104,9 +104,10 @@ async def test_redis_listener_resumes_workflow_after_approval():
     task_id = _task_id("listener")
     result = await _start_production_workflow(task_id)
     # Approving publishes approval.approved to stream.approvals; the orchestrator
-    # consumer-group listener should pick it up and resume the workflow.
+    # consumer-group listener should pick it up and resume (dispatch) the workflow.
+    # The agent pipeline may then drive it on to completed.
     _approve(result["approval_request_id"])
-    final = _poll_stage(task_id, "completed", timeout=30)
+    final = _poll_stages(task_id, {"dispatched", "completed"}, timeout=30)
     assert final is not None, "workflow was not resumed by the listener in time"
-    assert final["stage"] == "completed"
+    assert final["stage"] in ("dispatched", "completed")
     assert final["execution_result"]["production_executed"] is False

@@ -34,7 +34,7 @@ def test_intake_mock_non_production(communication_gateway_app):
     assert response.status_code == 200
     body = response.json()
     assert body["task_id"] == task_id
-    assert body["stage"] == "completed"
+    assert body["stage"] == "dispatched"
     assert body["approval_required"] is False
 
 

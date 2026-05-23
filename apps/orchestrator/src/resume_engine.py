@@ -1,3 +1,4 @@
+from dispatch import dispatch_task
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.notifications.client import send_notification
@@ -92,20 +93,29 @@ class ResumeEngine:
             raise ResumeError(f"workflow not found: {task_id}")
         state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
         audit_ref = await self._record_resume_audit(task_id)
-        # mock-safe: resume only updates bookkeeping; no production action runs.
+        # mock-safe: an approved restricted action is dispatched to the agent
+        # pipeline, which only simulates the deployment — no production action.
+        request = workflow["request"] if isinstance(workflow["request"], dict) else {}
+        dispatched = await dispatch_task(
+            task_id,
+            str(state.get("workflow_id", "")),
+            dict(request),
+            str(state.get("source", "orchestrator-resume")),
+        )
         execution_result = {
-            "status": "completed",
+            "status": "awaiting_agents",
             "production_executed": False,
             "resumed": True,
+            "dispatched": dispatched,
             "mock": True,
         }
-        state["stage"] = "completed"
+        state["stage"] = "dispatched"
         state["approval_status"] = "approved"
         state["audit_refs"] = list(state.get("audit_refs", [])) + [audit_ref]
         state["execution_result"] = execution_result
         updated = await self.store.update_workflow_state(
             task_id,
-            stage="completed",
+            stage="dispatched",
             state=state,
             approval_required=bool(workflow["approval_required"]),
             approval_status="approved",
@@ -115,7 +125,7 @@ class ResumeEngine:
         if updated is None:
             raise ResumeError(f"workflow not found: {task_id}")
         await send_notification(
-            task_id, "workflow.resumed", f"workflow {task_id} resumed and completed"
+            task_id, "workflow.resumed", f"workflow {task_id} resumed and dispatched"
         )
         return updated
 

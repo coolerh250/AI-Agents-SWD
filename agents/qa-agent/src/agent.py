@@ -30,7 +30,7 @@ class QAAgent(StreamAgent):
         task_id = report["task_id"]
         message = {
             "event": "qa.completed",
-            "task_id": task_id,
+            **self.correlation_ids(payload),
             "artifact": report,
             "produced_by": self.name,
         }

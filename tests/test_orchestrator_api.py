@@ -37,7 +37,7 @@ def test_workflow_test_non_production():
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["stage"] == "completed"
+    assert body["stage"] == "dispatched"
     assert body["approval_required"] is False
 
 

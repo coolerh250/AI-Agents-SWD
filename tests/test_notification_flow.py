@@ -30,7 +30,7 @@ def _notifications_for(task_id: str, count: int = 100) -> list[dict]:
     ]
 
 
-def test_intake_completion_publishes_notification():
+def test_intake_dispatch_publishes_notification():
     task_id = f"test-flow-dev-{uuid.uuid4().hex[:8]}"
     response = httpx.post(
         f"{GATEWAY}/intake/mock",
@@ -38,9 +38,9 @@ def test_intake_completion_publishes_notification():
         timeout=30,
     )
     assert response.status_code == 200
-    assert response.json()["stage"] == "completed"
+    assert response.json()["stage"] == "dispatched"
     events = _notifications_for(task_id)
-    assert any(e["event_type"] == "workflow.completed" for e in events)
+    assert any(e["event_type"] == "workflow.dispatched" for e in events)
 
 
 def test_intake_production_deploy_publishes_waiting_approval_notification():

@@ -33,7 +33,7 @@ async def test_non_production_workflow_is_persisted():
     await run_mock_workflow({"task_id": task_id, "source": "test", "request": {"type": "dev.test"}})
     stored = await WorkflowStore().get_workflow_state(task_id)
     assert stored is not None
-    assert stored["stage"] == "completed"
+    assert stored["stage"] == "dispatched"
     assert stored["approval_required"] is False
     assert stored["execution_result"]["production_executed"] is False
     assert stored["state"]["task_id"] == task_id

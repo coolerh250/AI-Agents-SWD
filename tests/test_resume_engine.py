@@ -58,25 +58,25 @@ async def test_resume_unknown_workflow_raises():
         await ResumeEngine(store).resume_workflow(_task_id())
 
 
-async def test_resume_approved_workflow_completes():
+async def test_resume_approved_workflow_dispatches():
     store = await _store_or_skip()
     task_id = _task_id()
     await _seed(store, task_id, "approved")
     resumed = await ResumeEngine(store).resume_workflow(task_id)
     assert resumed is not None
-    assert resumed["stage"] == "completed"
+    assert resumed["stage"] == "dispatched"
     assert resumed["approval_status"] == "approved"
     assert resumed["execution_result"]["production_executed"] is False
     assert resumed["execution_result"]["resumed"] is True
 
 
-async def test_on_approval_event_approved_resumes():
+async def test_on_approval_event_approved_dispatches():
     store = await _store_or_skip()
     task_id = _task_id()
     await _seed(store, task_id, "pending")
     result = await ResumeEngine(store).on_approval_event(task_id, "approved")
     assert result is not None
-    assert result["stage"] == "completed"
+    assert result["stage"] == "dispatched"
     assert result["execution_result"]["production_executed"] is False
 
 

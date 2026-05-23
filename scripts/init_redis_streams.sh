@@ -14,10 +14,15 @@ PAIRS=(
   "stream.development development-agent-group"
   "stream.qa qa-agent-group"
   "stream.deployments devops-agent-group"
+  "stream.devops orchestrator-workflow-group"
+  "stream.development orchestrator-workflow-group"
+  "stream.qa orchestrator-workflow-group"
+  "stream.deployments orchestrator-workflow-group"
   "stream.approvals approval-group"
   "stream.audit audit-group"
   "stream.notifications notification-group"
   "stream.incidents incident-group"
+  "stream.deadletter deadletter-group"
 )
 
 echo "=== Redis Streams consumer-group initialization ==="

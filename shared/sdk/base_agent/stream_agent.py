@@ -4,7 +4,11 @@ from abc import abstractmethod
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.audit.client import AuditClient
 from shared.sdk.base_agent.base import BaseAgent
-from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+from shared.sdk.event_bus.redis_streams import (
+    RedisStreamEventBus,
+    is_retry_exhausted,
+    with_incremented_retry,
+)
 from shared.sdk.notifications.client import send_notification
 
 
@@ -29,8 +33,17 @@ class StreamAgent(BaseAgent):
         self.execution_store = AgentExecutionStore()
         self.processed_count = 0
         self.failed_count = 0
+        self.dead_letter_count = 0
         self.last_task_id: str | None = None
         self.running = False
+
+    @staticmethod
+    def correlation_ids(payload: dict) -> dict:
+        """The task/workflow ids every pipeline message must carry forward."""
+        return {
+            "task_id": str(payload.get("task_id", "unknown")),
+            "workflow_id": payload.get("workflow_id", ""),
+        }
 
     # BaseAgent abstract methods — stream agents transform inside handle().
     async def receive_task(self, task: dict) -> dict:
@@ -88,10 +101,11 @@ class StreamAgent(BaseAgent):
                         self.input_stream, self.group, self.consumer, count=10, block_ms=2000
                     )
                     for event in events:
+                        payload = event["event"]
                         try:
-                            await self.process(event["event"])
-                        except Exception:
-                            pass  # one bad message must not stop the loop
+                            await self.process(payload)
+                        except Exception as exc:
+                            await self._handle_failure(payload, exc)
                         await self.bus.ack_event(self.input_stream, self.group, event["id"])
                 except asyncio.CancelledError:
                     break
@@ -99,6 +113,24 @@ class StreamAgent(BaseAgent):
                     await asyncio.sleep(1)
         finally:
             self.running = False
+
+    async def _handle_failure(self, payload: dict, exc: Exception) -> None:
+        """Retry a failed message; dead-letter it once its retries are exhausted.
+
+        This is the retry / dead-letter foundation — there is no separate retry
+        scheduler. A failed message is re-published to the input stream with an
+        incremented retry_count; once retry_count reaches max_retries it goes to
+        stream.deadletter instead.
+        """
+        attempted = with_incremented_retry(payload)
+        try:
+            if is_retry_exhausted(attempted):
+                await self.bus.publish_dead_letter(self.input_stream, attempted, str(exc))
+                self.dead_letter_count += 1
+            else:
+                await self.bus.publish_event(self.input_stream, attempted)
+        except Exception:
+            pass  # a transient Redis error must not stop the consumer loop
 
     def status(self) -> dict:
         return {
@@ -109,6 +141,7 @@ class StreamAgent(BaseAgent):
             "group": self.group,
             "processed_count": self.processed_count,
             "failed_count": self.failed_count,
+            "dead_letter_count": self.dead_letter_count,
             "last_task_id": self.last_task_id,
         }
 

@@ -43,12 +43,12 @@ curl -sS -m 10 http://localhost:8000/workflow/schema || echo "(schema unavailabl
 echo
 
 echo
-echo "=== /workflow/test (non-production smoke) ==="
+echo "=== /workflow/test (non-production dispatch smoke) ==="
 np=$(curl -sS -m 20 -X POST http://localhost:8000/workflow/test \
   -H "Content-Type: application/json" \
   -d '{"task_id":"smoke-dev","source":"check","request":{"type":"dev.test"}}' || echo '{}')
 echo "$np"
-if echo "$np" | grep -q '"stage": *"completed"'; then
+if echo "$np" | grep -q '"stage": *"dispatched"'; then
   echo "NON_PROD_SMOKE: PASS"
 else
   echo "NON_PROD_SMOKE: CHECK"
@@ -150,7 +150,7 @@ if [ -n "$rs_req" ]; then
     -d "{\"request_id\":\"$rs_req\",\"decided_by\":\"check-runtime\"}" >/dev/null 2>&1 || true
   rs_resumed=$(curl -sS -m 15 -X POST "http://localhost:8000/workflow/resume/$rs_task" || echo '{}')
   echo "$rs_resumed"
-  if echo "$rs_resumed" | grep -q '"stage": *"completed"'; then
+  if echo "$rs_resumed" | grep -qE '"stage": *"(dispatched|completed)"'; then
     echo "APPROVAL_RESUME_SMOKE: PASS"
   else
     echo "APPROVAL_RESUME_SMOKE: CHECK"
@@ -172,7 +172,7 @@ echo "=== /intake/mock non-production smoke ==="
 gw_dev=$(curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
   -d '{"task_id":"smoke-gw-dev","request":{"type":"dev.test"}}' || echo '{}')
 echo "$gw_dev"
-if echo "$gw_dev" | grep -q '"stage": *"completed"'; then
+if echo "$gw_dev" | grep -q '"stage": *"dispatched"'; then
   echo "INTAKE_NONPROD_SMOKE: PASS"
 else
   echo "INTAKE_NONPROD_SMOKE: CHECK"
@@ -260,6 +260,73 @@ if [ "${dep_rows:-0}" -ge 1 ]; then
   echo "DEPLOYMENT_RECORD_SMOKE: PASS"
 else
   echo "DEPLOYMENT_RECORD_SMOKE: CHECK"
+fi
+
+echo
+echo "=== unified dispatch end-to-end (gateway -> orchestrator -> agents -> completed) ==="
+e2e_task="smoke-e2e-$$"
+e2e_disp=$(curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$e2e_task\",\"request\":{\"type\":\"dev.test\"}}" || echo '{}')
+echo "$e2e_disp"
+if echo "$e2e_disp" | grep -q '"stage": *"dispatched"'; then
+  echo "DISPATCH_SMOKE: PASS"
+else
+  echo "DISPATCH_SMOKE: CHECK"
+fi
+e2e_final='{}'
+for i in $(seq 1 30); do
+  e2e_final=$(curl -sS -m 10 "http://localhost:8000/workflow/$e2e_task" || echo '{}')
+  if echo "$e2e_final" | grep -q '"stage": *"completed"'; then break; fi
+  sleep 2
+done
+echo "$e2e_final"
+if echo "$e2e_final" | grep -q '"stage": *"completed"'; then
+  echo "DISPATCH_TO_COMPLETED_SMOKE: PASS"
+else
+  echo "DISPATCH_TO_COMPLETED_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow progress API smoke (GET /workflow/progress/{id}) ==="
+prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$e2e_task" || echo '{}')
+echo "$prog"
+if echo "$prog" | grep -q '"execution_status"' && echo "$prog" | grep -q '"completed_agents"'; then
+  echo "PROGRESS_API_SMOKE: PASS"
+else
+  echo "PROGRESS_API_SMOKE: CHECK"
+fi
+
+echo
+echo "=== deadletter foundation smoke (publish -> stream.deadletter) ==="
+dl=$(python3 - <<'PY' 2>/dev/null || echo 'ERR ERR'
+import asyncio
+
+from shared.sdk.event_bus.redis_streams import DEAD_LETTER_STREAM, RedisStreamEventBus
+
+
+async def main() -> None:
+    bus = RedisStreamEventBus(redis_url="redis://localhost:6379")
+    before = await bus.client.xlen(DEAD_LETTER_STREAM)
+    await bus.publish_dead_letter(
+        "stream.smoke",
+        {"task_id": "smoke-deadletter", "retry_count": 3, "max_retries": 3},
+        "runtime smoke",
+    )
+    after = await bus.client.xlen(DEAD_LETTER_STREAM)
+    await bus.close()
+    print(f"{before} {after}")
+
+
+asyncio.run(main())
+PY
+)
+echo "stream.deadletter xlen (before after): $dl"
+dl_before=$(echo "$dl" | awk '{print $1}')
+dl_after=$(echo "$dl" | awk '{print $2}')
+if [ "${dl_after:-x}" != "x" ] && [ "${dl_after:-0}" -gt "${dl_before:-0}" ] 2>/dev/null; then
+  echo "DEADLETTER_SMOKE: PASS"
+else
+  echo "DEADLETTER_SMOKE: CHECK"
 fi
 
 echo

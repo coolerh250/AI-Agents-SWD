@@ -23,7 +23,7 @@ requires_policy_engine = pytest.mark.skipif(
 
 
 @requires_policy_engine
-async def test_non_production_workflow_completes():
+async def test_non_production_workflow_dispatches():
     result = await run_mock_workflow(
         {
             "task_id": "wf-dev-1",
@@ -31,8 +31,9 @@ async def test_non_production_workflow_completes():
             "request": {"type": "dev.test", "description": "non-production"},
         }
     )
-    assert result["stage"] == "completed"
+    assert result["stage"] == "dispatched"
     assert result["approval_required"] is False
+    assert result["execution_result"]["status"] == "awaiting_agents"
     assert result["execution_result"]["production_executed"] is False
 
 

@@ -161,27 +161,30 @@ shared/models/            Pydantic models (WorkflowState, AgentEvent,
 
 ## Orchestrator Workflow
 
-The `orchestrator` service runs a LangGraph workflow skeleton
+The `orchestrator` service runs a LangGraph workflow
 (`apps/orchestrator/src/workflow.py`) with six nodes:
-`intake → requirement → policy → approval → audit → final`. The `policy`,
+`intake → requirement → policy → approval → audit → dispatch`. The `policy`,
 `approval`, and `audit` nodes call the dedicated governance services over HTTP
 via the shared SDK's `PolicyHttpClient`, `ApprovalHttpClient`, and
-`AuditHttpClient` — the orchestrator no longer embeds policy/audit logic.
+`AuditHttpClient`. The `dispatch` node hands the task to the agent pipeline —
+the orchestrator no longer simulates the work in-process (see
+[Unified Workflow Dispatch](#unified-workflow-dispatch)).
 
 API endpoints:
 
 | Method | Path | Purpose |
 |--------|------|---------|
 | GET  | `/health` | Liveness check |
-| POST | `/workflow/test` | Run the mock workflow for a request |
+| POST | `/workflow/test` | Run the workflow for a request (dispatches to the agents) |
 | POST | `/workflow/policy-test` | Evaluate an action against the policy |
 | GET  | `/workflow/schema` | Describe the `WorkflowState` fields |
 | GET  | `/workflow` | List persisted workflows (optional `?status=`) |
 | GET  | `/workflow/{task_id}` | Get one persisted workflow state |
+| GET  | `/workflow/progress/{task_id}` | Get a workflow's agent-pipeline progress |
 | GET  | `/workflow/replay/{task_id}` | Replay a persisted workflow state (no execution) |
 | POST | `/workflow/resume/{task_id}` | Resume an approved workflow |
 
-Run the mock workflow:
+Run the workflow:
 
 ```
 curl -X POST http://localhost:8000/workflow/test \
@@ -189,10 +192,12 @@ curl -X POST http://localhost:8000/workflow/test \
   -d '{"task_id":"mock-1","source":"manual","request":{"type":"dev.test"}}'
 ```
 
-A non-production request runs through to `stage: completed`. A
-`production.deploy` request is flagged by the policy node and ends at
-`stage: waiting_approval` — **the workflow never executes a production
-action**; it only records that human approval is required.
+A non-production request is dispatched to the agent pipeline
+(`stage: dispatched`); when the pipeline finishes, the orchestrator's workflow
+event consumer drives it to `stage: completed`. A `production.deploy` request is
+flagged by the policy node and ends at `stage: waiting_approval` — it is **not**
+dispatched until it is approved, and **the workflow never executes a production
+action**.
 
 ## Governance Services
 
@@ -310,7 +315,7 @@ Slack / Kubernetes / cloud calls and execute no production actions.
 | `requirement-agent` | 8011 | `stream.requirements` | `stream.development` |
 | `development-agent` | 8012 | `stream.development` | `stream.qa` |
 | `qa-agent` | 8013 | `stream.qa` | `stream.deployments` |
-| `devops-agent` | 8014 | `stream.deployments` | — (writes `deployment_records`) |
+| `devops-agent` | 8014 | `stream.deployments` | `stream.devops` (+ `deployment_records`) |
 
 **Agent pipeline** — a task placed on `stream.tasks` flows through the full
 pipeline:
@@ -352,6 +357,52 @@ With `publish_to_stream: true` the gateway writes to `stream.tasks` for the
 agents to process; the default (`false`) runs the workflow directly through the
 orchestrator. `scripts/check_runtime_state.sh` runs an end-to-end agent pipeline
 smoke test and checks `agent_executions` and `deployment_records`.
+
+## Unified Workflow Dispatch
+
+The orchestrator workflow and the agent pipeline are one flow: the orchestrator
+no longer simulates the work in-process — it **dispatches** the task to the
+agents and tracks their progress.
+
+```
+communication-gateway → orchestrator workflow → stream.tasks → intake-agent →
+requirement-agent → development-agent → qa-agent → devops-agent →
+stream.devops → orchestrator → workflow state completed
+```
+
+**Dispatch** — the workflow's `dispatch` node publishes a `task.created` event
+(`task_id`, `workflow_id`, `request`, `source`, `requested_at`) to `stream.tasks`
+and sets `stage: dispatched`, `execution_result.status: awaiting_agents`.
+`apps/orchestrator/src/dispatch.py` owns the dispatch helper. A
+`production.deploy` request still passes policy/approval first — it is **not**
+dispatched until it is approved; the resume engine dispatches an approved
+restricted action, which the agents only ever *simulate*.
+
+**Workflow event consumer** — on startup the orchestrator opens a Redis consumer
+group (`orchestrator-workflow-group`) on the agent pipeline streams
+(`stream.development`, `stream.qa`, `stream.deployments`, `stream.devops`).
+`requirement.completed` / `development.completed` / `qa.completed` move the
+workflow to `in_progress`; `devops.deployment_simulated` moves it to `completed`
+and records `deployment_record_id` in `execution_result`
+(`apps/orchestrator/src/workflow_events.py`).
+
+**Progress tracking** — `GET /workflow/progress/{task_id}` returns
+`current_stage`, `completed_agents`, `pending_agents`, `execution_status`
+(`waiting_approval` / `dispatched` / `in_progress` / `completed` / `failed`),
+`approval_status`, and timestamps. It combines the persisted workflow state with
+the `agent_executions` rows (`apps/orchestrator/src/progress.py`).
+
+**Event correlation** — every task / agent event carries `task_id` **and**
+`workflow_id`; each agent forwards both ids to the next stage
+(`StreamAgent.correlation_ids`). The devops-agent's `deployment_records` row
+also carries the `workflow_id`.
+
+**Retry & dead-letter foundation** — events carry `retry_count` / `max_retries`
+metadata. When an agent fails to process a message it is re-published to the
+input stream with an incremented `retry_count`; once `retry_count` reaches
+`max_retries` (default 3) it is routed to the `stream.deadletter` stream instead
+(`shared/sdk/event_bus/redis_streams.py`). This is the foundation only — there
+is no separate retry scheduler.
 
 ## Testing
 
