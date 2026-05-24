@@ -649,3 +649,142 @@ issues & blockers, and next-step suggestions.
   2. Add retry / dead-letter handling for messages an agent fails to process.
   3. Surface `agent_executions` and `deployment_records` in an observability
      dashboard or a consolidated status endpoint.
+
+---
+
+## Stage 13 — Orchestrator-to-Agent Unified Workflow Dispatch (Step 12)
+
+- **Execution time:** 2026-05-24 07:59–08:02 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `2bbf8f7`. Step 12 produces
+  two commits:
+  - `f61cdd805e2c5da3448333549d344aa76bae7bcf` — orchestrator dispatch refactor,
+    workflow event consumer, progress API, event correlation, dead-letter
+    foundation, 4 new test files, 8 updated test files, runtime scripts, README
+  - this Stage 13 progress entry is committed on top.
+- **Modified files:**
+  - Added: `apps/orchestrator/src/{dispatch.py,progress.py,workflow_events.py}`,
+    `tests/{test_orchestrator_dispatch.py,test_workflow_progress.py,test_event_correlation.py,test_deadletter_foundation.py}`
+  - Modified: `apps/orchestrator/src/{main.py,workflow.py,resume_engine.py}`,
+    `shared/sdk/event_bus/redis_streams.py`,
+    `shared/sdk/base_agent/stream_agent.py`,
+    `agents/{intake-agent,requirement-agent,development-agent,qa-agent,devops-agent}/src/agent.py`,
+    `scripts/{check_runtime_state.sh,init_redis_streams.sh}`,
+    `tests/{test_orchestrator_workflow.py,test_orchestrator_api.py,test_workflow_persistence.py,test_orchestrator_service_integration.py,test_notification_flow.py,test_resume_engine.py,test_approval_resume_flow.py,test_communication_gateway.py}`,
+    `README.md`, `source/progress.md`
+- **Deployment target:** test server `10.0.1.31` — unified dispatch + agent
+  pipeline + progress / correlation / dead-letter validation. **No production
+  resources were created and no production deployment was executed.**
+- **Workflow dispatch result:** the orchestrator workflow's terminal node is
+  now `dispatch_node` (`apps/orchestrator/src/workflow.py`). It publishes
+  `task.created` (`task_id`, `workflow_id`, `request`, `source`,
+  `requested_at`) to `stream.tasks` and sets `stage: dispatched`,
+  `execution_result.status: awaiting_agents`. The smoke responses confirm it:
+  `smoke-dev` reached `stage: dispatched` with
+  `execution_result.dispatched: true, production_executed: false, mock: true`;
+  `smoke-prod` (production.deploy) stayed at `waiting_approval` with
+  `execution_result.dispatched: false` — **a restricted action is not
+  dispatched until it is approved**. An approved restricted action is
+  dispatched by the resume engine (`smoke-resume-3896681` reached
+  `stage: completed` via the agent pipeline after the approval listener
+  resumed it).
+- **Agent completion integration:** the orchestrator opens a Redis consumer
+  group `orchestrator-workflow-group` on `stream.development`, `stream.qa`,
+  `stream.deployments`, and `stream.devops`
+  (`apps/orchestrator/src/workflow_events.py`).
+  `requirement.completed` / `development.completed` / `qa.completed` move the
+  workflow to `in_progress`; `devops.deployment_simulated` moves it to
+  `completed` and writes `deployment_record_id` into `execution_result`. End
+  to end: `smoke-e2e-3896681` went
+  `gateway → /workflow/test → dispatched → agent pipeline →
+  devops.deployment_simulated → workflow.stage: completed`, with
+  `deployment_record_id: 14f74894-972f-4d42-bbad-ed57a5849c71`.
+- **Workflow progress result:** `GET /workflow/progress/{task_id}` returns
+  `current_stage`, `completed_agents`, `pending_agents`, `failed_agents`,
+  `execution_status` (`waiting_approval` / `dispatched` / `in_progress` /
+  `completed` / `failed`), `approval_status`, `workflow_id`, and timestamps
+  including per-agent `started_at`/`completed_at`
+  (`apps/orchestrator/src/progress.py`). PROGRESS_API_SMOKE for
+  `smoke-e2e-3896681` returned `execution_status: completed`,
+  `completed_agents: [intake-agent, requirement-agent, development-agent,
+  qa-agent, devops-agent]`, `pending_agents: []`.
+- **Event correlation result:** every pipeline message carries `task_id` **and**
+  `workflow_id` via `StreamAgent.correlation_ids`. The persisted state for
+  `smoke-e2e-3896681` carries `workflow_id: wf-d13dba799e01`, the
+  `devops.deployment_simulated` event in `stream.devops` carries the same
+  workflow_id, and the deployment_records `metadata` JSONB carries it too.
+- **Dead-letter foundation result:** `shared/sdk/event_bus/redis_streams.py`
+  adds `retry_count` / `max_retries` metadata, `with_incremented_retry`,
+  `is_retry_exhausted`, `build_dead_letter_event`, and `publish_dead_letter`.
+  `StreamAgent._handle_failure` re-publishes a failed message with
+  `retry_count + 1`; once `retry_count >= max_retries` it routes the event to
+  `stream.deadletter` instead. DEADLETTER_SMOKE grew `stream.deadletter` from
+  2 to 3.
+- **Deployment correlation result:** the devops-agent's
+  `_persist_deployment_record` now `INSERT ... RETURNING id`; the
+  `devops.deployment_simulated` event carries `deployment_record_id` and
+  `workflow_id`; the orchestrator's workflow-event consumer persists the
+  `deployment_record_id` into `workflow_states.execution_result`
+  (`smoke-e2e-3896681` ended with
+  `execution_result.deployment_record_id: 14f74894-972f-4d42-bbad-ed57a5849c71`).
+- **Test results:** `run_tests.sh` on the server — `pytest` **128 passed**
+  (20.11s); `ruff check` all checks passed; `black --check` 76 files clean;
+  `mypy shared/` no issues in 25 source files.
+  - New pytest files: `test_orchestrator_dispatch.py` (3 tests: non-prod
+    publishes `task.created`; production.deploy is not dispatched without
+    approval; approved production.deploy is dispatched);
+    `test_workflow_progress.py` (8 tests: 6 pure unit tests for
+    `build_progress` + 2 API tests); `test_event_correlation.py` (3 tests:
+    2 pure unit tests + 1 end-to-end workflow_id propagation);
+    `test_deadletter_foundation.py` (8 tests: 5 pure unit tests +
+    `publish_dead_letter` integration + retry re-enqueue + exhausted-retry
+    dead-letter routing).
+  - Locally (Windows, no infra): 65 passed, 63 skipped, 0 failures. On the
+    test server (full stack): 128 passed, 0 skipped, 0 failures.
+- **Runtime smoke test:** `check_runtime_state.sh` on the server — 13
+  containers Up (healthy); all health endpoints PASS; the existing
+  HEALTH / NON_PROD / PROD_APPROVAL / APPROVAL / AUDIT / WORKFLOW_PERSISTENCE /
+  WORKFLOW_REPLAY / APPROVAL_RESUME / INTAKE_NONPROD / INTAKE_PROD /
+  NOTIFICATIONS / FULL_PIPELINE / AGENT_EXECUTIONS / DEPLOYMENT_RECORD smokes
+  PASS, and the **new** DISPATCH / DISPATCH_TO_COMPLETED / PROGRESS_API /
+  DEADLETTER smokes all PASS. The Redis groups list grew to include
+  `orchestrator-workflow-group` on the four pipeline streams and a
+  `deadletter-group` on `stream.deadletter`.
+- **workflow_states query (recent):** `smoke-e2e-3896681` reached `completed`
+  with `agent_progress` for all four downstream agents and
+  `deployment_record_id`; `smoke-gw-prod` and `smoke-prod` stayed at
+  `waiting_approval` with `dispatched: false`; `smoke-resume-3896681` reached
+  `completed` (`resumed: true`, `dispatched: true`). No row records
+  `production_executed: true`.
+- **deployment_records correlation:** `smoke-e2e-3896681` /
+  `smoke-pipeline-3896681` / `smoke-gw-dev` / `smoke-resume-3896681` /
+  `smoke-persist-3896681` each have `environment=test`, `status=simulated`,
+  and the `metadata` JSONB carries `task_id`, `workflow_id`, and
+  `production_executed: false`. **No production deployment was performed and
+  no Kubernetes / cloud / GitHub API was called.**
+- **Issues & blockers:** none — all build, test, and verification steps
+  passed on the first run; no fix commit was required.
+- **Risks / notes:**
+  - The agents make no LLM / GitHub / Slack / Kubernetes / cloud calls; every
+    artifact (`requirement_spec`, `code_change`, `test_report`,
+    `deployment_record`) is a mock (`mock: true`). An approved
+    `production.deploy` is dispatched to the agents which only simulate the
+    deployment — `production_executed: false` everywhere.
+  - The retry / dead-letter foundation re-publishes a failed message to the
+    same input stream up to `max_retries` times before routing it to
+    `stream.deadletter`; there is no separate retry scheduler or backoff.
+    Poison messages can therefore loop fast — the bound is `max_retries`
+    (default 3).
+  - The orchestrator's workflow-event consumer correlates events by
+    `task_id`. Tasks placed on `stream.tasks` directly by the gateway's
+    `publish_to_stream: true` mode have no persisted workflow row; the
+    consumer ignores them (no error).
+  - PostgreSQL `trust` auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Implement a proper retry scheduler / DLQ replayer that reads
+     `stream.deadletter`, inspects failures, and either re-queues or surfaces
+     them in an operator view.
+  2. Add tracing / metrics across the orchestrator workflow, the agent
+     pipeline, and the workflow-event consumer so the unified flow has a
+     single timeline view.
+  3. Add a workflow cancel / abort path so a queued workflow can be stopped
+     before the agents pick it up.
