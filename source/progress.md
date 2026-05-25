@@ -788,3 +788,167 @@ issues & blockers, and next-step suggestions.
      single timeline view.
   3. Add a workflow cancel / abort path so a queued workflow can be stopped
      before the agents pick it up.
+
+---
+
+## Stage 14 — Retry Scheduler, DLQ Replayer & Workflow Cancelation (Step 13)
+
+- **Execution time:** 2026-05-25 09:16–09:21 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `256f3fd`. Step 13 produces
+  three commits:
+  - `05a4e87982a119e7b9c56197eba52bc05e197dc1` — retry-scheduler service,
+    DLQ replayer, orchestrator cancel/abort + ignore-after-abort,
+    development-agent controlled failure, 5 new test files, 8 updated test
+    files, runtime scripts, docker-compose, README.
+  - `07f48f5` — smoke fix: cancel / abort smokes target `production.deploy`
+    workflows so the cancel POST is not raced by the agent pipeline (the unit
+    tests already covered the deterministic transitions against a seeded
+    store).
+  - this Stage 14 progress entry is committed on top.
+- **Modified files:**
+  - Added: `apps/retry-scheduler/{Dockerfile,requirements.txt,src/main.py,src/scheduler.py}`,
+    `tests/{test_retry_scheduler.py,test_workflow_cancelation.py,test_workflow_abort.py,test_dlq_replay.py,test_failure_retry_flow.py}`
+  - Modified: `apps/orchestrator/src/{main.py,workflow_events.py,progress.py}`,
+    `shared/sdk/event_bus/redis_streams.py`,
+    `shared/sdk/base_agent/stream_agent.py`,
+    `agents/{requirement-agent,development-agent}/src/agent.py`,
+    `infra/docker-compose/docker-compose.yml`,
+    `scripts/{init_redis_streams.sh,check_runtime_state.sh}`,
+    `tests/{conftest.py,test_deadletter_foundation.py}`,
+    `README.md`, `source/progress.md`
+- **Deployment target:** test server `10.0.1.31` — retry / DLQ /
+  cancel / abort / controlled-failure validation. **No production resources
+  were created and no production deployment was executed.**
+- **Retry scheduler result:** `apps/retry-scheduler/` runs as a 14th service
+  on `127.0.0.1:8015` (`/health: ok`). It consumes `stream.deadletter` via
+  the `retry-scheduler-group` consumer group and, for each event, sleeps
+  `retry_after_seconds` (capped at 60s) before re-publishing the original
+  event back to `original_stream` as `event: retry.requeued`. After the smoke
+  run the `/status` endpoint reported
+  `running: true, input_stream: stream.deadletter, group: retry-scheduler-group,
+  requeued_count: 10, terminal_failure_count: 4`. No busy polling — the
+  consume loop blocks on `XREADGROUP` and each scheduled requeue is an
+  `asyncio.sleep`.
+- **DLQ replay result:** `GET /deadletter` (paginated by `count`) returned
+  five most-recent entries, each carrying the spec-aligned fields
+  `original_stream`, `failure_reason`, `retry_count`, `max_retries`,
+  `retry_after_seconds`, `failed_at`, and `original_event`.
+  `POST /deadletter/replay/{message_id}` republished the entry as
+  `event: retry.manual_replay` to the recorded `original_stream`
+  (DLQ_REPLAY_SMOKE: `replayed=True stream=test.replay.smoke before=0
+  after=2`). The terminal path
+  (`retry_count > max_retries`) routes to `stream.deadletter.terminal` as
+  `retry.terminal_failure` instead of requeueing.
+- **Workflow cancel result:** `POST /workflow/cancel/{task_id}` on a
+  `production.deploy` workflow at `waiting_approval` returned
+  `{"stage": "canceled", "execution_result": {"status": "canceled",
+  "cancel_reason": "runtime smoke", "production_executed": false, ...}}`.
+  The persisted state JSONB carries `canceled_at` and `cancel_reason`. An
+  already-terminal workflow (completed / canceled / aborted / rejected) is
+  refused with 409 (`test_workflow_cancelation.py::test_cancel_completed_workflow_returns_409`).
+  WORKFLOW_CANCEL_SMOKE: PASS.
+- **Workflow abort result:** `POST /workflow/abort/{task_id}` returned the
+  same shape with `stage: aborted`, `aborted_at`, `abort_reason: "runtime
+  smoke abort"`, `production_executed: false`. WORKFLOW_ABORT_SMOKE: PASS.
+- **Ignored event handling result:** the orchestrator's workflow-event
+  consumer checks the workflow's current stage before applying an agent
+  event; if the workflow is already `aborted` or `canceled` it skips the
+  update, writes an `audit_logs` row
+  (`decision_type: workflow_event_ignored`), and publishes a
+  `workflow.event_ignored` notification.
+  `tests/test_workflow_abort.py::test_workflow_event_consumer_ignores_events_for_aborted_workflow`
+  and `..._canceled_workflow` cover both branches.
+- **Failure simulation result:** the development-agent honors
+  `request.simulate_failure: true` and raises a `SimulatedFailure` inside
+  `handle()` — the consumer loop never crashes (the
+  `_handle_failure` path retries and then dead-letters). End to end on the
+  server: `smoke-fail-$$ → in-stream retries → DLQ (retry_count=3) → retry
+  scheduler requeue → another failure (retry_count=4) → DLQ → terminal_failure
+  (retry_count=4 > max_retries=3)`. FAILURE_SIMULATION_SMOKE:
+  `dl_retry_count=4 terminal_retry_count=4 → PASS`.
+- **Deadletter query:** `stream.deadletter xlen: 17`,
+  `stream.deadletter.terminal xlen: 5`. A representative entry from
+  `GET /deadletter` carries `task_id: smoke-fail-1733371`,
+  `workflow_id: wf-smoke-fail-1733371`,
+  `original_stream: stream.development`,
+  `failure_reason: development-agent simulated failure for smoke-fail-1733371
+  (request.simulate_failure)`, `retry_count: 4, max_retries: 3,
+  retry_after_seconds: 1.0`, and the original retry.requeued payload
+  embedded in `original_event`.
+- **Docker compose ps:** 14 containers Up (healthy) — postgres, redis,
+  vault, policy-engine, approval-engine, audit-service, orchestrator,
+  communication-gateway, intake-agent, requirement-agent, development-agent,
+  qa-agent, devops-agent, **retry-scheduler** — all bound to `127.0.0.1`.
+- **Test results:** `run_tests.sh` on the server — `pytest` **153 passed**
+  (26.56s, 0 skipped, 0 failures); `ruff check` all checks passed;
+  `black --check` 83 files clean; `mypy shared/` no issues in 25 source
+  files.
+  - New pytest files: `test_retry_scheduler.py` (12 tests — 5 pure unit
+    tests for `_is_terminal`, `_retry_delay`, `_original_stream`,
+    `_build_requeue_event`, `_build_terminal_event` + 2 TestClient tests +
+    5 Redis integration tests covering requeue, terminal, list);
+    `test_workflow_cancelation.py` (4 tests — cancel, unknown 404,
+    completed 409, default reason);
+    `test_workflow_abort.py` (4 tests — abort, unknown 404,
+    event-ignored-after-aborted, event-ignored-after-canceled);
+    `test_dlq_replay.py` (4 tests — list endpoint shape, 404 path,
+    integration replay, unknown KeyError);
+    `test_failure_retry_flow.py` (3 tests — DLQ reached, terminal_failure
+    reached, retry_count progression).
+  - Locally (Windows, no infra): the same suite gives the same pure-unit /
+    TestClient tests pass; redis/db/service tests skip. On the server the
+    full suite is green.
+- **Runtime smoke test:** `check_runtime_state.sh` on the server — 14
+  containers Up; **all 22 smokes PASS** (HEALTH, NON_PROD, PROD_APPROVAL,
+  governance HEALTH × 3, APPROVAL, AUDIT, WORKFLOW_PERSISTENCE,
+  WORKFLOW_REPLAY, APPROVAL_RESUME, communication-gateway HEALTH,
+  INTAKE_NONPROD, INTAKE_PROD, NOTIFICATIONS, 5× agent HEALTH +
+  retry-scheduler HEALTH, FULL_PIPELINE, AGENT_EXECUTIONS,
+  DEPLOYMENT_RECORD, DISPATCH, DISPATCH_TO_COMPLETED, PROGRESS_API,
+  DEADLETTER, **DLQ_LIST**, **DLQ_REPLAY**, **WORKFLOW_CANCEL**,
+  **WORKFLOW_ABORT**, **FAILURE_SIMULATION**). The Redis groups list now
+  shows `retry-scheduler-group` on `stream.deadletter` and a separate
+  `terminal-failure-group` on `stream.deadletter.terminal`.
+- **source/progress.md latest:** this Stage 14 entry. The previous
+  next-step suggestion to add a retry scheduler / DLQ replayer (Stage 13)
+  and the suggestion to add a workflow cancel/abort path (Stage 13) are
+  now implemented and validated.
+- **Issues & blockers:** the initial smoke run hit a race in the cancel /
+  abort smokes — the agent pipeline drove the `dev.test` workflow to
+  `completed` before the smoke's POST arrived, so cancel / abort got 409.
+  Fixed in commit `07f48f5` by switching the smoke to `production.deploy`
+  (which stays at `waiting_approval` indefinitely). The unit tests under
+  `test_workflow_cancelation.py` and `test_workflow_abort.py` were
+  unaffected because they seed the workflow row directly.
+- **Risks / notes:**
+  - The retry scheduler re-publishes to the original input stream
+    immediately (within `retry_after_seconds`). A poison message that
+    always fails will cycle through retries quickly until the scheduler
+    publishes a `terminal_failure` event — work is bounded by
+    `max_retries` but the system burns audit / notification / DLQ entries
+    while iterating.
+  - The terminal_failure event lives on its own stream
+    (`stream.deadletter.terminal`) and is **not** yet consumed by the
+    orchestrator. A failed workflow's `workflow_states.stage` therefore
+    stays at `in_progress` (it never reaches a workflow-level `failed`
+    state automatically). An operator can `POST /workflow/cancel` or
+    `POST /workflow/abort` to bring it to a terminal stage.
+  - The DLQ manual replay (`POST /deadletter/replay/{message_id}`) ignores
+    `retry_count` — it republishes the original_event as
+    `retry.manual_replay`. It is the operator's explicit recovery path; if
+    the underlying defect is not yet fixed the replay will simply DLQ
+    again.
+  - Same as prior stages: no LLM / GitHub / Slack / Kubernetes / cloud
+    calls; `production_executed: false` everywhere; PostgreSQL `trust`
+    auth and Vault dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. Surface terminal_failure events back into `workflow_states` — when the
+     scheduler emits `retry.terminal_failure` for a `task_id` that owns a
+     workflow row, transition that row to `stage: failed` so the workflow
+     has a clear terminal state without operator intervention.
+  2. Add exponential backoff to `retry_after_seconds` and / or a retry
+     policy per agent so a flaky agent does not burn its retry budget
+     instantly.
+  3. Provide a `/workflow/replay/{task_id}` end-to-end path that pairs a
+     workflow with a DLQ replay (find the most recent DLQ entry for the
+     task, edit the payload, and replay).
