@@ -101,6 +101,7 @@ class ResumeEngine:
             str(state.get("workflow_id", "")),
             dict(request),
             str(state.get("source", "orchestrator-resume")),
+            trace_id=str(state.get("trace_id", "")),
         )
         execution_result = {
             "status": "awaiting_agents",

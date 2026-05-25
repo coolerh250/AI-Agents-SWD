@@ -1,3 +1,5 @@
+from datetime import datetime
+
 PIPELINE_AGENTS = [
     "intake-agent",
     "requirement-agent",
@@ -5,6 +7,53 @@ PIPELINE_AGENTS = [
     "qa-agent",
     "devops-agent",
 ]
+
+
+def _duration_ms(started: str | None, completed: str | None) -> int | None:
+    if not started or not completed:
+        return None
+    try:
+        s = datetime.fromisoformat(str(started))
+        c = datetime.fromisoformat(str(completed))
+    except (TypeError, ValueError):
+        return None
+    return max(int((c - s).total_seconds() * 1000), 0)
+
+
+def build_agent_timeline(executions: list[dict]) -> list[dict]:
+    """Return a chronological per-agent timeline derived from agent_executions."""
+    ordered = sorted(executions, key=lambda e: str(e.get("started_at") or ""))
+    return [
+        {
+            "phase": e.get("agent"),
+            "status": e.get("status"),
+            "started_at": e.get("started_at"),
+            "completed_at": e.get("completed_at"),
+            "duration_ms": _duration_ms(e.get("started_at"), e.get("completed_at")),
+        }
+        for e in ordered
+    ]
+
+
+def build_retry_timeline(dead_letters: list[dict]) -> list[dict]:
+    """Reduce raw DLQ entries to the fields a retry timeline needs."""
+    timeline: list[dict] = []
+    for entry in dead_letters:
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if not isinstance(payload, dict):
+            continue
+        timeline.append(
+            {
+                "message_id": entry.get("id"),
+                "original_stream": payload.get("original_stream") or payload.get("source_stream"),
+                "retry_count": payload.get("retry_count"),
+                "max_retries": payload.get("max_retries"),
+                "failure_reason": payload.get("failure_reason") or payload.get("error", ""),
+                "failed_at": payload.get("failed_at") or payload.get("dead_lettered_at"),
+            }
+        )
+    timeline.sort(key=lambda entry: str(entry.get("failed_at") or ""))
+    return timeline
 
 
 def _execution_status(stage: str, completed: list[str], failed: list[str]) -> str:
@@ -28,8 +77,16 @@ def _execution_status(stage: str, completed: list[str], failed: list[str]) -> st
     return "dispatched"
 
 
-def build_progress(workflow: dict, executions: list[dict]) -> dict:
-    """Summarize a workflow's agent-pipeline progress for the progress API."""
+def build_progress(
+    workflow: dict, executions: list[dict], retry_timeline: list[dict] | None = None
+) -> dict:
+    """Summarize a workflow's agent-pipeline progress for the progress API.
+
+    Adds three observability fields on top of the original progress payload:
+    ``traces`` (workflow-level trace id), ``agent_timeline`` (one ordered entry
+    per agent_executions row), and ``retry_timeline`` (DLQ entries observed
+    for the task, when supplied).
+    """
     stage = str(workflow.get("stage") or "unknown")
     state = workflow.get("state") if isinstance(workflow.get("state"), dict) else {}
     completed = {e["agent"] for e in executions if e.get("status") == "completed"}
@@ -46,6 +103,12 @@ def build_progress(workflow: dict, executions: list[dict]) -> dict:
         "completed_agents": completed_agents,
         "pending_agents": pending_agents,
         "failed_agents": failed_agents,
+        "traces": {
+            "trace_id": state.get("trace_id", ""),
+            "workflow_id": state.get("workflow_id", ""),
+        },
+        "agent_timeline": build_agent_timeline(executions),
+        "retry_timeline": retry_timeline or [],
         "timestamps": {
             "created_at": workflow.get("created_at"),
             "updated_at": workflow.get("updated_at"),

@@ -5,15 +5,19 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
-from progress import build_progress
+from progress import build_progress, build_retry_timeline
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.notifications.client import send_notification
+from shared.sdk.observability.metrics import WORKFLOW_FAILED_TOTAL, install_metrics_endpoint
+from shared.sdk.observability.tracing import setup_tracing
 from shared.sdk.workflow_store.store import WorkflowStore
 from workflow import run_mock_workflow, workflow_state_schema
 from workflow_events import WorkflowEventConsumer
+
+setup_tracing("orchestrator")
 
 TERMINAL_STAGES = {"completed", "canceled", "aborted", "rejected"}
 
@@ -73,6 +77,7 @@ async def _terminate_workflow(task_id: str, new_stage: str, reason: str) -> dict
     message = f"workflow {task_id} {new_stage}"
     if reason:
         message = f"{message}: {reason}"
+    WORKFLOW_FAILED_TOTAL.labels(reason=new_stage).inc()
     await send_notification(task_id, f"workflow.{new_stage}", message)
     return updated
 
@@ -131,6 +136,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="orchestrator", lifespan=lifespan)
+install_metrics_endpoint(app)
 
 
 @app.get("/health")
@@ -184,6 +190,29 @@ async def abort_workflow(task_id: str, payload: dict | None = None):
     return await _terminate_workflow(task_id, "aborted", reason)
 
 
+async def _retry_timeline_for(task_id: str, limit: int = 200) -> list[dict]:
+    """Best-effort DLQ scan for a task_id, ready for the progress / timeline API."""
+    import json
+
+    bus = RedisStreamEventBus()
+    try:
+        entries = await bus.client.xrevrange("stream.deadletter", "+", "-", count=limit)
+    except Exception:
+        return []
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+    matches: list[dict] = []
+    for entry_id, fields in entries:
+        try:
+            payload = json.loads(fields.get("data", "{}"))
+        except (ValueError, TypeError):
+            continue
+        if payload.get("task_id") == task_id:
+            matches.append({"id": entry_id, "payload": payload})
+    return build_retry_timeline(matches)
+
+
 @app.get("/workflow/progress/{task_id}")
 async def workflow_progress(task_id: str):
     try:
@@ -196,7 +225,43 @@ async def workflow_progress(task_id: str):
         executions = await AgentExecutionStore().list_executions(task_id=task_id)
     except Exception:  # progress is still useful without the execution detail
         executions = []
-    return build_progress(workflow, executions)
+    retry_timeline = await _retry_timeline_for(task_id)
+    return build_progress(workflow, executions, retry_timeline=retry_timeline)
+
+
+@app.get("/workflow/timeline/{task_id}")
+async def workflow_timeline(task_id: str):
+    """Return a richer chronological timeline for a workflow.
+
+    This collapses workflow_states, agent_executions, and DLQ entries into one
+    ordered list so an operator (or a dashboard) can see the workflow's full
+    distributed timeline — dispatch -> intake -> requirement -> development ->
+    qa -> devops -> retry -> approval -> completion — without joining the
+    underlying tables themselves.
+    """
+    try:
+        workflow = await WorkflowStore().get_workflow_state(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    try:
+        executions = await AgentExecutionStore().list_executions(task_id=task_id)
+    except Exception:
+        executions = []
+    retry_timeline = await _retry_timeline_for(task_id)
+    progress = build_progress(workflow, executions, retry_timeline=retry_timeline)
+    return {
+        "task_id": progress["task_id"],
+        "workflow_id": progress["workflow_id"],
+        "traces": progress["traces"],
+        "current_stage": progress["current_stage"],
+        "execution_status": progress["execution_status"],
+        "approval_status": progress["approval_status"],
+        "agent_timeline": progress["agent_timeline"],
+        "retry_timeline": progress["retry_timeline"],
+        "timestamps": progress["timestamps"],
+    }
 
 
 @app.get("/workflow/replay/{task_id}")

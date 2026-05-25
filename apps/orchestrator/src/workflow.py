@@ -8,12 +8,15 @@ from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.notifications.client import send_notification
+from shared.sdk.observability.metrics import WORKFLOW_TOTAL
+from shared.sdk.observability.tracing import generate_trace_id
 from shared.sdk.workflow_store.store import WorkflowStore
 
 
 class WorkflowState(TypedDict):
     task_id: str
     workflow_id: str
+    trace_id: str
     source: str
     request: dict[str, Any]
     stage: str
@@ -31,6 +34,7 @@ class WorkflowState(TypedDict):
 REQUIRED_STATE_FIELDS = [
     "task_id",
     "workflow_id",
+    "trace_id",
     "source",
     "request",
     "stage",
@@ -170,12 +174,17 @@ async def dispatch_node(state: WorkflowState) -> dict:
             },
         }
         await _persist(state, update)
+        WORKFLOW_TOTAL.labels(status="waiting_approval").inc()
         await send_notification(
             task_id, "workflow.waiting_approval", f"workflow {task_id} is waiting for approval"
         )
         return update
     dispatched = await dispatch_task(
-        task_id, state["workflow_id"], dict(state["request"]), state["source"]
+        task_id,
+        state["workflow_id"],
+        dict(state["request"]),
+        state["source"],
+        trace_id=state.get("trace_id", ""),
     )
     update = {
         "stage": "dispatched",
@@ -186,6 +195,7 @@ async def dispatch_node(state: WorkflowState) -> dict:
             "mock": True,
         },
     }
+    WORKFLOW_TOTAL.labels(status="dispatched").inc()
     await _persist(state, update)
     await send_notification(
         task_id, "workflow.dispatched", f"workflow {task_id} dispatched to the agent pipeline"
@@ -215,6 +225,7 @@ def _initial_state(request: dict) -> WorkflowState:
     return {
         "task_id": request.get("task_id", "unknown"),
         "workflow_id": request.get("workflow_id") or f"wf-{uuid.uuid4().hex[:12]}",
+        "trace_id": str(request.get("trace_id") or generate_trace_id()),
         "source": request.get("source", "unknown"),
         "request": request.get("request", {}),
         "stage": "intake",
@@ -247,6 +258,7 @@ def workflow_state_schema() -> dict:
     return {
         "task_id": "string - unique task identifier",
         "workflow_id": "string - orchestrator workflow run id",
+        "trace_id": "string - distributed-trace id shared across the workflow",
         "source": "string - origin of the request",
         "request": "object - the original mock request payload",
         "stage": "string - current workflow stage",

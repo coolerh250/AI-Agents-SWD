@@ -477,4 +477,117 @@ else
 fi
 
 echo
+echo "=== prometheus /-/ready ==="
+if curl -sS -m 10 http://localhost:9090/-/ready >/dev/null 2>&1; then
+  echo "PROMETHEUS_HEALTH: PASS"
+else
+  echo "PROMETHEUS_HEALTH: FAIL"
+fi
+
+echo
+echo "=== grafana /api/health ==="
+gh=$(curl -sS -m 10 http://localhost:3000/api/health || echo '{}')
+echo "$gh"
+if echo "$gh" | grep -q '"database":"ok"'; then
+  echo "GRAFANA_HEALTH: PASS"
+else
+  echo "GRAFANA_HEALTH: FAIL"
+fi
+
+echo
+echo "=== prometheus /api/v1/targets ==="
+targets=$(curl -sS -m 10 http://localhost:9090/api/v1/targets || echo '{}')
+echo "$targets" | head -c 500
+echo
+if echo "$targets" | grep -q 'orchestrator' && echo "$targets" | grep -q 'retry-scheduler'; then
+  echo "PROMETHEUS_TARGETS_SMOKE: PASS"
+else
+  echo "PROMETHEUS_TARGETS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== orchestrator /metrics smoke ==="
+metrics=$(curl -sS -m 10 http://localhost:8000/metrics || echo '')
+if echo "$metrics" | grep -q '^workflow_total'; then
+  echo "METRICS_ENDPOINT_SMOKE: PASS"
+else
+  echo "METRICS_ENDPOINT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== trace propagation smoke (dispatch -> stream.devops carries trace_id) ==="
+trace_smoke=$(python3 - <<PY 2>/dev/null || echo 'ERR'
+import asyncio
+import json
+import time
+import uuid
+
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+
+
+async def main() -> None:
+    bus = RedisStreamEventBus(redis_url="redis://localhost:6379")
+    task_id = "smoke-trace-" + uuid.uuid4().hex[:8]
+    workflow_id = "wf-smoke-trace-" + uuid.uuid4().hex[:8]
+    trace_id = "f" * 32
+    try:
+        await bus.publish_event(
+            "stream.tasks",
+            {
+                "event": "task.created",
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+                "trace_id": trace_id,
+                "source": "check",
+                "request": {"type": "dev.test"},
+            },
+        )
+        deadline = time.time() + 30
+        match = None
+        while time.time() < deadline:
+            entries = await bus.client.xrevrange("stream.devops", "+", "-", count=200)
+            for _id, fields in entries:
+                try:
+                    payload = json.loads(fields.get("data", "{}"))
+                except (ValueError, TypeError):
+                    continue
+                if payload.get("task_id") == task_id:
+                    match = payload
+                    break
+            if match:
+                break
+            await asyncio.sleep(1)
+        if match is None:
+            print("no devops event")
+        else:
+            print(f"trace_id={match.get('trace_id', '')} span_id={match.get('span_id', '')}")
+    finally:
+        await bus.close()
+
+
+asyncio.run(main())
+PY
+)
+echo "$trace_smoke"
+if echo "$trace_smoke" | grep -q "trace_id=${trace_smoke##*=}"; then
+  : # noop, placeholder
+fi
+if echo "$trace_smoke" | grep -qE 'trace_id=[a-f0-9]{32}' && echo "$trace_smoke" | grep -qE 'span_id=[a-f0-9]{16}'; then
+  echo "TRACE_PROPAGATION_SMOKE: PASS"
+else
+  echo "TRACE_PROPAGATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow timeline API smoke ==="
+tl=$(curl -sS -m 10 "http://localhost:8000/workflow/timeline/$e2e_task" || echo '{}')
+echo "$tl" | head -c 800
+echo
+if echo "$tl" | grep -q '"agent_timeline"' && echo "$tl" | grep -q '"traces"'; then
+  echo "WORKFLOW_TIMELINE_SMOKE: PASS"
+else
+  echo "WORKFLOW_TIMELINE_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

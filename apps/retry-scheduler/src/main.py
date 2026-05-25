@@ -5,7 +5,10 @@ from collections.abc import AsyncIterator
 from fastapi import FastAPI, HTTPException
 
 from scheduler import RetryScheduler
+from shared.sdk.observability.metrics import install_metrics_endpoint
+from shared.sdk.observability.tracing import setup_tracing
 
+setup_tracing("retry-scheduler")
 _scheduler = RetryScheduler()
 _stop_event = asyncio.Event()
 
@@ -24,6 +27,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="retry-scheduler", lifespan=lifespan)
+install_metrics_endpoint(app)
 
 
 @app.get("/health")

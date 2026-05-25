@@ -5,11 +5,15 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+from shared.sdk.observability.metrics import install_metrics_endpoint
+from shared.sdk.observability.tracing import setup_tracing
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
 APPROVALS_STREAM = "stream.approvals"
 
+setup_tracing("approval-engine")
 app = FastAPI(title="approval-engine")
+install_metrics_endpoint(app)
 
 
 class ApprovalRequestIn(BaseModel):

@@ -8,11 +8,15 @@ from pydantic import BaseModel, Field
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.notifications.client import NotificationClient
+from shared.sdk.observability.metrics import install_metrics_endpoint
+from shared.sdk.observability.tracing import setup_tracing
 
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://localhost:8000").rstrip("/")
 TASKS_STREAM = "stream.tasks"
 
+setup_tracing("communication-gateway")
 app = FastAPI(title="communication-gateway")
+install_metrics_endpoint(app)
 
 
 class IntakeRequest(BaseModel):

@@ -456,6 +456,57 @@ terminated stage.
 end-to-end. The failure only raises within `handle`; the consumer loop never
 crashes.
 
+## Observability — Tracing, Metrics, Grafana
+
+Every service initializes OpenTelemetry tracing (`setup_tracing(service_name)`)
+and exposes a Prometheus `/metrics` endpoint
+(`shared/sdk/observability/{tracing.py,metrics.py,correlation.py}`).
+**No real cloud observability SaaS is contacted** — tracing exports only when
+`OTEL_EXPORTER_OTLP_ENDPOINT` is set; metrics are scraped over the local
+network by the bundled Prometheus.
+
+**Distributed trace propagation** — every Redis event in the pipeline carries
+the same `{task_id, workflow_id, trace_id, span_id}` correlation block. The
+orchestrator generates a `trace_id` when it dispatches a workflow; every agent
+forwards it to the next stage and generates a fresh `span_id` per hop so a
+trace viewer can build the per-stage span graph
+(`StreamAgent.correlation_ids`).
+
+**Metrics exposed by `/metrics`** — `workflow_total`,
+`workflow_completed_total`, `workflow_failed_total{reason}`,
+`workflow_duration_seconds`, `agent_execution_total{agent,status}`,
+`agent_execution_failures_total{agent}`, `agent_latency_seconds{agent}`,
+`deadletter_total{original_stream}`, `retry_total{kind}`,
+`notification_total{event_type}`.
+
+**Stack**:
+
+| Component | Port | Purpose |
+|-----------|------|---------|
+| `prometheus` | `9090` | Scrapes every service's `/metrics` every 15s |
+| `grafana`    | `3000` | Renders the bundled AI Agents SWD Platform dashboard (anonymous Admin in the local/test runtime) |
+
+Both bind to `127.0.0.1` only. Configuration lives under
+[infra/observability/](infra/observability/):
+
+```
+infra/observability/
+  prometheus.yml                                          # scrape config
+  grafana/provisioning/datasources/prometheus.yml        # Prometheus datasource
+  grafana/provisioning/dashboards/dashboards.yml         # dashboard provider
+  grafana/dashboards/aiagents.json                       # workflow + agent dashboard
+```
+
+Open the dashboard at http://localhost:3000 (folder "AI Agents SWD"; the
+dashboard `AI Agents SWD Platform`).
+
+**Workflow timeline** — `GET /workflow/progress/{task_id}` now also returns
+`traces` (`trace_id`, `workflow_id`), `agent_timeline` (chronological per-agent
+status + `duration_ms`), and `retry_timeline` (DLQ entries observed for the
+task). `GET /workflow/timeline/{task_id}` returns the same timelines as a
+condensed, dashboard-friendly view
+(`apps/orchestrator/src/progress.py`).
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

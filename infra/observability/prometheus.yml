@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: aiagents-test
+
+scrape_configs:
+  - job_name: orchestrator
+    static_configs:
+      - targets: ['orchestrator:8000']
+  - job_name: policy-engine
+    static_configs:
+      - targets: ['policy-engine:8001']
+  - job_name: approval-engine
+    static_configs:
+      - targets: ['approval-engine:8002']
+  - job_name: audit-service
+    static_configs:
+      - targets: ['audit-service:8003']
+  - job_name: communication-gateway
+    static_configs:
+      - targets: ['communication-gateway:8004']
+  - job_name: intake-agent
+    static_configs:
+      - targets: ['intake-agent:8010']
+  - job_name: requirement-agent
+    static_configs:
+      - targets: ['requirement-agent:8011']
+  - job_name: development-agent
+    static_configs:
+      - targets: ['development-agent:8012']
+  - job_name: qa-agent
+    static_configs:
+      - targets: ['qa-agent:8013']
+  - job_name: devops-agent
+    static_configs:
+      - targets: ['devops-agent:8014']
+  - job_name: retry-scheduler
+    static_configs:
+      - targets: ['retry-scheduler:8015']

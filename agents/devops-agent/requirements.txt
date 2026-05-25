@@ -3,3 +3,6 @@ uvicorn
 pydantic
 redis
 asyncpg
+prometheus_client
+opentelemetry-api
+opentelemetry-sdk

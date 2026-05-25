@@ -12,13 +12,19 @@ from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 
 def test_correlation_ids_extracts_task_and_workflow_id():
     ids = StreamAgent.correlation_ids({"task_id": "t-1", "workflow_id": "wf-1", "extra": "x"})
-    assert ids == {"task_id": "t-1", "workflow_id": "wf-1"}
+    assert ids["task_id"] == "t-1"
+    assert ids["workflow_id"] == "wf-1"
+    # Step 14: correlation now also carries the {trace_id, span_id} block
+    assert ids["trace_id"]
+    assert ids["span_id"]
 
 
 def test_correlation_ids_defaults_when_absent():
     ids = StreamAgent.correlation_ids({})
     assert ids["task_id"] == "unknown"
     assert ids["workflow_id"] == ""
+    assert ids["trace_id"]  # always generated
+    assert ids["span_id"]
 
 
 def _pipeline_up() -> bool:

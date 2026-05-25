@@ -1,12 +1,31 @@
 import asyncio
 import contextlib
+from datetime import datetime
 
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.notifications.client import send_notification
+from shared.sdk.observability.metrics import (
+    WORKFLOW_COMPLETED_TOTAL,
+    WORKFLOW_DURATION_SECONDS,
+)
 from shared.sdk.workflow_store.store import WorkflowStore
 
 IGNORED_STAGES = ("aborted", "canceled")
+
+
+def _workflow_duration_seconds(workflow: dict) -> float | None:
+    """Best-effort seconds from workflow_states.created_at to now."""
+    created = workflow.get("created_at")
+    if not created:
+        return None
+    try:
+        started = datetime.fromisoformat(str(created))
+    except (TypeError, ValueError):
+        return None
+    now = datetime.now(started.tzinfo) if started.tzinfo else datetime.now()
+    return max((now - started).total_seconds(), 0.0)
+
 
 # The agent pipeline streams the orchestrator watches for completion events.
 WORKFLOW_EVENT_STREAMS = [
@@ -98,6 +117,10 @@ class WorkflowEventConsumer:
             execution_result=execution_result,
         )
         if event == _FINAL_EVENT and updated is not None:
+            WORKFLOW_COMPLETED_TOTAL.inc()
+            duration = _workflow_duration_seconds(workflow)
+            if duration is not None:
+                WORKFLOW_DURATION_SECONDS.observe(duration)
             await send_notification(task_id, "workflow.completed", f"workflow {task_id} completed")
         return updated
 

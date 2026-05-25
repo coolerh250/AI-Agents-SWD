@@ -34,6 +34,12 @@ class NotificationClient:
     async def publish_notification(self, task_id: str, event_type: str, message: str) -> dict:
         notification = self.build_notification(task_id, event_type, message)
         entry_id = await self.event_bus.publish_event(self.STREAM, notification)
+        try:
+            from shared.sdk.observability.metrics import NOTIFICATION_TOTAL
+
+            NOTIFICATION_TOTAL.labels(event_type=event_type).inc()
+        except Exception:
+            pass  # metrics are best-effort
         return {"id": entry_id, "notification": notification}
 
     async def list_notifications(self, count: int = 20) -> list[dict]:

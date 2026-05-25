@@ -91,10 +91,17 @@ class RedisStreamEventBus:
         retry_after_seconds: float = 0.0,
     ) -> str:
         """Publish a failed event to the dead-letter stream."""
-        return await self.publish_event(
+        message_id = await self.publish_event(
             DEAD_LETTER_STREAM,
             build_dead_letter_event(original_stream, event, failure_reason, retry_after_seconds),
         )
+        try:
+            from shared.sdk.observability.metrics import DEADLETTER_TOTAL
+
+            DEADLETTER_TOTAL.labels(original_stream=original_stream).inc()
+        except Exception:
+            pass  # metrics are best-effort
+        return message_id
 
     async def consume_events(
         self,

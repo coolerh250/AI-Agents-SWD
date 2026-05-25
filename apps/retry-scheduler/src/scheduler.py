@@ -9,6 +9,7 @@ from shared.sdk.event_bus.redis_streams import (
     get_max_retries,
     get_retry_count,
 )
+from shared.sdk.observability.metrics import RETRY_TOTAL
 
 DEAD_LETTER_GROUP = "retry-scheduler-group"
 DEAD_LETTER_CONSUMER = "retry-scheduler-1"
@@ -110,6 +111,7 @@ class RetryScheduler:
                     self._build_terminal_event(payload, message_id),
                 )
             self.terminal_count += 1
+            RETRY_TOTAL.labels(kind="terminal_failure").inc()
             return {"action": "terminal_failure", "message_id": message_id}
         delay = self._retry_delay(payload)
         if delay > 0:
@@ -120,6 +122,7 @@ class RetryScheduler:
         event = self._build_requeue_event(payload, "retry.requeued")
         await self.bus.publish_event(target, event)
         self.requeued_count += 1
+        RETRY_TOTAL.labels(kind="requeued").inc()
         return {"action": "requeued", "stream": target, "message_id": message_id}
 
     async def _safe_handle(self, message_id: str, payload: dict) -> None:
@@ -156,6 +159,7 @@ class RetryScheduler:
             raise KeyError(message_id)
         event = self._build_requeue_event(payload, "retry.manual_replay")
         published_id = await self.bus.publish_event(target, event)
+        RETRY_TOTAL.labels(kind="manual_replay").inc()
         return {
             "replayed": True,
             "message_id": message_id,

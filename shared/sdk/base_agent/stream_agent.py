@@ -1,4 +1,5 @@
 import asyncio
+import time
 from abc import abstractmethod
 
 from shared.sdk.agent_execution.store import AgentExecutionStore
@@ -10,6 +11,12 @@ from shared.sdk.event_bus.redis_streams import (
     with_incremented_retry,
 )
 from shared.sdk.notifications.client import send_notification
+from shared.sdk.observability.correlation import correlation_payload
+from shared.sdk.observability.metrics import (
+    AGENT_EXECUTION_FAILURES_TOTAL,
+    AGENT_EXECUTION_TOTAL,
+    AGENT_LATENCY_SECONDS,
+)
 
 
 class StreamAgent(BaseAgent):
@@ -39,11 +46,15 @@ class StreamAgent(BaseAgent):
 
     @staticmethod
     def correlation_ids(payload: dict) -> dict:
-        """The task/workflow ids every pipeline message must carry forward."""
-        return {
-            "task_id": str(payload.get("task_id", "unknown")),
-            "workflow_id": payload.get("workflow_id", ""),
-        }
+        """Build the {task_id, workflow_id, trace_id, span_id} block carried by
+        every pipeline message.
+
+        The trace_id is propagated from the inbound payload (so the whole
+        workflow shares one trace) and a fresh span_id is generated for the
+        outbound stage. Receivers see the same trace_id and a new span_id per
+        hop.
+        """
+        return correlation_payload(payload, inject_new_span=True)
 
     # BaseAgent abstract methods — stream agents transform inside handle().
     async def receive_task(self, task: dict) -> dict:
@@ -66,14 +77,20 @@ class StreamAgent(BaseAgent):
     async def process(self, payload: dict) -> dict:
         task_id = str(payload.get("task_id", "unknown"))
         execution_id = await self._start_execution(task_id)
+        started = time.perf_counter()
         try:
             result = await self.handle(payload)
         except Exception as exc:
             self.failed_count += 1
+            AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="failed").inc()
+            AGENT_EXECUTION_FAILURES_TOTAL.labels(agent=self.name).inc()
+            AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
             await self._fail_execution(execution_id, str(exc))
             raise
         self.processed_count += 1
         self.last_task_id = task_id
+        AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="completed").inc()
+        AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
         await self._complete_execution(execution_id, result)
         await self.write_audit(
             {
