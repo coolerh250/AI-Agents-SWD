@@ -952,3 +952,165 @@ issues & blockers, and next-step suggestions.
   3. Provide a `/workflow/replay/{task_id}` end-to-end path that pairs a
      workflow with a DLQ replay (find the most recent DLQ entry for the
      task, edit the payload, and replay).
+
+---
+
+## Stage 15 — Observability, Metrics & Distributed Tracing (Step 14)
+
+- **Execution time:** 2026-05-25 12:00–12:08 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `9b96dea`. Step 14 produces
+  three commits:
+  - `0d58f343b...` — observability SDK, tracing/metrics wiring in every
+    service, workflow timeline, Prometheus + Grafana stack, four new test
+    files.
+  - `957016fa...` — runtime fix: tolerant grep on `/api/health` and
+    GF_ANALYTICS_* env vars so Grafana stays offline (no grafana.com calls).
+  - this Stage 15 progress entry is committed on top.
+- **Modified files:**
+  - Added: `shared/sdk/observability/{__init__.py,tracing.py,metrics.py,correlation.py}`,
+    `apps/orchestrator/src/progress.py` updates,
+    `infra/observability/{prometheus.yml,grafana/provisioning/datasources/prometheus.yml,grafana/provisioning/dashboards/dashboards.yml,grafana/dashboards/aiagents.json}`,
+    `tests/{test_metrics.py,test_tracing.py,test_observability_stack.py,test_workflow_timeline.py}`
+  - Modified: every service's `requirements.txt` (`prometheus_client`,
+    `opentelemetry-api`, `opentelemetry-sdk`), root `requirements.txt`
+    (+ exporter + 3 instrumentation packages),
+    every service's `main.py` (`setup_tracing(...)` +
+    `install_metrics_endpoint(app)`),
+    `shared/sdk/base_agent/stream_agent.py` (correlation_ids carries
+    trace_id + emits agent metrics),
+    `shared/sdk/event_bus/redis_streams.py` (DEADLETTER_TOTAL),
+    `shared/sdk/notifications/client.py` (NOTIFICATION_TOTAL),
+    `apps/orchestrator/src/{main.py,workflow.py,dispatch.py,workflow_events.py,resume_engine.py,progress.py}`,
+    `apps/retry-scheduler/src/scheduler.py` (RETRY_TOTAL),
+    `infra/docker-compose/docker-compose.yml` (+ prometheus + grafana),
+    `scripts/check_runtime_state.sh` (6 observability smokes),
+    `tests/test_event_correlation.py` (correlation now 4 fields),
+    `README.md`, `source/progress.md`
+- **Deployment target:** test server `10.0.1.31` — distributed tracing,
+  Prometheus / Grafana, workflow timeline validation. **No production
+  resources were created and no cloud observability SaaS was contacted.**
+- **Tracing result:** every service initializes OpenTelemetry tracing at
+  startup (`shared/sdk/observability/tracing.py::setup_tracing`).
+  `inject_trace_context` / `extract_trace_context` carry a workflow-scope
+  `trace_id` (128-bit hex) and a per-stage `span_id` (64-bit hex) through
+  every Redis event. Without an OTLP collector configured the SDK keeps the
+  ids local — no real cloud observability SaaS is contacted. The dispatch
+  event now carries `task_id`, `workflow_id`, `trace_id`, `span_id`, and
+  every agent's outbound message carries the same four fields
+  (`StreamAgent.correlation_ids → correlation_payload`).
+- **Metrics endpoint result:** every FastAPI service exposes
+  `GET /metrics` in the Prometheus text format
+  (`install_metrics_endpoint(app)`).
+  Orchestrator `/metrics` smoke output starts with
+  `# HELP workflow_total Workflows dispatched...` and `workflow_total{status="..."}`,
+  followed by `workflow_completed_total`, `workflow_failed_total`,
+  `workflow_duration_seconds_bucket{...}`, `agent_execution_total{...}`,
+  `agent_latency_seconds_bucket{...}`, `deadletter_total{...}`,
+  `retry_total{...}`, `notification_total{...}`. METRICS_ENDPOINT_SMOKE:
+  PASS.
+- **Prometheus scrape result:** prometheus 2.55.1 on
+  `127.0.0.1:9090`. `/api/v1/targets` lists every service with
+  `health=up` — orchestrator, policy-engine, approval-engine, audit-service,
+  communication-gateway, intake-agent, requirement-agent, development-agent,
+  qa-agent, devops-agent, retry-scheduler. PROMETHEUS_HEALTH: PASS,
+  PROMETHEUS_TARGETS_SMOKE: PASS. `/api/v1/query?query=sum(workflow_total)`
+  returns a value > 0 after the runtime smoke completes.
+- **Grafana provisioning result:** grafana 11.3.0 on `127.0.0.1:3000`.
+  Anonymous Admin access enabled for the local/test runtime. The
+  AI Agents SWD Platform dashboard is auto-provisioned in the
+  `AI Agents SWD` folder with 8 panels (workflow totals, failed by reason,
+  deadletter total, agent execution rate, agent latency p95, workflow
+  duration p95, retry / deadletter activity).
+  GRAFANA_HEALTH: PASS (after the regex fix in commit `957016f`).
+  All four GF_ANALYTICS_* env vars are now set to false so Grafana never
+  contacts grafana.com.
+- **Workflow timeline result:** `GET /workflow/progress/{task_id}` now also
+  returns `traces` (`{trace_id, workflow_id}`), `agent_timeline`
+  (chronological per-agent `started_at` / `completed_at` / `duration_ms`),
+  and `retry_timeline` (DLQ entries observed for the task). The new
+  `GET /workflow/timeline/{task_id}` returns the same timelines as a
+  condensed view, suitable for a dashboard. WORKFLOW_TIMELINE_SMOKE: PASS
+  on the smoke task `smoke-e2e-$$` after it completed through the agent
+  pipeline.
+- **Trace propagation result:** the smoke published a `task.created` event
+  to `stream.tasks` with `trace_id=ff...ff` and verified the matching
+  `devops.deployment_simulated` event on `stream.devops` carried both
+  `trace_id=[0-9a-f]{32}` and a fresh `span_id=[0-9a-f]{16}` per hop.
+  TRACE_PROPAGATION_SMOKE: PASS.
+- **Docker compose ps:** 16 containers Up (healthy) — postgres, redis,
+  vault, policy-engine, approval-engine, audit-service, orchestrator,
+  communication-gateway, intake-agent, requirement-agent, development-agent,
+  qa-agent, devops-agent, retry-scheduler, **prometheus**, **grafana** —
+  all bound to `127.0.0.1`.
+- **Test results:** `run_tests.sh` on the server — `pytest` **183 passed**
+  (26.83s, 0 skipped, 0 failures); `ruff check` all checks passed;
+  `black --check` 91 files clean; `mypy shared/` no issues in 29 source
+  files.
+  - New pytest files: `test_metrics.py` (5 tests — metric registry,
+    counter / histogram observation, /metrics endpoint shape, install
+    helper); `test_tracing.py` (9 tests — `setup_tracing` idempotency,
+    `generate_trace_id` / `generate_span_id` format, inject / extract
+    roundtrip, parent trace_id propagation, span_id refreshed per hop);
+    `test_observability_stack.py` (9 tests — Prometheus config covers all
+    11 services, Grafana provisioning files exist and reference
+    `prometheus:9090`, dashboard JSON references all platform metrics,
+    docker-compose binds 127.0.0.1:9090 and 127.0.0.1:3000, plus 3
+    skip-guarded smoke tests against the live stack);
+    `test_workflow_timeline.py` (8 tests — `build_agent_timeline` ordering
+    + missing timestamps, `build_retry_timeline` skips invalid entries,
+    API tests via `await workflow_progress` / `await workflow_timeline`).
+  - Locally (Windows, no infra): 97 passed, 85 skipped, 0 failures. On the
+    test server (full stack): 183 passed, 0 skipped, 0 failures.
+- **Runtime smoke test:** `check_runtime_state.sh` — 16 containers Up; **all
+  33 smokes PASS** including the existing 27 from Step 13 plus the new
+  **PROMETHEUS_HEALTH**, **GRAFANA_HEALTH**, **PROMETHEUS_TARGETS_SMOKE**,
+  **METRICS_ENDPOINT_SMOKE**, **TRACE_PROPAGATION_SMOKE**, and
+  **WORKFLOW_TIMELINE_SMOKE**.
+- **source/progress.md latest:** this Stage 15 entry. The previous Stage 13
+  next-step suggestion to "add tracing / metrics across the orchestrator
+  workflow, the agent pipeline, and the workflow-event consumer so the
+  unified flow has a single timeline view" is now implemented and
+  validated.
+- **Issues & blockers:** the first verification run hit two non-blocking
+  glitches that were fixed in commit `957016f`:
+  1. `GRAFANA_HEALTH` smoke used a no-whitespace regex
+     (`"database":"ok"`); Grafana returns `"database": "ok"`. Switched to
+     a tolerant POSIX regex.
+  2. Grafana 11.3.0 auto-pulled the `grafana-lokiexplore-app` plugin from
+     grafana.com at startup. Disabled by `GF_ANALYTICS_REPORTING_ENABLED`,
+     `GF_ANALYTICS_CHECK_FOR_UPDATES`,
+     `GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES`, and `GF_INSTALL_PLUGINS=""`
+     — required by the "no real cloud observability SaaS" constraint.
+  Both fixes were applied, pushed, and re-verified — all six observability
+  smokes PASS.
+- **Risks / notes:**
+  - The `OTLPSpanExporter` ships in `opentelemetry-exporter-otlp` (root
+    requirements only) and is conditional on
+    `OTEL_EXPORTER_OTLP_ENDPOINT` being set. The local/test runtime does
+    not set it, so traces are recorded in-process and dropped on flush —
+    enough to validate id propagation, but not enough to view the
+    distributed trace in a Tempo / Jaeger UI.
+  - Grafana anonymous access (`GF_AUTH_ANONYMOUS_ENABLED: true`) is
+    appropriate only for the local/test environment — never for
+    production.
+  - Per-service instrumentation packages (`opentelemetry-instrumentation-{fastapi,redis,asyncpg}`)
+    are in the root `requirements.txt` only. Service images install
+    `opentelemetry-api` / `opentelemetry-sdk` / `prometheus_client`; the
+    instrumentation packages are not yet wired into the FastAPI / Redis /
+    asyncpg call sites — the present coverage is the custom trace_id
+    propagation through Redis events and Prometheus counters / histograms.
+  - Same as prior stages: no LLM / GitHub / Slack / Kubernetes / cloud
+    calls; PostgreSQL `trust` auth and Vault dev mode remain
+    local/test-only.
+- **Next-step suggestions:**
+  1. Add a Tempo / Jaeger sidecar to the compose stack and point
+     `OTEL_EXPORTER_OTLP_ENDPOINT` at it so traces render as a span graph
+     in Grafana's Tempo / Traces UI.
+  2. Wire the instrumentation packages (FastAPI, Redis, asyncpg) into
+     each service so per-request HTTP and per-XADD Redis spans are emitted
+     automatically — currently only the manual workflow / agent spans
+     exist.
+  3. Add alert rules (`alerts.rules.yml`) targeting `workflow_failed_total
+     > N` and `agent_execution_failures_total > M`; provision an
+     Alertmanager so the same operator who runs `/workflow/cancel` sees
+     a Grafana alert before the failure spreads.
