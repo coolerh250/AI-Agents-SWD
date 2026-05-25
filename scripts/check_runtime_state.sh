@@ -381,12 +381,13 @@ else
 fi
 
 echo
-echo "=== workflow cancel smoke (dispatched -> cancel -> canceled) ==="
+echo "=== workflow cancel smoke (waiting_approval -> cancel -> canceled) ==="
+# Use production.deploy so the workflow sits at waiting_approval (non-terminal)
+# without racing the agent pipeline to completed.
 cancel_task="smoke-cancel-$$"
 curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
-  -d "{\"task_id\":\"$cancel_task\",\"source\":\"check\",\"request\":{\"type\":\"dev.test\"}}" \
+  -d "{\"task_id\":\"$cancel_task\",\"source\":\"check\",\"request\":{\"type\":\"production.deploy\"}}" \
   >/dev/null 2>&1 || true
-sleep 1
 cancel_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/workflow/cancel/$cancel_task" \
   -H "Content-Type: application/json" -d '{"reason":"runtime smoke"}' || echo '{}')
 echo "$cancel_resp"
@@ -398,12 +399,11 @@ else
 fi
 
 echo
-echo "=== workflow abort smoke (dispatched -> abort -> aborted) ==="
+echo "=== workflow abort smoke (waiting_approval -> abort -> aborted) ==="
 abort_task="smoke-abort-$$"
 curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
-  -d "{\"task_id\":\"$abort_task\",\"source\":\"check\",\"request\":{\"type\":\"dev.test\"}}" \
+  -d "{\"task_id\":\"$abort_task\",\"source\":\"check\",\"request\":{\"type\":\"production.deploy\"}}" \
   >/dev/null 2>&1 || true
-sleep 1
 abort_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/workflow/abort/$abort_task" \
   -H "Content-Type: application/json" -d '{"reason":"runtime smoke abort"}' || echo '{}')
 echo "$abort_resp"
