@@ -488,7 +488,7 @@ echo
 echo "=== grafana /api/health ==="
 gh=$(curl -sS -m 10 http://localhost:3000/api/health || echo '{}')
 echo "$gh"
-if echo "$gh" | grep -q '"database":"ok"'; then
+if echo "$gh" | grep -qE '"database"[[:space:]]*:[[:space:]]*"ok"'; then
   echo "GRAFANA_HEALTH: PASS"
 else
   echo "GRAFANA_HEALTH: FAIL"
