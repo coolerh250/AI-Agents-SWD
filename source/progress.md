@@ -1114,3 +1114,123 @@ issues & blockers, and next-step suggestions.
      > N` and `agent_execution_failures_total > M`; provision an
      Alertmanager so the same operator who runs `/workflow/cancel` sees
      a Grafana alert before the failure spreads.
+
+---
+
+## Stage 16.1 — Tempo Trace Backend (Step 15.1)
+
+- **Execution time:** 2026-05-25 16:18–16:41 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; base commit `87aa313`. Step 15.1
+  produces three commits:
+  - `a3f936fa...` — Tempo service + Grafana Tempo datasource + OTEL_* env
+    vars on every service + `verify_tracing_backend.sh` + tests + README.
+  - `9725240...` — set exec bit on `scripts/verify_tracing_backend.sh`
+    (Windows git did not carry the +x mode through the initial commit).
+  - this Stage 16.1 progress entry.
+- **Modified files:**
+  - Added: `infra/observability/tempo/tempo.yml`,
+    `infra/observability/grafana/provisioning/datasources/tempo.yml`,
+    `scripts/verify_tracing_backend.sh`,
+    `tests/test_tempo_config.py`,
+    `tests/test_grafana_tempo_datasource.py`
+  - Modified: `infra/docker-compose/docker-compose.yml` (tempo service +
+    `OTEL_EXPORTER_OTLP_ENDPOINT` / `OTEL_EXPORTER_OTLP_PROTOCOL` /
+    `OTEL_SERVICE_NAME` on every service + grafana `depends_on tempo` +
+    `tempo-data` volume),
+    `infra/observability/grafana/provisioning/datasources/prometheus.yml`
+    (`uid: prometheus` so the Tempo serviceMap can reference it),
+    `scripts/check_runtime_state.sh` (TEMPO_HEALTH +
+    GRAFANA_TEMPO_DATASOURCE_SMOKE), `README.md`, `source/progress.md`.
+- **Deployment target:** test server `10.0.1.31` — local Tempo trace backend
+  validation. **No cloud observability SaaS, no Grafana Cloud, and no remote
+  OTLP collector is contacted** (`tempo.yml::usage_report.reporting_enabled:
+  false`).
+- **Tempo container status:** `aiagents-test-tempo-1` running
+  `grafana/tempo:2.6.1`; `Up 22 minutes (healthy)`; bound to
+  `127.0.0.1:3200`, `127.0.0.1:4317`, `127.0.0.1:4318`. Local filesystem
+  storage at `/var/tempo` backed by the `tempo-data` Docker volume.
+- **Tempo `/ready` result:** `GET /ready → "ready"`;
+  `GET /status/version` returned
+  `tempo, version 2.6.1 (branch: HEAD, revision: 24c5b553d)`.
+  TEMPO_READY: PASS, TEMPO_HEALTH: PASS.
+- **Grafana Tempo datasource result:** `GET /api/datasources` returns two
+  entries — `Prometheus` (`uid: prometheus`, `url: http://prometheus:9090`,
+  `readOnly: true`) and `Tempo` (`type: tempo`, `url: http://tempo:3200`,
+  `jsonData.serviceMap.datasourceUid: prometheus`,
+  `jsonData.tracesToMetrics.datasourceUid: prometheus`, `readOnly: true`).
+  GRAFANA_TEMPO_DATASOURCE_SMOKE: PASS,
+  `test_grafana_serves_tempo_datasource_via_api`: PASS.
+- **OTLP endpoint result:** all three Tempo ports listen on `127.0.0.1` —
+  OTLP gRPC (`:4317`), OTLP HTTP (`:4318`), Tempo HTTP / query (`:3200`).
+  A `POST http://localhost:4318/v1/traces` with an empty body returned
+  `HTTP 200`, confirming the OTLP HTTP receiver accepts requests.
+  OTLP_HTTP_ENDPOINT: PASS.
+- **Per-service OTEL env vars:** every container (orchestrator,
+  communication-gateway, policy-engine, approval-engine, audit-service, all
+  five agents, retry-scheduler — 11 services total) carries
+  `OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317`,
+  `OTEL_EXPORTER_OTLP_PROTOCOL=grpc`, `OTEL_SERVICE_NAME=<service-name>`.
+  Verified by `docker compose exec -T orchestrator env | grep ^OTEL_`.
+- **Test results:** `run_tests.sh` on the server — initial run
+  `196 passed + 1 failed`; after force-recreating Grafana the failing
+  `test_grafana_serves_tempo_datasource_via_api` flipped green, giving
+  **197 passed in 27.54s** (0 skipped, 0 failures); `ruff check` all checks
+  passed; `black --check` 93 files clean; `mypy shared/` no issues in 29
+  source files.
+  - New pytest files: `test_tempo_config.py` (9 tests — tempo.yml shape,
+    OTLP gRPC/HTTP endpoints on 4317/4318, local storage paths,
+    `usage_report` disabled, compose tempo service ports,
+    grafana `depends_on tempo`, every service's OTEL env trio);
+    `test_grafana_tempo_datasource.py` (5 tests — datasource type / URL /
+    serviceMap UID + Prometheus UID + a live API test when grafana is up).
+- **check_runtime_state.sh result:** all 33 prior smokes plus the new
+  **TEMPO_HEALTH** and **GRAFANA_TEMPO_DATASOURCE_SMOKE** PASS. The runtime
+  now has 17 healthy containers (postgres, redis, vault, policy-engine,
+  approval-engine, audit-service, orchestrator, communication-gateway,
+  intake-agent, requirement-agent, development-agent, qa-agent, devops-agent,
+  retry-scheduler, prometheus, grafana, **tempo**).
+- **Issues & blockers:** initial server run hit a Grafana datasource
+  provisioning glitch — Docker Compose did not force-recreate the `grafana`
+  container when `depends_on: + tempo` was the only change to its service
+  block, so Grafana started before the new `tempo.yml` provisioning file
+  was visible; the Prometheus datasource also stayed on its previously
+  auto-generated UID instead of picking up the new `uid: prometheus`.
+  `docker compose up -d --force-recreate grafana` re-ran provisioning and
+  both datasources appeared correctly. After the fix the pytest suite went
+  green and `GRAFANA_TEMPO_DATASOURCE_SMOKE` flipped from `CHECK` to
+  `PASS`. The only code change needed for the fix was the
+  `verify_tracing_backend.sh` exec-bit commit (`9725240`).
+- **Risks / notes:**
+  - The platform code still does not call `tracer.start_as_current_span(...)`
+    anywhere, so no spans are actually exported to Tempo yet — the OTLP
+    receivers are listening but the only traffic they see is the empty
+    `POST /v1/traces` from `verify_tracing_backend.sh`. A follow-up step
+    needs to install `opentelemetry-exporter-otlp-proto-grpc` per service
+    and instrument the FastAPI handlers / Redis publishers so spans
+    actually flow into Tempo.
+  - The provisioning glitch above is hidden by
+    `grafana-data:/var/lib/grafana` — Grafana's SQLite database persists
+    across runs and provisioning runs only at startup. Changes to
+    datasource provisioning files require either `--force-recreate
+    grafana` or wiping the `grafana-data` volume.
+  - Tempo's local filesystem backend uses the `tempo-data` volume; data
+    survives container restarts. The `block_retention: 24h` setting keeps
+    the volume bounded.
+  - Same as prior stages: no cloud observability SaaS, no LLM / GitHub /
+    Slack / Kubernetes / cloud calls; PostgreSQL `trust` auth and Vault
+    dev mode remain local/test-only.
+- **Next-step suggestions:**
+  1. **Wire actual span emission**: add
+     `opentelemetry-exporter-otlp-proto-grpc` (and the FastAPI / Redis /
+     asyncpg instrumentation packages) to each service, then either call
+     `FastAPIInstrumentor().instrument_app(app)` after `setup_tracing` or
+     manually create spans around the orchestrator workflow nodes + each
+     agent's `handle()`. Once spans flow, the Grafana Tempo datasource
+     will surface them in the trace UI and the service map.
+  2. **Bake `--force-recreate` into the deploy path** (or move dashboard /
+     datasource provisioning behind `editable: true` plus a sentinel
+     timestamp) so a `git pull && docker compose up -d` always picks up
+     provisioning changes without manual intervention.
+  3. **Add a `tempo` job to Prometheus** so Tempo's own metrics (block
+     count, ingester rate, query duration) are scrapeable from the same
+     observability stack.
