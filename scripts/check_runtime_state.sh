@@ -205,7 +205,7 @@ fi
 echo
 echo "=== agent services /health ==="
 for entry in intake-agent:8010 requirement-agent:8011 development-agent:8012 \
-             qa-agent:8013 devops-agent:8014; do
+             qa-agent:8013 devops-agent:8014 retry-scheduler:8015; do
   name="${entry%%:*}"
   port="${entry##*:}"
   if curl -sS -m 10 "http://localhost:${port}/health" >/dev/null 2>&1; then
@@ -327,6 +327,153 @@ if [ "${dl_after:-x}" != "x" ] && [ "${dl_after:-0}" -gt "${dl_before:-0}" ] 2>/
   echo "DEADLETTER_SMOKE: PASS"
 else
   echo "DEADLETTER_SMOKE: CHECK"
+fi
+
+echo
+echo "=== retry-scheduler /deadletter list smoke ==="
+dl_list=$(curl -sS -m 10 "http://localhost:8015/deadletter?count=5" || echo '{}')
+echo "$dl_list"
+if echo "$dl_list" | grep -q '"count"'; then
+  echo "DLQ_LIST_SMOKE: PASS"
+else
+  echo "DLQ_LIST_SMOKE: CHECK"
+fi
+
+echo
+echo "=== retry-scheduler /deadletter/replay smoke (publish -> replay -> on original stream) ==="
+replay_smoke=$(python3 - <<'PY' 2>/dev/null || echo 'ERR'
+import asyncio
+import json
+import urllib.request
+
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+
+
+async def main() -> None:
+    bus = RedisStreamEventBus(redis_url="redis://localhost:6379")
+    target = "test.replay.smoke"
+    try:
+        message_id = await bus.publish_dead_letter(
+            target,
+            {"task_id": "smoke-replay", "workflow_id": "wf-smoke-replay", "retry_count": 1, "max_retries": 3},
+            "replay smoke",
+        )
+        before = await bus.client.xlen(target)
+        req = urllib.request.Request(
+            f"http://localhost:8015/deadletter/replay/{message_id}", method="POST"
+        )
+        body = json.loads(urllib.request.urlopen(req, timeout=10).read().decode())
+        after = await bus.client.xlen(target)
+        await bus.client.delete(target)
+        print(f"replayed={body.get('replayed')} stream={body.get('stream')} before={before} after={after}")
+    finally:
+        await bus.close()
+
+
+asyncio.run(main())
+PY
+)
+echo "$replay_smoke"
+if echo "$replay_smoke" | grep -q 'replayed=True' && echo "$replay_smoke" | grep -q 'stream=test.replay.smoke'; then
+  echo "DLQ_REPLAY_SMOKE: PASS"
+else
+  echo "DLQ_REPLAY_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow cancel smoke (dispatched -> cancel -> canceled) ==="
+cancel_task="smoke-cancel-$$"
+curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$cancel_task\",\"source\":\"check\",\"request\":{\"type\":\"dev.test\"}}" \
+  >/dev/null 2>&1 || true
+sleep 1
+cancel_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/workflow/cancel/$cancel_task" \
+  -H "Content-Type: application/json" -d '{"reason":"runtime smoke"}' || echo '{}')
+echo "$cancel_resp"
+if echo "$cancel_resp" | grep -q '"stage": *"canceled"' \
+   && echo "$cancel_resp" | grep -q '"cancel_reason": *"runtime smoke"'; then
+  echo "WORKFLOW_CANCEL_SMOKE: PASS"
+else
+  echo "WORKFLOW_CANCEL_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow abort smoke (dispatched -> abort -> aborted) ==="
+abort_task="smoke-abort-$$"
+curl -sS -m 25 -X POST http://localhost:8000/workflow/test -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$abort_task\",\"source\":\"check\",\"request\":{\"type\":\"dev.test\"}}" \
+  >/dev/null 2>&1 || true
+sleep 1
+abort_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/workflow/abort/$abort_task" \
+  -H "Content-Type: application/json" -d '{"reason":"runtime smoke abort"}' || echo '{}')
+echo "$abort_resp"
+if echo "$abort_resp" | grep -q '"stage": *"aborted"' \
+   && echo "$abort_resp" | grep -q '"abort_reason": *"runtime smoke abort"'; then
+  echo "WORKFLOW_ABORT_SMOKE: PASS"
+else
+  echo "WORKFLOW_ABORT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== failure simulation smoke (simulate_failure -> deadletter -> terminal_failure) ==="
+fail_task="smoke-fail-$$"
+fail_smoke=$(python3 - <<PY 2>/dev/null || echo 'ERR'
+import asyncio
+import json
+import time
+
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+
+
+async def main() -> None:
+    bus = RedisStreamEventBus(redis_url="redis://localhost:6379")
+    try:
+        await bus.publish_event(
+            "stream.tasks",
+            {
+                "event": "task.created",
+                "task_id": "$fail_task",
+                "workflow_id": "wf-$fail_task",
+                "source": "check",
+                "request": {"type": "dev.test", "simulate_failure": True},
+            },
+        )
+        dl_match = None
+        term_match = None
+        deadline = time.time() + 75
+        while time.time() < deadline:
+            for stream_name, target in (("stream.deadletter", "dl"), ("stream.deadletter.terminal", "term")):
+                entries = await bus.client.xrevrange(stream_name, "+", "-", count=300)
+                for _id, fields in entries:
+                    try:
+                        payload = json.loads(fields.get("data", "{}"))
+                    except (ValueError, TypeError):
+                        continue
+                    if payload.get("task_id") == "$fail_task":
+                        if target == "dl" and dl_match is None:
+                            dl_match = payload
+                        elif target == "term" and term_match is None:
+                            term_match = payload
+            if dl_match and term_match:
+                break
+            await asyncio.sleep(2)
+        dl_rc = dl_match.get("retry_count") if dl_match else None
+        term_rc = term_match.get("retry_count") if term_match else None
+        print(f"dl_retry_count={dl_rc} terminal_retry_count={term_rc}")
+    finally:
+        await bus.close()
+
+
+asyncio.run(main())
+PY
+)
+echo "$fail_smoke"
+if echo "$fail_smoke" | grep -q 'dl_retry_count=' \
+   && echo "$fail_smoke" | grep -q 'terminal_retry_count=' \
+   && ! echo "$fail_smoke" | grep -q 'terminal_retry_count=None'; then
+  echo "FAILURE_SIMULATION_SMOKE: PASS"
+else
+  echo "FAILURE_SIMULATION_SMOKE: CHECK"
 fi
 
 echo

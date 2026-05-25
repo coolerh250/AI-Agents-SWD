@@ -1,6 +1,7 @@
 import asyncio
 import contextlib
 from collections.abc import AsyncIterator
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
@@ -9,9 +10,72 @@ from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
+from shared.sdk.notifications.client import send_notification
 from shared.sdk.workflow_store.store import WorkflowStore
 from workflow import run_mock_workflow, workflow_state_schema
 from workflow_events import WorkflowEventConsumer
+
+TERMINAL_STAGES = {"completed", "canceled", "aborted", "rejected"}
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+async def _terminate_workflow(task_id: str, new_stage: str, reason: str) -> dict:
+    """Move a workflow to ``canceled`` or ``aborted`` and persist the reason.
+
+    Only a non-terminal workflow can be terminated. Mock-safe: it records
+    bookkeeping only — no production action runs.
+    """
+    store = WorkflowStore()
+    try:
+        workflow = await store.get_workflow_state(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    current = workflow["stage"]
+    if current in TERMINAL_STAGES:
+        raise HTTPException(
+            status_code=409,
+            detail=f"workflow {task_id} is {current}; cannot {new_stage}",
+        )
+    state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
+    execution_result = (
+        dict(workflow["execution_result"]) if isinstance(workflow["execution_result"], dict) else {}
+    )
+    timestamp_key = "canceled_at" if new_stage == "canceled" else "aborted_at"
+    reason_key = "cancel_reason" if new_stage == "canceled" else "abort_reason"
+    timestamp = _utcnow_iso()
+    state["stage"] = new_stage
+    state[timestamp_key] = timestamp
+    state[reason_key] = reason
+    execution_result["status"] = new_stage
+    execution_result[timestamp_key] = timestamp
+    execution_result[reason_key] = reason
+    execution_result["production_executed"] = False
+    state["execution_result"] = execution_result
+    try:
+        updated = await store.update_workflow_state(
+            task_id,
+            stage=new_stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+    message = f"workflow {task_id} {new_stage}"
+    if reason:
+        message = f"{message}: {reason}"
+    await send_notification(task_id, f"workflow.{new_stage}", message)
+    return updated
+
 
 APPROVALS_STREAM = "stream.approvals"
 RESUME_GROUP = "orchestrator-resume-group"
@@ -106,6 +170,18 @@ async def resume_workflow(task_id: str):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+
+
+@app.post("/workflow/cancel/{task_id}")
+async def cancel_workflow(task_id: str, payload: dict | None = None):
+    reason = str((payload or {}).get("reason", ""))
+    return await _terminate_workflow(task_id, "canceled", reason)
+
+
+@app.post("/workflow/abort/{task_id}")
+async def abort_workflow(task_id: str, payload: dict | None = None):
+    reason = str((payload or {}).get("reason", ""))
+    return await _terminate_workflow(task_id, "aborted", reason)
 
 
 @app.get("/workflow/progress/{task_id}")

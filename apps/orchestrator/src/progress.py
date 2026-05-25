@@ -10,10 +10,15 @@ PIPELINE_AGENTS = [
 def _execution_status(stage: str, completed: list[str], failed: list[str]) -> str:
     """Map a workflow stage and agent progress to a single execution status.
 
-    One of: waiting_approval, dispatched, in_progress, completed, failed.
+    One of: waiting_approval, dispatched, in_progress, completed, failed,
+    canceled, aborted.
     """
     if stage == "waiting_approval":
         return "waiting_approval"
+    if stage == "canceled":
+        return "canceled"
+    if stage == "aborted":
+        return "aborted"
     if stage in ("rejected", "failed") or failed:
         return "failed"
     if stage == "completed":

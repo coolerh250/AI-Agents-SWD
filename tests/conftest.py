@@ -23,6 +23,26 @@ def _load_service_module(service: str) -> ModuleType:
     return module
 
 
+def _preload_module(module_name: str, path: Path) -> None:
+    """Preload a sibling module under a fixed sys.modules name.
+
+    The retry-scheduler's main.py does ``from scheduler import RetryScheduler``;
+    preloading scheduler.py here lets test files do the same import at module
+    level without putting another src/ on sys.path.
+    """
+    if module_name in sys.modules or not path.exists():
+        return
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    if spec is None or spec.loader is None:
+        return
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+
+_preload_module("scheduler", _REPO_ROOT / "apps" / "retry-scheduler" / "src" / "scheduler.py")
+
+
 @pytest.fixture
 def policy_engine_app():
     return _load_service_module("policy-engine").app
@@ -41,6 +61,11 @@ def audit_service_app():
 @pytest.fixture
 def communication_gateway_app():
     return _load_service_module("communication-gateway").app
+
+
+@pytest.fixture
+def retry_scheduler_module():
+    return _load_service_module("retry-scheduler")
 
 
 def _load_agent_module(agent: str) -> ModuleType:

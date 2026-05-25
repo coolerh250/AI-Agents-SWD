@@ -42,12 +42,13 @@ def test_is_retry_exhausted_threshold():
 
 def test_build_dead_letter_event_wraps_original():
     original = {"task_id": "t-1", "workflow_id": "wf-1", "retry_count": 3}
-    dl = build_dead_letter_event("stream.tasks", original, "boom")
+    dl = build_dead_letter_event("stream.tasks", original, "boom", retry_after_seconds=2.0)
     assert dl["event"] == "deadletter"
     assert dl["task_id"] == "t-1"
     assert dl["workflow_id"] == "wf-1"
-    assert dl["source_stream"] == "stream.tasks"
-    assert dl["error"] == "boom"
+    assert dl["original_stream"] == "stream.tasks"
+    assert dl["failure_reason"] == "boom"
+    assert dl["retry_after_seconds"] == 2.0
     assert dl["original_event"] == original
 
 

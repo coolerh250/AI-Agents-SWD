@@ -23,6 +23,8 @@ PAIRS=(
   "stream.notifications notification-group"
   "stream.incidents incident-group"
   "stream.deadletter deadletter-group"
+  "stream.deadletter retry-scheduler-group"
+  "stream.deadletter.terminal terminal-failure-group"
 )
 
 echo "=== Redis Streams consumer-group initialization ==="

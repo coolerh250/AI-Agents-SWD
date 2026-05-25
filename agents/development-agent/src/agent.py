@@ -1,11 +1,19 @@
 from shared.sdk.base_agent.stream_agent import StreamAgent
 
 
+class SimulatedFailure(RuntimeError):
+    """Raised by development-agent when the request asks for a controlled failure."""
+
+
 class DevelopmentAgent(StreamAgent):
     """Consumes requirement specs from stream.development, produces a mock
     code_change artifact, and publishes a development.completed event to
     stream.qa. Records an agent execution, an audit event, and a notification.
     Makes no LLM / GitHub / Slack calls and produces no real code.
+
+    Honors a controlled-failure switch (``request.simulate_failure: true``) so
+    the retry / dead-letter foundation can be exercised end-to-end. The failure
+    only raises within ``handle`` — it never crashes the consumer loop.
     """
 
     name = "development-agent"
@@ -26,12 +34,25 @@ class DevelopmentAgent(StreamAgent):
             "mock": True,
         }
 
+    @staticmethod
+    def _should_simulate_failure(payload: dict) -> bool:
+        request = payload.get("request") or {}
+        if not isinstance(request, dict):
+            return False
+        return bool(request.get("simulate_failure"))
+
     async def handle(self, payload: dict) -> dict:
+        if self._should_simulate_failure(payload):
+            task_id = str(payload.get("task_id", "unknown"))
+            raise SimulatedFailure(
+                f"development-agent simulated failure for {task_id} " "(request.simulate_failure)"
+            )
         artifact = self.build_artifact(payload)
         task_id = artifact["task_id"]
         message = {
             "event": "development.completed",
             **self.correlation_ids(payload),
+            "request": payload.get("request", {}),
             "artifact": artifact,
             "produced_by": self.name,
         }

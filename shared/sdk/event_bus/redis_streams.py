@@ -39,17 +39,23 @@ def is_retry_exhausted(event: dict) -> bool:
     return get_retry_count(event) >= get_max_retries(event)
 
 
-def build_dead_letter_event(source_stream: str, event: dict, error: str = "") -> dict:
-    """Wrap a failed event with the metadata needed to inspect it later."""
+def build_dead_letter_event(
+    original_stream: str,
+    event: dict,
+    failure_reason: str = "",
+    retry_after_seconds: float = 0.0,
+) -> dict:
+    """Wrap a failed event with the metadata the retry scheduler needs."""
     return {
         "event": "deadletter",
         "task_id": event.get("task_id", "unknown"),
         "workflow_id": event.get("workflow_id", ""),
-        "source_stream": source_stream,
-        "error": error,
+        "original_stream": original_stream,
+        "failure_reason": failure_reason,
         "retry_count": get_retry_count(event),
         "max_retries": get_max_retries(event),
-        "dead_lettered_at": datetime.now(timezone.utc).isoformat(),
+        "retry_after_seconds": retry_after_seconds,
+        "failed_at": datetime.now(timezone.utc).isoformat(),
         "original_event": event,
     }
 
@@ -77,10 +83,17 @@ class RedisStreamEventBus:
     async def publish_event(self, stream: str, event: dict) -> str:
         return await self.client.xadd(stream, {"data": json.dumps(event)})
 
-    async def publish_dead_letter(self, source_stream: str, event: dict, error: str = "") -> str:
+    async def publish_dead_letter(
+        self,
+        original_stream: str,
+        event: dict,
+        failure_reason: str = "",
+        retry_after_seconds: float = 0.0,
+    ) -> str:
         """Publish a failed event to the dead-letter stream."""
         return await self.publish_event(
-            DEAD_LETTER_STREAM, build_dead_letter_event(source_stream, event, error)
+            DEAD_LETTER_STREAM,
+            build_dead_letter_event(original_stream, event, failure_reason, retry_after_seconds),
         )
 
     async def consume_events(

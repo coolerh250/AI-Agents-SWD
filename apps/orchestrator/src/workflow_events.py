@@ -2,8 +2,11 @@ import asyncio
 import contextlib
 
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.workflow_store.store import WorkflowStore
+
+IGNORED_STAGES = ("aborted", "canceled")
 
 # The agent pipeline streams the orchestrator watches for completion events.
 WORKFLOW_EVENT_STREAMS = [
@@ -56,6 +59,9 @@ class WorkflowEventConsumer:
 
     async def _advance(self, workflow: dict, event: str, payload: dict) -> dict | None:
         task_id = workflow["task_id"]
+        if workflow["stage"] in IGNORED_STAGES:
+            await self._record_ignored_event(task_id, event, str(workflow["stage"]))
+            return None
         state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
         execution_result = (
             dict(workflow["execution_result"])
@@ -94,6 +100,23 @@ class WorkflowEventConsumer:
         if event == _FINAL_EVENT and updated is not None:
             await send_notification(task_id, "workflow.completed", f"workflow {task_id} completed")
         return updated
+
+    async def _record_ignored_event(self, task_id: str, event: str, stage: str) -> None:
+        """Audit + notify that an agent event was ignored on a terminated workflow."""
+        with contextlib.suppress(Exception):
+            await AuditHttpClient().record_event(
+                task_id=task_id,
+                agent="orchestrator",
+                decision_type="workflow_event_ignored",
+                summary=f"ignored {event} on {stage} workflow {task_id}",
+                result="ignored",
+                artifact_refs={"event": event, "stage": stage},
+            )
+        await send_notification(
+            task_id,
+            "workflow.event_ignored",
+            f"ignored {event} on {stage} workflow {task_id}",
+        )
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Consume agent events until stop_event is set (Redis consumer group)."""

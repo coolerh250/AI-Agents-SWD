@@ -125,7 +125,12 @@ class StreamAgent(BaseAgent):
         attempted = with_incremented_retry(payload)
         try:
             if is_retry_exhausted(attempted):
-                await self.bus.publish_dead_letter(self.input_stream, attempted, str(exc))
+                await self.bus.publish_dead_letter(
+                    self.input_stream,
+                    attempted,
+                    failure_reason=str(exc),
+                    retry_after_seconds=1.0,
+                )
                 self.dead_letter_count += 1
             else:
                 await self.bus.publish_event(self.input_stream, attempted)

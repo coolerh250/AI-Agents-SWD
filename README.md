@@ -183,6 +183,8 @@ API endpoints:
 | GET  | `/workflow/progress/{task_id}` | Get a workflow's agent-pipeline progress |
 | GET  | `/workflow/replay/{task_id}` | Replay a persisted workflow state (no execution) |
 | POST | `/workflow/resume/{task_id}` | Resume an approved workflow |
+| POST | `/workflow/cancel/{task_id}` | Cancel a non-terminal workflow |
+| POST | `/workflow/abort/{task_id}` | Abort a non-terminal workflow (ignore future agent events) |
 
 Run the workflow:
 
@@ -400,9 +402,59 @@ also carries the `workflow_id`.
 **Retry & dead-letter foundation** — events carry `retry_count` / `max_retries`
 metadata. When an agent fails to process a message it is re-published to the
 input stream with an incremented `retry_count`; once `retry_count` reaches
-`max_retries` (default 3) it is routed to the `stream.deadletter` stream instead
-(`shared/sdk/event_bus/redis_streams.py`). This is the foundation only — there
-is no separate retry scheduler.
+`max_retries` (default 3) it is routed to the `stream.deadletter` stream — the
+dead-letter event includes `original_stream`, `retry_count`, `max_retries`,
+`retry_after_seconds`, `failed_at`, and `failure_reason`
+(`shared/sdk/event_bus/redis_streams.py`).
+
+## Retry Scheduler, DLQ Replay & Workflow Cancelation
+
+The `retry-scheduler` (port `8015`) is the operator-recovery side of the
+unified workflow dispatch.
+
+**Retry scheduler** — `apps/retry-scheduler/` opens a Redis consumer group on
+`stream.deadletter`. For each event it sleeps `retry_after_seconds` (capped at
+60s) and re-publishes the original event back to `original_stream` with
+`event: retry.requeued`. The agent's consumer group then re-processes it. When
+the dead-letter event's `retry_count` has already passed `max_retries`, the
+scheduler skips the requeue and publishes a `retry.terminal_failure` event on
+`stream.deadletter.terminal` instead — the task is bounded, not retried
+forever. The consume loop uses `XREADGROUP BLOCK` and each scheduled requeue
+uses `asyncio.sleep`; there is no busy polling.
+
+**DLQ replay API**:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| GET  | `/health` | Liveness check |
+| GET  | `/status` | Scheduler counters (`requeued_count`, `terminal_failure_count`) |
+| GET  | `/deadletter` | List recent dead-letter entries (`?count=N`) |
+| POST | `/deadletter/replay/{message_id}` | Replay one entry back to its original stream |
+
+`POST /deadletter/replay/{message_id}` re-publishes the entry as
+`event: retry.manual_replay` to its `original_stream`, regardless of
+`retry_count`. It is the operator's manual recovery path.
+
+**Workflow cancelation** — `POST /workflow/cancel/{task_id}` moves a
+non-terminal workflow to `stage: canceled`, sets `canceled_at` and
+`cancel_reason` in the persisted state, and publishes a
+`workflow.canceled` notification. `POST /workflow/abort/{task_id}` does the
+same for `stage: aborted` (with `aborted_at` and `abort_reason`). Both refuse
+to act on a workflow that is already `completed`, `canceled`, `aborted`, or
+`rejected`. The body is optional: `{"reason": "..."}`.
+
+**Event ignore after abort** — the orchestrator's workflow-event consumer
+checks the persisted stage before applying an agent event. If the workflow is
+already `aborted` or `canceled`, the event is ignored: the consumer records an
+`audit_logs` row (`decision_type: workflow_event_ignored`) and publishes a
+`workflow.event_ignored` notification, and the workflow stays at its
+terminated stage.
+
+**Controlled failure** — the development-agent supports
+`request.simulate_failure: true`; when set, `handle()` raises a
+`SimulatedFailure` so the retry / dead-letter foundation can be exercised
+end-to-end. The failure only raises within `handle`; the consumer loop never
+crashes.
 
 ## Testing
 
