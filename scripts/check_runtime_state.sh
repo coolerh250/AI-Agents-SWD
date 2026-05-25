@@ -477,6 +477,16 @@ else
 fi
 
 echo
+echo "=== tempo /ready ==="
+tr=$(curl -sS -m 10 http://localhost:3200/ready || echo '')
+echo "$tr"
+if [ "$tr" = "ready" ] || echo "$tr" | grep -qi ready; then
+  echo "TEMPO_HEALTH: PASS"
+else
+  echo "TEMPO_HEALTH: FAIL"
+fi
+
+echo
 echo "=== prometheus /-/ready ==="
 if curl -sS -m 10 http://localhost:9090/-/ready >/dev/null 2>&1; then
   echo "PROMETHEUS_HEALTH: PASS"
@@ -492,6 +502,17 @@ if echo "$gh" | grep -qE '"database"[[:space:]]*:[[:space:]]*"ok"'; then
   echo "GRAFANA_HEALTH: PASS"
 else
   echo "GRAFANA_HEALTH: FAIL"
+fi
+
+echo
+echo "=== grafana datasources (anonymous) ==="
+ds=$(curl -sS -m 10 http://localhost:3000/api/datasources || echo '[]')
+echo "$ds" | head -c 1000
+echo
+if echo "$ds" | grep -q '"type":"tempo"' && echo "$ds" | grep -q '"url":"http://tempo:3200"'; then
+  echo "GRAFANA_TEMPO_DATASOURCE_SMOKE: PASS"
+else
+  echo "GRAFANA_TEMPO_DATASOURCE_SMOKE: CHECK"
 fi
 
 echo

@@ -484,21 +484,37 @@ trace viewer can build the per-stage span graph
 | Component | Port | Purpose |
 |-----------|------|---------|
 | `prometheus` | `9090` | Scrapes every service's `/metrics` every 15s |
-| `grafana`    | `3000` | Renders the bundled AI Agents SWD Platform dashboard (anonymous Admin in the local/test runtime) |
+| `grafana`    | `3000` | Renders the bundled AI Agents SWD Platform dashboard (anonymous Admin in the local/test runtime); Prometheus + Tempo datasources auto-provisioned |
+| `tempo`      | `3200` (query), `4317` (OTLP gRPC), `4318` (OTLP HTTP) | Local filesystem trace backend; configured but no real cloud observability SaaS is contacted |
 
-Both bind to `127.0.0.1` only. Configuration lives under
+All bind to `127.0.0.1` only. Configuration lives under
 [infra/observability/](infra/observability/):
 
 ```
 infra/observability/
   prometheus.yml                                          # scrape config
+  tempo/tempo.yml                                         # tempo trace backend (OTLP gRPC + HTTP, local FS)
   grafana/provisioning/datasources/prometheus.yml        # Prometheus datasource
+  grafana/provisioning/datasources/tempo.yml             # Tempo datasource (service map links to Prometheus)
   grafana/provisioning/dashboards/dashboards.yml         # dashboard provider
   grafana/dashboards/aiagents.json                       # workflow + agent dashboard
 ```
 
+**Trace backend (Tempo)** — every service container sets
+`OTEL_EXPORTER_OTLP_ENDPOINT=http://tempo:4317`,
+`OTEL_EXPORTER_OTLP_PROTOCOL=grpc`, and
+`OTEL_SERVICE_NAME=<service-name>`. Tempo's OTLP receivers listen on
+`4317` (gRPC) / `4318` (HTTP) and persist traces to `/var/tempo` (a Docker
+volume). `usage_report.reporting_enabled: false` keeps Tempo offline. Grafana
+auto-provisions a Tempo datasource; the dashboard `serviceMap.datasourceUid`
+references the Prometheus datasource (`uid: prometheus`) so the trace
+service-map can correlate spans with the agent / workflow metrics.
+`scripts/verify_tracing_backend.sh` validates the Tempo container, OTLP port
+listeners, and the Grafana Tempo datasource.
+
 Open the dashboard at http://localhost:3000 (folder "AI Agents SWD"; the
-dashboard `AI Agents SWD Platform`).
+dashboard `AI Agents SWD Platform`). The Tempo datasource is available
+under Connections → Data sources → Tempo.
 
 **Workflow timeline** — `GET /workflow/progress/{task_id}` now also returns
 `traces` (`trace_id`, `workflow_id`), `agent_timeline` (chronological per-agent

@@ -41,6 +41,10 @@ services:
     build:
       context: ../..
       dockerfile: apps/policy-engine/Dockerfile
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: policy-engine
     ports:
       - "127.0.0.1:8001:8001"
     healthcheck:
@@ -57,6 +61,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: approval-engine
     ports:
       - "127.0.0.1:8002:8002"
     depends_on:
@@ -78,6 +85,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: audit-service
     ports:
       - "127.0.0.1:8003:8003"
     depends_on:
@@ -102,6 +112,9 @@ services:
       POLICY_ENGINE_URL: http://policy-engine:8001
       APPROVAL_ENGINE_URL: http://approval-engine:8002
       AUDIT_SERVICE_URL: http://audit-service:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: orchestrator
     ports:
       - "127.0.0.1:8000:8000"
     depends_on:
@@ -123,6 +136,9 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:8000
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: communication-gateway
     ports:
       - "127.0.0.1:8004:8004"
     depends_on:
@@ -141,6 +157,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: intake-agent
     ports:
       - "127.0.0.1:8010:8010"
     depends_on:
@@ -162,6 +181,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: requirement-agent
     ports:
       - "127.0.0.1:8011:8011"
     depends_on:
@@ -183,6 +205,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: development-agent
     ports:
       - "127.0.0.1:8012:8012"
     depends_on:
@@ -204,6 +229,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: qa-agent
     ports:
       - "127.0.0.1:8013:8013"
     depends_on:
@@ -225,6 +253,9 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: devops-agent
     ports:
       - "127.0.0.1:8014:8014"
     depends_on:
@@ -245,6 +276,9 @@ services:
       dockerfile: apps/retry-scheduler/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: retry-scheduler
     ports:
       - "127.0.0.1:8015:8015"
     depends_on:
@@ -256,6 +290,24 @@ services:
       timeout: 5s
       retries: 5
       start_period: 15s
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    user: "0:0"
+    volumes:
+      - ../observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-data:/var/tempo
+    ports:
+      - "127.0.0.1:3200:3200"
+      - "127.0.0.1:4317:4317"
+      - "127.0.0.1:4318:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
 
   prometheus:
     image: prom/prometheus:v2.55.1
@@ -298,6 +350,7 @@ services:
       - "127.0.0.1:3000:3000"
     depends_on:
       - prometheus
+      - tempo
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
       interval: 15s
@@ -309,3 +362,4 @@ volumes:
   postgres-data:
   prometheus-data:
   grafana-data:
+  tempo-data:
