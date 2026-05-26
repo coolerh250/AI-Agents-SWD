@@ -1,0 +1,144 @@
+# AI Agents SWD alert rules.
+#
+# These rules cover the eight signals tied to workflow / agent / retry health
+# already surfaced via /metrics by every service. Each alert carries
+# {severity, component} labels and {summary, description, runbook_url}
+# annotations. Runbook URLs point at the README anchor under "Observability"
+# until a dedicated runbook lives in the repo.
+groups:
+  - name: aiagents.workflow
+    interval: 30s
+    rules:
+      - alert: AIWorkflowFailuresHigh
+        expr: increase(workflow_failed_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: orchestrator
+        annotations:
+          summary: "Workflow failed/canceled/aborted within the last 5 minutes"
+          description: |
+            workflow_failed_total{reason} has incremented within the last 5
+            minutes. Inspect /workflow/timeline/{task_id} to see which
+            workflows ended in canceled / aborted / rejected / failed.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+      - alert: AIWorkflowLatencyP95High
+        expr: histogram_quantile(0.95, sum by (le) (rate(workflow_duration_seconds_bucket[5m]))) > 30
+        for: 5m
+        labels:
+          severity: warning
+          component: orchestrator
+        annotations:
+          summary: "Workflow p95 duration above 30s"
+          description: |
+            histogram_quantile(0.95, rate(workflow_duration_seconds_bucket[5m]))
+            has exceeded 30s for the last 5 minutes. The agent pipeline or one
+            of the downstream services (policy / approval / audit) is slow.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: aiagents.agent
+    interval: 30s
+    rules:
+      - alert: AIAgentExecutionFailuresHigh
+        expr: increase(agent_execution_failures_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: agent
+        annotations:
+          summary: "Agent execution failures observed in the last 5 minutes"
+          description: |
+            agent_execution_failures_total{agent} has incremented. Look at
+            stream.deadletter and /workflow/timeline/{task_id} for the agent
+            named in the metric label.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: aiagents.retry
+    interval: 30s
+    rules:
+      - alert: AIDeadletterIncreasing
+        expr: increase(deadletter_total[5m]) > 0
+        for: 0m
+        labels:
+          severity: warning
+          component: retry-scheduler
+        annotations:
+          summary: "stream.deadletter is growing"
+          description: |
+            deadletter_total has incremented in the last 5 minutes. Inspect
+            retry-scheduler /deadletter and decide whether to replay or
+            terminal-fail the impacted task.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+      - alert: AIRetrySpike
+        expr: increase(retry_total[5m]) > 5
+        for: 0m
+        labels:
+          severity: warning
+          component: retry-scheduler
+        annotations:
+          summary: "Retry rate is unusually high"
+          description: |
+            retry_total has incremented more than 5 times in the last 5
+            minutes. A downstream stream (development / qa / devops) is
+            failing repeatedly and is being re-queued.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: aiagents.platform
+    interval: 30s
+    rules:
+      - alert: AIServiceDown
+        expr: up == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: platform
+        annotations:
+          summary: "AI Agents SWD service down ({{ $labels.job }})"
+          description: |
+            Prometheus has been unable to scrape {{ $labels.job }} at
+            {{ $labels.instance }} for the last 2 minutes. The container may
+            be unhealthy or the network may be partitioned.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+      # AIPrometheusTargetDown uses the same `up == 0` expression but is
+      # scoped to a longer "for" window so it fires only on persistent target
+      # failures (e.g. a service crash-loop). AIServiceDown handles the
+      # short-window case.
+      - alert: AIPrometheusTargetDown
+        expr: up == 0
+        for: 10m
+        labels:
+          severity: critical
+          component: platform
+        annotations:
+          summary: "Prometheus target persistently down ({{ $labels.job }})"
+          description: |
+            Target {{ $labels.job }} ({{ $labels.instance }}) has been down
+            for 10 minutes. Check `docker compose ps` and the service's
+            container logs.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: aiagents.approval
+    interval: 30s
+    rules:
+      # TODO(step-15.3): once an `approval_pending_seconds` (or
+      # approval_pending_total) metric ships, replace this placeholder with a
+      # condition such as
+      #   histogram_quantile(0.95, rate(approval_pending_seconds_bucket[1h])) > 3600
+      # The rule below stays valid (always-false expression) so the YAML
+      # still loads and the alert is visible in /api/v1/rules.
+      - alert: AIApprovalPendingTooLong
+        expr: vector(0) > 1
+        for: 0m
+        labels:
+          severity: warning
+          component: approval-engine
+        annotations:
+          summary: "Approval requests pending for too long (placeholder)"
+          description: |
+            Placeholder alert: a dedicated approval_pending_seconds metric is
+            not yet emitted by approval-engine. Track the open Step 15.x task
+            to add it; once it exists, point this rule at the real metric.
+          runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"

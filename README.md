@@ -486,18 +486,22 @@ trace viewer can build the per-stage span graph
 | `prometheus` | `9090` | Scrapes every service's `/metrics` every 15s |
 | `grafana`    | `3000` | Renders the bundled AI Agents SWD Platform dashboard (anonymous Admin in the local/test runtime); Prometheus + Tempo datasources auto-provisioned |
 | `tempo`      | `3200` (query), `4317` (OTLP gRPC), `4318` (OTLP HTTP) | Local filesystem trace backend; configured but no real cloud observability SaaS is contacted |
+| `alertmanager` | `9093` | Routes Prometheus alerts to a local null receiver; no real Slack / Discord / Telegram / PagerDuty / webhook is contacted |
 
 All bind to `127.0.0.1` only. Configuration lives under
 [infra/observability/](infra/observability/):
 
 ```
 infra/observability/
-  prometheus.yml                                          # scrape config
+  prometheus.yml                                          # scrape config + rule_files + alerting
+  prometheus/rules/aiagents.rules.yml                     # AI Agents SWD alert rules
+  alertmanager/alertmanager.yml                           # Alertmanager (null receiver only)
   tempo/tempo.yml                                         # tempo trace backend (OTLP gRPC + HTTP, local FS)
   grafana/provisioning/datasources/prometheus.yml        # Prometheus datasource
   grafana/provisioning/datasources/tempo.yml             # Tempo datasource (service map links to Prometheus)
+  grafana/provisioning/datasources/alertmanager.yml      # Alertmanager datasource (Prometheus implementation)
   grafana/provisioning/dashboards/dashboards.yml         # dashboard provider
-  grafana/dashboards/aiagents.json                       # workflow + agent dashboard
+  grafana/dashboards/aiagents.json                       # workflow + agent + alerts dashboard
 ```
 
 **Trace backend (Tempo)** — every service container sets
@@ -570,6 +574,62 @@ status + `duration_ms`), and `retry_timeline` (DLQ entries observed for the
 task). `GET /workflow/timeline/{task_id}` returns the same timelines as a
 condensed, dashboard-friendly view
 (`apps/orchestrator/src/progress.py`).
+
+### Alertmanager + Prometheus alert rules
+
+Prometheus loads `infra/observability/prometheus/rules/aiagents.rules.yml`
+and forwards firing alerts to the bundled `alertmanager` container at
+`http://alertmanager:9093`. Alertmanager routes every alert to a **null
+receiver**: no Slack, Discord, Telegram, PagerDuty, OpsGenie, email, or
+webhook is contacted from the local/test environment, and no notifier
+secret is stored in the repo. Any real off-host notifier must be wired
+through Vault and added behind a feature flag.
+
+The rule file ships eight alerts grouped into four families:
+
+| Alert                          | Family            | Severity | Trigger expression |
+|--------------------------------|-------------------|----------|--------------------|
+| `AIWorkflowFailuresHigh`       | `aiagents.workflow` | warning  | `increase(workflow_failed_total[5m]) > 0` |
+| `AIWorkflowLatencyP95High`     | `aiagents.workflow` | warning  | `histogram_quantile(0.95, sum by (le) (rate(workflow_duration_seconds_bucket[5m]))) > 30` |
+| `AIAgentExecutionFailuresHigh` | `aiagents.agent`    | warning  | `increase(agent_execution_failures_total[5m]) > 0` |
+| `AIDeadletterIncreasing`       | `aiagents.retry`    | warning  | `increase(deadletter_total[5m]) > 0` |
+| `AIRetrySpike`                 | `aiagents.retry`    | warning  | `increase(retry_total[5m]) > 5` |
+| `AIServiceDown`                | `aiagents.platform` | critical | `up == 0` for 2m |
+| `AIPrometheusTargetDown`       | `aiagents.platform` | critical | `up == 0` for 10m |
+| `AIApprovalPendingTooLong`     | `aiagents.approval` | warning  | placeholder (`vector(0) > 1`) until an `approval_pending_seconds` metric exists |
+
+Every alert carries `{severity, component}` labels and `{summary,
+description, runbook_url}` annotations. The runbook URLs point at this
+README anchor until a dedicated runbook ships.
+
+**Verifying alerts** — `scripts/verify_alerting.sh` checks:
+
+- `GET http://localhost:9093/-/healthy` → `ALERTMANAGER_HEALTHY: PASS`
+- `GET http://localhost:9093/api/v2/status` returns Alertmanager
+  `versionInfo` + `cluster`
+- `GET http://localhost:9090/api/v1/rules` exposes ≥ 4 `aiagents.*`
+  rule groups and every required `AI*` alert by name
+- `GET http://localhost:9090/api/v1/alerts` returns `status: success`
+- `GET http://localhost:9090/api/v1/targets` reports every job `up`
+- `GET http://localhost:9093/api/v2/receivers` does NOT contain
+  `slack` / `discord` / `telegram` / `pagerduty` / `opsgenie` / `webhook`
+
+`scripts/check_runtime_state.sh` calls the same endpoints and emits
+`ALERTMANAGER_HEALTH / PROMETHEUS_RULES_SMOKE / PROMETHEUS_ALERTS_API_SMOKE`
+markers.
+
+In Grafana Explore the **Alertmanager** datasource is preconfigured with
+`implementation: prometheus`, so the **AI Agents SWD Platform** dashboard
+gains an *Active alerts (firing)* stat, an *Active alerts over time*
+timeseries, and a *Service health (up per job)* table on top of the
+existing workflow / agent / retry panels.
+
+**Wiring a real notifier later** — when production notifiers are added,
+do not commit the receiver block to git: read the webhook URL / token
+from Vault via an entrypoint script, render `alertmanager.yml` from a
+template at container start, and gate the rollout behind an explicit
+operator switch. The local/test runtime must keep using the null
+receiver.
 
 ## Testing
 

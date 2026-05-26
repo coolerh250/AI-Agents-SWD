@@ -495,6 +495,40 @@ else
 fi
 
 echo
+echo "=== alertmanager /-/healthy ==="
+am_health=$(curl -sS -o /dev/null -w '%{http_code}' -m 10 http://localhost:9093/-/healthy || echo 000)
+echo "  HTTP $am_health"
+if [ "$am_health" = "200" ]; then
+  echo "ALERTMANAGER_HEALTH: PASS"
+else
+  echo "ALERTMANAGER_HEALTH: FAIL"
+fi
+
+echo
+echo "=== prometheus /api/v1/rules (aiagents.* rule groups) ==="
+rules=$(curl -sS -m 10 http://localhost:9090/api/v1/rules || echo '{}')
+echo "$rules" | head -c 400 || true
+echo
+group_count=$(echo "$rules" | grep -o '"name":"aiagents\.[a-z]*"' | sort -u | wc -l)
+echo "aiagents.* rule groups: $group_count"
+if [ "${group_count:-0}" -ge 4 ]; then
+  echo "PROMETHEUS_RULES_SMOKE: PASS"
+else
+  echo "PROMETHEUS_RULES_SMOKE: CHECK"
+fi
+
+echo
+echo "=== prometheus /api/v1/alerts ==="
+alerts=$(curl -sS -m 10 http://localhost:9090/api/v1/alerts || echo '{}')
+echo "$alerts" | head -c 400 || true
+echo
+if echo "$alerts" | grep -q '"status":"success"'; then
+  echo "PROMETHEUS_ALERTS_API_SMOKE: PASS"
+else
+  echo "PROMETHEUS_ALERTS_API_SMOKE: CHECK"
+fi
+
+echo
 echo "=== grafana /api/health ==="
 gh=$(curl -sS -m 10 http://localhost:3000/api/health || echo '{}')
 echo "$gh"

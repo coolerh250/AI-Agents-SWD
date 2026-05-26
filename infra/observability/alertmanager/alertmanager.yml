@@ -1,0 +1,38 @@
+# Local/test Alertmanager config for AI Agents SWD.
+#
+# The platform routes every alert to the null receiver — no Slack, Discord,
+# Telegram, PagerDuty, OpsGenie, email, or webhook secret is contacted. Any
+# real off-host notifier must be wired through Vault and added behind a flag.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: null-receiver
+  group_by: ["alertname", "severity", "component"]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers:
+        - severity = "critical"
+      receiver: null-receiver
+      continue: false
+    - matchers:
+        - severity = "warning"
+      receiver: null-receiver
+      continue: false
+
+receivers:
+  # The null-receiver intentionally has no notifier blocks: Alertmanager will
+  # group / dedupe the alert and stop. This is the safe default for the local
+  # / test environment.
+  - name: null-receiver
+
+inhibit_rules:
+  # If a service is reported down, suppress the noisier alerts that almost
+  # certainly fire as a side-effect (failed executions, missing workflows).
+  - source_matchers:
+      - alertname = "AIServiceDown"
+    target_matchers:
+      - severity = "warning"
+    equal: ["component"]

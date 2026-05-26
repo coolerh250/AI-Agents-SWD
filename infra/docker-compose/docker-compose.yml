@@ -309,6 +309,25 @@ services:
       retries: 5
       start_period: 30s
 
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      # Bind --web.external-url so the API self-links resolve in tests.
+      - --web.external-url=http://localhost:9093
+    volumes:
+      - ../observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-data:/alertmanager
+    ports:
+      - "127.0.0.1:9093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
   prometheus:
     image: prom/prometheus:v2.55.1
     command:
@@ -317,12 +336,14 @@ services:
       - --web.enable-lifecycle
     volumes:
       - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/rules:/etc/prometheus/rules:ro
       - prometheus-data:/prometheus
     ports:
       - "127.0.0.1:9090:9090"
     depends_on:
       - orchestrator
       - communication-gateway
+      - alertmanager
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/ready"]
       interval: 15s
@@ -351,6 +372,7 @@ services:
     depends_on:
       - prometheus
       - tempo
+      - alertmanager
     healthcheck:
       test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
       interval: 15s
@@ -363,3 +385,4 @@ volumes:
   prometheus-data:
   grafana-data:
   tempo-data:
+  alertmanager-data:
