@@ -2132,3 +2132,280 @@ issues & blockers, and next-step suggestions.
      `histogram_quantile` expressions; then drop `status: planned`
      from `aiagents-slo.yml` and remove the placeholder probe in
      `verify_alerting.sh`.
+
+
+## Stage 17 — Step 16: GitHub Automation & Pull Request Workflow
+
+- **Execution time:** 2026-05-26 21:30 – 23:35 (local)
+- **Git branch / commit:**
+  `main` →
+  Commit A `3a075b7 Step 16: GitHub automation foundation (dry-run by default)`
+  Commit A.1 `24588ba Step 16: accept HELP/TYPE lines in github metric verify probes`
+  Commit B (this entry) appended on top.
+- **Previous commit:** `2fc9f89 Stage 16.5: progress log - Step 15.5 full
+  verification + operational readiness + 10.0.1.31 validation`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only — no
+  production deploy, no real merge, no branch-protection change, no
+  real Slack / Discord / Telegram / PagerDuty / webhook call, no real
+  GitHub / Kubernetes / Cloud / LLM API by default. The opt-in
+  real-GitHub path is gated on `RUN_REAL_GITHUB_TEST=true` **plus**
+  `GITHUB_TOKEN`; this stage was validated dry-run only.
+
+- **Modified / added files:**
+  - `shared/sdk/github/__init__.py` — package surface exporting
+    `GitHubClient`, the error hierarchy, and the five dataclass models.
+  - `shared/sdk/github/errors.py` — `GitHubClientError`,
+    `GitHubMissingTokenError`, `GitHubAuthError`,
+    `GitHubNotFoundError`. Every failure funnels through this hierarchy
+    so callers stay crash-free.
+  - `shared/sdk/github/models.py` — `GitHubIssue` / `GitHubBranch` /
+    `GitHubFile` / `GitHubPullRequest` / `GitHubChecks` dataclasses
+    with `to_dict()`. `content_preview` is truncated to 200 chars so
+    the SDK never echoes a full file body into a response/log.
+  - `shared/sdk/github/client.py` — `GitHubClient` with
+    `create_issue / create_branch / create_or_update_file /
+    create_pull_request / get_pull_request / read_checks /
+    list_open_pull_requests`. Dry-run by default; flipping
+    `dry_run=False` while `GITHUB_TOKEN` is absent raises
+    `GitHubMissingTokenError` *before* any network IO. The token is
+    read from `env["GITHUB_TOKEN"]` only — there is no constructor
+    arg, no file load, no logging path. Every operation opens a span
+    `github.{operation}` with `github.repo / github.operation /
+    github.dry_run / task_id / workflow_id` attributes.
+  - `apps/github-automation/Dockerfile + requirements.txt + src/main.py`
+    — new FastAPI service on `127.0.0.1:8005`. Health, five direct
+    REST routes (`/github/{issue,branch,file,pull-request,checks}`
+    plus `GET /github/pull-request/{number}`), and the aggregate
+    `POST /github/workflow/demo-pr` that walks issue → branch → file
+    → PR → checks, builds the PR body via the `build_pr_body` helper,
+    publishes `github.pr.dry_run` (or `github.pr.created`)
+    notification, writes `decision_type=github_automation` audit, and
+    increments the matching Prometheus counter. All side effects are
+    wrapped in `contextlib.suppress(Exception)` — a Redis/audit hiccup
+    cannot break the API outcome.
+  - `shared/sdk/http_clients/github_http_client.py` — in-cluster
+    httpx client for `github-automation`. Used by
+    communication-gateway and available for any future internal
+    caller.
+  - `apps/communication-gateway/src/main.py` — new
+    `POST /github/demo-pr` endpoint that proxies into
+    `github-automation:8005/github/workflow/demo-pr`. Operators talk
+    to the gateway; the gateway resolves the in-cluster URL via
+    `GITHUB_AUTOMATION_URL`.
+  - `shared/sdk/observability/metrics.py` — five new counters:
+    `github_issue_created_total`, `github_branch_created_total`,
+    `github_pr_created_total`, `github_checks_read_total`,
+    `github_automation_failures_total`. Each carries either a
+    `dry_run="true|false"` label or an `operation` label, so an
+    operator can spot a real-mode regression at a glance.
+  - `infra/docker-compose/docker-compose.yml` — new
+    `github-automation` service entry. `GITHUB_TOKEN: ${GITHUB_TOKEN:-}`
+    interpolation (the token is owned by the operator shell, never
+    committed). `127.0.0.1:8005:8005` binding. Healthcheck via
+    `python -c urlopen('http://localhost:8005/health')`.
+    communication-gateway gained `GITHUB_AUTOMATION_URL` env.
+  - `infra/observability/prometheus.yml` — new
+    `github-automation:8005` scrape target.
+  - `tests/conftest.py` — new `github_automation_module` and
+    `github_automation_app` fixtures.
+  - `tests/test_github_client.py` (13 cases) — invalid-repo guard,
+    dry-run defaults, missing-token guard, dry-run create_issue /
+    create_branch (deterministic SHA) / create_or_update_file
+    (preview truncation) / create_pull_request / get_pull_request /
+    read_checks / list_open_pull_requests, `has_token()` from env,
+    and "no token attribute" reflection check.
+  - `tests/test_github_automation_service.py` (8 cases) — health,
+    each of the five REST routes in dry-run, the `get_checks` query
+    param, and the `/metrics` endpoint exposing all five counters.
+  - `tests/test_github_demo_pr_flow.py` (3 cases) — end-to-end
+    in-process demo-pr in dry-run; defaults when `dry_run` is
+    omitted; PR body contains all five required sections.
+  - `tests/test_github_pr_template.py` (3 cases) — section
+    presence, section order, empty-changed-files fallback.
+  - `tests/test_github_tracing_metrics.py` (4 cases, 2 runtime-gated)
+    — span coverage by way of a successful demo-pr call, all five
+    `github_*` counters in `/metrics` with the `dry_run` label, plus
+    Redis/audit-gated tests that confirm the notification and audit
+    rows land on a live cluster.
+  - `scripts/check_runtime_state.sh` — five new smokes:
+    `GITHUB_AUTOMATION_HEALTH`, `GITHUB_DEMO_PR_DRY_RUN_SMOKE`,
+    `GITHUB_AUDIT_SMOKE`, `GITHUB_NOTIFICATION_SMOKE`,
+    `GITHUB_METRICS_SMOKE`.
+  - `scripts/verify_github_automation.sh` (+x in git index, validated
+    by `bash -n`) — seven checks: `dry_run=true` flag,
+    issue/branch/file/pr/checks sub-objects, PR body sections,
+    `stream.notifications` event, audit row, `/metrics` counters,
+    communication-gateway proxy. Opt-in real-GitHub branch fires
+    only when `RUN_REAL_GITHUB_TEST=true` *and* `GITHUB_TOKEN` are
+    set; PR title forced to begin with `[AI-Agents-SWD Test]`, branch
+    name `ai-agents-swd/real-<ts>`, PR left open (no merge), branch
+    protection untouched.
+  - `docs/operations/github-automation-runbook.md` — operator runbook
+    (~270 lines): service map, verify dry-run, configure
+    `GITHUB_TOKEN`, run the opt-in real test, confirm no merge / no
+    production action, inspect audit / notification / trace, rollback
+    a test branch / PR, common-issues troubleshooting, explicit
+    "what this service does NOT do" list.
+  - `README.md` — new **GitHub Automation Service** section with the
+    endpoint table, PR body requirements, dry-run contract, opt-in
+    real-test rules, and a `verify_github_automation.sh` quickstart.
+
+- **Test results (Windows dev box, no Docker runtime):**
+  - `pytest`: **221 passed, 111 skipped** (skips are runtime-gated
+    integration tests requiring Redis / Postgres / docker — they run
+    on the test server, not Windows). The 28 new GitHub tests are
+    all in the passing set (the 2 Redis/audit-gated cases skip on
+    Windows; on the test server they all pass).
+  - `ruff check .`: clean.
+  - `black --check .`: 123 files unchanged.
+  - `mypy shared/`: 37 source files, no issues.
+
+- **Test results (10.0.1.31, after `docker compose build
+  github-automation communication-gateway && up -d && up -d
+  --force-recreate prometheus`):**
+  - **19 / 19** containers reported `running (healthy)` (the 18 from
+    Stage 16.5 plus the new `github-automation`).
+  - `pytest -q` inside `.venv`: **332 passed, 1 warning** in 37.92s
+    (the deprecation warning is pre-existing —
+    `asyncio.get_event_loop()` in `test_redis_tracing.py:22` and
+    `test_github_tracing_metrics.py:32`).
+  - `ruff check .`: clean.
+  - `black --check .`: 123 files unchanged.
+  - `mypy shared/`: 37 source files, no issues.
+  - `./scripts/check_runtime_state.sh`: every named smoke `PASS`
+    including the five new `GITHUB_*` smokes, ends
+    `CHECK_RUNTIME_STATE_DONE`. Total: **51 / 51** smokes PASS (46
+    from Stage 16.5 plus 5 new).
+  - `./scripts/verify_github_automation.sh`: **checks passed: 7 / 7**,
+    `GITHUB_AUTOMATION_VERIFY: PASS`. Sample dry-run PR URL:
+    `https://github.com/coolerh250/AI-Agents-SWD/pull/1902` — note
+    this is the mocked URL, no real PR exists.
+  - `./scripts/verify_platform_observability.sh`: **PASS=81 FAIL=0**.
+    Aggregate output ends `PLATFORM_OBSERVABILITY_VERIFY: PASS` with
+    `CHECK_RUNTIME_STATE / VERIFY_TRACING_BACKEND / VERIFY_TRACE_FLOW
+    / VERIFY_ALERTING / VERIFY_INCIDENT_FLOW` all `PASS`.
+
+- **Dry-run demo PR result:**
+  - Task id: `github-verify-1779809312`.
+  - Mock issue: `https://github.com/coolerh250/AI-Agents-SWD/issues/4874`.
+  - Mock branch: `ai-agents-swd/verify-1779809312` (SHA
+    `9685a6da9064...`).
+  - Mock file: `docs/automation-demo.md`.
+  - Mock PR: `https://github.com/coolerh250/AI-Agents-SWD/pull/1902`.
+  - PR body section assertions:
+    `## Summary / ## Changed Files / ## Risk Assessment /
+    ## Test Result / ## Rollback Plan` — all `PRESENT`.
+  - All step responses carry `"dry_run":true`.
+  - No real GitHub API call was made.
+
+- **PR body validation result:** All five required sections present,
+  in order; `tests/test_github_pr_template.py::test_build_pr_body_section_order`
+  enforces ordering across future changes.
+
+- **Audit / notification verification result:**
+  - Audit row: `decision_type='github_automation'`, `source='github-automation'`,
+    `artifact_refs={"issue_url":..., "branch":..., "pr_url":..., "dry_run":true}`.
+  - Notification: `event_type='github.pr.dry_run'`, `task_id` matches
+    the demo PR, `dry_run:true` carried on the notification payload.
+
+- **Metrics / tracing verification result:**
+  - Five new counters registered and visible in
+    `http://localhost:8005/metrics`:
+    `github_issue_created_total{dry_run="true"} >= 1`,
+    `github_branch_created_total{dry_run="true"} >= 1`,
+    `github_pr_created_total{dry_run="true"} >= 1`,
+    `github_checks_read_total{dry_run="true"} >= 1`,
+    `github_automation_failures_total` registered (HELP/TYPE; no
+    failures on a green run).
+  - Spans emitted: `github.demo_pr`, `github.create_issue`,
+    `github.create_branch`, `github.create_or_update_file`,
+    `github.create_pull_request`, `github.read_checks`, and
+    `github_automation.demo_pr` (gateway client). All carry
+    `github.repo / github.operation / github.dry_run / task_id /
+    workflow_id` attributes.
+  - Prometheus picked up `github-automation:8005` as a scrape target
+    (up=12 after this stage, was 11 before).
+
+- **Optional real GitHub test:** **NOT executed.** The verify script's
+  closing section reports
+  `OPTIONAL: real GitHub test SKIPPED (set RUN_REAL_GITHUB_TEST=true
+  and GITHUB_TOKEN to enable)`. No `GITHUB_TOKEN` was injected into
+  the runtime; the opt-in flag was not set. No real issue / branch /
+  file / PR was created.
+
+- **Safety verification:**
+  - Alertmanager `/api/v2/receivers` still returns
+    `[{"name":"null-receiver"}]` — no external Slack / Discord /
+    Telegram / PagerDuty / OpsGenie / webhook / email receiver
+    appeared this stage.
+  - `deployment_records` query:
+    `SELECT COUNT(*) FROM deployment_records WHERE metadata->>'production_executed'='true' OR environment='production';`
+    returned **`0`**. The github-automation service never touches
+    `deployment_records`; the safety probe in
+    `verify_platform_observability.sh` still passes.
+  - The `github-automation` container's `/health` returns
+    `"has_token": false` — the operator shell did not inject
+    `GITHUB_TOKEN`, so the service is structurally incapable of
+    issuing a real GitHub write call this stage.
+  - `grep -rn ghp_ docs/ source/ apps/ shared/ infra/ scripts/ tests/`
+    returns only the placeholder strings in the runbook + tests
+    (e.g. `ghp_TEST_NOT_REAL`, `ghp_TEST`, `ghp_REPLACE_ME`,
+    `ghp_REAL_OR_FINE_GRAINED`). No real token committed.
+
+- **Issues & blockers:** none — every assertion clears.
+
+- **Risks / notes:**
+  - The opt-in real-GitHub branch is exercised by code paths in
+    `shared/sdk/github/client.py` (`_request`, the `else` branch of
+    each operation) that have **only** been validated for shape, not
+    against real GitHub at this stage. The very first opt-in run
+    should be done in a throwaway test repo with a fine-grained
+    token before pointing it at `coolerh250/AI-Agents-SWD`.
+    Validation steps:
+    1. Spin up a side branch + sandbox repo.
+    2. Run `RUN_REAL_GITHUB_TEST=true GITHUB_TOKEN=<sandbox-token>
+       ./scripts/verify_github_automation.sh`.
+    3. Confirm the script ends `REAL_GITHUB_TEST: PASS` and the
+       returned PR URL is the sandbox repo, not the main repo.
+    4. Close the PR and delete the test branch as the runbook
+       documents.
+  - The github-automation service does **not** call
+    `instrument_asyncpg()` because it does not talk to PostgreSQL
+    directly — every persistence path goes via audit-service /
+    redis. If a future change introduces direct asyncpg use, add the
+    instrumentation hook at startup the same way audit-service does.
+  - `github_automation_failures_total` is rendered as
+    `# HELP / # TYPE` lines only until a failure increments it. The
+    smokes in `check_runtime_state.sh` and
+    `verify_github_automation.sh` accept the registration line, but
+    a dashboard panel that expects a value line will show "No data"
+    on a green run — wire it as `or vector(0)` if visibility matters.
+  - The demo-pr endpoint forces the PR title to start with
+    `[AI-Agents-SWD Test]` so a future real-mode run is visually
+    distinct in the PR list. Removing that prefix without
+    re-thinking the safety story would be a regression.
+  - Same as prior stages: no real Slack / Discord / Telegram /
+    PagerDuty / GitHub (default path) / LLM / Kubernetes / cloud /
+    Grafana Cloud / observability SaaS call; no secret or token
+    written; no production deploy; PostgreSQL `trust` auth + Vault
+    dev mode remain local/test only.
+
+- **Next-step suggestions:**
+  1. **Wire the development-agent / devops-agent to call
+     github-automation** through the gateway proxy (`POST
+     /github/demo-pr`) at the end of a successful workflow, instead
+     of just simulating a deployment record. The agent would emit a
+     demo PR per workflow_id, and the orchestrator would attach the
+     resulting `pr_url` to `execution_result.pr_url` so operators
+     can jump from a workflow timeline straight to the (dry-run) PR.
+  2. **Run the opt-in real-GitHub validation once** against a
+     sandbox repo with a fine-grained token, document the resulting
+     PR URL in the runbook, and add a CRON-style guard ensuring
+     `RUN_REAL_GITHUB_TEST` reverts to `false` after the validation
+     so subsequent runs cannot accidentally re-create the PR.
+  3. **Add a `GET /github/automation/audit-trail/{task_id}`** thin
+     endpoint that joins `audit_logs` rows where
+     `agent='github-automation' AND task_id=$1` and surfaces them on
+     the workflow timeline alongside the other agent events. Today
+     an operator has to query audit-service separately to confirm
+     the github_automation row.
