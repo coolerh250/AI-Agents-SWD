@@ -58,6 +58,33 @@ NOTIFICATION_TOTAL = Counter(
     ["event_type"],
 )
 
+# GitHub automation metrics
+GITHUB_ISSUE_CREATED_TOTAL = Counter(
+    "github_issue_created_total",
+    "GitHub issues created (labelled by dry_run mode)",
+    ["dry_run"],
+)
+GITHUB_BRANCH_CREATED_TOTAL = Counter(
+    "github_branch_created_total",
+    "GitHub branches created (labelled by dry_run mode)",
+    ["dry_run"],
+)
+GITHUB_PR_CREATED_TOTAL = Counter(
+    "github_pr_created_total",
+    "GitHub pull requests created (labelled by dry_run mode)",
+    ["dry_run"],
+)
+GITHUB_CHECKS_READ_TOTAL = Counter(
+    "github_checks_read_total",
+    "GitHub check-runs read (labelled by dry_run mode)",
+    ["dry_run"],
+)
+GITHUB_AUTOMATION_FAILURES_TOTAL = Counter(
+    "github_automation_failures_total",
+    "Failures in the github-automation pipeline (labelled by operation)",
+    ["operation"],
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

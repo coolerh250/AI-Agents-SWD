@@ -48,3 +48,6 @@ scrape_configs:
   - job_name: retry-scheduler
     static_configs:
       - targets: ['retry-scheduler:8015']
+  - job_name: github-automation
+    static_configs:
+      - targets: ['github-automation:8005']

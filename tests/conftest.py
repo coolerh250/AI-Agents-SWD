@@ -64,6 +64,16 @@ def communication_gateway_app():
 
 
 @pytest.fixture
+def github_automation_module():
+    return _load_service_module("github-automation")
+
+
+@pytest.fixture
+def github_automation_app(github_automation_module):
+    return github_automation_module.app
+
+
+@pytest.fixture
 def retry_scheduler_module():
     return _load_service_module("retry-scheduler")
 

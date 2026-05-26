@@ -136,6 +136,7 @@ services:
       ORCHESTRATOR_URL: http://orchestrator:8000
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: communication-gateway
@@ -145,6 +146,31 @@ services:
       - orchestrator
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  github-automation:
+    build:
+      context: ../..
+      dockerfile: apps/github-automation/Dockerfile
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      GITHUB_DRY_RUN: "true"
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: github-automation
+    ports:
+      - "127.0.0.1:8005:8005"
+    depends_on:
+      - audit-service
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

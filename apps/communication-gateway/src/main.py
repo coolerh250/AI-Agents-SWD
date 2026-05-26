@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+from shared.sdk.http_clients.github_http_client import GitHubAutomationHttpClient
 from shared.sdk.notifications.client import NotificationClient
 from shared.sdk.observability.metrics import install_metrics_endpoint
 from shared.sdk.observability.tracing import (
@@ -140,3 +141,31 @@ async def list_executions(
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"database unavailable: {exc}") from exc
     return {"count": len(executions), "executions": executions}
+
+
+class GitHubDemoPRRequest(BaseModel):
+    task_id: str = "gateway-github-demo"
+    workflow_id: str = ""
+    repo: str | None = None
+    base_branch: str = "main"
+    branch_name: str = ""
+    title: str = "[AI-Agents-SWD Test] gateway github-automation demo PR"
+    body_summary: str = "Dispatched from communication-gateway dry-run."
+    file_path: str = "docs/automation-demo.md"
+    file_content: str = "# AI Agents SWD demo file (gateway)\n"
+    dry_run: bool | None = True
+
+
+@app.post("/github/demo-pr")
+async def github_demo_pr(payload: GitHubDemoPRRequest) -> dict:
+    client = GitHubAutomationHttpClient()
+    try:
+        return await client.demo_pr(
+            payload.model_dump(exclude_none=False),
+            task_id=payload.task_id,
+            workflow_id=payload.workflow_id,
+        )
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=503, detail=f"github-automation unavailable: {exc}"
+        ) from exc

@@ -784,4 +784,63 @@ else
 fi
 
 echo
+echo "=== github-automation /health ==="
+if curl -sS -m 10 http://localhost:8005/health >/dev/null 2>&1; then
+  echo "  github-automation (:8005)  ->  HEALTH: PASS"
+  echo "GITHUB_AUTOMATION_HEALTH: PASS"
+else
+  echo "  github-automation (:8005)  ->  HEALTH: FAIL"
+  echo "GITHUB_AUTOMATION_HEALTH: FAIL"
+fi
+
+echo
+echo "=== github-automation /github/workflow/demo-pr (dry-run) ==="
+gh_task="smoke-gh-$$"
+gh_demo=$(curl -sS -m 15 -X POST http://localhost:8005/github/workflow/demo-pr \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$gh_task\",\"repo\":\"coolerh250/AI-Agents-SWD\",\"dry_run\":true,\"title\":\"[AI-Agents-SWD Test] runtime smoke\",\"file_path\":\"docs/automation-demo.md\",\"file_content\":\"# runtime smoke\\n\"}" \
+  || echo '{}')
+echo "$gh_demo" | head -c 800 || true
+echo
+if echo "$gh_demo" | grep -q '"dry_run":true' \
+   && echo "$gh_demo" | grep -q '"event_type":"github.pr.dry_run"' \
+   && echo "$gh_demo" | grep -q '"pull_request"'; then
+  echo "GITHUB_DEMO_PR_DRY_RUN_SMOKE: PASS"
+else
+  echo "GITHUB_DEMO_PR_DRY_RUN_SMOKE: CHECK"
+fi
+
+echo
+echo "=== github-automation -> audit smoke (decision_type=github_automation) ==="
+gh_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events/$gh_task" || echo '{}')
+echo "$gh_audit" | head -c 400 || true
+echo
+if echo "$gh_audit" | grep -q '"decision_type": *"github_automation"'; then
+  echo "GITHUB_AUDIT_SMOKE: PASS"
+else
+  echo "GITHUB_AUDIT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== github-automation -> notification smoke (event_type=github.pr.dry_run) ==="
+gh_notif=$(curl -sS -m 10 "http://localhost:8004/notifications?count=100" || echo '{}')
+if echo "$gh_notif" | grep -q '"event_type": *"github.pr.dry_run"' \
+   && echo "$gh_notif" | grep -q "$gh_task"; then
+  echo "GITHUB_NOTIFICATION_SMOKE: PASS"
+else
+  echo "GITHUB_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== github-automation /metrics smoke (github_* counters present) ==="
+gh_metrics=$(curl -sS -m 10 http://localhost:8005/metrics || echo '')
+if echo "$gh_metrics" | grep -q '^github_issue_created_total' \
+   && echo "$gh_metrics" | grep -q '^github_pr_created_total' \
+   && echo "$gh_metrics" | grep -q '^github_checks_read_total'; then
+  echo "GITHUB_METRICS_SMOKE: PASS"
+else
+  echo "GITHUB_METRICS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

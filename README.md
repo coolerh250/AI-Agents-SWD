@@ -764,6 +764,109 @@ row ever flips to `true` or sets `environment = 'production'`. No
 production resource is created, modified, or deployed by anything in
 this repository.
 
+## GitHub Automation Service
+
+Stage 17 ships a `github-automation` service on port `127.0.0.1:8005`
+(`apps/github-automation/`). It is the platform's single in-cluster
+boundary for GitHub REST calls — backed by `shared/sdk/github/`
+(`GitHubClient`).
+
+### Default contract: dry-run
+
+The service runs **dry-run by default**. Every call to
+`/github/issue`, `/github/branch`, `/github/file`,
+`/github/pull-request`, `/github/checks`,
+`/github/pull-request/{number}`, and the aggregate
+`/github/workflow/demo-pr` returns a deterministic mock response and
+contacts **no real GitHub API** unless the caller passes
+`dry_run=false` *and* the container has a `GITHUB_TOKEN` env var.
+
+`GITHUB_TOKEN` is read from the environment only — never from a file,
+never from a constructor argument, never echoed in any response or log.
+The Docker Compose stanza pulls it from `${GITHUB_TOKEN:-}`, so the
+token is owned by the operator's shell, not the repository.
+
+| Endpoint                            | Purpose                                  |
+|-------------------------------------|------------------------------------------|
+| `GET /health`                       | Service liveness (also returns `has_token`) |
+| `POST /github/issue`                | Create an issue (dry-run or real)         |
+| `POST /github/branch`               | Create a branch from a base ref           |
+| `POST /github/file`                 | Create or update a file on a branch       |
+| `POST /github/pull-request`         | Open a PR                                |
+| `GET /github/pull-request/{number}` | Fetch one PR                             |
+| `GET /github/checks?ref=...`        | Read check-runs on a ref                  |
+| `POST /github/workflow/demo-pr`     | Aggregate: issue → branch → file → PR → checks |
+
+### Demo-PR workflow
+
+`POST /github/workflow/demo-pr` walks the issue → branch → file → PR →
+checks sequence, builds a PR body with the five required sections
+**Summary / Changed Files / Risk Assessment / Test Result /
+Rollback Plan**, publishes a `github.pr.dry_run` (or
+`github.pr.created` for real runs) notification on
+`stream.notifications`, and writes one audit row with
+`decision_type='github_automation'`. Each step also increments the
+matching Prometheus counter:
+
+```
+github_issue_created_total{dry_run="true|false"}
+github_branch_created_total{dry_run="true|false"}
+github_pr_created_total{dry_run="true|false"}
+github_checks_read_total{dry_run="true|false"}
+github_automation_failures_total{operation="..."}
+```
+
+The communication-gateway exposes `POST /github/demo-pr` as an
+in-cluster proxy so other services don't have to know the
+`github-automation:8005` URL directly.
+
+### PR body requirements
+
+Every demo PR carries:
+
+```
+## Summary
+## Changed Files
+## Risk Assessment
+## Test Result
+## Rollback Plan
+```
+
+The `build_pr_body` helper enforces this layout; `tests/test_github_pr_template.py`
+asserts the five sections exist and stay in that order.
+
+### Real GitHub test — opt-in only
+
+The `verify_github_automation.sh` script runs the dry-run flow by
+default. It will only issue a real GitHub call when **both**
+environment variables are set:
+
+```
+GITHUB_TOKEN=ghp_REAL_OR_FINE_GRAINED
+RUN_REAL_GITHUB_TEST=true
+```
+
+Even then, the PR title is forced to begin with
+`[AI-Agents-SWD Test]`, the branch is `ai-agents-swd/real-<ts>`, the
+PR is left **open** (never merged), and branch protection / production
+resources are never touched. See
+[`docs/operations/github-automation-runbook.md`](docs/operations/github-automation-runbook.md)
+for the full safety contract and rollback steps.
+
+### Verification
+
+```
+./scripts/verify_github_automation.sh
+```
+
+Expected: `checks passed: 7 / 7` then `GITHUB_AUTOMATION_VERIFY: PASS`.
+
+The aggregate `verify_platform_observability.sh` still passes after
+this stage; `check_runtime_state.sh` gained five new smokes
+(`GITHUB_AUTOMATION_HEALTH`, `GITHUB_DEMO_PR_DRY_RUN_SMOKE`,
+`GITHUB_AUDIT_SMOKE`, `GITHUB_NOTIFICATION_SMOKE`,
+`GITHUB_METRICS_SMOKE`).
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
