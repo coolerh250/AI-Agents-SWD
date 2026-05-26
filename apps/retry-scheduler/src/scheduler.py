@@ -9,8 +9,12 @@ from shared.sdk.event_bus.redis_streams import (
     get_max_retries,
     get_retry_count,
 )
-from shared.sdk.observability.metrics import RETRY_TOTAL
+from shared.sdk.http_clients.audit_http_client import AuditHttpClient
+from shared.sdk.incidents import IncidentStore
+from shared.sdk.notifications.client import send_notification
+from shared.sdk.observability.metrics import RETRY_TOTAL, WORKFLOW_FAILED_TOTAL
 from shared.sdk.observability.tracing import start_span
+from shared.sdk.workflow_store.store import WorkflowStore
 
 DEAD_LETTER_GROUP = "retry-scheduler-group"
 DEAD_LETTER_CONSUMER = "retry-scheduler-1"
@@ -126,7 +130,12 @@ class RetryScheduler:
                         )
                     self.terminal_count += 1
                     RETRY_TOTAL.labels(kind="terminal_failure").inc()
-                    return {"action": "terminal_failure", "message_id": message_id}
+                    incident_id = await self._on_terminal_failure(payload, message_id)
+                    return {
+                        "action": "terminal_failure",
+                        "message_id": message_id,
+                        "incident_id": incident_id,
+                    }
             delay = self._retry_delay(payload)
             if delay > 0:
                 await asyncio.sleep(delay)
@@ -139,6 +148,121 @@ class RetryScheduler:
                 self.requeued_count += 1
                 RETRY_TOTAL.labels(kind="requeued").inc()
                 return {"action": "requeued", "stream": target, "message_id": message_id}
+
+    async def _on_terminal_failure(self, payload: dict, message_id: str) -> str | None:
+        """Side-effects fired after the terminal_failure event is published.
+
+        Creates an incident_records row, flips the matching workflow_state to
+        ``failed``, publishes a workflow.failed notification, and records an
+        audit event. Each step is best-effort and isolated: a failure here
+        must NEVER crash the retry-scheduler consumer loop. Returns the
+        incident_id when the row was created.
+        """
+        task_id = str(payload.get("task_id", "")).strip() or None
+        workflow_id = str(payload.get("workflow_id", "")).strip() or None
+        failure_reason = str(payload.get("failure_reason", "")) or "terminal failure"
+        original_stream = self._original_stream(payload)
+        details = {
+            "original_stream": original_stream,
+            "retry_count": get_retry_count(payload),
+            "max_retries": get_max_retries(payload),
+            "failure_reason": failure_reason,
+            "failed_at": payload.get("failed_at"),
+            "original_event": payload.get("original_event"),
+            "original_message_id": message_id,
+        }
+
+        workflow_updated = False
+        with contextlib.suppress(Exception):
+            workflow_updated = await self._mark_workflow_failed(task_id, failure_reason)
+        if task_id and not workflow_updated:
+            details["workflow_not_found"] = True
+
+        incident_id: str | None = None
+        with contextlib.suppress(Exception):
+            incident = await IncidentStore().create_incident(
+                severity="sev2",
+                source="retry-scheduler",
+                summary=(
+                    f"terminal failure: max retries exceeded on {original_stream or 'unknown'} "
+                    f"(task={task_id or 'unknown'})"
+                ),
+                task_id=task_id,
+                workflow_id=workflow_id,
+                details=details,
+            )
+            incident_id = incident.incident_id
+
+        # workflow.failed notification + audit are tied to the task_id so the
+        # existing dashboards can correlate them with workflow_states.
+        notification_id = task_id or workflow_id or message_id
+        with contextlib.suppress(Exception):
+            await send_notification(
+                notification_id,
+                "workflow.failed",
+                f"workflow {task_id or workflow_id or message_id} terminal failure: {failure_reason}",
+            )
+        with contextlib.suppress(Exception):
+            await AuditHttpClient().record_event(
+                task_id=task_id or incident_id or message_id,
+                agent="retry-scheduler",
+                decision_type="workflow_failed",
+                summary=f"retry-scheduler marked {task_id or message_id} as terminal failure",
+                result="failed",
+                artifact_refs={
+                    "incident_id": incident_id or "",
+                    "original_stream": original_stream,
+                    "original_message_id": message_id,
+                },
+                workflow_id=workflow_id or "",
+            )
+        with contextlib.suppress(Exception):
+            WORKFLOW_FAILED_TOTAL.labels(reason="failed").inc()
+        return incident_id
+
+    async def _mark_workflow_failed(self, task_id: str | None, failure_reason: str) -> bool:
+        """Flip the matching workflow_states row to ``failed``.
+
+        Returns True only when an existing workflow row was updated. Mock-safe:
+        if the workflow is already in a terminal stage (completed / canceled /
+        aborted) we don't overwrite it.
+        """
+        if not task_id:
+            return False
+        store = WorkflowStore()
+        workflow = await store.get_workflow_state(task_id)
+        if workflow is None:
+            return False
+        current = str(workflow.get("stage") or "")
+        if current in ("completed", "canceled", "aborted", "failed", "rejected"):
+            # Already terminal — don't churn the row, but report the workflow
+            # was found so the incident doesn't claim workflow_not_found.
+            return True
+        state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
+        execution_result = (
+            dict(workflow["execution_result"])
+            if isinstance(workflow["execution_result"], dict)
+            else {}
+        )
+        timestamp = _utcnow_iso()
+        execution_result["status"] = "failed"
+        execution_result["failure_reason"] = failure_reason
+        execution_result["production_executed"] = False
+        execution_result["failed_at"] = timestamp
+        state["stage"] = "failed"
+        state["failed_at"] = timestamp
+        state["failure_reason"] = failure_reason
+        state["execution_result"] = execution_result
+        updated = await store.update_workflow_state(
+            task_id,
+            stage="failed",
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        return updated is not None
 
     async def _safe_handle(self, message_id: str, payload: dict) -> None:
         try:

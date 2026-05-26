@@ -645,6 +645,105 @@ else
 fi
 
 echo
+echo "=== incident API smoke (GET /incidents list) ==="
+inc_list=$(curl -sS -m 10 http://localhost:8000/incidents || echo '{}')
+echo "$inc_list" | head -c 400 || true
+echo
+if echo "$inc_list" | grep -q '"count"'; then
+  echo "INCIDENT_API_SMOKE: PASS"
+else
+  echo "INCIDENT_API_SMOKE: CHECK"
+fi
+
+echo
+echo "=== incident create smoke (POST /incidents) ==="
+inc_task="smoke-incident-$$"
+inc_create=$(curl -sS -m 10 -X POST http://localhost:8000/incidents \
+  -H "Content-Type: application/json" \
+  -d "{\"severity\":\"sev3\",\"source\":\"check-runtime\",\"summary\":\"runtime incident smoke\",\"task_id\":\"$inc_task\",\"details\":{\"smoke\":true}}" \
+  || echo '{}')
+echo "$inc_create" | head -c 400 || true
+echo
+inc_id=$(echo "$inc_create" | sed -n 's/.*"incident_id": *"\([a-f0-9-]*\)".*/\1/p' | head -n1)
+if [ -n "$inc_id" ] && echo "$inc_create" | grep -q '"status": *"open"'; then
+  echo "INCIDENT_CREATE_SMOKE: PASS (incident_id=$inc_id)"
+else
+  echo "INCIDENT_CREATE_SMOKE: CHECK"
+fi
+
+echo
+echo "=== incident ack smoke (POST /incidents/{id}/ack) ==="
+if [ -n "$inc_id" ]; then
+  inc_ack=$(curl -sS -m 10 -X POST "http://localhost:8000/incidents/$inc_id/ack" || echo '{}')
+  echo "$inc_ack" | head -c 400 || true
+  echo
+  if echo "$inc_ack" | grep -q '"status": *"acknowledged"'; then
+    echo "INCIDENT_ACK_SMOKE: PASS"
+  else
+    echo "INCIDENT_ACK_SMOKE: CHECK"
+  fi
+else
+  echo "INCIDENT_ACK_SMOKE: CHECK (no incident_id from create)"
+fi
+
+echo
+echo "=== incident resolve smoke (POST /incidents/{id}/resolve) ==="
+if [ -n "$inc_id" ]; then
+  inc_res=$(curl -sS -m 10 -X POST "http://localhost:8000/incidents/$inc_id/resolve" || echo '{}')
+  echo "$inc_res" | head -c 400 || true
+  echo
+  if echo "$inc_res" | grep -q '"status": *"resolved"'; then
+    echo "INCIDENT_RESOLVE_SMOKE: PASS"
+  else
+    echo "INCIDENT_RESOLVE_SMOKE: CHECK"
+  fi
+else
+  echo "INCIDENT_RESOLVE_SMOKE: CHECK (no incident_id from create)"
+fi
+
+echo
+echo "=== terminal failure -> incident smoke (simulate_failure -> incident row) ==="
+tf_task="smoke-terminal-incident-$$"
+curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$tf_task\",\"request\":{\"type\":\"dev.test\",\"simulate_failure\":true}}" \
+  >/dev/null 2>&1 || true
+tf_incident_id=""
+tf_wf_stage=""
+for i in $(seq 1 45); do
+  tf_list=$(curl -sS -m 10 "http://localhost:8000/incidents?task_id=$tf_task" || echo '{}')
+  tf_incident_id=$(echo "$tf_list" | sed -n 's/.*"incident_id": *"\([a-f0-9-]*\)".*/\1/p' | head -n1)
+  tf_wf=$(curl -sS -m 10 "http://localhost:8000/workflow/$tf_task" || echo '{}')
+  tf_wf_stage=$(echo "$tf_wf" | sed -n 's/.*"stage": *"\([^"]*\)".*/\1/p' | head -n1)
+  if [ -n "$tf_incident_id" ] && [ "$tf_wf_stage" = "failed" ]; then break; fi
+  sleep 2
+done
+echo "tf_task=$tf_task incident_id=$tf_incident_id workflow_stage=$tf_wf_stage"
+if [ -n "$tf_incident_id" ]; then
+  echo "TERMINAL_FAILURE_INCIDENT_SMOKE: PASS"
+else
+  echo "TERMINAL_FAILURE_INCIDENT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow failed state smoke (workflow_states.stage=failed after terminal) ==="
+if [ "$tf_wf_stage" = "failed" ]; then
+  echo "WORKFLOW_FAILED_STATE_SMOKE: PASS"
+else
+  echo "WORKFLOW_FAILED_STATE_SMOKE: CHECK (workflow stage=$tf_wf_stage)"
+fi
+
+echo
+echo "=== SLO config smoke ==="
+slo_path="infra/observability/slo/aiagents-slo.yml"
+if [ -f "$slo_path" ] && grep -q "^slos:" "$slo_path" \
+   && grep -q "name: workflow_completion_p95_seconds" "$slo_path" \
+   && grep -q "name: service_availability" "$slo_path"; then
+  echo "SLO_CONFIG_SMOKE: PASS"
+else
+  echo "SLO_CONFIG_SMOKE: CHECK"
+fi
+
+echo
 echo "=== trace flow smoke (trace_id reaches Tempo with all 7 service spans) ==="
 tf_task="smoke-trace-flow-$$"
 # Orchestrator mode so the workflow row is persisted and the agent pipeline

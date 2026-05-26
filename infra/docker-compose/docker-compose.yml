@@ -276,6 +276,8 @@ services:
       dockerfile: apps/retry-scheduler/Dockerfile
     environment:
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      AUDIT_SERVICE_URL: http://audit-service:8003
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: retry-scheduler
@@ -283,6 +285,8 @@ services:
       - "127.0.0.1:8015:8015"
     depends_on:
       redis:
+        condition: service_healthy
+      postgres:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8015/health')"]

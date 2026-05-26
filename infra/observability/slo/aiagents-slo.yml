@@ -1,0 +1,112 @@
+# AI Agents SWD service-level objectives.
+#
+# The schema is intentionally simple: each SLO declares a Prometheus expression
+# that returns a single value, a target the value must meet, the evaluation
+# window, the severity that should fire if the SLO is breached, and the team
+# that owns the response.
+#
+# status:
+#   active   - the underlying metric exists and the query is meaningful today.
+#   planned  - the underlying metric does NOT exist yet; the SLO is declared
+#              for transparency but its query is a placeholder (vector(...))
+#              and must NEVER be wired into an Alertmanager route until the
+#              metric ships. The TODO field names the follow-up work.
+
+version: 1
+owner_team: aiagents-platform
+
+slos:
+  - name: workflow_completion_p95_seconds
+    description: |
+      95th-percentile end-to-end workflow latency (dispatch -> completed)
+      stays below 30 seconds over a rolling 5-minute window.
+    status: active
+    target: "<=30"
+    window: 5m
+    query: |
+      histogram_quantile(0.95, sum by (le) (rate(workflow_duration_seconds_bucket[5m])))
+    severity: warning
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: workflow_success_rate
+    description: |
+      Ratio of workflows that finished as ``completed`` over the total
+      workflows that reached a terminal stage (completed / failed / canceled
+      / aborted / rejected) in the last 15 minutes. Target: >= 95%.
+    status: active
+    target: ">=0.95"
+    window: 15m
+    query: |
+      sum(increase(workflow_completed_total[15m]))
+      /
+      clamp_min(
+        sum(increase(workflow_completed_total[15m]))
+        + sum(increase(workflow_failed_total[15m])),
+        1
+      )
+    severity: warning
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: agent_failure_rate
+    description: |
+      Per-agent failure rate (failed / total) over a 5-minute window must
+      remain at or below 5%. Spikes typically indicate a downstream stream is
+      poisoning the consumer.
+    status: active
+    target: "<=0.05"
+    window: 5m
+    query: |
+      sum by (agent) (rate(agent_execution_failures_total[5m]))
+      /
+      clamp_min(sum by (agent) (rate(agent_execution_total[5m])), 1)
+    severity: warning
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: dlq_growth_rate
+    description: |
+      Dead-letter publications per minute must stay at or below 5 over a
+      5-minute window. A sustained growth implies the agent pipeline can't
+      drain stream.deadletter.
+    status: active
+    target: "<=5"
+    window: 5m
+    query: |
+      sum(increase(deadletter_total[5m]))
+    severity: warning
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: approval_pending_duration_seconds
+    description: |
+      95th-percentile age of a pending approval request must stay below one
+      hour. This is the same metric the Prometheus alert
+      AIApprovalPendingTooLong will consume once it ships.
+    status: planned
+    todo: |
+      approval-engine does not yet emit approval_pending_seconds. Replace
+      this placeholder query with the real histogram_quantile expression
+      after that metric is added. The Prometheus alert
+      AIApprovalPendingTooLong currently uses the same placeholder.
+    target: "<=3600"
+    window: 1h
+    query: vector(0)
+    severity: warning
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"
+
+  - name: service_availability
+    description: |
+      Every Prometheus target (the 11 platform services) must report
+      ``up == 1`` averaged over 5 minutes. Anything below 1 indicates a
+      flapping or down service.
+    status: active
+    target: ">=0.99"
+    window: 5m
+    query: |
+      avg_over_time(up[5m])
+    severity: critical
+    owner: aiagents-platform
+    runbook_url: "https://github.com/coolerh250/AI-Agents-SWD/blob/main/README.md#observability--tracing-metrics-grafana"

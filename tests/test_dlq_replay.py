@@ -47,10 +47,25 @@ async def test_manual_replay_publishes_back_to_original_stream():
         assert result["replayed"] is True
         assert result["stream"] == target
         assert result["task_id"] == task_id
-        entries = await bus.client.xrevrange(target, "+", "-", count=10)
-        assert entries
-        event = json.loads(entries[0][1]["data"])
-        assert event["event"] == "retry.manual_replay"
+        # The retry-scheduler container is also consuming stream.deadletter
+        # in this runtime and may publish a regular ``retry.requeued`` entry
+        # to the same target before/after our manual replay. Don't read the
+        # newest entry — search the entries by event type so the assertion
+        # is robust against that race.
+        entries = await bus.client.xrange(target, "-", "+", count=50)
+        replay_events = []
+        for _entry_id, fields in entries:
+            try:
+                payload = json.loads(fields["data"])
+            except (ValueError, TypeError):
+                continue
+            if payload.get("event") == "retry.manual_replay":
+                replay_events.append(payload)
+        assert replay_events, (
+            "no retry.manual_replay entry found on the target stream; "
+            f"entries: {[(eid, fields) for eid, fields in entries]}"
+        )
+        event = replay_events[-1]
         assert event["task_id"] == task_id
         assert event["workflow_id"] == "wf-replay"
     finally:

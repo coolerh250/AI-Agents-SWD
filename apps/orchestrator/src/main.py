@@ -5,11 +5,17 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+from incidents_api import (
+    ack_incident_with_side_effects,
+    create_incident_with_side_effects,
+    resolve_incident_with_side_effects,
+)
 from progress import build_progress, build_retry_timeline
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
+from shared.sdk.incidents import IncidentStore
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import WORKFLOW_FAILED_TOTAL, install_metrics_endpoint
 from shared.sdk.observability.tracing import (
@@ -312,3 +318,85 @@ async def get_workflow(task_id: str):
     if workflow is None:
         raise HTTPException(status_code=404, detail="workflow not found")
     return workflow
+
+
+@app.get("/incidents")
+async def list_incidents(
+    status: str | None = None,
+    severity: str | None = None,
+    task_id: str | None = None,
+    workflow_id: str | None = None,
+) -> dict:
+    try:
+        incidents = await IncidentStore().list_incidents(
+            status=status,
+            severity=severity,
+            task_id=task_id,
+            workflow_id=workflow_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    return {
+        "count": len(incidents),
+        "incidents": [incident.to_dict() for incident in incidents],
+    }
+
+
+@app.get("/incidents/{incident_id}")
+async def get_incident(incident_id: str) -> dict:
+    try:
+        incident = await IncidentStore().get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return incident.to_dict()
+
+
+@app.post("/incidents")
+async def create_incident(payload: dict) -> dict:
+    summary = str((payload or {}).get("summary", "")).strip()
+    if not summary:
+        raise HTTPException(status_code=400, detail="summary is required")
+    severity = str((payload or {}).get("severity", "sev3"))
+    source = str((payload or {}).get("source", "operator"))
+    task_id = (payload or {}).get("task_id")
+    workflow_id = (payload or {}).get("workflow_id")
+    details = (payload or {}).get("details") or {}
+    if not isinstance(details, dict):
+        raise HTTPException(status_code=400, detail="details must be an object")
+    try:
+        incident = await create_incident_with_side_effects(
+            IncidentStore(),
+            severity=severity,
+            source=source,
+            summary=summary,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            details=details,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    return incident.to_dict()
+
+
+@app.post("/incidents/{incident_id}/ack")
+async def acknowledge_incident(incident_id: str) -> dict:
+    try:
+        incident = await ack_incident_with_side_effects(IncidentStore(), incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return incident.to_dict()
+
+
+@app.post("/incidents/{incident_id}/resolve")
+async def resolve_incident(incident_id: str) -> dict:
+    try:
+        incident = await resolve_incident_with_side_effects(IncidentStore(), incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return incident.to_dict()

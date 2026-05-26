@@ -631,6 +631,91 @@ template at container start, and gate the rollout behind an explicit
 operator switch. The local/test runtime must keep using the null
 receiver.
 
+### Incident API + IncidentStore
+
+The orchestrator exposes a `/incidents` API backed by
+`shared/sdk/incidents/IncidentStore` and the `incident_records`
+PostgreSQL table (migration `005_incident_management.sql` extends the
+table with `task_id`, `workflow_id`, `source`, `details`,
+`acknowledged_at`, `resolved_at` columns and the matching indexes;
+strictly additive and idempotent).
+
+| Endpoint                                  | Purpose                                                                 |
+|-------------------------------------------|-------------------------------------------------------------------------|
+| `GET /incidents`                          | List incidents; supports `?status=`, `?severity=`, `?task_id=`, `?workflow_id=` |
+| `GET /incidents/{incident_id}`            | Fetch one incident                                                       |
+| `POST /incidents`                         | Create an operator incident (`summary` required; `severity` defaults to `sev3`; `source` defaults to `operator`) |
+| `POST /incidents/{incident_id}/ack`       | Mark as `acknowledged`, set `acknowledged_at`, publish `incident.acknowledged` notification + audit |
+| `POST /incidents/{incident_id}/resolve`   | Mark as `resolved`, set `resolved_at`, publish `incident.resolved` notification + audit |
+
+Severities follow the standard four-tier SEV ladder
+(`sev1 / sev2 / sev3 / sev4`); statuses are
+`open / acknowledged / resolved`. Every create / ack / resolve also
+publishes a notification on `stream.notifications` and writes an audit
+event via the audit-service. The Alertmanager still routes alerts to a
+**null receiver** — no off-host notifier is contacted; the incident API
+is the in-platform record of what an operator did about a firing alert.
+
+### Terminal failure → incident → workflow.failed
+
+When the retry-scheduler observes a dead-letter event whose
+`retry_count` has already exceeded `max_retries`, it:
+
+1. Publishes the terminal event on `stream.deadletter.terminal` (as
+   before).
+2. Creates an incident_records row (`severity: sev2`,
+   `source: retry-scheduler`, summary including
+   *terminal failure / max retries exceeded*, `details` carrying
+   `original_stream`, `retry_count`, `max_retries`, `failure_reason`,
+   `failed_at`, `original_event`, `original_message_id`).
+3. Flips the matching workflow_states row to `stage = failed` and sets
+   `execution_result.{status, failure_reason, production_executed,
+   failed_at}`. If no workflow row exists, the incident still lands and
+   `details.workflow_not_found = true` is recorded; the scheduler does
+   not crash.
+4. Publishes a `workflow.failed` notification keyed by `task_id`.
+5. Writes an audit event `decision_type = workflow_failed` via the
+   audit-service.
+
+`scripts/verify_incident_flow.sh` drives this end-to-end: it seeds a
+`simulate_failure: true` workflow, polls `/incidents?task_id=...` until
+the incident appears, asserts `workflow.stage = failed`, the
+`workflow.failed` notification, the audit event, then exercises
+`/incidents/{id}/ack` and `/incidents/{id}/resolve`. The aggregate
+result is printed as `INCIDENT_FLOW_SMOKE: PASS / FAIL / CHECK`.
+
+`scripts/check_runtime_state.sh` covers the same surface with seven new
+inline smokes: `INCIDENT_API_SMOKE`, `INCIDENT_CREATE_SMOKE`,
+`INCIDENT_ACK_SMOKE`, `INCIDENT_RESOLVE_SMOKE`,
+`TERMINAL_FAILURE_INCIDENT_SMOKE`, `WORKFLOW_FAILED_STATE_SMOKE`,
+`SLO_CONFIG_SMOKE`.
+
+### SLO configuration
+
+`infra/observability/slo/aiagents-slo.yml` declares the platform's
+service-level objectives. Each SLO carries `name`, `description`,
+`target`, `window`, `query`, `severity`, `owner`, `runbook_url`, and a
+`status` field (`active` when the underlying metric exists today;
+`planned` when the SLO is documented for transparency but its query is
+a placeholder pending a metric).
+
+| SLO                                  | Target  | Window | Status   | Query base |
+|--------------------------------------|---------|--------|----------|-----------|
+| `workflow_completion_p95_seconds`    | ≤ 30s   | 5m     | active   | `histogram_quantile(0.95, … workflow_duration_seconds_bucket …)` |
+| `workflow_success_rate`              | ≥ 95%   | 15m    | active   | `workflow_completed_total / (workflow_completed_total + workflow_failed_total)` |
+| `agent_failure_rate`                 | ≤ 5%    | 5m     | active   | `agent_execution_failures_total / agent_execution_total` |
+| `dlq_growth_rate`                    | ≤ 5/5m  | 5m     | active   | `increase(deadletter_total[5m])` |
+| `approval_pending_duration_seconds`  | ≤ 3600s | 1h     | planned  | `vector(0)` (TODO: emit `approval_pending_seconds`) |
+| `service_availability`               | ≥ 99%   | 5m     | active   | `avg_over_time(up[5m])` |
+
+The `approval_pending_duration_seconds` SLO is intentionally
+`status: planned` and mirrors the placeholder `AIApprovalPendingTooLong`
+Prometheus alert: once the approval-engine ships
+`approval_pending_seconds`, both will be flipped to real
+`histogram_quantile` expressions together. No SLO references a metric
+that does not exist without an explicit `status: planned` + `todo:`
+field.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
