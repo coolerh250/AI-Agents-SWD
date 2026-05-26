@@ -66,16 +66,31 @@ def get_tracer(name: str) -> Any:
 
 
 @contextlib.contextmanager
-def start_span(name: str, **attributes: Any) -> Iterator[Any]:
+def start_span(
+    name: str,
+    *,
+    parent_trace_id: str = "",
+    parent_span_id: str = "",
+    **attributes: Any,
+) -> Iterator[Any]:
     """Context manager that opens a span on the default tracer.
 
-    Attribute values are coerced to OTel-friendly primitives. Errors raised
-    inside the block are recorded on the span and re-raised. Falls back to a
-    no-op span when the OTel SDK is unavailable so call sites stay safe.
+    When ``parent_trace_id`` + ``parent_span_id`` are provided (hex strings
+    carried by an inbound Redis event or upstream message), the new span is
+    started as a child of that remote context — that is how a downstream
+    agent inherits the orchestrator's ``trace_id`` while still emitting a
+    fresh ``span_id`` per stage. Attribute values are coerced to
+    OTel-friendly primitives. Errors raised inside the block are recorded on
+    the span and re-raised. Falls back to a no-op span when the OTel SDK is
+    unavailable so call sites stay safe.
     """
     tracer = get_tracer("aiagents")
+    parent_ctx = _remote_parent_context(parent_trace_id, parent_span_id)
     try:
-        cm = tracer.start_as_current_span(name)
+        if parent_ctx is not None:
+            cm = tracer.start_as_current_span(name, context=parent_ctx)
+        else:
+            cm = tracer.start_as_current_span(name)
     except Exception:
         yield _NoopSpan()
         return
@@ -91,6 +106,42 @@ def start_span(name: str, **attributes: Any) -> Iterator[Any]:
             with contextlib.suppress(Exception):
                 span.record_exception(exc)
             raise
+
+
+def _remote_parent_context(parent_trace_id: str, parent_span_id: str) -> Any:
+    """Build an OTel Context whose current span has the supplied IDs.
+
+    Returns ``None`` when either id is missing/invalid or when the OTel SDK
+    cannot be imported; the caller then opens a root span.
+    """
+    if not parent_trace_id or not parent_span_id:
+        return None
+    try:
+        from opentelemetry.trace import (
+            NonRecordingSpan,
+            SpanContext,
+            TraceFlags,
+            set_span_in_context,
+        )
+    except Exception:
+        return None
+    try:
+        trace_id_int = int(parent_trace_id, 16)
+        span_id_int = int(parent_span_id, 16)
+    except (TypeError, ValueError):
+        return None
+    if trace_id_int == 0 or span_id_int == 0:
+        return None
+    try:
+        ctx = SpanContext(
+            trace_id=trace_id_int,
+            span_id=span_id_int,
+            is_remote=True,
+            trace_flags=TraceFlags(TraceFlags.SAMPLED),
+        )
+        return set_span_in_context(NonRecordingSpan(ctx))
+    except Exception:
+        return None
 
 
 def _coerce(value: Any) -> Any:

@@ -97,6 +97,8 @@ class StreamAgent(BaseAgent):
     async def process(self, payload: dict) -> dict:
         task_id = str(payload.get("task_id", "unknown"))
         workflow_id = str(payload.get("workflow_id", ""))
+        parent_trace_id = str(payload.get("trace_id", ""))
+        parent_span_id = str(payload.get("span_id", ""))
         span_attrs = {
             "service.name": self.name,
             "agent": self.name,
@@ -105,43 +107,51 @@ class StreamAgent(BaseAgent):
             "stream": self.input_stream,
             "event_type": str(payload.get("event", "")),
         }
-        with start_span("agent.receive", **span_attrs):
+        # agent.receive adopts the upstream trace context so every span this
+        # process() emits shares one trace_id with the orchestrator and the
+        # upstream agents.
+        with start_span(
+            "agent.receive",
+            parent_trace_id=parent_trace_id,
+            parent_span_id=parent_span_id,
+            **span_attrs,
+        ):
             execution_id = await self._start_execution(task_id)
-        started = time.perf_counter()
-        try:
-            with start_span("agent.execute", **span_attrs):
-                with start_span("agent.analyze", **span_attrs):
-                    pass
-                result = await self.handle(payload)
-        except Exception as exc:
-            self.failed_count += 1
-            AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="failed").inc()
-            AGENT_EXECUTION_FAILURES_TOTAL.labels(agent=self.name).inc()
+            started = time.perf_counter()
+            try:
+                with start_span("agent.execute", **span_attrs):
+                    with start_span("agent.analyze", **span_attrs):
+                        pass
+                    result = await self.handle(payload)
+            except Exception as exc:
+                self.failed_count += 1
+                AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="failed").inc()
+                AGENT_EXECUTION_FAILURES_TOTAL.labels(agent=self.name).inc()
+                AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
+                await self._fail_execution(execution_id, str(exc))
+                raise
+            self.processed_count += 1
+            self.last_task_id = task_id
+            AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="completed").inc()
             AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
-            await self._fail_execution(execution_id, str(exc))
-            raise
-        self.processed_count += 1
-        self.last_task_id = task_id
-        AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="completed").inc()
-        AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
-        await self._complete_execution(execution_id, result)
-        with start_span("agent.write_audit", **span_attrs):
-            await self.write_audit(
-                {
-                    "decision_type": result.get("decision_type", self.name),
-                    "summary": result.get("summary", ""),
-                    "result": result.get("result", ""),
-                    "task_id": task_id,
-                    "artifact_refs": result.get("artifact_refs", {}),
-                }
-            )
-        with start_span("agent.publish_notification", **span_attrs):
-            await send_notification(
-                task_id,
-                result.get("event_type", f"{self.name}.completed"),
-                result.get("message", result.get("summary", "")),
-            )
-        return result
+            await self._complete_execution(execution_id, result)
+            with start_span("agent.write_audit", **span_attrs):
+                await self.write_audit(
+                    {
+                        "decision_type": result.get("decision_type", self.name),
+                        "summary": result.get("summary", ""),
+                        "result": result.get("result", ""),
+                        "task_id": task_id,
+                        "artifact_refs": result.get("artifact_refs", {}),
+                    }
+                )
+            with start_span("agent.publish_notification", **span_attrs):
+                await send_notification(
+                    task_id,
+                    result.get("event_type", f"{self.name}.completed"),
+                    result.get("message", result.get("summary", "")),
+                )
+            return result
 
     async def run_consumer(self, stop_event: asyncio.Event) -> None:
         """Consume the input stream until stop_event is set (Redis consumer group)."""
