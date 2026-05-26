@@ -4,6 +4,8 @@ from typing import Any
 
 import asyncpg
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
 
 _COLUMNS = (
@@ -53,23 +55,27 @@ class WorkflowStore:
     async def create_workflow_state(
         self, task_id: str, request: dict, stage: str = "intake"
     ) -> dict:
-        conn = await self._connect()
-        try:
-            row = await conn.fetchrow(
-                "INSERT INTO workflow_states (task_id, stage, phase, request, state) "
-                "VALUES ($1, $2, $2, $3::jsonb, $4::jsonb) "
-                "ON CONFLICT (task_id) DO UPDATE SET "
-                "stage = EXCLUDED.stage, phase = EXCLUDED.phase, "
-                "request = EXCLUDED.request, state = EXCLUDED.state, updated_at = now() "
-                f"RETURNING {_COLUMNS}",
-                task_id,
-                stage,
-                json.dumps(request),
-                json.dumps({}),
-            )
-        finally:
-            await conn.close()
-        return _row_to_dict(row)
+        with start_span(
+            "workflow_store.create",
+            **{"db.table": "workflow_states", "task_id": task_id, "stage": stage},
+        ):
+            conn = await self._connect()
+            try:
+                row = await conn.fetchrow(
+                    "INSERT INTO workflow_states (task_id, stage, phase, request, state) "
+                    "VALUES ($1, $2, $2, $3::jsonb, $4::jsonb) "
+                    "ON CONFLICT (task_id) DO UPDATE SET "
+                    "stage = EXCLUDED.stage, phase = EXCLUDED.phase, "
+                    "request = EXCLUDED.request, state = EXCLUDED.state, updated_at = now() "
+                    f"RETURNING {_COLUMNS}",
+                    task_id,
+                    stage,
+                    json.dumps(request),
+                    json.dumps({}),
+                )
+            finally:
+                await conn.close()
+            return _row_to_dict(row)
 
     async def update_workflow_state(
         self,
@@ -82,35 +88,43 @@ class WorkflowStore:
         risk_level: str,
         execution_result: dict,
     ) -> dict | None:
-        conn = await self._connect()
-        try:
-            row = await conn.fetchrow(
-                "UPDATE workflow_states SET "
-                "stage = $2, phase = $2, state = $3::jsonb, approval_required = $4, "
-                "approval_status = $5, risk_level = $6, execution_result = $7::jsonb, "
-                "updated_at = now() WHERE task_id = $1 "
-                f"RETURNING {_COLUMNS}",
-                task_id,
-                stage,
-                json.dumps(state),
-                approval_required,
-                approval_status,
-                risk_level,
-                json.dumps(execution_result),
-            )
-        finally:
-            await conn.close()
-        return _row_to_dict(row) if row else None
+        with start_span(
+            "workflow_store.update",
+            **{"db.table": "workflow_states", "task_id": task_id, "stage": stage},
+        ):
+            conn = await self._connect()
+            try:
+                row = await conn.fetchrow(
+                    "UPDATE workflow_states SET "
+                    "stage = $2, phase = $2, state = $3::jsonb, approval_required = $4, "
+                    "approval_status = $5, risk_level = $6, execution_result = $7::jsonb, "
+                    "updated_at = now() WHERE task_id = $1 "
+                    f"RETURNING {_COLUMNS}",
+                    task_id,
+                    stage,
+                    json.dumps(state),
+                    approval_required,
+                    approval_status,
+                    risk_level,
+                    json.dumps(execution_result),
+                )
+            finally:
+                await conn.close()
+            return _row_to_dict(row) if row else None
 
     async def get_workflow_state(self, task_id: str) -> dict | None:
-        conn = await self._connect()
-        try:
-            row = await conn.fetchrow(
-                f"SELECT {_COLUMNS} FROM workflow_states WHERE task_id = $1", task_id
-            )
-        finally:
-            await conn.close()
-        return _row_to_dict(row) if row else None
+        with start_span(
+            "workflow_store.get",
+            **{"db.table": "workflow_states", "task_id": task_id},
+        ):
+            conn = await self._connect()
+            try:
+                row = await conn.fetchrow(
+                    f"SELECT {_COLUMNS} FROM workflow_states WHERE task_id = $1", task_id
+                )
+            finally:
+                await conn.close()
+            return _row_to_dict(row) if row else None
 
     async def list_workflows(self, status: str | None = None) -> list[dict]:
         conn = await self._connect()

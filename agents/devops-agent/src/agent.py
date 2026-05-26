@@ -4,6 +4,7 @@ import os
 import asyncpg
 
 from shared.sdk.base_agent.stream_agent import StreamAgent
+from shared.sdk.observability.tracing import start_span
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
 
@@ -41,24 +42,33 @@ class DevOpsAgent(StreamAgent):
 
     async def _persist_deployment_record(self, record: dict) -> str | None:
         """Best-effort write of a mock deployment record; returns its row id."""
-        try:
-            conn = await asyncpg.connect(dsn=DATABASE_URL, timeout=5)
-        except Exception:
-            return None
-        try:
-            row = await conn.fetchrow(
-                "INSERT INTO deployment_records (task_id, environment, status, metadata) "
-                "VALUES ($1, $2, $3, $4::jsonb) RETURNING id",
-                record["task_id"],
-                record["environment"],
-                record["status"],
-                json.dumps(record),
-            )
-            return str(row["id"]) if row else None
-        except Exception:
-            return None
-        finally:
-            await conn.close()
+        with start_span(
+            "deployment_records.insert",
+            **{
+                "db.table": "deployment_records",
+                "task_id": record.get("task_id", ""),
+                "workflow_id": record.get("workflow_id", ""),
+                "environment": record.get("environment", ""),
+            },
+        ):
+            try:
+                conn = await asyncpg.connect(dsn=DATABASE_URL, timeout=5)
+            except Exception:
+                return None
+            try:
+                row = await conn.fetchrow(
+                    "INSERT INTO deployment_records (task_id, environment, status, metadata) "
+                    "VALUES ($1, $2, $3, $4::jsonb) RETURNING id",
+                    record["task_id"],
+                    record["environment"],
+                    record["status"],
+                    json.dumps(record),
+                )
+                return str(row["id"]) if row else None
+            except Exception:
+                return None
+            finally:
+                await conn.close()
 
     async def handle(self, payload: dict) -> dict:
         record = self.build_deployment_record(payload)
@@ -72,7 +82,7 @@ class DevOpsAgent(StreamAgent):
             "artifact": record,
             "produced_by": self.name,
         }
-        await self.bus.publish_event(self.output_stream, message)
+        await self.publish_next(message)
         return {
             "task_id": task_id,
             "decision_type": "deployment",

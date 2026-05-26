@@ -4,6 +4,8 @@ from typing import Any
 
 import asyncpg
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
 
 _COLUMNS = (
@@ -56,20 +58,24 @@ class AgentExecutionStore:
     async def create_execution(
         self, task_id: str, agent: str, metadata: dict | None = None
     ) -> dict:
-        conn = await self._connect()
-        try:
-            row = await conn.fetchrow(
-                "INSERT INTO agent_executions "
-                "(task_id, agent, agent_name, status, started_at, metadata) "
-                "VALUES ($1, $2, $2, 'started', now(), $3::jsonb) "
-                f"RETURNING {_COLUMNS}",
-                task_id,
-                agent,
-                json.dumps(metadata or {}),
-            )
-        finally:
-            await conn.close()
-        return _row_to_dict(row)
+        with start_span(
+            "agent_execution.create",
+            **{"db.table": "agent_executions", "task_id": task_id, "agent": agent},
+        ):
+            conn = await self._connect()
+            try:
+                row = await conn.fetchrow(
+                    "INSERT INTO agent_executions "
+                    "(task_id, agent, agent_name, status, started_at, metadata) "
+                    "VALUES ($1, $2, $2, 'started', now(), $3::jsonb) "
+                    f"RETURNING {_COLUMNS}",
+                    task_id,
+                    agent,
+                    json.dumps(metadata or {}),
+                )
+            finally:
+                await conn.close()
+            return _row_to_dict(row)
 
     async def update_execution(
         self,
@@ -95,29 +101,37 @@ class AgentExecutionStore:
     async def complete_execution(
         self, execution_id: str, metadata: dict | None = None
     ) -> dict | None:
-        return await self._run_update(
-            "UPDATE agent_executions SET "
-            "status = 'completed', completed_at = now(), finished_at = now(), "
-            "metadata = COALESCE($2::jsonb, metadata), updated_at = now() "
-            "WHERE id = $1::uuid "
-            f"RETURNING {_COLUMNS}",
-            execution_id,
-            json.dumps(metadata) if metadata is not None else None,
-        )
+        with start_span(
+            "agent_execution.complete",
+            **{"db.table": "agent_executions", "execution_id": execution_id},
+        ):
+            return await self._run_update(
+                "UPDATE agent_executions SET "
+                "status = 'completed', completed_at = now(), finished_at = now(), "
+                "metadata = COALESCE($2::jsonb, metadata), updated_at = now() "
+                "WHERE id = $1::uuid "
+                f"RETURNING {_COLUMNS}",
+                execution_id,
+                json.dumps(metadata) if metadata is not None else None,
+            )
 
     async def fail_execution(
         self, execution_id: str, error: str, metadata: dict | None = None
     ) -> dict | None:
-        return await self._run_update(
-            "UPDATE agent_executions SET "
-            "status = 'failed', completed_at = now(), finished_at = now(), "
-            "error = $2, metadata = COALESCE($3::jsonb, metadata), updated_at = now() "
-            "WHERE id = $1::uuid "
-            f"RETURNING {_COLUMNS}",
-            execution_id,
-            error,
-            json.dumps(metadata) if metadata is not None else None,
-        )
+        with start_span(
+            "agent_execution.fail",
+            **{"db.table": "agent_executions", "execution_id": execution_id},
+        ):
+            return await self._run_update(
+                "UPDATE agent_executions SET "
+                "status = 'failed', completed_at = now(), finished_at = now(), "
+                "error = $2, metadata = COALESCE($3::jsonb, metadata), updated_at = now() "
+                "WHERE id = $1::uuid "
+                f"RETURNING {_COLUMNS}",
+                execution_id,
+                error,
+                json.dumps(metadata) if metadata is not None else None,
+            )
 
     async def _run_update(self, query: str, *args: Any) -> dict | None:
         conn = await self._connect()

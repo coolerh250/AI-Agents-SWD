@@ -9,7 +9,7 @@ from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import WORKFLOW_TOTAL
-from shared.sdk.observability.tracing import generate_trace_id
+from shared.sdk.observability.tracing import generate_trace_id, start_span
 from shared.sdk.workflow_store.store import WorkflowStore
 
 
@@ -91,13 +91,26 @@ async def requirement_node(state: WorkflowState) -> dict:
 async def policy_node(state: WorkflowState) -> dict:
     """Delegate the policy decision to the policy-engine service over HTTP."""
     action = state["request"].get("type", "")
-    try:
-        decision = await PolicyHttpClient().evaluate(action)
-        approval_required = bool(decision.get("approval_required"))
-        risk_level = str(decision.get("risk_level", "low"))
-    except Exception:  # fail-safe: require approval if the policy engine is down
-        approval_required = True
-        risk_level = "unknown"
+    with start_span(
+        "workflow.policy_check",
+        **{
+            "service.name": "orchestrator",
+            "task_id": state["task_id"],
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "policy_check",
+            "policy.action": action,
+        },
+    ):
+        try:
+            decision = await PolicyHttpClient().evaluate(
+                action, task_id=state["task_id"], workflow_id=state["workflow_id"]
+            )
+            approval_required = bool(decision.get("approval_required"))
+            risk_level = str(decision.get("risk_level", "low"))
+        except Exception:  # fail-safe: require approval if the policy engine is down
+            approval_required = True
+            risk_level = "unknown"
     update = {
         "approval_required": approval_required,
         "risk_level": risk_level,
@@ -113,18 +126,30 @@ async def approval_node(state: WorkflowState) -> dict:
         update = {"stage": "audit", "approval_status": "not_required"}
         await _persist(state, update)
         return update
-    try:
-        result = await ApprovalHttpClient().request_approval(
-            task_id=state["task_id"],
-            action=state["request"].get("type", ""),
-            risk_level=state["risk_level"],
-            reason="restricted action requires human approval",
-        )
-        request_id = str(result.get("request_id", ""))
-        status = str(result.get("status", "pending"))
-    except Exception:  # degrade gracefully if the approval engine is down
-        request_id = f"approval-local:{state['task_id']}"
-        status = "pending"
+    with start_span(
+        "workflow.approval_request",
+        **{
+            "service.name": "orchestrator",
+            "task_id": state["task_id"],
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "approval_request",
+            "risk_level": state["risk_level"],
+        },
+    ):
+        try:
+            result = await ApprovalHttpClient().request_approval(
+                task_id=state["task_id"],
+                action=state["request"].get("type", ""),
+                risk_level=state["risk_level"],
+                reason="restricted action requires human approval",
+                workflow_id=state["workflow_id"],
+            )
+            request_id = str(result.get("request_id", ""))
+            status = str(result.get("status", "pending"))
+        except Exception:  # degrade gracefully if the approval engine is down
+            request_id = f"approval-local:{state['task_id']}"
+            status = "pending"
     update = {
         "stage": "waiting_approval",
         "approval_status": status,
@@ -137,18 +162,29 @@ async def approval_node(state: WorkflowState) -> dict:
 async def audit_node(state: WorkflowState) -> dict:
     """Record a workflow audit event via the audit-service."""
     ref = f"audit-local:{state['task_id']}"
-    try:
-        result = await AuditHttpClient().record_event(
-            task_id=state["task_id"],
-            agent="orchestrator",
-            decision_type="workflow",
-            summary=f"workflow {state['task_id']} reached stage {state['stage']}",
-            result=state["approval_status"],
-            artifact_refs={"artifacts": state["artifacts"]},
-        )
-        ref = str(result.get("audit_id") or ref)
-    except Exception:  # degrade gracefully if the audit service is down
-        pass
+    with start_span(
+        "workflow.audit",
+        **{
+            "service.name": "orchestrator",
+            "task_id": state["task_id"],
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "workflow_audit",
+        },
+    ):
+        try:
+            result = await AuditHttpClient().record_event(
+                task_id=state["task_id"],
+                agent="orchestrator",
+                decision_type="workflow",
+                summary=f"workflow {state['task_id']} reached stage {state['stage']}",
+                result=state["approval_status"],
+                artifact_refs={"artifacts": state["artifacts"]},
+                workflow_id=state["workflow_id"],
+            )
+            ref = str(result.get("audit_id") or ref)
+        except Exception:  # degrade gracefully if the audit service is down
+            pass
     update = {"audit_refs": state["audit_refs"] + [ref]}
     await _persist(state, update)
     return update
@@ -164,43 +200,56 @@ async def dispatch_node(state: WorkflowState) -> dict:
     executed here.
     """
     task_id = state["task_id"]
-    if state["approval_required"] and state["approval_status"] != "approved":
+    with start_span(
+        "workflow.dispatch",
+        **{
+            "service.name": "orchestrator",
+            "task_id": task_id,
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "workflow_dispatch",
+            "stream": "stream.tasks",
+        },
+    ):
+        if state["approval_required"] and state["approval_status"] != "approved":
+            update = {
+                "stage": "waiting_approval",
+                "execution_result": {
+                    "status": "blocked_pending_approval",
+                    "production_executed": False,
+                    "dispatched": False,
+                },
+            }
+            await _persist(state, update)
+            WORKFLOW_TOTAL.labels(status="waiting_approval").inc()
+            await send_notification(
+                task_id,
+                "workflow.waiting_approval",
+                f"workflow {task_id} is waiting for approval",
+            )
+            return update
+        dispatched = await dispatch_task(
+            task_id,
+            state["workflow_id"],
+            dict(state["request"]),
+            state["source"],
+            trace_id=state.get("trace_id", ""),
+        )
         update = {
-            "stage": "waiting_approval",
+            "stage": "dispatched",
             "execution_result": {
-                "status": "blocked_pending_approval",
+                "status": "awaiting_agents",
                 "production_executed": False,
-                "dispatched": False,
+                "dispatched": dispatched,
+                "mock": True,
             },
         }
+        WORKFLOW_TOTAL.labels(status="dispatched").inc()
         await _persist(state, update)
-        WORKFLOW_TOTAL.labels(status="waiting_approval").inc()
         await send_notification(
-            task_id, "workflow.waiting_approval", f"workflow {task_id} is waiting for approval"
+            task_id, "workflow.dispatched", f"workflow {task_id} dispatched to the agent pipeline"
         )
         return update
-    dispatched = await dispatch_task(
-        task_id,
-        state["workflow_id"],
-        dict(state["request"]),
-        state["source"],
-        trace_id=state.get("trace_id", ""),
-    )
-    update = {
-        "stage": "dispatched",
-        "execution_result": {
-            "status": "awaiting_agents",
-            "production_executed": False,
-            "dispatched": dispatched,
-            "mock": True,
-        },
-    }
-    WORKFLOW_TOTAL.labels(status="dispatched").inc()
-    await _persist(state, update)
-    await send_notification(
-        task_id, "workflow.dispatched", f"workflow {task_id} dispatched to the agent pipeline"
-    )
-    return update
 
 
 def build_workflow():
@@ -243,15 +292,26 @@ def _initial_state(request: dict) -> WorkflowState:
 
 async def run_mock_workflow(request: dict) -> dict:
     initial = _initial_state(request)
-    try:
-        await WorkflowStore().create_workflow_state(
-            initial["task_id"], dict(initial["request"]), stage="intake"
-        )
-    except Exception:  # persistence failure must not break the workflow
-        pass
-    workflow = build_workflow()
-    final_state = await workflow.ainvoke(initial)
-    return dict(final_state)
+    with start_span(
+        "workflow.run",
+        **{
+            "service.name": "orchestrator",
+            "task_id": initial["task_id"],
+            "workflow_id": initial["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "workflow_run",
+            "request.type": initial["request"].get("type", "unknown"),
+        },
+    ):
+        try:
+            await WorkflowStore().create_workflow_state(
+                initial["task_id"], dict(initial["request"]), stage="intake"
+            )
+        except Exception:  # persistence failure must not break the workflow
+            pass
+        workflow = build_workflow()
+        final_state = await workflow.ainvoke(initial)
+        return dict(final_state)
 
 
 def workflow_state_schema() -> dict:

@@ -9,6 +9,7 @@ from shared.sdk.observability.metrics import (
     WORKFLOW_COMPLETED_TOTAL,
     WORKFLOW_DURATION_SECONDS,
 )
+from shared.sdk.observability.tracing import start_span
 from shared.sdk.workflow_store.store import WorkflowStore
 
 IGNORED_STAGES = ("aborted", "canceled")
@@ -71,10 +72,20 @@ class WorkflowEventConsumer:
         task_id = payload.get("task_id")
         if not task_id or event not in _AGENT_BY_EVENT:
             return None
-        workflow = await self.store.get_workflow_state(str(task_id))
-        if workflow is None:
-            return None
-        return await self._advance(workflow, str(event), payload)
+        with start_span(
+            "workflow.event_update",
+            **{
+                "service.name": "orchestrator",
+                "task_id": str(task_id),
+                "workflow_id": str(payload.get("workflow_id", "")),
+                "agent": "orchestrator",
+                "event_type": str(event),
+            },
+        ):
+            workflow = await self.store.get_workflow_state(str(task_id))
+            if workflow is None:
+                return None
+            return await self._advance(workflow, str(event), payload)
 
     async def _advance(self, workflow: dict, event: str, payload: dict) -> dict | None:
         task_id = workflow["task_id"]
@@ -117,11 +128,27 @@ class WorkflowEventConsumer:
             execution_result=execution_result,
         )
         if event == _FINAL_EVENT and updated is not None:
-            WORKFLOW_COMPLETED_TOTAL.inc()
-            duration = _workflow_duration_seconds(workflow)
-            if duration is not None:
-                WORKFLOW_DURATION_SECONDS.observe(duration)
-            await send_notification(task_id, "workflow.completed", f"workflow {task_id} completed")
+            with start_span(
+                "workflow.completed",
+                **{
+                    "service.name": "orchestrator",
+                    "task_id": task_id,
+                    "workflow_id": (
+                        str(workflow.get("state", {}).get("workflow_id", ""))
+                        if isinstance(workflow.get("state"), dict)
+                        else ""
+                    ),
+                    "agent": "orchestrator",
+                    "event_type": "workflow_completed",
+                },
+            ):
+                WORKFLOW_COMPLETED_TOTAL.inc()
+                duration = _workflow_duration_seconds(workflow)
+                if duration is not None:
+                    WORKFLOW_DURATION_SECONDS.observe(duration)
+                await send_notification(
+                    task_id, "workflow.completed", f"workflow {task_id} completed"
+                )
         return updated
 
     async def _record_ignored_event(self, task_id: str, event: str, stage: str) -> None:

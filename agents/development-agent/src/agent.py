@@ -56,7 +56,7 @@ class DevelopmentAgent(StreamAgent):
             "artifact": artifact,
             "produced_by": self.name,
         }
-        await self.bus.publish_event(self.output_stream, message)
+        await self.publish_next(message)
         return {
             "task_id": task_id,
             "decision_type": "development",

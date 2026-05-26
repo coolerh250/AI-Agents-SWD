@@ -2,6 +2,8 @@ import os
 
 import httpx
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_AUDIT_SERVICE_URL = "http://localhost:8003"
 
 
@@ -21,6 +23,7 @@ class AuditHttpClient:
         summary: str,
         result: str,
         artifact_refs: dict | None = None,
+        workflow_id: str = "",
     ) -> dict:
         payload = {
             "task_id": task_id,
@@ -30,13 +33,27 @@ class AuditHttpClient:
             "result": result,
             "artifact_refs": artifact_refs or {},
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(f"{self.base_url}/audit/events", json=payload)
-            response.raise_for_status()
-            return response.json()
+        with start_span(
+            "audit.record_event",
+            **{
+                "http.client.service": "audit-service",
+                "audit.agent": agent,
+                "audit.decision_type": decision_type,
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+            },
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(f"{self.base_url}/audit/events", json=payload)
+                response.raise_for_status()
+                return response.json()
 
     async def get_events(self, task_id: str) -> dict:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{self.base_url}/audit/events/{task_id}")
-            response.raise_for_status()
-            return response.json()
+        with start_span(
+            "audit.get_events",
+            **{"http.client.service": "audit-service", "task_id": task_id},
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/audit/events/{task_id}")
+                response.raise_for_status()
+                return response.json()

@@ -10,6 +10,7 @@ from shared.sdk.event_bus.redis_streams import (
     get_retry_count,
 )
 from shared.sdk.observability.metrics import RETRY_TOTAL
+from shared.sdk.observability.tracing import start_span
 
 DEAD_LETTER_GROUP = "retry-scheduler-group"
 DEAD_LETTER_CONSUMER = "retry-scheduler-1"
@@ -104,26 +105,40 @@ class RetryScheduler:
     async def handle(self, message_id: str, payload: dict) -> dict:
         """Process one dead-letter event: terminal-mark or schedule a requeue."""
         self.last_message_id = message_id
-        if self._is_terminal(payload):
-            with contextlib.suppress(Exception):
-                await self.bus.publish_event(
-                    TERMINAL_FAILURE_STREAM,
-                    self._build_terminal_event(payload, message_id),
-                )
-            self.terminal_count += 1
-            RETRY_TOTAL.labels(kind="terminal_failure").inc()
-            return {"action": "terminal_failure", "message_id": message_id}
-        delay = self._retry_delay(payload)
-        if delay > 0:
-            await asyncio.sleep(delay)
-        target = self._original_stream(payload)
-        if not target:
-            return {"action": "no_original_stream", "message_id": message_id}
-        event = self._build_requeue_event(payload, "retry.requeued")
-        await self.bus.publish_event(target, event)
-        self.requeued_count += 1
-        RETRY_TOTAL.labels(kind="requeued").inc()
-        return {"action": "requeued", "stream": target, "message_id": message_id}
+        base_attrs = {
+            "service.name": "retry-scheduler",
+            "agent": "retry-scheduler",
+            "task_id": str(payload.get("task_id", "")),
+            "workflow_id": str(payload.get("workflow_id", "")),
+            "stream": self._original_stream(payload),
+            "redis.message_id": message_id,
+        }
+        with start_span("retry.consume_deadletter", **base_attrs):
+            if self._is_terminal(payload):
+                with start_span(
+                    "retry.terminal_failure",
+                    **{**base_attrs, "event_type": "retry.terminal_failure"},
+                ):
+                    with contextlib.suppress(Exception):
+                        await self.bus.publish_event(
+                            TERMINAL_FAILURE_STREAM,
+                            self._build_terminal_event(payload, message_id),
+                        )
+                    self.terminal_count += 1
+                    RETRY_TOTAL.labels(kind="terminal_failure").inc()
+                    return {"action": "terminal_failure", "message_id": message_id}
+            delay = self._retry_delay(payload)
+            if delay > 0:
+                await asyncio.sleep(delay)
+            target = self._original_stream(payload)
+            if not target:
+                return {"action": "no_original_stream", "message_id": message_id}
+            with start_span("retry.requeue", **{**base_attrs, "event_type": "retry.requeued"}):
+                event = self._build_requeue_event(payload, "retry.requeued")
+                await self.bus.publish_event(target, event)
+                self.requeued_count += 1
+                RETRY_TOTAL.labels(kind="requeued").inc()
+                return {"action": "requeued", "stream": target, "message_id": message_id}
 
     async def _safe_handle(self, message_id: str, payload: dict) -> None:
         try:
@@ -157,16 +172,28 @@ class RetryScheduler:
         target = self._original_stream(payload)
         if not target:
             raise KeyError(message_id)
-        event = self._build_requeue_event(payload, "retry.manual_replay")
-        published_id = await self.bus.publish_event(target, event)
-        RETRY_TOTAL.labels(kind="manual_replay").inc()
-        return {
-            "replayed": True,
-            "message_id": message_id,
-            "stream": target,
-            "published_id": published_id,
-            "task_id": event.get("task_id"),
-        }
+        with start_span(
+            "retry.manual_replay",
+            **{
+                "service.name": "retry-scheduler",
+                "agent": "retry-scheduler",
+                "task_id": str(payload.get("task_id", "")),
+                "workflow_id": str(payload.get("workflow_id", "")),
+                "stream": target,
+                "redis.message_id": message_id,
+                "event_type": "retry.manual_replay",
+            },
+        ):
+            event = self._build_requeue_event(payload, "retry.manual_replay")
+            published_id = await self.bus.publish_event(target, event)
+            RETRY_TOTAL.labels(kind="manual_replay").inc()
+            return {
+                "replayed": True,
+                "message_id": message_id,
+                "stream": target,
+                "published_id": published_id,
+                "task_id": event.get("task_id"),
+            }
 
     async def run(self, stop_event: asyncio.Event) -> None:
         """Consume stream.deadletter until stop_event is set."""

@@ -9,13 +9,23 @@ from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.notifications.client import NotificationClient
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_redis,
+    setup_tracing,
+)
 
 ORCHESTRATOR_URL = os.environ.get("ORCHESTRATOR_URL", "http://localhost:8000").rstrip("/")
 TASKS_STREAM = "stream.tasks"
 
 setup_tracing("communication-gateway")
+instrument_asyncpg()
+instrument_redis()
+instrument_httpx()
 app = FastAPI(title="communication-gateway")
+instrument_fastapi(app, "communication-gateway")
 install_metrics_endpoint(app)
 
 

@@ -7,13 +7,21 @@ from pydantic import BaseModel, Field
 
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
+    instrument_fastapi,
+    instrument_redis,
+    setup_tracing,
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
 AUDIT_STREAM = "stream.audit"
 
 setup_tracing("audit-service")
+instrument_asyncpg()
+instrument_redis()
 app = FastAPI(title="audit-service")
+instrument_fastapi(app, "audit-service")
 install_metrics_endpoint(app)
 
 

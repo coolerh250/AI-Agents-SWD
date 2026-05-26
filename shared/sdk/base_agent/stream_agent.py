@@ -17,6 +17,7 @@ from shared.sdk.observability.metrics import (
     AGENT_EXECUTION_TOTAL,
     AGENT_LATENCY_SECONDS,
 )
+from shared.sdk.observability.tracing import start_span
 
 
 class StreamAgent(BaseAgent):
@@ -74,12 +75,44 @@ class StreamAgent(BaseAgent):
         artifact_refs, event_type, message, and optional execution_metadata.
         """
 
+    async def publish_next(self, message: dict) -> str:
+        """Publish ``message`` to ``output_stream`` inside an ``agent.publish_next`` span.
+
+        Concrete handle() implementations use this instead of calling ``bus.publish_event``
+        directly so the per-agent custom span is always emitted.
+        """
+        with start_span(
+            "agent.publish_next",
+            **{
+                "service.name": self.name,
+                "agent": self.name,
+                "stream": self.output_stream,
+                "task_id": str(message.get("task_id", "")),
+                "workflow_id": str(message.get("workflow_id", "")),
+                "event_type": str(message.get("event", "")),
+            },
+        ):
+            return await self.bus.publish_event(self.output_stream, message)
+
     async def process(self, payload: dict) -> dict:
         task_id = str(payload.get("task_id", "unknown"))
-        execution_id = await self._start_execution(task_id)
+        workflow_id = str(payload.get("workflow_id", ""))
+        span_attrs = {
+            "service.name": self.name,
+            "agent": self.name,
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "stream": self.input_stream,
+            "event_type": str(payload.get("event", "")),
+        }
+        with start_span("agent.receive", **span_attrs):
+            execution_id = await self._start_execution(task_id)
         started = time.perf_counter()
         try:
-            result = await self.handle(payload)
+            with start_span("agent.execute", **span_attrs):
+                with start_span("agent.analyze", **span_attrs):
+                    pass
+                result = await self.handle(payload)
         except Exception as exc:
             self.failed_count += 1
             AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="failed").inc()
@@ -92,20 +125,22 @@ class StreamAgent(BaseAgent):
         AGENT_EXECUTION_TOTAL.labels(agent=self.name, status="completed").inc()
         AGENT_LATENCY_SECONDS.labels(agent=self.name).observe(time.perf_counter() - started)
         await self._complete_execution(execution_id, result)
-        await self.write_audit(
-            {
-                "decision_type": result.get("decision_type", self.name),
-                "summary": result.get("summary", ""),
-                "result": result.get("result", ""),
-                "task_id": task_id,
-                "artifact_refs": result.get("artifact_refs", {}),
-            }
-        )
-        await send_notification(
-            task_id,
-            result.get("event_type", f"{self.name}.completed"),
-            result.get("message", result.get("summary", "")),
-        )
+        with start_span("agent.write_audit", **span_attrs):
+            await self.write_audit(
+                {
+                    "decision_type": result.get("decision_type", self.name),
+                    "summary": result.get("summary", ""),
+                    "result": result.get("result", ""),
+                    "task_id": task_id,
+                    "artifact_refs": result.get("artifact_refs", {}),
+                }
+            )
+        with start_span("agent.publish_notification", **span_attrs):
+            await send_notification(
+                task_id,
+                result.get("event_type", f"{self.name}.completed"),
+                result.get("message", result.get("summary", "")),
+            )
         return result
 
     async def run_consumer(self, stop_event: asyncio.Event) -> None:

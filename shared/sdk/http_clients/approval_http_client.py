@@ -2,6 +2,8 @@ import os
 
 import httpx
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_APPROVAL_ENGINE_URL = "http://localhost:8002"
 
 
@@ -20,6 +22,7 @@ class ApprovalHttpClient:
         risk_level: str = "unknown",
         reason: str = "",
         requested_by: str = "orchestrator",
+        workflow_id: str = "",
     ) -> dict:
         payload = {
             "task_id": task_id,
@@ -28,10 +31,20 @@ class ApprovalHttpClient:
             "reason": reason,
             "requested_by": requested_by,
         }
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(f"{self.base_url}/approval/request", json=payload)
-            response.raise_for_status()
-            return response.json()
+        with start_span(
+            "approval.request",
+            **{
+                "http.client.service": "approval-engine",
+                "approval.action": action,
+                "approval.risk_level": risk_level,
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+            },
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(f"{self.base_url}/approval/request", json=payload)
+                response.raise_for_status()
+                return response.json()
 
     async def approve(self, request_id: str, decided_by: str = "operator") -> dict:
         return await self._decide("approve", request_id, decided_by)
@@ -41,13 +54,28 @@ class ApprovalHttpClient:
 
     async def _decide(self, decision: str, request_id: str, decided_by: str) -> dict:
         payload = {"request_id": request_id, "decided_by": decided_by}
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(f"{self.base_url}/approval/{decision}", json=payload)
-            response.raise_for_status()
-            return response.json()
+        with start_span(
+            f"approval.{decision}",
+            **{
+                "http.client.service": "approval-engine",
+                "approval.request_id": request_id,
+                "approval.decided_by": decided_by,
+            },
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(f"{self.base_url}/approval/{decision}", json=payload)
+                response.raise_for_status()
+                return response.json()
 
     async def get_approval(self, request_id: str) -> dict:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.get(f"{self.base_url}/approval/{request_id}")
-            response.raise_for_status()
-            return response.json()
+        with start_span(
+            "approval.get",
+            **{
+                "http.client.service": "approval-engine",
+                "approval.request_id": request_id,
+            },
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.get(f"{self.base_url}/approval/{request_id}")
+                response.raise_for_status()
+                return response.json()

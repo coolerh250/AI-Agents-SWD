@@ -2,11 +2,12 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import instrument_fastapi, setup_tracing
 from shared.sdk.policy.client import RESTRICTED_ACTIONS
 
 setup_tracing("policy-engine")
 app = FastAPI(title="policy-engine")
+instrument_fastapi(app, "policy-engine")
 install_metrics_endpoint(app)
 
 

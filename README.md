@@ -512,6 +512,54 @@ service-map can correlate spans with the agent / workflow metrics.
 `scripts/verify_tracing_backend.sh` validates the Tempo container, OTLP port
 listeners, and the Grafana Tempo datasource.
 
+**OpenTelemetry auto-instrumentation** — every service calls
+`setup_tracing(service_name)` then installs the OpenTelemetry SDK
+instrumentations relevant to its stack
+(`shared/sdk/observability/tracing.py`):
+
+- `instrument_fastapi(app, name)` produces an HTTP span per incoming request
+- `instrument_httpx()` produces a client span for every outbound
+  service-to-service call (orchestrator → policy / approval / audit,
+  communication-gateway → orchestrator)
+- `instrument_redis()` produces a span per Redis command, on top of the
+  per-publish / per-consume / per-ack custom spans emitted by
+  `RedisStreamEventBus`
+- `instrument_asyncpg()` produces a span per SQL statement, on top of the
+  per-operation custom spans wrapped around `WorkflowStore`,
+  `AgentExecutionStore`, and `deployment_records`
+
+**Custom span hierarchy** — on top of auto-instrumentation each workflow,
+agent, and retry step emits a named custom span (`shared/sdk/observability/
+tracing.py::start_span`):
+
+| Layer | Span names |
+|-------|-----------|
+| Orchestrator workflow | `workflow.run`, `workflow.policy_check`, `workflow.approval_request`, `workflow.audit`, `workflow.dispatch`, `workflow.event_update`, `workflow.completed`, `workflow.failed` |
+| Agent (`StreamAgent`)   | `agent.receive`, `agent.analyze`, `agent.execute`, `agent.publish_next`, `agent.write_audit`, `agent.publish_notification` |
+| Retry scheduler        | `retry.consume_deadletter`, `retry.requeue`, `retry.terminal_failure`, `retry.manual_replay` |
+| Redis event bus        | `redis.publish`, `redis.consume`, `redis.consume_multi`, `redis.ack` |
+| HTTP clients           | `policy.evaluate`, `approval.request`, `approval.approve`, `approval.reject`, `approval.get`, `audit.record_event`, `audit.get_events` |
+| asyncpg (custom)       | `workflow_store.{create,update,get}`, `agent_execution.{create,complete,fail}`, `deployment_records.insert` |
+
+Every custom span carries the `{service.name, task_id, workflow_id, agent,
+event_type, stream}` attribute set so Tempo's service-map and Grafana's
+TraceQL search can group spans by task / workflow.
+
+**Querying traces in Grafana** — open http://localhost:3000 → Explore →
+data source `Tempo`. Pick `TraceQL` and try `{ service.name = "orchestrator"
+}` or `{ name = "workflow.dispatch" }`. Each Redis event in the pipeline still
+carries the `{task_id, workflow_id, trace_id, span_id}` correlation block, so
+`/workflow/progress/{task_id}` and `/workflow/timeline/{task_id}` both expose
+the `trace_id` for direct pivoting into Tempo.
+
+**End-to-end verification** — `scripts/verify_trace_flow.sh` seeds one task
+through `/intake/mock`, polls `/workflow/progress/{task_id}` until the
+workflow reaches `completed`, then queries
+`GET http://tempo:3200/api/traces/<trace_id>` and asserts that all seven
+service names (`communication-gateway`, `orchestrator`, `intake-agent`,
+`requirement-agent`, `development-agent`, `qa-agent`, `devops-agent`) appear
+in the same trace.
+
 Open the dashboard at http://localhost:3000 (folder "AI Agents SWD"; the
 dashboard `AI Agents SWD Platform`). The Tempo datasource is available
 under Connections → Data sources → Tempo.

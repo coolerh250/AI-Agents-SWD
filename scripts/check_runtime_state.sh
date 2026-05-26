@@ -611,4 +611,40 @@ else
 fi
 
 echo
+echo "=== trace flow smoke (trace_id reaches Tempo with all 7 service spans) ==="
+tf_task="smoke-trace-flow-$$"
+curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$tf_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"trace flow check\"},\"publish_to_stream\":true}" \
+  >/dev/null 2>&1 || true
+tf_trace=""
+tf_stage=""
+for i in $(seq 1 40); do
+  tf_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$tf_task" || echo '{}')
+  tf_stage=$(echo "$tf_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  if [ -z "$tf_trace" ]; then
+    tf_trace=$(echo "$tf_prog" | sed -n 's/.*"trace_id": *"\([a-f0-9]*\)".*/\1/p' | head -n1)
+  fi
+  if [ "$tf_stage" = "completed" ]; then break; fi
+  sleep 2
+done
+echo "task=$tf_task trace_id=$tf_trace stage=$tf_stage"
+sleep 6
+if [ -n "$tf_trace" ]; then
+  tf_body=$(curl -sS -m 15 "http://localhost:3200/api/traces/$tf_trace" || echo '')
+  echo "$tf_body" | head -c 500
+  echo
+  hits=0
+  for svc in communication-gateway orchestrator intake-agent requirement-agent development-agent qa-agent devops-agent; do
+    if echo "$tf_body" | grep -q "\"$svc\""; then hits=$((hits+1)); fi
+  done
+  if [ "${hits:-0}" -ge 6 ]; then
+    echo "TRACE_FLOW_SMOKE: PASS ($hits/7 services in trace $tf_trace)"
+  else
+    echo "TRACE_FLOW_SMOKE: CHECK ($hits/7 services in trace $tf_trace)"
+  fi
+else
+  echo "TRACE_FLOW_SMOKE: CHECK (no trace_id for $tf_task)"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

@@ -31,7 +31,7 @@ class IntakeAgent(StreamAgent):
     async def handle(self, payload: dict) -> dict:
         message = self.build_message(payload)
         task_id = message["task_id"]
-        await self.bus.publish_event(self.output_stream, message)
+        await self.publish_next(message)
         return {
             "task_id": task_id,
             "decision_type": "intake",

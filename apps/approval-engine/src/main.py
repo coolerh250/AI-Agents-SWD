@@ -6,13 +6,21 @@ from pydantic import BaseModel
 
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
+    instrument_fastapi,
+    instrument_redis,
+    setup_tracing,
+)
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
 APPROVALS_STREAM = "stream.approvals"
 
 setup_tracing("approval-engine")
+instrument_asyncpg()
+instrument_redis()
 app = FastAPI(title="approval-engine")
+instrument_fastapi(app, "approval-engine")
 install_metrics_endpoint(app)
 
 

@@ -12,12 +12,22 @@ from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import WORKFLOW_FAILED_TOTAL, install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_redis,
+    setup_tracing,
+    start_span,
+)
 from shared.sdk.workflow_store.store import WorkflowStore
 from workflow import run_mock_workflow, workflow_state_schema
 from workflow_events import WorkflowEventConsumer
 
 setup_tracing("orchestrator")
+instrument_asyncpg()
+instrument_redis()
+instrument_httpx()
 
 TERMINAL_STAGES = {"completed", "canceled", "aborted", "rejected"}
 
@@ -32,54 +42,71 @@ async def _terminate_workflow(task_id: str, new_stage: str, reason: str) -> dict
     Only a non-terminal workflow can be terminated. Mock-safe: it records
     bookkeeping only — no production action runs.
     """
-    store = WorkflowStore()
-    try:
-        workflow = await store.get_workflow_state(task_id)
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
-    if workflow is None:
-        raise HTTPException(status_code=404, detail="workflow not found")
-    current = workflow["stage"]
-    if current in TERMINAL_STAGES:
-        raise HTTPException(
-            status_code=409,
-            detail=f"workflow {task_id} is {current}; cannot {new_stage}",
+    with start_span(
+        "workflow.failed",
+        **{
+            "service.name": "orchestrator",
+            "task_id": task_id,
+            "agent": "orchestrator",
+            "event_type": "workflow_failed",
+            "workflow.terminal_stage": new_stage,
+            "workflow.reason": reason,
+        },
+    ):
+        store = WorkflowStore()
+        try:
+            workflow = await store.get_workflow_state(task_id)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail=f"workflow store unavailable: {exc}"
+            ) from exc
+        if workflow is None:
+            raise HTTPException(status_code=404, detail="workflow not found")
+        current = workflow["stage"]
+        if current in TERMINAL_STAGES:
+            raise HTTPException(
+                status_code=409,
+                detail=f"workflow {task_id} is {current}; cannot {new_stage}",
+            )
+        state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
+        execution_result = (
+            dict(workflow["execution_result"])
+            if isinstance(workflow["execution_result"], dict)
+            else {}
         )
-    state = dict(workflow["state"]) if isinstance(workflow["state"], dict) else {}
-    execution_result = (
-        dict(workflow["execution_result"]) if isinstance(workflow["execution_result"], dict) else {}
-    )
-    timestamp_key = "canceled_at" if new_stage == "canceled" else "aborted_at"
-    reason_key = "cancel_reason" if new_stage == "canceled" else "abort_reason"
-    timestamp = _utcnow_iso()
-    state["stage"] = new_stage
-    state[timestamp_key] = timestamp
-    state[reason_key] = reason
-    execution_result["status"] = new_stage
-    execution_result[timestamp_key] = timestamp
-    execution_result[reason_key] = reason
-    execution_result["production_executed"] = False
-    state["execution_result"] = execution_result
-    try:
-        updated = await store.update_workflow_state(
-            task_id,
-            stage=new_stage,
-            state=state,
-            approval_required=bool(workflow["approval_required"]),
-            approval_status=str(workflow["approval_status"] or "none"),
-            risk_level=str(workflow["risk_level"] or "unknown"),
-            execution_result=execution_result,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
-    if updated is None:
-        raise HTTPException(status_code=404, detail="workflow not found")
-    message = f"workflow {task_id} {new_stage}"
-    if reason:
-        message = f"{message}: {reason}"
-    WORKFLOW_FAILED_TOTAL.labels(reason=new_stage).inc()
-    await send_notification(task_id, f"workflow.{new_stage}", message)
-    return updated
+        timestamp_key = "canceled_at" if new_stage == "canceled" else "aborted_at"
+        reason_key = "cancel_reason" if new_stage == "canceled" else "abort_reason"
+        timestamp = _utcnow_iso()
+        state["stage"] = new_stage
+        state[timestamp_key] = timestamp
+        state[reason_key] = reason
+        execution_result["status"] = new_stage
+        execution_result[timestamp_key] = timestamp
+        execution_result[reason_key] = reason
+        execution_result["production_executed"] = False
+        state["execution_result"] = execution_result
+        try:
+            updated = await store.update_workflow_state(
+                task_id,
+                stage=new_stage,
+                state=state,
+                approval_required=bool(workflow["approval_required"]),
+                approval_status=str(workflow["approval_status"] or "none"),
+                risk_level=str(workflow["risk_level"] or "unknown"),
+                execution_result=execution_result,
+            )
+        except Exception as exc:
+            raise HTTPException(
+                status_code=503, detail=f"workflow store unavailable: {exc}"
+            ) from exc
+        if updated is None:
+            raise HTTPException(status_code=404, detail="workflow not found")
+        message = f"workflow {task_id} {new_stage}"
+        if reason:
+            message = f"{message}: {reason}"
+        WORKFLOW_FAILED_TOTAL.labels(reason=new_stage).inc()
+        await send_notification(task_id, f"workflow.{new_stage}", message)
+        return updated
 
 
 APPROVALS_STREAM = "stream.approvals"
@@ -136,6 +163,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="orchestrator", lifespan=lifespan)
+instrument_fastapi(app, "orchestrator")
 install_metrics_endpoint(app)
 
 

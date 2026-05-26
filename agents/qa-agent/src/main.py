@@ -6,9 +6,18 @@ from fastapi import FastAPI
 
 from agent import QAAgent
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
+    instrument_fastapi,
+    instrument_httpx,
+    instrument_redis,
+    setup_tracing,
+)
 
 setup_tracing("qa-agent")
+instrument_asyncpg()
+instrument_redis()
+instrument_httpx()
 _agent = QAAgent()
 _stop_event = asyncio.Event()
 
@@ -27,6 +36,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="qa-agent", lifespan=lifespan)
+instrument_fastapi(app, "qa-agent")
 install_metrics_endpoint(app)
 
 

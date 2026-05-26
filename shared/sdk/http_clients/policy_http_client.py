@@ -2,6 +2,8 @@ import os
 
 import httpx
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_POLICY_ENGINE_URL = "http://localhost:8001"
 
 
@@ -13,10 +15,19 @@ class PolicyHttpClient:
         self.base_url = resolved.rstrip("/")
         self.timeout = timeout
 
-    async def evaluate(self, action: str) -> dict:
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.post(
-                f"{self.base_url}/policy/evaluate", json={"action": action}
-            )
-            response.raise_for_status()
-            return response.json()
+    async def evaluate(self, action: str, task_id: str = "", workflow_id: str = "") -> dict:
+        with start_span(
+            "policy.evaluate",
+            **{
+                "http.client.service": "policy-engine",
+                "policy.action": action,
+                "task_id": task_id,
+                "workflow_id": workflow_id,
+            },
+        ):
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                response = await client.post(
+                    f"{self.base_url}/policy/evaluate", json={"action": action}
+                )
+                response.raise_for_status()
+                return response.json()

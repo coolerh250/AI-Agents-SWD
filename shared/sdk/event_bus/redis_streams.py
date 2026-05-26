@@ -5,6 +5,8 @@ from datetime import datetime, timezone
 import redis.asyncio as aioredis
 from redis.exceptions import ResponseError
 
+from shared.sdk.observability.tracing import start_span
+
 DEFAULT_REDIS_URL = "redis://localhost:6379"
 DEAD_LETTER_STREAM = "stream.deadletter"
 DEFAULT_MAX_RETRIES = 3
@@ -81,7 +83,22 @@ class RedisStreamEventBus:
                 raise
 
     async def publish_event(self, stream: str, event: dict) -> str:
-        return await self.client.xadd(stream, {"data": json.dumps(event)})
+        with start_span(
+            "redis.publish",
+            **{
+                "redis.stream": stream,
+                "redis.operation": "xadd",
+                "task_id": event.get("task_id", ""),
+                "workflow_id": event.get("workflow_id", ""),
+                "event_type": event.get("event", ""),
+            },
+        ) as span:
+            message_id = await self.client.xadd(stream, {"data": json.dumps(event)})
+            try:
+                span.set_attribute("redis.message_id", str(message_id))
+            except Exception:
+                pass
+            return message_id
 
     async def publish_dead_letter(
         self,
@@ -112,23 +129,36 @@ class RedisStreamEventBus:
         block_ms: int = 5000,
     ) -> list:
         await self.ensure_group(stream, group)
-        response = await self.client.xreadgroup(
-            groupname=group,
-            consumername=consumer,
-            streams={stream: ">"},
-            count=count,
-            block=block_ms,
-        )
-        events: list = []
-        for _stream, messages in response or []:
-            for message_id, fields in messages:
-                raw = fields.get("data", "{}")
-                try:
-                    payload = json.loads(raw)
-                except (ValueError, TypeError):
-                    payload = {"raw": raw}
-                events.append({"id": message_id, "event": payload})
-        return events
+        with start_span(
+            "redis.consume",
+            **{
+                "redis.stream": stream,
+                "redis.group": group,
+                "redis.consumer": consumer,
+                "redis.operation": "xreadgroup",
+            },
+        ) as span:
+            response = await self.client.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams={stream: ">"},
+                count=count,
+                block=block_ms,
+            )
+            events: list = []
+            for _stream, messages in response or []:
+                for message_id, fields in messages:
+                    raw = fields.get("data", "{}")
+                    try:
+                        payload = json.loads(raw)
+                    except (ValueError, TypeError):
+                        payload = {"raw": raw}
+                    events.append({"id": message_id, "event": payload})
+            try:
+                span.set_attribute("redis.batch_size", len(events))
+            except Exception:
+                pass
+            return events
 
     async def consume_events_multi(
         self,
@@ -145,26 +175,48 @@ class RedisStreamEventBus:
         """
         for stream in streams:
             await self.ensure_group(stream, group)
-        response = await self.client.xreadgroup(
-            groupname=group,
-            consumername=consumer,
-            streams={stream: ">" for stream in streams},
-            count=count,
-            block=block_ms,
-        )
-        events: list = []
-        for stream, messages in response or []:
-            for message_id, fields in messages:
-                raw = fields.get("data", "{}")
-                try:
-                    payload = json.loads(raw)
-                except (ValueError, TypeError):
-                    payload = {"raw": raw}
-                events.append({"id": message_id, "stream": stream, "event": payload})
-        return events
+        with start_span(
+            "redis.consume_multi",
+            **{
+                "redis.streams": ",".join(streams),
+                "redis.group": group,
+                "redis.consumer": consumer,
+                "redis.operation": "xreadgroup",
+            },
+        ) as span:
+            response = await self.client.xreadgroup(
+                groupname=group,
+                consumername=consumer,
+                streams={stream: ">" for stream in streams},
+                count=count,
+                block=block_ms,
+            )
+            events: list = []
+            for stream, messages in response or []:
+                for message_id, fields in messages:
+                    raw = fields.get("data", "{}")
+                    try:
+                        payload = json.loads(raw)
+                    except (ValueError, TypeError):
+                        payload = {"raw": raw}
+                    events.append({"id": message_id, "stream": stream, "event": payload})
+            try:
+                span.set_attribute("redis.batch_size", len(events))
+            except Exception:
+                pass
+            return events
 
     async def ack_event(self, stream: str, group: str, message_id: str) -> int:
-        return await self.client.xack(stream, group, message_id)
+        with start_span(
+            "redis.ack",
+            **{
+                "redis.stream": stream,
+                "redis.group": group,
+                "redis.message_id": message_id,
+                "redis.operation": "xack",
+            },
+        ):
+            return await self.client.xack(stream, group, message_id)
 
     async def close(self) -> None:
         if self._client is not None:

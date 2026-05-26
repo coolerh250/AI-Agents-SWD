@@ -6,9 +6,14 @@ from fastapi import FastAPI, HTTPException
 
 from scheduler import RetryScheduler
 from shared.sdk.observability.metrics import install_metrics_endpoint
-from shared.sdk.observability.tracing import setup_tracing
+from shared.sdk.observability.tracing import (
+    instrument_fastapi,
+    instrument_redis,
+    setup_tracing,
+)
 
 setup_tracing("retry-scheduler")
+instrument_redis()
 _scheduler = RetryScheduler()
 _stop_event = asyncio.Event()
 
@@ -27,6 +32,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 app = FastAPI(title="retry-scheduler", lifespan=lifespan)
+instrument_fastapi(app, "retry-scheduler")
 install_metrics_endpoint(app)
 
 
