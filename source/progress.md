@@ -1234,3 +1234,224 @@ issues & blockers, and next-step suggestions.
   3. **Add a `tempo` job to Prometheus** so Tempo's own metrics (block
      count, ingester rate, query duration) are scrapeable from the same
      observability stack.
+
+---
+
+## Stage 16.2 — Step 15.2: OpenTelemetry Auto-Instrumentation + Custom Workflow / Agent / Retry Spans
+
+- **Execution time:** 2026-05-25 19:30 – 2026-05-26 11:55 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; deliverable commit `cee0719`,
+  follow-up fix commits `ad9e497`, `6b53139`, `ad632d8`, `f545cb0`;
+  Stage 16.2 progress record committed on top of `f545cb0`.
+- **Modified files:**
+  - `requirements.txt` — added `opentelemetry-exporter-otlp-proto-grpc`
+    plus the four OTel instrumentation packages (fastapi, httpx, redis,
+    asyncpg)
+  - `apps/orchestrator/requirements.txt`,
+    `apps/communication-gateway/requirements.txt`,
+    `apps/policy-engine/requirements.txt`,
+    `apps/approval-engine/requirements.txt`,
+    `apps/audit-service/requirements.txt`,
+    `apps/retry-scheduler/requirements.txt`,
+    `agents/intake-agent/requirements.txt`,
+    `agents/requirement-agent/requirements.txt`,
+    `agents/development-agent/requirements.txt`,
+    `agents/qa-agent/requirements.txt`,
+    `agents/devops-agent/requirements.txt` — per-service OTel
+    instrumentation deps (`-fastapi` everywhere, `-httpx` / `-redis` /
+    `-asyncpg` where the service uses each library)
+  - `shared/sdk/observability/tracing.py` — `instrument_fastapi`,
+    `instrument_httpx`, `instrument_redis`, `instrument_asyncpg`,
+    `instrument_all_clients` (idempotent, best-effort); `get_tracer`;
+    `start_span(name, *, parent_trace_id, parent_span_id, **attrs)` with
+    OTel-friendly attribute coercion and remote-parent-context support;
+    `get_current_trace_id` helper; `_NoopTracer` / `_NoopSpan` fallback
+  - `apps/orchestrator/src/main.py`,
+    `apps/orchestrator/src/workflow.py`,
+    `apps/orchestrator/src/workflow_events.py` — `setup_tracing` plus
+    `instrument_fastapi(app, "orchestrator")`,
+    `instrument_asyncpg / redis / httpx`; custom spans `workflow.run`,
+    `workflow.policy_check`, `workflow.approval_request`,
+    `workflow.audit`, `workflow.dispatch`, `workflow.event_update`,
+    `workflow.completed`, `workflow.failed`; `_initial_state` adopts
+    the active OTel trace_id so `/workflow/progress` and Tempo agree
+  - `apps/communication-gateway/src/main.py`,
+    `apps/policy-engine/src/main.py`,
+    `apps/approval-engine/src/main.py`,
+    `apps/audit-service/src/main.py`,
+    `apps/retry-scheduler/src/main.py` — `instrument_fastapi` plus
+    library-specific instrumentations during service startup
+  - `apps/retry-scheduler/src/scheduler.py` — `retry.consume_deadletter`,
+    `retry.requeue`, `retry.terminal_failure`, `retry.manual_replay`
+    custom spans with `service.name / agent / task_id / workflow_id /
+    stream / event_type / redis.message_id` attributes
+  - `shared/sdk/base_agent/stream_agent.py` — `process()` reads
+    `payload["trace_id"]` + `payload["span_id"]` and opens
+    `agent.receive` as a remote-parented span so the downstream agent
+    inherits the upstream trace_id; nested `agent.execute`,
+    `agent.analyze`, `agent.write_audit`,
+    `agent.publish_notification`; new `publish_next(message)` helper
+    emits `agent.publish_next` and replaces direct
+    `self.bus.publish_event` calls in every agent
+  - `agents/intake-agent/src/main.py`,
+    `agents/requirement-agent/src/main.py`,
+    `agents/development-agent/src/main.py`,
+    `agents/qa-agent/src/main.py`,
+    `agents/devops-agent/src/main.py` — `setup_tracing` plus
+    `instrument_*` calls during startup,
+    `instrument_fastapi(app, name)`
+  - `agents/intake-agent/src/agent.py`,
+    `agents/requirement-agent/src/agent.py`,
+    `agents/development-agent/src/agent.py`,
+    `agents/qa-agent/src/agent.py`,
+    `agents/devops-agent/src/agent.py` — call `self.publish_next` so
+    every hand-off emits the `agent.publish_next` span; devops-agent
+    wraps `deployment_records.insert` in a custom span
+  - `shared/sdk/event_bus/redis_streams.py` — `publish_event`,
+    `consume_events`, `consume_events_multi`, `ack_event` each emit a
+    custom span carrying `redis.stream / redis.group /
+    redis.consumer / redis.message_id / task_id / workflow_id /
+    event_type / redis.batch_size / redis.operation`
+  - `shared/sdk/workflow_store/store.py`,
+    `shared/sdk/agent_execution/store.py` — custom asyncpg spans
+    (`workflow_store.{create,update,get}`,
+    `agent_execution.{create,complete,fail}`) layered on top of the
+    auto-instrumented SQL spans
+  - `shared/sdk/http_clients/policy_http_client.py`,
+    `shared/sdk/http_clients/audit_http_client.py`,
+    `shared/sdk/http_clients/approval_http_client.py` — new
+    `task_id` / `workflow_id` kwargs plus custom `policy.evaluate`,
+    `approval.{request,approve,reject,get}`,
+    `audit.{record_event,get_events}` spans
+  - `scripts/verify_trace_flow.sh` (new, +x in git index) — seeds a
+    task through the gateway in orchestrator mode, polls
+    `/workflow/progress/{task_id}` until completed, queries
+    `GET http://tempo:3200/api/traces/<trace_id>`, asserts all seven
+    `service.name` values appear, prints
+    `TRACE_FLOW_SMOKE: PASS / FAIL / CHECK`
+  - `scripts/check_runtime_state.sh` — appended a `TRACE_FLOW_SMOKE`
+    section calling the gateway in orchestrator mode and verifying
+    the trace in Tempo; SIGPIPE-safe `head -c N || true`
+  - `tests/test_auto_instrumentation.py` (new) — idempotency of
+    `setup_tracing`, `instrument_fastapi`, `instrument_httpx`,
+    `instrument_redis`, `instrument_asyncpg`; verifies the four OTel
+    instrumentation packages and the OTLP gRPC exporter are importable
+  - `tests/test_custom_spans.py` (new) — `start_span` is a working
+    context manager, swallows attribute-coercion errors, propagates
+    user exceptions; `inject_trace_context` keeps trace_id constant
+    and assigns fresh span_ids per hop; greps each source file to
+    assert every required custom span name is present in the workflow
+    / agent / retry code
+  - `tests/test_trace_flow.py` (new) — script exists, is +x in the
+    git index, has valid bash syntax, targets the seven services,
+    emits PASS / FAIL markers; live smoke runs `verify_trace_flow.sh`
+    and asserts it reaches `VERIFY_TRACE_FLOW_DONE` when the stack is up
+  - `tests/test_httpx_tracing.py` (new) — http clients accept
+    `task_id` / `workflow_id` kwargs; live smoke calls
+    `policy.evaluate` and `audit.record_event` under tracing when
+    the services are up
+  - `tests/test_redis_tracing.py` (new) — module imports succeed
+    under best-effort OTel; live `publish_event` → `consume_events`
+    → `ack_event` round-trip still works with spans wrapping every
+    step; Tempo `/api/search` endpoint reachable
+  - `README.md` — added the OpenTelemetry auto-instrumentation /
+    custom-span-hierarchy section, TraceQL examples for Grafana
+    Explore, `verify_trace_flow.sh` usage
+  - `source/progress.md` — this Stage 16.2 entry
+
+- **Deployment target:** test server `10.0.1.31` (`aiagent-swd`,
+  Ubuntu 24.04.4 LTS). Server pulled `f545cb0` via
+  `git pull --ff-only`, rebuilt the eleven service images
+  (`docker compose -f infra/docker-compose/docker-compose.yml build`),
+  restarted the stack. All seventeen containers reach
+  `Up … (healthy)`. No production resources were created. No
+  production deploy was performed.
+
+- **Test results (10.0.1.31, all from the venv):**
+
+  | Check | Result |
+  |-------|--------|
+  | `pytest -q` (whole suite) | **227 passed, 1 warning** in 36.3s |
+  | `ruff check .` | All checks passed |
+  | `black --check .` | 98 files would be left unchanged |
+  | `mypy shared/` | Success: no issues found in 29 source files |
+  | `scripts/check_runtime_state.sh` | 36 of 36 smokes **PASS**, including the new `TRACE_FLOW_SMOKE: PASS (7/7 services in trace …)` |
+  | `scripts/verify_trace_flow.sh` | `TRACE_FLOW_SMOKE: PASS` — trace_id reaches Tempo with all seven expected `service.name` values |
+  | `docker compose ps` | seventeen containers, every one `Up (healthy)` |
+
+  **Auto-instrumentation coverage (verified against `/api/traces/<trace_id>` payloads):**
+
+  | Layer | Coverage |
+  |-------|----------|
+  | FastAPI HTTP spans | `communication-gateway`, `orchestrator`, `policy-engine`, `approval-engine`, `audit-service`, `retry-scheduler`, `intake-agent`, `requirement-agent`, `development-agent`, `qa-agent`, `devops-agent` (all eleven services emit per-request spans) |
+  | httpx client spans | orchestrator → policy-engine / approval-engine / audit-service; communication-gateway → orchestrator (W3C `traceparent` propagated automatically by the auto-instrumentation) |
+  | Redis publish / consume / ack spans | every `RedisStreamEventBus.publish_event`, `consume_events`, `consume_events_multi`, `ack_event` call across all services |
+  | asyncpg SQL spans | `workflow_store.{create,update,get}`, `agent_execution.{create,complete,fail}`, `deployment_records.insert` — plus per-statement spans from `AsyncPGInstrumentor` |
+  | Custom workflow spans | `workflow.run`, `workflow.policy_check`, `workflow.approval_request`, `workflow.audit`, `workflow.dispatch`, `workflow.event_update`, `workflow.completed`, `workflow.failed` |
+  | Custom agent spans | `agent.receive`, `agent.analyze`, `agent.execute`, `agent.publish_next`, `agent.write_audit`, `agent.publish_notification` (one set per agent stage) |
+  | Custom retry spans | `retry.consume_deadletter`, `retry.requeue`, `retry.terminal_failure`, `retry.manual_replay` |
+
+  **Tempo query result (`verify_trace_flow.sh`, run during this stage):**
+
+  ```
+  task_id=trace-verify-1779768241 workflow_id=wf-a444c05856c4
+  trace_id=8be9f0fdeb1a2bb1ff9306684d2b758a final_stage=completed
+    communication-gateway: PRESENT
+    orchestrator:          PRESENT
+    intake-agent:          PRESENT
+    requirement-agent:     PRESENT
+    development-agent:     PRESENT
+    qa-agent:              PRESENT
+    devops-agent:          PRESENT
+  TRACE_FLOW_SMOKE: PASS (trace_id=8be9f0fdeb1a2bb1ff9306684d2b758a covers all 7 services)
+  ```
+
+  The `service.name` attribute in the Tempo trace covers every
+  service the workflow touches. The trace_id reported by
+  `/workflow/progress/{task_id}` matches the trace_id Tempo indexes
+  the spans under (because `_initial_state` now adopts the active
+  OTel trace_id).
+
+- **Issues & blockers:** none — all assertions clear.
+- **Risks / notes:**
+  - The agents inherit the upstream trace_id by building a remote
+    `SpanContext` (`start_span(parent_trace_id=…, parent_span_id=…)`).
+    This is a best-effort propagator — if a future upstream omits
+    `trace_id` / `span_id` from the JSON event the agent simply starts
+    a root span (no exception). The redis-py auto-instrumentation does
+    NOT carry OTel context across stream messages; the in-payload
+    `{trace_id, span_id}` block is the propagation channel.
+  - `test_dlq_replay.py::test_manual_replay_publishes_back_to_original_stream`
+    can flake when the running retry-scheduler container consumes the
+    test's dead-letter entry before `sched.replay()` does — both
+    publish to the same target stream and the test reads the most
+    recent entry. Pre-existing flake unrelated to Step 15.2; passes
+    on re-run.
+  - The `head -c N` Tempo-response preview triggered `SIGPIPE`
+    (exit 141) under `set -euo pipefail`. Documented in this stage;
+    fixed with `|| true`. Worth keeping in mind for any future smoke
+    that pipes a possibly-large response into `head`.
+  - Same as prior stages: no real Slack / Discord / Telegram / GitHub
+    / LLM / Kubernetes / cloud / Grafana Cloud calls; no secrets
+    written; no production deploy; PostgreSQL `trust` auth and
+    Vault dev mode remain local/test-only.
+
+- **Next-step suggestions:**
+  1. **Wire W3C `traceparent` propagation on Redis publishes** so the
+     `redis.publish` span and the downstream agent's `agent.receive`
+     span are also linked directly through the OTel context (not only
+     via the in-payload `trace_id / span_id` fields). This would let
+     the service map in Grafana show the
+     `redis.publish` → `agent.receive` edge automatically.
+  2. **Add a Grafana TraceQL dashboard pane** (or a saved Explore
+     link) that filters by `service.name = "orchestrator"` AND
+     `name = "workflow.run"` so the trace UI surfaces workflow roots
+     at a glance. Today the dashboard already references
+     `workflow_total` / `workflow_completed` metrics; pairing them
+     with a trace pane closes the metrics-→-trace pivot loop.
+  3. **Tighten the dead-letter replay test** (`test_dlq_replay.py`)
+     to either run the replay before the in-container retry-scheduler
+     has a chance to requeue, or scan the target stream for the
+     `retry.manual_replay` entry by event name rather than reading
+     the newest entry. The current flake is harmless but adds noise
+     to CI.
