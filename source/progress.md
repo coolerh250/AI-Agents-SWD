@@ -1455,3 +1455,203 @@ issues & blockers, and next-step suggestions.
      `retry.manual_replay` entry by event name rather than reading
      the newest entry. The current flake is harmless but adds noise
      to CI.
+
+---
+
+## Stage 16.3 — Step 15.3: Alertmanager + Prometheus Alert Rules
+
+- **Execution time:** 2026-05-26 12:00 – 2026-05-26 13:10 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; deliverable commit `fdb1873`;
+  Stage 16.3 progress record committed on top of `fdb1873`.
+- **Modified files:**
+  - `infra/observability/alertmanager/alertmanager.yml` (new) — route +
+    null-receiver only; no `slack_configs / discord_configs /
+    telegram_configs / pagerduty_configs / opsgenie_configs /
+    webhook_configs / email_configs` block exists. Inhibit rule
+    suppresses warning-severity noise when `AIServiceDown` is firing
+    for the same component.
+  - `infra/observability/prometheus/rules/aiagents.rules.yml` (new) —
+    five rule groups (`aiagents.workflow`, `aiagents.agent`,
+    `aiagents.retry`, `aiagents.platform`, `aiagents.approval`) holding
+    eight alerts: `AIWorkflowFailuresHigh`, `AIWorkflowLatencyP95High`,
+    `AIAgentExecutionFailuresHigh`, `AIDeadletterIncreasing`,
+    `AIRetrySpike`, `AIServiceDown` (2m), `AIPrometheusTargetDown`
+    (10m), `AIApprovalPendingTooLong` (placeholder until an
+    `approval_pending_seconds` metric ships — expression
+    `vector(0) > 1`, documented in a code comment). Each rule has
+    `severity` + `component` labels and `summary` + `description` +
+    `runbook_url` annotations.
+  - `infra/observability/prometheus.yml` — added `rule_files:
+    /etc/prometheus/rules/*.rules.yml` plus
+    `alerting.alertmanagers: alertmanager:9093`. Existing scrape
+    configs unchanged.
+  - `infra/observability/grafana/provisioning/datasources/alertmanager.yml`
+    (new) — Alertmanager datasource (`type: alertmanager`,
+    `implementation: prometheus`, `uid: alertmanager`, points at
+    `http://alertmanager:9093`).
+  - `infra/observability/grafana/dashboards/aiagents.json` — dashboard
+    bumped to `version: 2`, 13 panels: *Active alerts (firing)* stat,
+    *Workflows dispatched / completed / failed* stats, *Service health*
+    `up`-per-job table, *Active alerts over time* timeseries, the
+    existing agent rate / agent p95 / workflow p95 / retry / dead-letter
+    panels, plus *Retry totals (by kind)* and *Notifications total*.
+    Every panel's Prometheus reference now uses `uid: prometheus`.
+  - `infra/docker-compose/docker-compose.yml` — new `alertmanager`
+    service (`prom/alertmanager:v0.27.0`, bound to `127.0.0.1:9093`,
+    healthcheck `wget --spider /-/healthy`); `prometheus` now mounts
+    `../observability/prometheus/rules:/etc/prometheus/rules:ro` and
+    `depends_on: alertmanager`; `grafana` also `depends_on:
+    alertmanager`; new named volume `alertmanager-data`.
+  - `scripts/verify_alerting.sh` (new, +x in git index) — verifies
+    `/-/healthy`, `/api/v2/status`, the eight required alert names via
+    `/api/v1/rules`, `/api/v1/alerts`, `/api/v1/targets` (all up),
+    and `/api/v2/receivers` (no slack / discord / telegram / pagerduty
+    / opsgenie / webhook). Emits `ALERTMANAGER_HEALTHY /
+    ALERTMANAGER_STATUS_API / PROMETHEUS_RULES_LOADED /
+    PROMETHEUS_RULES_NAMES / PROMETHEUS_ALERTS_API /
+    PROMETHEUS_TARGETS_ALL_UP / ALERTMANAGER_OFFHOST_RECEIVER` markers
+    + `VERIFY_ALERTING_DONE`.
+  - `scripts/check_runtime_state.sh` — three new sections appended
+    (`ALERTMANAGER_HEALTH`, `PROMETHEUS_RULES_SMOKE`,
+    `PROMETHEUS_ALERTS_API_SMOKE`); existing 36 smokes unchanged.
+  - `tests/test_prometheus_rules.py` (new) — rules file exists, YAML
+    valid, every required alert name + label (`severity`,
+    `component`) + annotation (`summary`, `description`,
+    `runbook_url`) is present, every alert has an `expr`,
+    `prometheus.yml` carries `rule_files` and `alerting.alertmanagers`
+    pointing at `alertmanager:9093`.
+  - `tests/test_alertmanager_config.py` (new) — YAML valid, route +
+    receivers present, default route points at an existing receiver,
+    no receiver declares any of the forbidden notifier blocks
+    (`slack_configs`, …, `email_configs`), docker-compose includes
+    the alertmanager service bound to `127.0.0.1:9093`, prometheus
+    depends on alertmanager and mounts the rules directory.
+  - `tests/test_alerting_endpoints.py` (new) — `verify_alerting.sh`
+    exists, +x in git index, bash-syntax valid, exercises the right
+    endpoints and emits the right markers; `check_runtime_state.sh`
+    includes the three new alerting smokes; live tests (skipped when
+    the stack is down) exercise Alertmanager `/-/healthy`,
+    `/api/v2/status`, Prometheus rule loading + the eight alert
+    names + `/api/v1/alerts`.
+  - `README.md` — new *Alertmanager + Prometheus alert rules* section
+    (table of the eight alerts, `verify_alerting.sh` description,
+    null-receiver contract, "wiring a real notifier later" guidance
+    via Vault); Alertmanager added to the observability stack table
+    and the `infra/observability/` tree listing.
+  - `source/progress.md` — this Stage 16.3 entry.
+
+- **Deployment target:** test server `10.0.1.31` (`aiagent-swd`,
+  Ubuntu 24.04.4 LTS). Server pulled `fdb1873` via
+  `git pull --ff-only`, `docker compose -f
+  infra/docker-compose/docker-compose.yml up -d` added the new
+  `alertmanager` container, and `docker compose up -d
+  --force-recreate prometheus grafana alertmanager` re-ran Grafana's
+  provisioning so the new Alertmanager datasource + updated dashboard
+  were picked up. All eighteen containers reach `Up … (healthy)`.
+  No production resources created; no production deploy performed.
+
+- **Test results (10.0.1.31, all from the venv):**
+
+  | Check | Result |
+  |-------|--------|
+  | `pytest -q` (whole suite) | **249 passed, 1 flaky failure** in 36.2s. The flake is `test_dlq_replay.py::test_manual_replay_publishes_back_to_original_stream`, a pre-existing race with the in-container retry-scheduler documented in Stage 16.2. Passes on isolated re-run (`pytest tests/test_dlq_replay.py -v` → 4 passed). |
+  | `ruff check .` | All checks passed |
+  | `black --check .` | 101 files unchanged |
+  | `mypy shared/` | Success: no issues found in 29 source files |
+  | `scripts/check_runtime_state.sh` | **39 / 39 smokes PASS**, including the new `ALERTMANAGER_HEALTH`, `PROMETHEUS_RULES_SMOKE`, `PROMETHEUS_ALERTS_API_SMOKE`. `TRACE_FLOW_SMOKE: PASS (7/7 services)` continues to pass on top. |
+  | `scripts/verify_alerting.sh` | `VERIFY_ALERTING_DONE` reached; every assertion PASS. |
+  | `docker compose ps` | eighteen containers, every one `Up (healthy)` (alertmanager joined the seventeen-container stack from Stage 16.2). |
+
+  **Alertmanager status:**
+  ```
+  /-/healthy           -> HTTP 200
+  /api/v2/status       -> cluster.status=ready, versionInfo present
+  /api/v2/receivers    -> [{"name":"null-receiver"}]
+  ```
+
+  **Prometheus rules loaded (`/api/v1/rules`):**
+  ```
+  aiagents.* rule groups found: 5
+   - aiagents.workflow   (AIWorkflowFailuresHigh, AIWorkflowLatencyP95High)
+   - aiagents.agent      (AIAgentExecutionFailuresHigh)
+   - aiagents.retry      (AIDeadletterIncreasing, AIRetrySpike)
+   - aiagents.platform   (AIServiceDown, AIPrometheusTargetDown)
+   - aiagents.approval   (AIApprovalPendingTooLong, placeholder)
+  ```
+
+  **Prometheus alerts API (`/api/v1/alerts`):**
+  ```
+  {"status":"success","data":{"alerts":[]}}
+  ```
+  No alerts firing under nominal traffic — expected. All eleven
+  service targets are `up`, so neither `AIServiceDown` nor
+  `AIPrometheusTargetDown` triggers; no recent failures means
+  `AIWorkflowFailuresHigh`, `AIAgentExecutionFailuresHigh`,
+  `AIDeadletterIncreasing`, `AIRetrySpike` stay inactive; workflow
+  p95 well below 30s so `AIWorkflowLatencyP95High` is inactive.
+  `AIApprovalPendingTooLong` is a placeholder rule that cannot fire
+  by design.
+
+  **Grafana dashboard:**
+  ```
+  Dashboard:  AI Agents SWD Platform (uid: aiagents-platform), version 2
+  Panel count: 13
+    - Active alerts (firing)                  [stat, ALERTS{alertstate="firing"}]
+    - Workflows dispatched / completed / failed-canceled-aborted
+    - Service health (up per job)             [table, up]
+    - Active alerts over time                 [timeseries]
+    - Agent execution rate (per agent)        [timeseries]
+    - Agent latency p95 (seconds)             [timeseries]
+    - Workflow duration p95 (seconds)         [timeseries]
+    - Retry / deadletter activity             [timeseries]
+    - Dead-letter total                       [stat]
+    - Retry totals (by kind)                  [stat]
+    - Notifications total (by event_type)     [stat]
+  Datasources visible to Grafana: Prometheus (default), Tempo, Alertmanager
+  ```
+
+- **Issues & blockers:** none — every assertion clears.
+- **Risks / notes:**
+  - The `AIApprovalPendingTooLong` rule is intentionally a placeholder:
+    no `approval_pending_seconds` (or `approval_pending_total`) metric
+    is emitted yet. The expression `vector(0) > 1` is always false so
+    the rule loads cleanly and shows up in `/api/v1/rules` without
+    falsely alerting. The TODO comment in the rule file marks the
+    follow-up.
+  - Alertmanager runs in single-node clustered mode (default).
+    `cluster.peers[0]` self-references the same container — this is
+    correct for one-node mode.
+  - When Grafana is recreated without `--force-recreate`, the
+    provisioned Alertmanager datasource and the dashboard `version:
+    2` may be served stale from the persistent `grafana-data` volume.
+    We run `docker compose up -d --force-recreate prometheus grafana
+    alertmanager` after pulling, which forces re-provisioning.
+    Documented in Stage 16.1; still the supported deploy step.
+  - Same as prior stages: no real Slack / Discord / Telegram /
+    PagerDuty / OpsGenie / webhook / Grafana Cloud / observability
+    SaaS call; no secret or token written; no production deploy;
+    PostgreSQL `trust` auth and Vault dev mode remain
+    local/test-only.
+
+- **Next-step suggestions:**
+  1. **Emit `approval_pending_seconds`** from the approval-engine
+     (Histogram, labelled `risk_level`) so
+     `AIApprovalPendingTooLong` can have a real expression — e.g.
+     `histogram_quantile(0.95,
+     rate(approval_pending_seconds_bucket[1h])) > 3600`. Once that
+     ships, swap the placeholder expression in `aiagents.rules.yml`
+     and tighten the test.
+  2. **Wire alert firing into the workflow timeline UI.** The
+     orchestrator's `/workflow/timeline/{task_id}` already exposes
+     a per-workflow timeline; pulling the matching firing alerts
+     (by `task_id` or `workflow_id` labels — those aren't on `up`
+     today, but could be on `agent_execution_failures_total` and
+     `workflow_failed_total`) would close the metric-→-incident
+     loop in one API call.
+  3. **Add an Alertmanager dead-man's-switch** (`AIDeadMansSwitch`
+     alert that is always firing) routed through a separate
+     "watchdog" receiver. Today the null receiver silently absorbs
+     alerts — a watchdog would let an external auditor confirm
+     Prometheus + Alertmanager are actually evaluating. The
+     watchdog receiver still must not contact any real off-host
+     notifier; it could write to a stream or to stdout.
