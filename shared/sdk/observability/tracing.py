@@ -177,6 +177,11 @@ def _current_otel_ids() -> tuple[str, str]:
     return format(ctx.trace_id, "032x"), format(ctx.span_id, "016x")
 
 
+def get_current_trace_id() -> str:
+    """Return the active OpenTelemetry trace_id (empty when no active span)."""
+    return _current_otel_ids()[0]
+
+
 def generate_trace_id() -> str:
     """Generate a fresh 128-bit trace id (32 hex chars, OTel-compatible)."""
     return uuid.uuid4().hex

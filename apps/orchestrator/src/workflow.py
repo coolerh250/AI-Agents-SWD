@@ -9,7 +9,11 @@ from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import WORKFLOW_TOTAL
-from shared.sdk.observability.tracing import generate_trace_id, start_span
+from shared.sdk.observability.tracing import (
+    generate_trace_id,
+    get_current_trace_id,
+    start_span,
+)
 from shared.sdk.workflow_store.store import WorkflowStore
 
 
@@ -271,10 +275,15 @@ def build_workflow():
 
 
 def _initial_state(request: dict) -> WorkflowState:
+    # Prefer the active OpenTelemetry trace_id so the workflow correlation
+    # block, /workflow/progress, and the Tempo-indexed spans all share one id.
+    inherited_trace_id = (
+        str(request.get("trace_id") or "") or get_current_trace_id() or generate_trace_id()
+    )
     return {
         "task_id": request.get("task_id", "unknown"),
         "workflow_id": request.get("workflow_id") or f"wf-{uuid.uuid4().hex[:12]}",
-        "trace_id": str(request.get("trace_id") or generate_trace_id()),
+        "trace_id": inherited_trace_id,
         "source": request.get("source", "unknown"),
         "request": request.get("request", {}),
         "stage": "intake",
@@ -291,18 +300,23 @@ def _initial_state(request: dict) -> WorkflowState:
 
 
 async def run_mock_workflow(request: dict) -> dict:
-    initial = _initial_state(request)
+    # Open the workflow.run span first so the rest of the workflow inherits
+    # this span's trace_id — that is the id Tempo indexes the trace under and
+    # the id we surface via /workflow/progress so callers can pivot into Tempo.
+    task_id = str(request.get("task_id", "unknown"))
+    workflow_id_hint = str(request.get("workflow_id") or "")
     with start_span(
         "workflow.run",
         **{
             "service.name": "orchestrator",
-            "task_id": initial["task_id"],
-            "workflow_id": initial["workflow_id"],
+            "task_id": task_id,
+            "workflow_id": workflow_id_hint,
             "agent": "orchestrator",
             "event_type": "workflow_run",
-            "request.type": initial["request"].get("type", "unknown"),
+            "request.type": request.get("request", {}).get("type", "unknown"),
         },
     ):
+        initial = _initial_state(request)
         try:
             await WorkflowStore().create_workflow_state(
                 initial["task_id"], dict(initial["request"]), stage="intake"
