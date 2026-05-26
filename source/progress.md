@@ -1655,3 +1655,266 @@ issues & blockers, and next-step suggestions.
      Prometheus + Alertmanager are actually evaluating. The
      watchdog receiver still must not contact any real off-host
      notifier; it could write to a stream or to stdout.
+
+---
+
+## Stage 16.4 — Step 15.4: SLO / Incident API Foundation
+
+- **Execution time:** 2026-05-26 13:30 – 2026-05-26 14:50 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** branch `main`; deliverable commit `cc10431`;
+  Stage 16.4 progress record committed on top of `cc10431`.
+- **Modified files:**
+  - `migrations/005_incident_management.sql` (new) — strictly additive,
+    idempotent: adds `task_id`, `workflow_id`, `source NOT NULL DEFAULT
+    'unknown'`, `details JSONB`, `acknowledged_at`, `resolved_at` to
+    `incident_records`; creates five indexes (`status`, `severity`,
+    `task_id`, `workflow_id`, `created_at`). Re-running the migration
+    only emits `NOTICE: ... already exists, skipping`; no rows are
+    rewritten.
+  - `shared/sdk/incidents/__init__.py`, `models.py`, `store.py` (new) —
+    `Incident` dataclass + `INCIDENT_SEVERITIES = (sev1..sev4)` +
+    `INCIDENT_STATUSES = (open, acknowledged, resolved)`;
+    `normalize_severity`, `normalize_status` clamp unknown inputs to
+    `sev3` / `open`. `IncidentStore` exposes
+    `create_incident / get_incident / list_incidents / ack_incident /
+    resolve_incident`; transitions are idempotent (`COALESCE` on
+    `acknowledged_at` / `resolved_at`); every call emits a custom
+    `incident_store.{create,get,list,transition}` OTel span on top of
+    the asyncpg auto-instrumentation.
+  - `apps/orchestrator/src/incidents_api.py` (new) — pure helpers
+    (`create_incident_with_side_effects`,
+    `ack_incident_with_side_effects`,
+    `resolve_incident_with_side_effects`) so the side-effects
+    (notification + audit) are testable in isolation. Audit + notification
+    failures are swallowed with `contextlib.suppress(Exception)` so the
+    primary store write decides the API outcome.
+  - `apps/orchestrator/src/main.py` — five new routes:
+    `GET /incidents` (filters: `status`, `severity`, `task_id`,
+    `workflow_id`), `GET /incidents/{incident_id}`, `POST /incidents`,
+    `POST /incidents/{incident_id}/ack`,
+    `POST /incidents/{incident_id}/resolve`. `summary` is required;
+    `severity` defaults to `sev3`; `source` defaults to `operator`.
+    Each POST emits `incident.created` / `incident.acknowledged` /
+    `incident.resolved` notifications on `stream.notifications` and
+    `decision_type=incident_created` / `_acknowledged` / `_resolved`
+    audit events via audit-service.
+  - `apps/retry-scheduler/src/scheduler.py` — `RetryScheduler.handle`
+    now calls `_on_terminal_failure` whenever
+    `retry_count > max_retries`. That method (best-effort, never
+    crashes the consumer):
+    1. flips `workflow_states.stage` to `failed` via
+       `_mark_workflow_failed`, leaving an already-terminal workflow
+       alone (completed / canceled / aborted / failed / rejected);
+    2. creates an `incident_records` row (severity `sev2`, source
+       `retry-scheduler`, summary
+       "terminal failure: max retries exceeded …", details
+       JSONB with `original_stream`, `retry_count`, `max_retries`,
+       `failure_reason`, `failed_at`, `original_event`,
+       `original_message_id`; `workflow_not_found: true` when there is
+       no workflow row);
+    3. publishes a `workflow.failed` notification keyed by `task_id`;
+    4. writes an audit event `decision_type='workflow_failed'`;
+    5. increments `WORKFLOW_FAILED_TOTAL{reason='failed'}`.
+    Returns the `incident_id` on the scheduler's result dict.
+  - `apps/retry-scheduler/requirements.txt` — adds `httpx`, `asyncpg`,
+    `opentelemetry-instrumentation-httpx`,
+    `opentelemetry-instrumentation-asyncpg` (needed for the new
+    audit-service + IncidentStore + WorkflowStore calls).
+  - `apps/retry-scheduler/src/main.py` — `instrument_asyncpg` +
+    `instrument_httpx` during startup.
+  - `infra/docker-compose/docker-compose.yml` — retry-scheduler gains
+    `DATABASE_URL` + `AUDIT_SERVICE_URL` env vars and
+    `depends_on: postgres healthy` so the new asyncpg / audit calls
+    work the moment the container starts.
+  - `infra/observability/slo/aiagents-slo.yml` (new) — 6 SLOs:
+    `workflow_completion_p95_seconds` (≤30s/5m, active),
+    `workflow_success_rate` (≥95%/15m, active),
+    `agent_failure_rate` (≤5%/5m, active),
+    `dlq_growth_rate` (≤5/5m, active),
+    `approval_pending_duration_seconds` (≤3600s/1h, **status: planned**
+    with `todo` + `vector(0)` placeholder; tracked alongside the
+    matching `AIApprovalPendingTooLong` Prometheus alert),
+    `service_availability` (≥99%/5m, active). Every SLO carries
+    `name`, `description`, `target`, `window`, `query`, `severity`,
+    `owner`, `runbook_url`.
+  - `scripts/verify_incident_flow.sh` (new, +x in git index) — seeds
+    a `simulate_failure: true` workflow, polls
+    `/incidents?task_id=...` until the incident appears, then asserts:
+    workflow `stage=failed`, `workflow.failed` notification on
+    `stream.notifications`, `decision_type=workflow_failed` in
+    audit-service, `/incidents/{id}/ack` returns
+    `status=acknowledged`, `/incidents/{id}/resolve` returns
+    `status=resolved`. Six checks aggregate into
+    `INCIDENT_FLOW_SMOKE: PASS|CHECK|FAIL` plus a
+    `VERIFY_INCIDENT_FLOW_DONE` marker.
+  - `scripts/check_runtime_state.sh` — appends seven smokes:
+    `INCIDENT_API_SMOKE`, `INCIDENT_CREATE_SMOKE`,
+    `INCIDENT_ACK_SMOKE`, `INCIDENT_RESOLVE_SMOKE`,
+    `TERMINAL_FAILURE_INCIDENT_SMOKE`, `WORKFLOW_FAILED_STATE_SMOKE`,
+    `SLO_CONFIG_SMOKE`.
+  - `tests/test_incident_store.py` (new) — severity / status
+    normalization unit tests + skip-guarded asyncpg integration tests
+    for create/get/list, ack-then-resolve (with ack timestamp
+    preservation), filter-by-severity, unknown-severity normalization.
+  - `tests/test_incident_api.py` (new) — TestClient against
+    `main.app`: GET list contract (200 or 503, never 500), POST
+    summary-required (400), POST details-must-be-object (400),
+    skip-guarded DB integration covering create → get → list → ack →
+    resolve, unknown-id returns 404/503, severity filter respects the
+    column, and (when audit-service is live) an `incident_created`
+    audit event lands within 5s.
+  - `tests/test_terminal_failure_incident.py` (new) — direct
+    `RetryScheduler.handle` tests with the live Redis + Postgres
+    runtime: terminal-failure creates the incident + flips the
+    workflow to `failed`; orphan task_id still creates the incident
+    with `details.workflow_not_found=true`; `workflow.failed`
+    notification lands on `stream.notifications`; when audit-service
+    is up the `workflow_failed` audit event is also written.
+  - `tests/test_slo_config.py` (new) — YAML valid + every required
+    SLO + every required field + planned SLOs must declare `todo` +
+    `vector(...)` placeholder, active SLOs must reference at least
+    one metric name actually exported by
+    `shared/sdk/observability/metrics.py`; also asserts the verify
+    script + check_runtime_state.sh wire the right markers and that
+    migration 005 uses idempotent `ADD COLUMN IF NOT EXISTS` /
+    `CREATE INDEX IF NOT EXISTS`.
+  - `tests/test_dlq_replay.py` — fix the pre-existing flake noted in
+    Stage 16.2 / 16.3: scan the target stream for the
+    `event=retry.manual_replay` entry instead of reading the newest
+    entry (the running retry-scheduler container races us). Test now
+    passes deterministically.
+  - `README.md` — Incident API table, terminal-failure → incident
+    flow, SLO table (incl. `status: planned` discipline),
+    `verify_incident_flow.sh` usage, Alertmanager remains null receiver.
+  - `source/progress.md` — this Stage 16.4 entry.
+
+- **Deployment target:** test server `10.0.1.31` (`aiagent-swd`,
+  Ubuntu 24.04.4 LTS). Server pulled `cc10431` via
+  `git pull --ff-only`. Migration 005 was applied via
+  `psql -v ON_ERROR_STOP=1 < migrations/005_incident_management.sql`
+  twice — the second run only emitted
+  `NOTICE: ... already exists, skipping` (idempotency confirmed). The
+  `incident_records` table now has the eleven expected columns + five
+  indexes. `docker compose -f infra/docker-compose/docker-compose.yml
+  build orchestrator retry-scheduler` rebuilt both images,
+  `docker compose up -d orchestrator retry-scheduler` rolled them, and
+  `docker compose up -d --force-recreate prometheus grafana
+  alertmanager` re-ran provisioning per the Stage 16.1 deploy step.
+  All eighteen containers reach `Up … (healthy)`. No production
+  resources created; no production deploy performed.
+
+- **Test results (10.0.1.31, all from the venv):**
+
+  | Check | Result |
+  |-------|--------|
+  | `pytest -q` (whole suite) | **280 passed, 0 failed**, 1 warning in 36.9s. The Stage 16.2 / 16.3 `test_dlq_replay` flake is gone (the test now scans the target stream by `event_type`). |
+  | `ruff check .` | All checks passed |
+  | `black --check .` | 109 files unchanged |
+  | `mypy shared/` | Success: no issues found in 32 source files |
+  | `scripts/check_runtime_state.sh` | **46 / 46 smokes PASS**, including the seven new incident smokes (`INCIDENT_API_SMOKE`, `INCIDENT_CREATE_SMOKE`, `INCIDENT_ACK_SMOKE`, `INCIDENT_RESOLVE_SMOKE`, `TERMINAL_FAILURE_INCIDENT_SMOKE`, `WORKFLOW_FAILED_STATE_SMOKE`, `SLO_CONFIG_SMOKE`). `TRACE_FLOW_SMOKE: PASS (7/7 services)` continues to pass. |
+  | `scripts/verify_incident_flow.sh` | `INCIDENT_FLOW_SMOKE: PASS` — 6/6 checks; `VERIFY_INCIDENT_FLOW_DONE` reached. |
+  | `docker compose ps` | eighteen containers, every one `Up (healthy)`. |
+
+  **Incident store / API result:**
+  ```
+  $ curl -sS http://localhost:8000/incidents | head -c 200
+  {"count": N, "incidents": [...]}
+
+  $ curl -sS -X POST http://localhost:8000/incidents -H 'Content-Type: application/json' \
+        -d '{"summary":"smoke","source":"operator","severity":"sev3"}'
+  -> {"incident_id":"<uuid>","status":"open","severity":"sev3","source":"operator",...}
+
+  $ curl -sS -X POST http://localhost:8000/incidents/<uuid>/ack
+  -> {"status":"acknowledged","acknowledged_at":"<iso>","..."}
+
+  $ curl -sS -X POST http://localhost:8000/incidents/<uuid>/resolve
+  -> {"status":"resolved","resolved_at":"<iso>","acknowledged_at":"<earlier iso>",...}
+  ```
+  Filters (`?status=`, `?severity=`, `?task_id=`, `?workflow_id=`) all
+  honoured by `IncidentStore.list_incidents`.
+
+  **Terminal failure → incident → workflow.failed (verify_incident_flow.sh excerpt):**
+  ```
+  task_id=incident-verify-1779777448
+  incident_id=c9318957-2bbb-47a1-a258-4a76a47f6681 incident_status=open
+
+  workflow stage=failed: PRESENT
+  workflow.failed notification: PRESENT
+  audit decision_type=workflow_failed: PRESENT
+  incident ack: PASS
+  incident resolve: PASS
+
+  checks passed: 6 / 6
+  INCIDENT_FLOW_SMOKE: PASS
+  ```
+  The retry-scheduler observed the `simulate_failure` workflow
+  exhaust its retries, wrote the `sev2` incident, flipped
+  `workflow_states.stage` to `failed`, published the
+  `workflow.failed` notification, and recorded the
+  `workflow_failed` audit event automatically — no operator
+  intervention needed.
+
+  **SLO config result:** `aiagents-slo.yml` parses; 6 SLOs declared,
+  the `approval_pending_duration_seconds` SLO is explicitly
+  `status: planned` with a `todo` field (paired with the placeholder
+  `AIApprovalPendingTooLong` alert). The active SLOs reference the
+  metric names already emitted by
+  `shared/sdk/observability/metrics.py` plus the Prometheus built-in
+  `up`. The runtime smoke only validates the file shape:
+  `SLO_CONFIG_SMOKE: PASS`.
+
+  **Flaky DLQ test fix:** `test_dlq_replay.py
+  ::test_manual_replay_publishes_back_to_original_stream` now scans
+  the target stream with `xrange(target, '-', '+')` and filters for
+  `event == retry.manual_replay`, so the live retry-scheduler
+  container can publish a regular `retry.requeued` to the same target
+  without flipping the assertion. Pre-existing race noted in Stage
+  16.2 / 16.3 is closed.
+
+- **Issues & blockers:** none — every assertion clears.
+- **Risks / notes:**
+  - The retry-scheduler now writes to PostgreSQL (`incident_records` +
+    `workflow_states`) and HTTP-calls audit-service. Every side-effect
+    is wrapped in `contextlib.suppress(Exception)` and the original
+    terminal-failure publish to `stream.deadletter.terminal` happens
+    first, so an outage in any one of those targets cannot prevent
+    the dead-letter from being terminal-marked or stop the consumer
+    loop.
+  - `incident_records.id` is `UUID` (from the original `001`
+    migration); the IncidentStore + API expose it as `incident_id`
+    (string). Bogus / non-UUID inputs to `/incidents/{id}` return 404
+    or 503 — never 500 — because the SDK catches `asyncpg.PostgresError`
+    + `ValueError` from `$1::uuid` casts.
+  - The `approval_pending_duration_seconds` SLO and the
+    `AIApprovalPendingTooLong` Prometheus alert are both placeholders
+    pending the approval-engine emitting `approval_pending_seconds`.
+    Documented in this stage and in `aiagents-slo.yml`'s `todo`
+    field; the SLO test enforces that any `status: planned` SLO must
+    carry the `todo` + a `vector(...)` placeholder query.
+  - Same as prior stages: no real Slack / Discord / Telegram /
+    PagerDuty / GitHub / LLM / Kubernetes / cloud / Grafana Cloud /
+    observability SaaS call; no secret or token written; no
+    production deploy; PostgreSQL `trust` auth + Vault dev mode
+    remain local/test only.
+
+- **Next-step suggestions:**
+  1. **Wire the alert-firing UI/API** — Alertmanager already exposes
+     firing alerts on `/api/v2/alerts`; the orchestrator could poll
+     that and auto-create matching `incident_records` rows (severity
+     mapped from alert label). Today an operator has to call
+     `POST /incidents` themselves when an alert fires. With auto-
+     promotion, a `AIWorkflowFailuresHigh` alert would land as an
+     incident the same way the retry-scheduler terminal failure does
+     now.
+  2. **Emit `approval_pending_seconds`** from approval-engine
+     (`Histogram`, labelled `risk_level`) so the placeholder SLO +
+     alert can be flipped to real `histogram_quantile` expressions.
+     Once that ships, also update `aiagents-slo.yml` to drop
+     `status: planned` and remove the `todo` field, plus the
+     `test_slo_config.py::test_planned_slos_must_declare_a_todo`
+     guard still applies to anything new.
+  3. **Add an `/incidents/{id}/audit-trail` endpoint** that joins
+     `audit_logs` rows tagged with `incident_id` (we already write
+     `artifact_refs={"incident_id": ...}` on ack / resolve). That
+     would give operators a single-call view of who acked / resolved
+     an incident without joining tables themselves.
