@@ -59,7 +59,9 @@ sleep 6
 echo
 echo "=== query Tempo /api/traces/$trace_id ==="
 trace_body=$(curl -sS -m 15 "$TEMPO/api/traces/$trace_id" || echo '')
-echo "$trace_body" | head -c 1500
+# Tempo's trace response can be MBs; head closes the pipe early and triggers
+# SIGPIPE under strict pipefail. Swallow it explicitly.
+echo "$trace_body" | head -c 1500 || true
 echo
 
 if [ -z "$trace_body" ] || echo "$trace_body" | grep -qi 'trace not found'; then

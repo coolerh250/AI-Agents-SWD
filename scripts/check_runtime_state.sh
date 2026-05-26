@@ -633,7 +633,9 @@ echo "task=$tf_task trace_id=$tf_trace stage=$tf_stage"
 sleep 6
 if [ -n "$tf_trace" ]; then
   tf_body=$(curl -sS -m 15 "http://localhost:3200/api/traces/$tf_trace" || echo '')
-  echo "$tf_body" | head -c 500
+  # Tempo /api/traces responses can be very large; head closes the pipe early
+  # and triggers SIGPIPE under set -euo pipefail. Swallow that explicitly.
+  echo "$tf_body" | head -c 500 || true
   echo
   hits=0
   for svc in communication-gateway orchestrator intake-agent requirement-agent development-agent qa-agent devops-agent; do
