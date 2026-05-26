@@ -1918,3 +1918,217 @@ issues & blockers, and next-step suggestions.
      `artifact_refs={"incident_id": ...}` on ack / resolve). That
      would give operators a single-call view of who acked / resolved
      an incident without joining tables themselves.
+
+
+## Stage 16.5 — Step 15.5: Full Verification & Operational Readiness
+
+- **Execution time:** 2026-05-26 17:30–18:10 (local)
+- **Git branch / commit:**
+  `main` →
+  Commit A `07f2acc Step 15.5: full verification + operational readiness`
+  Commit B (this entry) appended on top.
+- **Previous commit:** `d89a9cd Stage 16.4: progress log - Step 15.4
+  SLO/Incident API foundation + 10.0.1.31 validation`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only — no
+  production deploy, no real Slack / Discord / Telegram / PagerDuty /
+  webhook call, no real GitHub / Kubernetes / Cloud / LLM API, no
+  secret/token written.
+
+- **Modified / added files:**
+  - `scripts/verify_platform_observability.sh` — new aggregate
+    verification script (`+x` in git index, validated by
+    `bash -n`). 12 inline sections covering Docker / health /
+    metrics / Prometheus / Grafana / Tempo / Alertmanager /
+    workflow / trace / incident / SLO / safety, plus a 13th section
+    that runs the 5 existing `verify_*.sh` scripts as sub-steps and
+    reports each as `PASS / FAIL`. Final aggregate line:
+    `PLATFORM_OBSERVABILITY_VERIFY: PASS`. Also prints the per-area
+    pass markers required by the spec:
+    `CHECK_RUNTIME_STATE: PASS`, `VERIFY_TRACING_BACKEND: PASS`,
+    `VERIFY_TRACE_FLOW: PASS`, `VERIFY_ALERTING: PASS`,
+    `VERIFY_INCIDENT_FLOW: PASS`.
+  - `docs/operations/observability-runbook.md` — new operator
+    runbook (~280 lines): platform service map with ports, how to
+    check Docker / Prometheus / Grafana / Tempo, how to find a
+    workflow by `task_id`, query a `trace_id` against Tempo, list
+    and replay the DLQ, list / ack / resolve incidents, confirm
+    terminal-failure → incident flow, confirm `production_executed
+    = false`, plus common-issue troubleshooting (Grafana
+    provisioning force-recreate, Tempo trace-not-found, Prometheus
+    target down, DLQ replay race, Postgres trust auth + Vault dev
+    mode reminder). Closes with a verification-script cheat sheet.
+  - `docs/operations/manual-verification.md` — new copy-paste
+    checklist for a human operator on 10.0.1.31: 18 numbered
+    steps from `ssh aiagent-swd` through running every verify
+    script, building a workflow, querying its trace in Tempo,
+    driving an incident lifecycle, and confirming
+    `deployment_records` has zero `production_executed=true` rows.
+    Ends with a sign-off checklist.
+  - `README.md` — new **Operational Readiness** section linking
+    the runbook + manual verification + aggregate verification
+    script, restating the local/test contract: null Alertmanager
+    receiver, mock deployments only, `production_executed = false`
+    safety probe.
+  - `tests/test_platform_observability_script.py` — 8 static
+    checks: file exists, +x in git index, `bash -n` clean,
+    aggregate markers present, all 5 sub-scripts referenced, every
+    required area covered (Docker / health / metrics / Prometheus /
+    Alertmanager / Grafana / Tempo / workflow / incident / SLO /
+    safety), no external SaaS hostnames, no embedded secret tokens.
+  - `tests/test_operational_runbook.py` — 7 static checks: file
+    exists, required sections + phrases present, verification
+    scripts mentioned, safety contract documented, banned production
+    deploy commands absent, no secret tokens, references both
+    10.0.1.31 and localhost / 127.0.0.1.
+  - `tests/test_manual_verification_doc.py` — 7 static checks:
+    file exists, required copy-paste commands present, test server
+    + repo path mentioned, safety contract documented, banned
+    production deploy commands absent, no secret tokens, README
+    cross-references both new docs + the aggregate script.
+
+- **Test results (Windows dev box, no Docker runtime):**
+  - `pytest`: **193 passed, 109 skipped** (skips are runtime-gated
+    integration tests requiring Redis / Postgres / docker — they
+    run on the test server, not Windows).
+  - `ruff check .`: clean.
+  - `black --check .`: 112 files unchanged.
+  - `mypy shared/`: 32 source files, no issues.
+
+- **Test results (10.0.1.31, after `docker compose build && up -d
+  && up -d --force-recreate prometheus grafana alertmanager tempo`):**
+  - 18 / 18 containers reported `running (healthy)`.
+  - `pytest -q` inside `.venv`: **302 passed, 1 warning** in 37.20s
+    (the deprecation warning is pre-existing —
+    `asyncio.get_event_loop()` in `test_redis_tracing.py:22`).
+  - `ruff check .`: clean.
+  - `black --check .`: 112 files unchanged.
+  - `mypy shared/`: 32 source files, no issues.
+  - `./scripts/check_runtime_state.sh`: every named smoke `PASS`
+    (workflow / approval / agents / DLQ / failure-simulation /
+    Tempo / Prometheus / Alertmanager / Grafana / incidents / SLO
+    / trace-flow), ends `CHECK_RUNTIME_STATE_DONE`. Note: the
+    inline Python smokes (`TRACE_PROPAGATION_SMOKE`,
+    `DEADLETTER_SMOKE`, `DLQ_REPLAY_SMOKE`, `FAILURE_SIMULATION_SMOKE`)
+    use the system `python3 -`; they only PASS when the SSH session
+    has the project `.venv` activated (so `shared/` is on the
+    `PYTHONPATH`). Documented in the runbook.
+  - `./scripts/verify_tracing_backend.sh`: `TEMPO_READY: PASS`,
+    `OTLP_HTTP_ENDPOINT: PASS`, `GRAFANA_TEMPO_DATASOURCE: PASS`,
+    `VERIFY_TRACING_BACKEND_DONE`.
+  - `./scripts/verify_trace_flow.sh`:
+    `TRACE_FLOW_SMOKE: PASS (trace_id=1e25f031d5c0432fe72c6ce60836588f
+    covers all 7 services)`, `VERIFY_TRACE_FLOW_DONE`.
+  - `./scripts/verify_alerting.sh`: `ALERTMANAGER_HEALTHY: PASS`,
+    `PROMETHEUS_RULES_LOADED: PASS (5 groups)`,
+    `PROMETHEUS_RULES_NAMES: PASS` (all 8 alerts present),
+    `PROMETHEUS_TARGETS_ALL_UP: PASS (up=11 down=0)`,
+    `ALERTMANAGER_OFFHOST_RECEIVER: PASS (null receiver only)`,
+    `VERIFY_ALERTING_DONE`.
+  - `./scripts/verify_incident_flow.sh`: `checks passed: 6 / 6`,
+    `INCIDENT_FLOW_SMOKE: PASS`, `VERIFY_INCIDENT_FLOW_DONE`.
+  - `./scripts/verify_platform_observability.sh`: **PASS=81  FAIL=0**.
+    Aggregate output:
+
+    ```
+    CHECK_RUNTIME_STATE: PASS
+    VERIFY_TRACING_BACKEND: PASS
+    VERIFY_TRACE_FLOW: PASS
+    VERIFY_ALERTING: PASS
+    VERIFY_INCIDENT_FLOW: PASS
+    PLATFORM_OBSERVABILITY_VERIFY: PASS
+    VERIFY_PLATFORM_OBSERVABILITY_DONE
+    ```
+
+    Per-area PASS counts (excerpted):
+    - 18 / 18 `container.*` PASS.
+    - 11 / 11 `health.*` PASS (HTTP 200 each).
+    - 3 / 3 `metrics.*` PASS (orchestrator `workflow_total`,
+      5/5 agents emit `agent_execution_total`, retry-scheduler
+      emits `retry_total` / `deadletter_total`).
+    - 4 / 4 `prometheus.*` PASS (healthy / targets all up /
+      5 `aiagents.*` rule groups / alerts API success).
+    - 5 / 5 `grafana.*` PASS (api health, prometheus + tempo +
+      alertmanager datasources, `AI Agents SWD Platform` dashboard).
+    - 2 / 2 `tempo.*` PASS.
+    - 3 / 3 `alertmanager.*` PASS (`null receiver only`).
+    - 7 / 7 `workflow.*` and 8 / 8 `trace.*` PASS — the
+      end-to-end workflow reached `completed`, every agent appeared
+      in the timeline, the trace ID was queryable in Tempo with
+      spans for `communication-gateway / orchestrator / intake-agent
+      / requirement-agent / development-agent / qa-agent /
+      devops-agent`.
+    - 4 / 4 `incident.*` PASS (terminal failure → incident →
+      `workflow_states.stage = failed` → ack → resolve).
+    - 8 / 8 `slo.*` PASS (YAML parses; every required SLO entry
+      present; `status: planned` carries `todo`).
+    - 2 / 2 `safety.*` PASS:
+      `deployment_records` summary: **prod_true=0, env_prod=0,
+      total=10+** — no row ever flipped to
+      `metadata.production_executed = true` or
+      `environment = 'production'`. `workflow_states` summary:
+      **0 rows** with `execution_result.production_executed = true`.
+
+- **Safety verification:**
+  - Alertmanager `/api/v2/receivers` returned `[{"name":"null-receiver"}]`
+    — no external Slack / Discord / Telegram / PagerDuty / OpsGenie /
+    webhook / email receiver. The verify script's
+    `alertmanager.receivers.no_offhost` probe fails the run if any
+    of those keywords ever appears.
+  - Postgres queries against
+    `deployment_records.metadata->>'production_executed'` and
+    `workflow_states.execution_result->>'production_executed'`
+    returned `0` true rows.
+  - No new secret / token / API key was written into the repo,
+    container env, or documentation. The two new docs were tested
+    against `api_key=`, `password=`, `bearer `, `aws_secret`,
+    `slack_token`, etc.
+
+- **Issues & blockers:** none — every assertion clears.
+
+- **Risks / notes:**
+  - `verify_platform_observability.sh` runs the existing
+    `verify_*.sh` scripts; it inherits their dependencies. Concretely:
+    the inline Python smokes inside `check_runtime_state.sh`
+    (`DEADLETTER_SMOKE`, `DLQ_REPLAY_SMOKE`,
+    `FAILURE_SIMULATION_SMOKE`, `TRACE_PROPAGATION_SMOKE`) call
+    `python3 -` against the system interpreter, so the SSH operator
+    must have the project `.venv` activated (or be on a host where
+    `shared/` is otherwise on `PYTHONPATH`) for those four smokes to
+    pass. Documented in the runbook + manual-verification doc.
+  - The script writes test workflows / incidents while it runs
+    (one normal `dev.test`, one `simulate_failure: true`, one
+    operator-created `INCIDENT_CREATE_SMOKE` row). These end up in
+    `workflow_states`, `incident_records`, and the DLQ — same as
+    every other smoke we already ship. Acceptable in local/test.
+  - The Alertmanager status API still includes
+    `pagerduty_url: https://events.pagerduty.com/v2/enqueue` /
+    `opsgenie_api_url: …` / etc. in its **global default config**
+    — those are the upstream defaults shipped by the Alertmanager
+    binary and are unreachable from our null-only receivers block.
+    They are not destinations the platform can ever route to.
+    Documented in the runbook so a security reviewer does not
+    mistake them for active integrations.
+  - Same as prior stages: no real Slack / Discord / Telegram /
+    PagerDuty / GitHub / LLM / Kubernetes / cloud / Grafana Cloud /
+    observability SaaS call; no secret or token written; no
+    production deploy; PostgreSQL `trust` auth + Vault dev mode
+    remain local/test only.
+
+- **Next-step suggestions:**
+  1. **Wire `verify_platform_observability.sh` into a scheduled
+     job on the test server** (systemd timer or cron) emitting the
+     `PASS / FAIL` summary into `source/progress.md`-adjacent
+     `source/runtime-health.log` once an hour. Same script, no new
+     logic, just a continuous-attestation source for the on-call
+     operator. Local/test only — still no external pager.
+  2. **Auto-promote firing Prometheus alerts to incidents**
+     (carry-over from Stage 16.4) — orchestrator polls Alertmanager
+     `/api/v2/alerts` and auto-creates `incident_records` rows with
+     severity mapped from alert label. Today an operator has to call
+     `POST /incidents` themselves when an alert fires.
+  3. **Emit `approval_pending_seconds`** from approval-engine
+     (Histogram, label `risk_level`) so the placeholder SLO + the
+     `AIApprovalPendingTooLong` alert can be flipped to real
+     `histogram_quantile` expressions; then drop `status: planned`
+     from `aiagents-slo.yml` and remove the placeholder probe in
+     `verify_alerting.sh`.
