@@ -613,8 +613,10 @@ fi
 echo
 echo "=== trace flow smoke (trace_id reaches Tempo with all 7 service spans) ==="
 tf_task="smoke-trace-flow-$$"
+# Orchestrator mode so the workflow row is persisted and the agent pipeline
+# completes — direct stream.tasks publishes have no workflow_state row.
 curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
-  -d "{\"task_id\":\"$tf_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"trace flow check\"},\"publish_to_stream\":true}" \
+  -d "{\"task_id\":\"$tf_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"trace flow check\"}}" \
   >/dev/null 2>&1 || true
 tf_trace=""
 tf_stage=""

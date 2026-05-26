@@ -15,9 +15,12 @@ echo "### verify_trace_flow: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 ts=$(date +%s)
 task_id="trace-verify-$ts"
 echo
-echo "=== seed task_id=$task_id via $GATEWAY/intake/mock (stream mode) ==="
+echo "=== seed task_id=$task_id via $GATEWAY/intake/mock (orchestrator mode) ==="
+# Use orchestrator mode (not publish_to_stream:true) so the workflow row is
+# persisted before agents consume — that gives /workflow/progress a trace_id
+# and lets the WorkflowEventConsumer drive the workflow to completed.
 seed=$(curl -sS -m 30 -X POST "$GATEWAY/intake/mock" -H "Content-Type: application/json" \
-  -d "{\"task_id\":\"$task_id\",\"request\":{\"type\":\"dev.test\",\"description\":\"trace flow verify\"},\"publish_to_stream\":true}" \
+  -d "{\"task_id\":\"$task_id\",\"request\":{\"type\":\"dev.test\",\"description\":\"trace flow verify\"}}" \
   || echo '{}')
 echo "$seed"
 

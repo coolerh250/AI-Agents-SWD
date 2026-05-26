@@ -46,6 +46,10 @@ async def test_publish_consume_ack_still_work_with_spans():
     consumer = "test-trace-redis-1"
     task_id = f"trace-redis-{uuid.uuid4().hex[:8]}"
     try:
+        # Ensure the consumer group exists BEFORE publishing — xgroup create
+        # uses id="$" (current end) so messages published before the group is
+        # created are invisible to a fresh consumer.
+        await bus.ensure_group(stream, group)
         event = {
             "event": "trace.test",
             "task_id": task_id,
