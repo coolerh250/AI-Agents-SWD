@@ -716,6 +716,54 @@ Prometheus alert: once the approval-engine ships
 that does not exist without an explicit `status: planned` + `todo:`
 field.
 
+## Operational Readiness
+
+The Step 15.5 verification battery covers everything the Step 15.1–15.4
+observability stack ships: Docker / runtime, service health, metrics,
+Prometheus, Grafana, Tempo, Alertmanager, end-to-end workflow + trace,
+incident lifecycle, SLO config, and the safety contract
+(`production_executed = false`, no external alert receiver). Run from
+the repository root:
+
+```
+./scripts/verify_platform_observability.sh
+```
+
+A green run ends with:
+
+```
+CHECK_RUNTIME_STATE: PASS
+VERIFY_TRACING_BACKEND: PASS
+VERIFY_TRACE_FLOW: PASS
+VERIFY_ALERTING: PASS
+VERIFY_INCIDENT_FLOW: PASS
+PLATFORM_OBSERVABILITY_VERIFY: PASS
+```
+
+The script aggregates the existing
+`check_runtime_state.sh / verify_tracing_backend.sh /
+verify_trace_flow.sh / verify_alerting.sh / verify_incident_flow.sh`
+scripts and adds Docker / health / metrics / Grafana / safety probes on
+top, so one command is enough to declare the platform observably
+healthy on `10.0.1.31`.
+
+For a human operator walking through the same checks step-by-step,
+follow [`docs/operations/manual-verification.md`](docs/operations/manual-verification.md).
+For troubleshooting and how-do-I questions (find a workflow by
+`task_id`, query a trace, replay the DLQ, ack/resolve an incident),
+read [`docs/operations/observability-runbook.md`](docs/operations/observability-runbook.md).
+
+**Current local/test limitation** — the platform is local/test only on
+`10.0.1.31`. Alertmanager runs with a **null receiver**: no Slack,
+Discord, Telegram, PagerDuty, OpsGenie, webhook, or email destination
+is configured, and the verification script enforces that contract.
+Mock dev/test deployments always record
+`metadata.production_executed = false`; the safety probe in
+`verify_platform_observability.sh` fails if any `deployment_records`
+row ever flips to `true` or sets `environment = 'production'`. No
+production resource is created, modified, or deployed by anything in
+this repository.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
