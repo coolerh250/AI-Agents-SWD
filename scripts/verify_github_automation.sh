@@ -124,7 +124,10 @@ metrics_ok=1
 for counter in github_issue_created_total github_branch_created_total \
                github_pr_created_total github_checks_read_total \
                github_automation_failures_total; do
-  if echo "$metrics" | grep -q "^$counter"; then
+  # Counters with labels emit only `# HELP` / `# TYPE` lines until the first
+  # `.labels(...).inc()` — accept either the HELP/TYPE registration or a value
+  # line. `github_automation_failures_total` has no failures on a green run.
+  if echo "$metrics" | grep -qE "(^|# HELP |# TYPE )$counter"; then
     echo "  metric.$counter: PRESENT"
   else
     echo "  metric.$counter: MISSING"

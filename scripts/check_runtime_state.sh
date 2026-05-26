@@ -834,9 +834,12 @@ fi
 echo
 echo "=== github-automation /metrics smoke (github_* counters present) ==="
 gh_metrics=$(curl -sS -m 10 http://localhost:8005/metrics || echo '')
-if echo "$gh_metrics" | grep -q '^github_issue_created_total' \
-   && echo "$gh_metrics" | grep -q '^github_pr_created_total' \
-   && echo "$gh_metrics" | grep -q '^github_checks_read_total'; then
+# Counter `.labels(...)` series only render after the first inc(); accept the
+# HELP / TYPE registration too so a no-failure run still counts.
+if echo "$gh_metrics" | grep -qE '(^|# HELP |# TYPE )github_issue_created_total' \
+   && echo "$gh_metrics" | grep -qE '(^|# HELP |# TYPE )github_pr_created_total' \
+   && echo "$gh_metrics" | grep -qE '(^|# HELP |# TYPE )github_checks_read_total' \
+   && echo "$gh_metrics" | grep -qE '(^|# HELP |# TYPE )github_automation_failures_total'; then
   echo "GITHUB_METRICS_SMOKE: PASS"
 else
   echo "GITHUB_METRICS_SMOKE: CHECK"
