@@ -5,6 +5,7 @@ import os
 import asyncpg
 
 from shared.sdk.base_agent.stream_agent import StreamAgent
+from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.github_http_client import GitHubAutomationHttpClient
 from shared.sdk.observability.metrics import (
     GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL,
@@ -223,6 +224,34 @@ class DevOpsAgent(StreamAgent):
             GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL.labels(reason="http_error").inc()
         return result
 
+    async def _write_github_audit(self, record: dict, github_result: dict) -> None:
+        """Persist a ``github_pr_integration`` audit row via audit-service.
+
+        StreamAgent's auto-audit publishes to ``stream.audit`` (which only
+        carries the event onto a Redis stream — no consumer persists it to
+        Postgres in this stack). We additionally call AuditHttpClient
+        directly so a query against ``audit_logs`` for the workflow can
+        confirm the github result was recorded.
+        """
+        with contextlib.suppress(Exception):
+            await AuditHttpClient().record_event(
+                task_id=record["task_id"],
+                agent=self.name,
+                decision_type="github_pr_integration",
+                summary=(
+                    f"github-automation {github_result.get('status', 'unknown')} "
+                    f"(dry_run={github_result.get('dry_run', True)}) for {record['task_id']}"
+                ),
+                result=str(github_result.get("status", "unknown")),
+                artifact_refs={
+                    "pr_url": github_result.get("pr_url", ""),
+                    "branch": github_result.get("branch", ""),
+                    "issue_url": github_result.get("issue_url", ""),
+                    "dry_run": bool(github_result.get("dry_run", True)),
+                },
+                workflow_id=str(record.get("workflow_id", "")),
+            )
+
     async def handle(self, payload: dict) -> dict:
         record = self.build_deployment_record(payload)
         task_id = record["task_id"]
@@ -231,6 +260,10 @@ class DevOpsAgent(StreamAgent):
 
         github_result = await self._run_github_automation(payload, record)
         record["github"] = github_result
+
+        # Persist github_pr_integration audit row in addition to the
+        # StreamAgent's stream-based audit so the audit-service DB carries it.
+        await self._write_github_audit(record, github_result)
 
         message = {
             "event": "devops.deployment_simulated",
