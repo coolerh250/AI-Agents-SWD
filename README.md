@@ -213,6 +213,7 @@ calls them over HTTP; each service URL is read from an environment variable
 | `policy-engine`   | 8001 | `POLICY_ENGINE_URL`  | Evaluates actions against policy |
 | `approval-engine` | 8002 | `APPROVAL_ENGINE_URL`| Creates / decides approval requests |
 | `audit-service`   | 8003 | `AUDIT_SERVICE_URL`  | Persists and serves audit events |
+| `audit-worker`    | 8006 | —                    | Consumes `stream.audit`, persists into `audit_logs` |
 
 All service ports bind to `127.0.0.1` on the host.
 
@@ -231,13 +232,68 @@ All service ports bind to `127.0.0.1` on the host.
    an `approval.approved` / `approval.rejected` event. **No production action is
    executed** — `production.deploy` stays at `waiting_approval`.
 
-**audit-service** — endpoints `POST /audit/events` and
-`GET /audit/events/{task_id}`. Audit flow: the orchestrator's `audit` node calls
-`POST /audit/events`; the event is persisted to the PostgreSQL `audit_logs`
-table and published to the `stream.audit` Redis stream. `GET /audit/events/{task_id}`
-returns all audit events recorded for a task.
+**audit-service** — endpoints `POST /audit/events`,
+`GET /audit/events/{task_id}`, and `GET /audit/events`
+(query by `task_id`, `agent`, `decision_type`, `limit`). The orchestrator's
+`audit` node still calls `POST /audit/events` directly (it needs the
+synchronous `audit_id` to record under the workflow's `audit_refs`); the
+event is persisted to the PostgreSQL `audit_logs` table and republished to
+the `stream.audit` Redis stream as `{"event": "audit.recorded", ...}`. The
+governance columns are added by `migrations/002_governance_tables.sql`.
 
-The governance columns are added by `migrations/002_governance_tables.sql`.
+**audit-worker (Stage 19)** — `apps/audit-worker/` consumes `stream.audit`
+with the existing `audit-group` consumer group (`XREADGROUP BLOCK` — no
+busy polling), normalizes each event via `shared/sdk/audit/normalizer.py`,
+and writes it through `shared/sdk/audit/store.py` (`AuditStore`) into the
+same `audit_logs` table. It is the **single unified audit path** for every
+service / agent that publishes to `stream.audit`:
+
+    service / agent  --publish-->  stream.audit  --consume-->  audit-worker  -->  audit_logs
+
+Key contracts:
+
+* **`audit.recorded` echo filtering.** When `POST /audit/events` writes a
+  row it republishes a `{"event": "audit.recorded", ...}` envelope onto
+  `stream.audit`. The worker's `is_audit_recorded_echo` check skips and
+  ACKs that envelope so persistence never triggers a circular write loop.
+* **ACK after persist.** A successful `INSERT` is followed by an `XACK`;
+  a failed `INSERT` is left un-ACKed so the consumer group redelivers.
+  After `MAX_FAILURES_BEFORE_DEADLETTER = 3` failed attempts the
+  envelope is routed to `stream.deadletter` as `audit.deadlettered`
+  (so a poison message can't block the group's pending list) and ACKed.
+* **Dedup.** Each persisted row carries `artifact_refs.source_message_id`
+  (the `XADD` id); a small in-process LRU short-circuits redeliveries.
+  This is runtime cache only — see Stage 19 progress notes for the
+  edge-case window after a worker crash.
+* **Backlog policy.** The worker uses `>` (`XREADGROUP "$"` group create)
+  so it only consumes **new** events. The ~5.5k historical Stage 17
+  entries on `stream.audit` are intentionally not back-filled to
+  Postgres — the `audit_recorded` echo filter would otherwise cause
+  partial double-writes for the rows the audit-service already
+  persisted. The backlog can be drained manually with `XGROUP SETID`
+  if and when an operator wants to.
+* **Direct HTTP audit-write deprecation.** As of Stage 19 the three
+  producers `devops-agent` (`github_pr_integration`),
+  `retry-scheduler` (`workflow_failed`), and `github-automation`
+  (`github_automation`) publish via `shared.sdk.audit.publisher`
+  instead of calling `audit-service` over HTTP. The audit-service
+  POST endpoint stays in place for orchestrator workflow audits (which
+  need the synchronous `audit_id`) and for any operator-driven
+  incident audits, plus as a compatibility surface — no agent or
+  worker is forced through it.
+
+The audit-worker exposes `/health`, `/status`, and `/metrics`
+(`audit_worker_processed_total`, `audit_worker_failures_total`,
+`audit_worker_deadlettered_total`, `audit_worker_skipped_total`,
+`audit_worker_processing_seconds`). Spans:
+`audit_worker.consume / .normalize / .persist / .deadletter / .skip`,
+each carrying `task_id`, `agent`, `decision_type`, `redis.message_id`,
+`stream=stream.audit`.
+
+The orchestrator's `/workflow/timeline/{task_id}` carries an
+`audit_timeline` list, sourced from `audit_logs`, so an operator sees the
+`github_pr_integration` / `github_automation` / `workflow_failed` rows
+inline with the agent timeline.
 
 ## Workflow Persistence & Resume
 

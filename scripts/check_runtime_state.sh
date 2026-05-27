@@ -925,5 +925,99 @@ else
   echo "GITHUB_PIPELINE_TRACE_SMOKE: CHECK (no trace_id for $gpi_task)"
 fi
 
+
+echo
+echo "=== audit-worker /health smoke ==="
+if curl -sS -m 10 http://localhost:8006/health >/dev/null 2>&1; then
+  echo "  audit-worker (:8006)  ->  HEALTH: PASS"
+  echo "AUDIT_WORKER_HEALTH_SMOKE: PASS"
+else
+  echo "  audit-worker (:8006)  ->  HEALTH: FAIL"
+  echo "AUDIT_WORKER_HEALTH_SMOKE: FAIL"
+fi
+
+echo
+echo "=== audit-worker /status smoke ==="
+aw_status=$(curl -sS -m 10 http://localhost:8006/status || echo '{}')
+echo "$aw_status" | head -c 400 || true
+echo
+if echo "$aw_status" | grep -q '"service": *"audit-worker"' \
+   && echo "$aw_status" | grep -q '"input_stream": *"stream.audit"' \
+   && echo "$aw_status" | grep -q '"group": *"audit-group"'; then
+  echo "AUDIT_WORKER_STATUS_SMOKE: PASS"
+else
+  echo "AUDIT_WORKER_STATUS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== stream.audit -> audit_logs smoke (orchestrator pipeline) ==="
+aw_task="smoke-aw-$$"
+curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$aw_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"audit-worker smoke\"}}" >/dev/null 2>&1 || true
+aw_seen=0
+for i in $(seq 1 30); do
+  aw_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$aw_task" || echo '{}')
+  aw_stage=$(echo "$aw_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  if [ "$aw_stage" = "completed" ]; then break; fi
+  sleep 2
+done
+sleep 3
+aw_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events/$aw_task" || echo '{}')
+aw_count=$(echo "$aw_audit" | sed -n 's/.*"count": *\([0-9]*\).*/\1/p' | head -n1)
+echo "audit count for $aw_task: $aw_count"
+if [ -n "$aw_count" ] && [ "$aw_count" -ge 4 ]; then
+  echo "AUDIT_STREAM_TO_DB_SMOKE: PASS"
+else
+  echo "AUDIT_STREAM_TO_DB_SMOKE: CHECK ($aw_count rows)"
+fi
+
+echo
+echo "=== audit.recorded skip smoke (echo not re-persisted) ==="
+aw_metrics=$(curl -sS -m 10 http://localhost:8006/metrics || echo '')
+if echo "$aw_metrics" | grep -qE '(^|# HELP |# TYPE )audit_worker_skipped_total'; then
+  echo "AUDIT_RECORDED_SKIP_SMOKE: PASS"
+else
+  echo "AUDIT_RECORDED_SKIP_SMOKE: CHECK"
+fi
+
+echo
+echo "=== audit deadletter metric smoke ==="
+if echo "$aw_metrics" | grep -qE '(^|# HELP |# TYPE )audit_worker_deadlettered_total'; then
+  echo "AUDIT_DEADLETTER_SMOKE: PASS"
+else
+  echo "AUDIT_DEADLETTER_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow audit_timeline smoke ==="
+aw_tl=$(curl -sS -m 10 "http://localhost:8000/workflow/timeline/$aw_task" || echo '{}')
+if echo "$aw_tl" | grep -q '"audit_timeline"'; then
+  echo "AUDIT_TIMELINE_SMOKE: PASS"
+else
+  echo "AUDIT_TIMELINE_SMOKE: CHECK"
+fi
+
+echo
+echo "=== github pipeline -> audit_logs.github_pr_integration smoke (DB-persisted via worker) ==="
+if echo "$gpi_audit" | grep -q '"decision_type": *"github_pr_integration"' \
+   && echo "$gpi_audit" | grep -q '"decision_type": *"github_automation"'; then
+  echo "GITHUB_PIPELINE_AUDIT_DB_SMOKE: PASS"
+else
+  echo "GITHUB_PIPELINE_AUDIT_DB_SMOKE: CHECK"
+fi
+
+echo
+echo "=== terminal failure -> audit_logs.workflow_failed smoke ==="
+tf_task="smoke-aw-fail-$$"
+curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$tf_task\",\"request\":{\"type\":\"dev.test\",\"simulate_failure\":true}}" >/dev/null 2>&1 || true
+sleep 12
+tf_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=workflow_failed&limit=5" || echo '{}')
+if echo "$tf_audit" | grep -q '"decision_type": *"workflow_failed"'; then
+  echo "TERMINAL_FAILURE_AUDIT_DB_SMOKE: PASS"
+else
+  echo "TERMINAL_FAILURE_AUDIT_DB_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

@@ -51,3 +51,6 @@ scrape_configs:
   - job_name: github-automation
     static_configs:
       - targets: ['github-automation:8005']
+  - job_name: audit-worker
+    static_configs:
+      - targets: ['audit-worker:8006']

@@ -95,6 +95,32 @@ GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL = Counter(
     ["reason"],  # http_error | safe_failure | disabled (informational)
 )
 
+# Audit-worker metrics (Stage 19 stream.audit -> audit_logs persistence)
+AUDIT_WORKER_PROCESSED_TOTAL = Counter(
+    "audit_worker_processed_total",
+    "Audit events persisted into audit_logs by audit-worker",
+    ["decision_type"],
+)
+AUDIT_WORKER_FAILURES_TOTAL = Counter(
+    "audit_worker_failures_total",
+    "Audit events whose persistence failed (labelled by reason)",
+    ["reason"],  # normalize_error | db_error | deadletter_error
+)
+AUDIT_WORKER_DEADLETTERED_TOTAL = Counter(
+    "audit_worker_deadlettered_total",
+    "Audit events routed to stream.deadletter by audit-worker",
+)
+AUDIT_WORKER_SKIPPED_TOTAL = Counter(
+    "audit_worker_skipped_total",
+    "Audit events skipped without persisting (labelled by reason)",
+    ["reason"],  # audit_recorded_echo | duplicate | empty
+)
+AUDIT_WORKER_PROCESSING_SECONDS = Histogram(
+    "audit_worker_processing_seconds",
+    "End-to-end audit-worker processing time per event",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

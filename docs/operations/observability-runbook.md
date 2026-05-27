@@ -329,12 +329,75 @@ for production; production must use real auth + a real KMS.
 
 | Script                                       | Verifies                                              | Pass marker                          |
 |----------------------------------------------|-------------------------------------------------------|--------------------------------------|
-| `scripts/check_runtime_state.sh`             | 40+ runtime smokes covering every service             | per-smoke `PASS` lines               |
+| `scripts/check_runtime_state.sh`             | 50+ runtime smokes covering every service             | per-smoke `PASS` lines               |
 | `scripts/verify_tracing_backend.sh`          | Tempo ready + OTLP ports + Grafana datasource         | `TEMPO_READY: PASS`                  |
 | `scripts/verify_trace_flow.sh`               | End-to-end trace with all 7 service spans             | `TRACE_FLOW_SMOKE: PASS`             |
 | `scripts/verify_alerting.sh`                 | Alertmanager + Prometheus rules + null receiver       | `ALERTMANAGER_HEALTHY: PASS`         |
 | `scripts/verify_incident_flow.sh`            | Terminal failure → incident → workflow.failed → ack/resolve | `INCIDENT_FLOW_SMOKE: PASS`    |
+| `scripts/verify_github_automation.sh`        | github-automation dry-run (+ opt-in real GitHub test) | `GITHUB_AUTOMATION_VERIFY: PASS`     |
+| `scripts/verify_github_pipeline_flow.sh`     | Agent pipeline → github-automation → workflow result  | `GITHUB_PIPELINE_FLOW_VERIFY: PASS`  |
+| `scripts/verify_unified_audit.sh`            | Unified `stream.audit → audit-worker → audit_logs`    | `UNIFIED_AUDIT_VERIFY: PASS`         |
 | `scripts/verify_platform_observability.sh`   | Aggregates all of the above + safety + SLO            | `PLATFORM_OBSERVABILITY_VERIFY: PASS` |
+
+### 17a. audit-worker (Stage 19)
+
+* **Health.** `curl http://localhost:8006/health` returns
+  `{"service":"audit-worker","status":"ok"}`.
+* **Status.** `curl http://localhost:8006/status` shows
+  `running`, `input_stream=stream.audit`, `group=audit-group`,
+  `consumer=audit-worker-1`, and the running counters
+  (`processed_count` / `failed_count` / `deadlettered_count` /
+  `skipped_count`).
+* **Metrics.** `curl http://localhost:8006/metrics | grep audit_worker_`
+  exposes `audit_worker_processed_total{decision_type=...}`,
+  `audit_worker_failures_total{reason=...}`,
+  `audit_worker_deadlettered_total`,
+  `audit_worker_skipped_total{reason=...}`,
+  `audit_worker_processing_seconds`.
+* **Consumer group.** `redis-cli XINFO GROUPS stream.audit` must
+  show `audit-group` with `consumers >= 1`. The worker uses
+  `XREADGROUP BLOCK` so there is no busy-polling — the consumer
+  name is `audit-worker-1`.
+* **`audit.recorded` skip.** Every `POST /audit/events` echoes
+  `{"event": "audit.recorded", ...}` back onto `stream.audit`. The
+  worker's `is_audit_recorded_echo` check skips and ACKs the
+  envelope; the echo never lands in `audit_logs`. Look for
+  `audit_worker_skipped_total{reason="audit_recorded_echo"}`
+  ticking up over time.
+* **Deadletter.** A poison message that keeps failing is routed
+  onto `stream.deadletter` as `audit.deadlettered` after
+  `MAX_FAILURES_BEFORE_DEADLETTER = 3` attempts; the original
+  message is then ACKed so the group's pending list doesn't grow
+  unbounded. The retry-scheduler will not re-queue it (the
+  deadletter envelope carries no `original_stream`).
+* **Backlog policy.** The worker only consumes **new** events
+  (`>` after `XGROUP CREATE … $`). The ~5.5k Stage-17 entries
+  on `stream.audit` are intentionally not back-filled — replaying
+  them would double-write the rows the audit-service already
+  persisted. To drain on demand:
+  `XGROUP SETID stream.audit audit-group 0-0` and restart
+  audit-worker; the `audit.recorded` filter and the
+  `source_message_id` dedup cache still apply.
+
+### 17b. /audit/events query API
+
+* `curl "http://localhost:8003/audit/events?limit=5"` — newest 5
+  audit rows across all tasks.
+* `curl "http://localhost:8003/audit/events?agent=qa-agent&limit=5"`
+  — newest qa-agent rows.
+* `curl "http://localhost:8003/audit/events?decision_type=github_pr_integration&limit=5"`
+  — newest pipeline-triggered PR rows.
+* `GET /audit/events/{task_id}` still returns every row for a
+  single task, ordered ascending.
+
+### 17c. Workflow audit_timeline
+
+`/workflow/timeline/{task_id}` carries an `audit_timeline` list
+sourced from `audit_logs`. Each entry has `decision_type`, `agent`,
+`created_at`, `summary`, `result`, and `artifact_refs`. A healthy
+github-pipeline workflow shows entries for `intake / requirement /
+development / qa / deployment / github_pr_integration /
+github_automation` ordered by `created_at`.
 
 ---
 

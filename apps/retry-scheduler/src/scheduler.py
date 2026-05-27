@@ -3,13 +3,13 @@ import contextlib
 import json
 from datetime import datetime, timezone
 
+from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.event_bus.redis_streams import (
     DEAD_LETTER_STREAM,
     RedisStreamEventBus,
     get_max_retries,
     get_retry_count,
 )
-from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.incidents import IncidentStore
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import RETRY_TOTAL, WORKFLOW_FAILED_TOTAL
@@ -203,8 +203,9 @@ class RetryScheduler:
                 f"workflow {task_id or workflow_id or message_id} terminal failure: {failure_reason}",
             )
         with contextlib.suppress(Exception):
-            await AuditHttpClient().record_event(
+            await publish_audit_event(
                 task_id=task_id or incident_id or message_id,
+                workflow_id=workflow_id or "",
                 agent="retry-scheduler",
                 decision_type="workflow_failed",
                 summary=f"retry-scheduler marked {task_id or message_id} as terminal failure",
@@ -214,7 +215,6 @@ class RetryScheduler:
                     "original_stream": original_stream,
                     "original_message_id": message_id,
                 },
-                workflow_id=workflow_id or "",
             )
         with contextlib.suppress(Exception):
             WORKFLOW_FAILED_TOTAL.labels(reason="failed").inc()

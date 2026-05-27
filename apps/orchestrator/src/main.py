@@ -10,9 +10,10 @@ from incidents_api import (
     create_incident_with_side_effects,
     resolve_incident_with_side_effects,
 )
-from progress import build_progress, build_retry_timeline
+from progress import build_audit_timeline, build_progress, build_retry_timeline
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
+from shared.sdk.audit.store import AuditStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
 from shared.sdk.incidents import IncidentStore
@@ -285,6 +286,11 @@ async def workflow_timeline(task_id: str):
         executions = []
     retry_timeline = await _retry_timeline_for(task_id)
     progress = build_progress(workflow, executions, retry_timeline=retry_timeline)
+    audit_events: list[dict] = []
+    try:
+        audit_events = await AuditStore().get_audit_logs(task_id)
+    except Exception:  # audit_logs is best-effort — timeline is still useful without it
+        audit_events = []
     return {
         "task_id": progress["task_id"],
         "workflow_id": progress["workflow_id"],
@@ -294,6 +300,7 @@ async def workflow_timeline(task_id: str):
         "approval_status": progress["approval_status"],
         "agent_timeline": progress["agent_timeline"],
         "retry_timeline": progress["retry_timeline"],
+        "audit_timeline": build_audit_timeline(audit_events),
         "github": progress.get("github"),
         "pr_url": progress.get("pr_url", ""),
         "github_status": progress.get("github_status", ""),

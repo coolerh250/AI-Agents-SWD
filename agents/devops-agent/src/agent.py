@@ -4,8 +4,8 @@ import os
 
 import asyncpg
 
+from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
-from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.github_http_client import GitHubAutomationHttpClient
 from shared.sdk.observability.metrics import (
     GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL,
@@ -225,17 +225,20 @@ class DevOpsAgent(StreamAgent):
         return result
 
     async def _write_github_audit(self, record: dict, github_result: dict) -> None:
-        """Persist a ``github_pr_integration`` audit row via audit-service.
+        """Publish a ``github_pr_integration`` audit event onto ``stream.audit``.
 
-        StreamAgent's auto-audit publishes to ``stream.audit`` (which only
-        carries the event onto a Redis stream — no consumer persists it to
-        Postgres in this stack). We additionally call AuditHttpClient
-        directly so a query against ``audit_logs`` for the workflow can
-        confirm the github result was recorded.
+        Stage 19 unified audit path: the audit-worker consumes stream.audit and
+        writes audit_logs, so devops-agent no longer needs the direct
+        ``audit-service`` HTTP call to land the row in Postgres. We rely on the
+        StreamAgent's existing ``write_audit`` call (which already publishes to
+        the same stream) — but the StreamAgent audit only covers the base
+        deployment decision_type, not ``github_pr_integration``. This explicit
+        call adds the github-specific row.
         """
         with contextlib.suppress(Exception):
-            await AuditHttpClient().record_event(
+            await publish_audit_event(
                 task_id=record["task_id"],
+                workflow_id=str(record.get("workflow_id", "")),
                 agent=self.name,
                 decision_type="github_pr_integration",
                 summary=(
@@ -249,7 +252,6 @@ class DevOpsAgent(StreamAgent):
                     "issue_url": github_result.get("issue_url", ""),
                     "dry_run": bool(github_result.get("dry_run", True)),
                 },
-                workflow_id=str(record.get("workflow_id", "")),
             )
 
     async def handle(self, payload: dict) -> dict:

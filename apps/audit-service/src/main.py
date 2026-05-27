@@ -119,3 +119,43 @@ async def get_events(task_id: str) -> dict:
         "count": len(rows),
         "events": [_row_to_audit(row) for row in rows],
     }
+
+
+@app.get("/audit/events")
+async def list_events(
+    task_id: str | None = None,
+    agent: str | None = None,
+    decision_type: str | None = None,
+    limit: int = 100,
+) -> dict:
+    """Query audit_logs by any combination of filters.
+
+    Used by operators and ``verify_unified_audit.sh`` to confirm that
+    stream-based audit events landed in Postgres. Newest first.
+    """
+    clauses: list[str] = []
+    params: list = []
+    if task_id:
+        params.append(task_id)
+        clauses.append(f"task_id = ${len(params)}")
+    if agent:
+        params.append(agent)
+        clauses.append(f"agent = ${len(params)}")
+    if decision_type:
+        params.append(decision_type)
+        clauses.append(f"decision_type = ${len(params)}")
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    params.append(max(1, min(int(limit or 100), 500)))
+    sql = (
+        f"SELECT {_RETURNING} FROM audit_logs "
+        f"{where} ORDER BY created_at DESC LIMIT ${len(params)}"
+    )
+    conn = await _db_conn()
+    try:
+        rows = await conn.fetch(sql, *params)
+    finally:
+        await conn.close()
+    return {
+        "count": len(rows),
+        "events": [_row_to_audit(row) for row in rows],
+    }

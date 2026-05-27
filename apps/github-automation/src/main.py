@@ -23,8 +23,8 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.github import GitHubClient, GitHubClientError
-from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.notifications.client import NotificationClient
 from shared.sdk.observability.metrics import (
     GITHUB_AUTOMATION_FAILURES_TOTAL,
@@ -194,16 +194,21 @@ async def _record_audit(
     result: str,
     artifact_refs: dict[str, Any],
 ) -> None:
+    """Publish a ``github_automation`` audit event onto ``stream.audit``.
+
+    Stage 19: the unified audit path is ``stream.audit -> audit-worker ->
+    audit_logs``. We no longer call ``audit-service`` over HTTP — best-effort
+    suppression matches the previous behaviour.
+    """
     with contextlib.suppress(Exception):
-        client = AuditHttpClient()
-        await client.record_event(
+        await publish_audit_event(
             task_id=task_id,
+            workflow_id=workflow_id,
             agent="github-automation",
             decision_type="github_automation",
             summary=summary,
             result=result,
             artifact_refs=artifact_refs,
-            workflow_id=workflow_id,
         )
 
 

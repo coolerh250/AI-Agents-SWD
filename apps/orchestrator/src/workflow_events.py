@@ -2,8 +2,8 @@ import asyncio
 import contextlib
 from datetime import datetime
 
+from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
-from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import (
     WORKFLOW_COMPLETED_TOTAL,
@@ -175,7 +175,7 @@ class WorkflowEventConsumer:
     async def _record_ignored_event(self, task_id: str, event: str, stage: str) -> None:
         """Audit + notify that an agent event was ignored on a terminated workflow."""
         with contextlib.suppress(Exception):
-            await AuditHttpClient().record_event(
+            await publish_audit_event(
                 task_id=task_id,
                 agent="orchestrator",
                 decision_type="workflow_event_ignored",

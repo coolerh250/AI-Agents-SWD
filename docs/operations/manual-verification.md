@@ -271,17 +271,63 @@ Expected output: `0`.
 
 ---
 
+## 17a. Verify the unified audit path (Stage 19)
+
+The audit-worker consumes `stream.audit` and writes `audit_logs`:
+
+```
+curl -sS http://localhost:8006/health
+curl -sS http://localhost:8006/status | python3 -m json.tool
+curl -sS http://localhost:8006/metrics | grep audit_worker_
+docker compose -f infra/docker-compose/docker-compose.yml \
+  exec -T redis redis-cli XINFO GROUPS stream.audit
+./scripts/verify_unified_audit.sh
+```
+
+`/health` returns `{"service":"audit-worker","status":"ok"}`.
+`/status` shows `"running":true`, `"group":"audit-group"`, and the
+processed counter incrementing as workflows run. `XINFO GROUPS` lists
+`audit-group` with `consumers >= 1`. `verify_unified_audit.sh` ends
+with `UNIFIED_AUDIT_VERIFY: PASS`.
+
+Query the unified audit DB directly:
+
+```
+curl -sS "http://localhost:8003/audit/events?limit=5" | python3 -m json.tool
+curl -sS "http://localhost:8003/audit/events?agent=qa-agent&limit=5" \
+  | python3 -m json.tool
+curl -sS "http://localhost:8003/audit/events?decision_type=github_pr_integration&limit=5" \
+  | python3 -m json.tool
+```
+
+A pipeline-triggered workflow with `github.enabled=true` produces
+`github_pr_integration` (devops-agent) and `github_automation`
+(github-automation) rows in `audit_logs`.
+
+`/workflow/timeline/{task_id}` carries `audit_timeline` next to
+`agent_timeline` / `retry_timeline`:
+
+```
+curl -sS "http://localhost:8000/workflow/timeline/$task" \
+  | python3 -m json.tool | grep -A2 audit_timeline | head -30
+```
+
+---
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.
-* [ ] All 18 containers reported `running (healthy)`.
+* [ ] All 19 services + audit-worker reported `running (healthy)`.
 * [ ] `./scripts/run_tests.sh` ended green.
+* [ ] `./scripts/verify_unified_audit.sh` ended `UNIFIED_AUDIT_VERIFY: PASS`.
 * [ ] `./scripts/verify_platform_observability.sh` ended
       `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
 * [ ] Manual workflow reached `completed`, trace covered all 7
       services, incident lifecycle (create → ack → resolve) worked.
 * [ ] `deployment_records` shows zero rows with
       `production_executed = true` or `environment = production`.
+* [ ] `workflow_states.execution_result->>'production_executed'='true'`
+      count is `0`.
 * [ ] Alertmanager `/api/v2/receivers` mentions no external
       Slack / Discord / Telegram / PagerDuty / webhook / email
       receiver.

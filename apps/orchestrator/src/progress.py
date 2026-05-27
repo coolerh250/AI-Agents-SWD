@@ -136,6 +136,32 @@ def _github_timeline_event(github: dict | None, updated_at: str | None) -> dict 
     }
 
 
+def build_audit_timeline(audit_events: list[dict]) -> list[dict]:
+    """Reduce raw audit_logs rows to a chronological timeline (oldest first).
+
+    Stage 19 unified-audit-path artefact: the orchestrator exposes the
+    persisted audit events alongside the agent timeline so a single timeline
+    view can show ``github_pr_integration`` / ``github_automation`` /
+    ``workflow_failed`` etc. without joining audit_logs by hand.
+    """
+    timeline: list[dict] = []
+    for event in audit_events or []:
+        if not isinstance(event, dict):
+            continue
+        timeline.append(
+            {
+                "decision_type": event.get("decision_type"),
+                "agent": event.get("agent"),
+                "created_at": event.get("created_at"),
+                "summary": event.get("summary"),
+                "result": event.get("result"),
+                "artifact_refs": event.get("artifact_refs") or {},
+            }
+        )
+    timeline.sort(key=lambda entry: str(entry.get("created_at") or ""))
+    return timeline
+
+
 def build_progress(
     workflow: dict, executions: list[dict], retry_timeline: list[dict] | None = None
 ) -> dict:
