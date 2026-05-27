@@ -50,7 +50,8 @@ Or run the inline smokes inside `check_runtime_state.sh`:
 ./scripts/check_runtime_state.sh | grep GITHUB_
 ```
 
-Expected:
+Expected (Stage 18 adds the six `GITHUB_PIPELINE_*` smokes on top of
+the Stage 17 service-level ones):
 
 ```
 GITHUB_AUTOMATION_HEALTH: PASS
@@ -58,7 +59,52 @@ GITHUB_DEMO_PR_DRY_RUN_SMOKE: PASS
 GITHUB_AUDIT_SMOKE: PASS
 GITHUB_NOTIFICATION_SMOKE: PASS
 GITHUB_METRICS_SMOKE: PASS
+GITHUB_PIPELINE_INTEGRATION_SMOKE: PASS
+GITHUB_WORKFLOW_RESULT_SMOKE: PASS
+GITHUB_TIMELINE_SMOKE: PASS
+GITHUB_PIPELINE_AUDIT_SMOKE: PASS
+GITHUB_PIPELINE_NOTIFICATION_SMOKE: PASS
+GITHUB_PIPELINE_TRACE_SMOKE: PASS
 ```
+
+## 2a. Verify pipeline-triggered dry-run PR
+
+The Stage 18 integration drives a workflow end-to-end through
+`communication-gateway → orchestrator → agents → github-automation`
+and asserts the github result lands in workflow state / timeline /
+audit / notifications / Tempo trace:
+
+```
+./scripts/verify_github_pipeline_flow.sh
+```
+
+Expected last lines:
+
+```
+checks passed: 7 / 7
+GITHUB_PIPELINE_FLOW_VERIFY: PASS
+VERIFY_GITHUB_PIPELINE_FLOW_DONE
+```
+
+To trigger one manually:
+
+```
+task=github-manual-$(date +%s)
+curl -sS -X POST http://localhost:8004/intake/mock -H 'Content-Type: application/json' \
+  -d "{\"task_id\":\"$task\",\"request\":{\"type\":\"dev.test\",\"github\":{\"enabled\":true,\"dry_run\":true}}}"
+```
+
+Then watch the workflow:
+
+```
+curl -sS "http://localhost:8000/workflow/progress/$task" | python3 -m json.tool
+curl -sS "http://localhost:8000/workflow/timeline/$task" | python3 -m json.tool
+```
+
+`progress.pr_url` is the canonical handle. `progress.github_status`
+will be `success` for a healthy dry-run, `failed` if
+github-automation was unreachable, or `disabled` when
+`request.github.enabled=false`.
 
 ---
 

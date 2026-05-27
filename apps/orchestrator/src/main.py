@@ -294,6 +294,10 @@ async def workflow_timeline(task_id: str):
         "approval_status": progress["approval_status"],
         "agent_timeline": progress["agent_timeline"],
         "retry_timeline": progress["retry_timeline"],
+        "github": progress.get("github"),
+        "pr_url": progress.get("pr_url", ""),
+        "github_status": progress.get("github_status", ""),
+        "github_dry_run": progress.get("github_dry_run"),
         "timestamps": progress["timestamps"],
     }
 

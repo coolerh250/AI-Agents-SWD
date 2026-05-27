@@ -279,6 +279,10 @@ services:
     environment:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      GITHUB_DRY_RUN: "true"
+      GITHUB_INTEGRATION_DEFAULT: "true"
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: devops-agent

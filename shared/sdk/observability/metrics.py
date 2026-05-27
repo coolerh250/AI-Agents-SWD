@@ -84,6 +84,16 @@ GITHUB_AUTOMATION_FAILURES_TOTAL = Counter(
     "Failures in the github-automation pipeline (labelled by operation)",
     ["operation"],
 )
+GITHUB_PIPELINE_INTEGRATION_TOTAL = Counter(
+    "github_pipeline_integration_total",
+    "Agent-pipeline -> github-automation integrations (labelled by dry_run mode)",
+    ["dry_run"],
+)
+GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL = Counter(
+    "github_pipeline_integration_failures_total",
+    "Agent-pipeline -> github-automation integration failures",
+    ["reason"],  # http_error | safe_failure | disabled (informational)
+)
 
 
 def metrics_response() -> tuple[bytes, str]:

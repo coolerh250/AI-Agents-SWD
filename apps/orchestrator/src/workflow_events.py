@@ -110,6 +110,27 @@ class WorkflowEventConsumer:
             record_id = payload.get("deployment_record_id")
             if record_id is not None:
                 execution_result["deployment_record_id"] = record_id
+            github_result = payload.get("github") if isinstance(payload.get("github"), dict) else {}
+            if github_result:
+                execution_result["github"] = {
+                    "status": github_result.get("status", "unknown"),
+                    "dry_run": bool(github_result.get("dry_run", True)),
+                    "issue_url": github_result.get("issue_url", ""),
+                    "branch": github_result.get("branch", ""),
+                    "pr_url": github_result.get("pr_url", ""),
+                    "pr_number": github_result.get("pr_number"),
+                    "checks_status": github_result.get("checks_status", "unknown"),
+                    "event_type": github_result.get(
+                        "event_type",
+                        (
+                            "github.pr.dry_run"
+                            if github_result.get("dry_run", True)
+                            else "github.pr.created"
+                        ),
+                    ),
+                }
+                if github_result.get("error"):
+                    execution_result["github"]["error"] = github_result["error"]
         elif workflow["stage"] == "completed":
             stage = "completed"  # never move a finished workflow backwards
         else:

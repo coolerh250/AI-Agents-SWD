@@ -867,6 +867,83 @@ this stage; `check_runtime_state.sh` gained five new smokes
 `GITHUB_AUDIT_SMOKE`, `GITHUB_NOTIFICATION_SMOKE`,
 `GITHUB_METRICS_SMOKE`).
 
+### Agent pipeline → GitHub PR integration
+
+Stage 18 wires `devops-agent` to call
+`github-automation /github/workflow/demo-pr` after its mock dev/test
+deployment. The result is folded into `deployment_records.metadata.github`
+and propagated to the orchestrator on the
+`devops.deployment_simulated` event so `workflow_states.execution_result.github`
+ends up with: `status`, `dry_run`, `issue_url`, `branch`, `pr_url`,
+`pr_number`, `checks_status`, `event_type`.
+
+`/workflow/progress/{task_id}` surfaces `pr_url`, `github_status`,
+`github_dry_run`, and the full `github` envelope.
+`/workflow/timeline/{task_id}` appends one of:
+
+* `github.demo_pr.dry_run` — successful dry-run (default path)
+* `github.demo_pr.created` — successful real-mode run (opt-in)
+* `github.demo_pr.failed` — github-automation HTTP/connection error
+* `github.demo_pr.skipped` — `request.github.enabled = false`
+
+To trigger the integration from `communication-gateway`:
+
+```json
+POST /intake/mock
+{
+  "task_id": "github-pipeline-001",
+  "request": {
+    "type": "dev.test",
+    "description": "verify pipeline github integration",
+    "github": {
+      "enabled": true,
+      "repo": "coolerh250/AI-Agents-SWD",
+      "base_branch": "main",
+      "dry_run": true
+    }
+  }
+}
+```
+
+`request.github` is optional. When absent, the integration runs in its
+default mode (enabled, dry-run). Set `enabled: false` to skip the
+github-automation call entirely (devops-agent still simulates the
+deployment record). Switching `dry_run: false` only takes effect when
+`github-automation` has `GITHUB_TOKEN` set — without a token the SDK
+raises `GitHubMissingTokenError` and `run_demo_pr` returns
+`status=failed` instead of touching the network. See
+[`docs/operations/github-automation-runbook.md`](docs/operations/github-automation-runbook.md)
+for the full safety contract.
+
+Two new Prometheus counters track the integration:
+
+```
+github_pipeline_integration_total{dry_run="true|false"}
+github_pipeline_integration_failures_total{reason="http_error|safe_failure|disabled"}
+```
+
+Verification:
+
+```
+./scripts/verify_github_pipeline_flow.sh
+```
+
+Expected: `checks passed: 7 / 7` (or `6/7` if Tempo lags) then
+`GITHUB_PIPELINE_FLOW_VERIFY: PASS`. `check_runtime_state.sh` gained
+six new smokes:
+`GITHUB_PIPELINE_INTEGRATION_SMOKE`,
+`GITHUB_WORKFLOW_RESULT_SMOKE`, `GITHUB_TIMELINE_SMOKE`,
+`GITHUB_PIPELINE_AUDIT_SMOKE`, `GITHUB_PIPELINE_NOTIFICATION_SMOKE`,
+`GITHUB_PIPELINE_TRACE_SMOKE`.
+
+**Safety contract reminder.** The integration is local/test only and
+**dry-run** by default. It never merges, never modifies branch
+protection, never deploys to production, and only flips to real-mode
+when both `GITHUB_TOKEN` and an explicit `dry_run=false` arrive
+together. The workflow_states row keeps
+`execution_result.production_executed = false` regardless of
+`dry_run`.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

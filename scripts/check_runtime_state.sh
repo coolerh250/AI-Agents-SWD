@@ -846,4 +846,84 @@ else
 fi
 
 echo
+echo "=== pipeline -> github-automation integration smoke ==="
+gpi_task="smoke-gpi-$$"
+gpi_seed=$(curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$gpi_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"github pipeline smoke\",\"github\":{\"enabled\":true,\"dry_run\":true}}}" \
+  || echo '{}')
+echo "$gpi_seed" | head -c 300 || true
+echo
+gpi_pr_url=""
+gpi_status=""
+for i in $(seq 1 30); do
+  gpi_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$gpi_task" || echo '{}')
+  gpi_stage=$(echo "$gpi_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  gpi_pr_url=$(echo "$gpi_prog" | sed -n 's/.*"pr_url": *"\([^"]*\)".*/\1/p' | head -n1)
+  gpi_status=$(echo "$gpi_prog" | sed -n 's/.*"github_status": *"\([^"]*\)".*/\1/p' | head -n1)
+  if [ "$gpi_stage" = "completed" ] && [ -n "$gpi_pr_url" ]; then break; fi
+  sleep 2
+done
+echo "gpi_task=$gpi_task pr_url=$gpi_pr_url github_status=$gpi_status"
+if [ -n "$gpi_pr_url" ] && [ "$gpi_status" = "success" ]; then
+  echo "GITHUB_PIPELINE_INTEGRATION_SMOKE: PASS"
+else
+  echo "GITHUB_PIPELINE_INTEGRATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow_states.execution_result.github backfill smoke ==="
+gpi_wf=$(curl -sS -m 10 "http://localhost:8000/workflow/$gpi_task" || echo '{}')
+if echo "$gpi_wf" | grep -q '"github"' \
+   && echo "$gpi_wf" | grep -q '"dry_run":true' \
+   && echo "$gpi_wf" | grep -q '"production_executed":false'; then
+  echo "GITHUB_WORKFLOW_RESULT_SMOKE: PASS"
+else
+  echo "GITHUB_WORKFLOW_RESULT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== workflow timeline carries github.demo_pr.dry_run smoke ==="
+gpi_tl=$(curl -sS -m 10 "http://localhost:8000/workflow/timeline/$gpi_task" || echo '{}')
+if echo "$gpi_tl" | grep -q 'github.demo_pr.dry_run'; then
+  echo "GITHUB_TIMELINE_SMOKE: PASS"
+else
+  echo "GITHUB_TIMELINE_SMOKE: CHECK"
+fi
+
+echo
+echo "=== audit decision_type=github_pr_integration smoke ==="
+gpi_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events/$gpi_task" || echo '{}')
+if echo "$gpi_audit" | grep -q '"decision_type": *"github_pr_integration"'; then
+  echo "GITHUB_PIPELINE_AUDIT_SMOKE: PASS"
+else
+  echo "GITHUB_PIPELINE_AUDIT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== notification github.pr.dry_run for $gpi_task smoke ==="
+gpi_notif=$(curl -sS -m 10 "http://localhost:8004/notifications?count=200" || echo '{}')
+if echo "$gpi_notif" | grep -q '"event_type": *"github.pr.dry_run"' \
+   && echo "$gpi_notif" | grep -q "$gpi_task"; then
+  echo "GITHUB_PIPELINE_NOTIFICATION_SMOKE: PASS"
+else
+  echo "GITHUB_PIPELINE_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== github-automation trace smoke (pipeline trace includes service) ==="
+gpi_trace=$(echo "$gpi_prog" | sed -n 's/.*"trace_id": *"\([a-f0-9]*\)".*/\1/p' | head -n1)
+if [ -n "$gpi_trace" ]; then
+  sleep 4
+  gpi_body=$(curl -sS -m 15 "http://localhost:3200/api/traces/$gpi_trace" || echo '')
+  if echo "$gpi_body" | grep -q '"github-automation"' \
+     && echo "$gpi_body" | grep -q '"devops-agent"'; then
+    echo "GITHUB_PIPELINE_TRACE_SMOKE: PASS (trace_id=$gpi_trace)"
+  else
+    echo "GITHUB_PIPELINE_TRACE_SMOKE: CHECK (trace_id=$gpi_trace)"
+  fi
+else
+  echo "GITHUB_PIPELINE_TRACE_SMOKE: CHECK (no trace_id for $gpi_task)"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

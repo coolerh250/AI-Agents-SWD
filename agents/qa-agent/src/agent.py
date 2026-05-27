@@ -31,6 +31,9 @@ class QAAgent(StreamAgent):
         message = {
             "event": "qa.completed",
             **self.correlation_ids(payload),
+            # Forward the original request so the downstream devops-agent
+            # can read e.g. ``request.github.{enabled,repo,base_branch,dry_run}``.
+            "request": payload.get("request", {}),
             "artifact": report,
             "produced_by": self.name,
         }

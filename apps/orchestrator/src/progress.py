@@ -77,6 +77,65 @@ def _execution_status(stage: str, completed: list[str], failed: list[str]) -> st
     return "dispatched"
 
 
+def build_github_summary(workflow: dict) -> dict | None:
+    """Extract the github-automation envelope the orchestrator backfilled.
+
+    Returns ``None`` when the workflow has no ``execution_result.github``
+    block (e.g. pre-Stage-18 rows or workflows that explicitly disabled the
+    integration via ``request.github.enabled=false``).
+    """
+    state = workflow.get("state") if isinstance(workflow.get("state"), dict) else {}
+    execution_result = (
+        state.get("execution_result")
+        if isinstance(state.get("execution_result"), dict)
+        else (
+            workflow.get("execution_result")
+            if isinstance(workflow.get("execution_result"), dict)
+            else {}
+        )
+    )
+    github = execution_result.get("github") if isinstance(execution_result, dict) else None
+    if not isinstance(github, dict) or not github:
+        return None
+    return {
+        "status": github.get("status", "unknown"),
+        "dry_run": bool(github.get("dry_run", True)),
+        "pr_url": github.get("pr_url", ""),
+        "pr_number": github.get("pr_number"),
+        "issue_url": github.get("issue_url", ""),
+        "branch": github.get("branch", ""),
+        "checks_status": github.get("checks_status", "unknown"),
+        "event_type": github.get("event_type", ""),
+        "error": github.get("error", ""),
+    }
+
+
+def _github_timeline_event(github: dict | None, updated_at: str | None) -> dict | None:
+    """Render a single timeline entry for the github-automation result."""
+    if not github:
+        return None
+    status = github.get("status", "unknown")
+    dry_run = github.get("dry_run", True)
+    if status == "failed":
+        phase = "github.demo_pr.failed"
+    elif status == "disabled":
+        phase = "github.demo_pr.skipped"
+    elif dry_run:
+        phase = "github.demo_pr.dry_run"
+    else:
+        phase = "github.demo_pr.created"
+    return {
+        "phase": phase,
+        "status": status,
+        "started_at": updated_at,
+        "completed_at": updated_at,
+        "duration_ms": None,
+        "pr_url": github.get("pr_url", ""),
+        "branch": github.get("branch", ""),
+        "dry_run": dry_run,
+    }
+
+
 def build_progress(
     workflow: dict, executions: list[dict], retry_timeline: list[dict] | None = None
 ) -> dict:
@@ -94,6 +153,11 @@ def build_progress(
     completed_agents = [a for a in PIPELINE_AGENTS if a in completed]
     failed_agents = [a for a in PIPELINE_AGENTS if a in failed]
     pending_agents = [a for a in PIPELINE_AGENTS if a not in completed and a not in failed]
+    github = build_github_summary(workflow)
+    agent_timeline = build_agent_timeline(executions)
+    gh_event = _github_timeline_event(github, workflow.get("updated_at"))
+    if gh_event is not None:
+        agent_timeline.append(gh_event)
     return {
         "task_id": workflow.get("task_id"),
         "workflow_id": state.get("workflow_id", ""),
@@ -107,8 +171,12 @@ def build_progress(
             "trace_id": state.get("trace_id", ""),
             "workflow_id": state.get("workflow_id", ""),
         },
-        "agent_timeline": build_agent_timeline(executions),
+        "agent_timeline": agent_timeline,
         "retry_timeline": retry_timeline or [],
+        "github": github,
+        "pr_url": (github or {}).get("pr_url", ""),
+        "github_status": (github or {}).get("status", "unknown") if github else "",
+        "github_dry_run": (github or {}).get("dry_run", True) if github else None,
         "timestamps": {
             "created_at": workflow.get("created_at"),
             "updated_at": workflow.get("updated_at"),
