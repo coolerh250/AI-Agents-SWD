@@ -2409,3 +2409,280 @@ issues & blockers, and next-step suggestions.
      the workflow timeline alongside the other agent events. Today
      an operator has to query audit-service separately to confirm
      the github_automation row.
+
+
+## Stage 18 — Step 17: Agent Pipeline → GitHub PR Integration
+
+- **Execution time:** 2026-05-27 08:00 – 10:00 (local)
+- **Git branch / commit:**
+  `main` →
+  Commit A `15e2bf8 Step 17: agent pipeline -> github-automation integration (dry-run)`
+  Commit A.1 `279a13f Step 17: devops-agent persists github_pr_integration via audit-service`
+  Commit A.2 `035ab93 Step 17: inject AUDIT_SERVICE_URL into devops-agent`
+  Commit B (this entry) appended on top.
+- **Previous commit:** `8d20c46 Stage 17: progress log - Step 16
+  GitHub automation foundation + 10.0.1.31 dry-run validation`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only. Same
+  Step-16 contract: no real GitHub call by default, no merge, no
+  branch-protection change, no production deploy, no real Slack /
+  Discord / Telegram / PagerDuty / LLM / Kubernetes / cloud API.
+  Real-mode flip stays opt-in (`RUN_REAL_GITHUB_TEST=true` +
+  `GITHUB_TOKEN`); Stage 18 was validated dry-run only.
+
+- **devops-agent → github-automation integration result:**
+  - `agents/devops-agent/src/agent.py` rewritten: after the mock
+    `deployment_records` insert, the agent reads
+    `payload.request.github` to decide whether to call
+    `github-automation /github/workflow/demo-pr`. Defaults: enabled,
+    `dry_run=true`, repo from `GITHUB_DEFAULT_REPO`, base_branch=main,
+    branch_name=`ai-agents/<task_id>`, file_path=`docs/automation-demo.md`,
+    file_content carrying `task_id` / `workflow_id` /
+    `generated_by=devops-agent` / `production_executed=false` /
+    `mock=true`.
+  - PR title forced to `[AI-Agents-SWD] Automated demo PR for <task_id>`;
+    PR body matches the Step-16 template (Summary / Changed Files /
+    Risk Assessment / Test Result / Rollback Plan).
+  - The github result is folded into
+    `deployment_records.metadata.github` (`github_dry_run`,
+    `github_issue_url`, `github_branch`, `github_pr_url`,
+    `github_checks_status`, `github.status`).
+  - The agent's `devops.deployment_simulated` event on
+    `stream.devops` now carries a top-level `github` block with the
+    same fields.
+  - Failure path (`status=failed`): deployment still completes,
+    workflow does not crash, `metadata.github.status=failed`, audit
+    + notification flip to `github.pr.failed`, the consumer loop
+    keeps running.
+  - `request.github.enabled = false` short-circuits: agent records
+    `metadata.github.status=disabled` with the operator's
+    `disabled_reason`, never touches github-automation, and the
+    workflow still completes.
+
+- **GitHubAutomationHttpClient test results:**
+  - Extended `shared/sdk/http_clients/github_http_client.py` with
+    `run_demo_pr` (safe-fail wrapper that normalises the demo-pr
+    envelope and returns `status=failed` on HTTP errors with the
+    caller's `dry_run` intent preserved), `get_health` (status=ok
+    or status=failed envelope), and `read_checks` (alias for
+    `get_checks`).
+  - `tests/test_github_http_client.py` (5 cases): success
+    normalisation, safe-fail preserves dry_run, get_health failure,
+    safe-fail on 500, read_checks alias — all passing on Windows
+    + on 10.0.1.31 with no real github-automation needed.
+
+- **Pipeline-triggered demo PR dry-run result:**
+  - `verify_github_pipeline_flow.sh` drove
+    `github-pipeline-verify-1779846522` through the gateway →
+    orchestrator → intake → requirement → development → qa →
+    devops → github-automation → back to orchestrator chain.
+  - Output: **checks passed: 7 / 7**,
+    `GITHUB_PIPELINE_FLOW_VERIFY: PASS`,
+    `VERIFY_GITHUB_PIPELINE_FLOW_DONE`.
+  - Sample dry-run PR URL recorded on the workflow row:
+    `https://github.com/coolerh250/AI-Agents-SWD/pull/5099` (the
+    PR is mock — no real GitHub PR exists; the URL is generated
+    deterministically by the SDK in dry-run mode).
+  - Tempo trace `b8d762712910342eb7870f5e0e569d0a` covered both
+    `devops-agent` and `github-automation` spans alongside the
+    existing seven pipeline service spans.
+
+- **Workflow progress github fields result:**
+  - `/workflow/progress/<task_id>` now exposes `pr_url`,
+    `github_status`, `github_dry_run`, and a full `github`
+    envelope (status / dry_run / pr_url / pr_number / issue_url /
+    branch / checks_status / event_type / error).
+  - `/workflow/timeline/<task_id>` returns the same fields plus
+    the agent timeline.
+  - Backfill happens in `apps/orchestrator/src/workflow_events.py`
+    on `devops.deployment_simulated`: the `github` block is copied
+    onto `workflow_states.execution_result.github` so a
+    `GET /workflow/<task_id>` shows it directly.
+
+- **Workflow timeline github event result:**
+  - `apps/orchestrator/src/progress.py` adds a single
+    `github.demo_pr.{dry_run, created, failed, skipped}` entry to
+    `agent_timeline` derived from the github status / dry_run
+    fields. Verified by `tests/test_github_pipeline_timeline.py`
+    (8 cases, parametrised over status × dry_run) and by the
+    live cluster smoke `GITHUB_TIMELINE_SMOKE: PASS`.
+
+- **Audit / notification verification result:**
+  - **Audit:** devops-agent now calls `AuditHttpClient.record_event`
+    directly (the StreamAgent's stream-based audit only publishes
+    to `stream.audit` with no DB consumer, so the row never
+    landed in `audit_logs` before this stage). A
+    `decision_type='github_pr_integration'` row appears in
+    `audit_logs` for every pipeline-triggered task with
+    `artifact_refs = {pr_url, branch, issue_url, dry_run}`.
+    `GITHUB_PIPELINE_AUDIT_SMOKE: PASS`.
+  - **Notification:** `stream.notifications` carries a
+    `github.pr.{dry_run, created, failed, skipped}` event keyed
+    by `task_id` (published by the StreamAgent base from the
+    agent return dict's `event_type`).
+    `GITHUB_PIPELINE_NOTIFICATION_SMOKE: PASS`.
+
+- **Metrics / tracing verification result:**
+  - Two new counters registered in
+    `shared/sdk/observability/metrics.py`:
+    `github_pipeline_integration_total{dry_run}` and
+    `github_pipeline_integration_failures_total{reason}`. The
+    failures counter labels: `http_error` (run_demo_pr returned
+    `status=failed`), `disabled` (request.github.enabled=false —
+    informational), `safe_failure` (reserved for future use).
+  - Spans: every github-automation call from devops-agent opens
+    `devops.github_automation` with `service.name=devops-agent` +
+    `github.repo` + `github.dry_run` + `task_id` + `workflow_id`.
+    The pre-existing `github_automation.demo_pr` client span +
+    `github.demo_pr` / `github.create_*` / `github.read_checks`
+    spans still emit.
+  - Tempo trace check: each pipeline trace now contains spans for
+    `communication-gateway / orchestrator / intake-agent /
+    requirement-agent / development-agent / qa-agent / devops-agent
+    / github-automation` — 8 services in one trace.
+    `GITHUB_PIPELINE_TRACE_SMOKE: PASS`.
+
+- **Optional real GitHub test:** **NOT executed.** Same as Stage 17.
+  The cluster runs without `GITHUB_TOKEN`, so the SDK refuses to
+  flip `dry_run=false` regardless of the request payload. Real-mode
+  validation against a sandbox repo is still the Stage 19
+  follow-up.
+
+- **check_runtime_state.sh result:** **57 / 57** smokes PASS (51 from
+  Stage 17 + 6 new):
+  `GITHUB_PIPELINE_INTEGRATION_SMOKE`,
+  `GITHUB_WORKFLOW_RESULT_SMOKE`, `GITHUB_TIMELINE_SMOKE`,
+  `GITHUB_PIPELINE_AUDIT_SMOKE`,
+  `GITHUB_PIPELINE_NOTIFICATION_SMOKE`,
+  `GITHUB_PIPELINE_TRACE_SMOKE`. Ends `CHECK_RUNTIME_STATE_DONE`.
+
+- **verify_github_pipeline_flow.sh result:** **checks passed: 7 / 7**,
+  `GITHUB_PIPELINE_FLOW_VERIFY: PASS`,
+  `VERIFY_GITHUB_PIPELINE_FLOW_DONE`. Each of the seven assertions
+  passed individually: `pr_url present`, `github_dry_run=true`,
+  `workflow.production_executed=false`,
+  `timeline.github.demo_pr.dry_run`, `audit.github_pr_integration`,
+  `notification.github.pr.dry_run`, `tempo.trace.github-automation`.
+
+- **verify_github_automation.sh result:** **checks passed: 7 / 7**,
+  `GITHUB_AUTOMATION_VERIFY: PASS`,
+  `VERIFY_GITHUB_AUTOMATION_DONE`. Stage 17 service surface stays
+  green; the Stage 18 pipeline-side wiring does not regress the
+  service-level smokes.
+
+- **verify_platform_observability.sh result:** **PASS=81 FAIL=0**,
+  `PLATFORM_OBSERVABILITY_VERIFY: PASS`. All five sub-scripts
+  (`CHECK_RUNTIME_STATE / VERIFY_TRACING_BACKEND / VERIFY_TRACE_FLOW /
+  VERIFY_ALERTING / VERIFY_INCIDENT_FLOW`) `PASS`.
+
+- **Docker compose ps:** **19 / 19** containers `running (healthy)`
+  (same 19 services as Stage 17 — no new containers; devops-agent,
+  qa-agent, and orchestrator were rebuilt and force-recreated).
+
+- **pytest / lint result:**
+  - Local (Windows): pytest **241 passed, 114 skipped** (skips are
+    runtime-gated integration tests); ruff/black/mypy clean.
+  - 10.0.1.31: pytest **355 passed** in 44.64s (includes the 3
+    pipeline-flow integration tests that skip on Windows);
+    ruff/black/mypy clean (37 source files).
+
+- **production_executed=false verification:**
+  `SELECT COUNT(*) FROM deployment_records WHERE metadata->>'production_executed'='true' OR environment='production';`
+  returned **`0`**. The Stage 18 integration writes
+  `metadata.production_executed=false` on every deployment record;
+  the safety probe in `verify_platform_observability.sh` still
+  passes.
+
+- **Modified / added files:**
+  - `shared/sdk/http_clients/github_http_client.py` — added
+    `run_demo_pr`, `get_health`, `read_checks`, `_safe_failure`,
+    `_normalize_demo_pr`.
+  - `shared/sdk/observability/metrics.py` — added
+    `GITHUB_PIPELINE_INTEGRATION_TOTAL` and
+    `GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL`.
+  - `agents/devops-agent/src/agent.py` — full rewrite: github
+    config resolver, demo-pr call, audit-service HTTP fallback,
+    propagation into deployment record + devops event + return dict.
+  - `agents/qa-agent/src/agent.py` — forward `request` so downstream
+    devops-agent sees `request.github`.
+  - `apps/orchestrator/src/workflow_events.py` — capture `payload.github`
+    into `execution_result.github` on
+    `devops.deployment_simulated`.
+  - `apps/orchestrator/src/progress.py` — `build_github_summary` +
+    `_github_timeline_event`; `build_progress` returns `pr_url` /
+    `github_status` / `github_dry_run` and appends the github
+    timeline event.
+  - `apps/orchestrator/src/main.py` — surface `github` / `pr_url`
+    / `github_status` / `github_dry_run` on
+    `/workflow/timeline/{task_id}` too.
+  - `infra/docker-compose/docker-compose.yml` — devops-agent env
+    now carries `AUDIT_SERVICE_URL`, `GITHUB_AUTOMATION_URL`,
+    `GITHUB_DEFAULT_REPO`, `GITHUB_DRY_RUN`,
+    `GITHUB_INTEGRATION_DEFAULT`.
+  - `scripts/check_runtime_state.sh` — six new smokes.
+  - `scripts/verify_github_pipeline_flow.sh` — new aggregate verify
+    script (`+x` in git index, validated by `bash -n`).
+  - `docs/operations/github-automation-runbook.md` — new
+    "Verify pipeline-triggered dry-run PR" section with a
+    copy-paste manual flow.
+  - `README.md` — new "Agent pipeline → GitHub PR integration"
+    section + safety contract reminder.
+  - `tests/test_github_http_client.py`, `tests/test_devops_github_integration.py`,
+    `tests/test_workflow_github_result.py`,
+    `tests/test_github_pipeline_flow.py` (runtime-gated),
+    `tests/test_github_pipeline_timeline.py`.
+
+- **Issues & blockers:** none — every assertion clears.
+
+- **Risks / notes:**
+  - The github_pr_integration audit row is written via direct
+    `AuditHttpClient.record_event()` from devops-agent — mirroring
+    Stage 15.4's retry-scheduler. The call is wrapped in
+    `contextlib.suppress(Exception)` so an audit-service outage
+    cannot stop the consumer loop, but it also means a silent
+    audit miss is possible. Mitigation: the runtime smoke
+    `GITHUB_PIPELINE_AUDIT_SMOKE` explicitly checks for the row
+    after every pipeline run; a regression flips it to `CHECK`.
+  - Today the StreamAgent base also writes the same agent return
+    dict to `stream.audit` (Redis), but no consumer in this stack
+    persists that stream to Postgres. Two write paths for one
+    audit event is wasteful; a Stage-19 follow-up should either
+    drop the stream write or stand up a stream → DB consumer.
+  - `request.github.dry_run = false` is honoured by the SDK only
+    if the github-automation container has `GITHUB_TOKEN`. On the
+    test cluster the token is unset, so any caller asking for
+    real mode will get `status=failed` + `error=GitHubMissingTokenError`.
+    That is the intended safety contract.
+  - Devops-agent now performs an extra HTTP call per workflow.
+    Latency add is bounded by `GitHubAutomationHttpClient.timeout`
+    (15s) and the call is post-deployment-record, so a slow
+    github-automation cannot delay the deployment record but it
+    can delay the `devops.deployment_simulated` event. In the
+    failure path the safe-fail envelope returns immediately
+    (`httpx.HTTPError`).
+  - Same as prior stages: no real Slack / Discord / Telegram /
+    PagerDuty / GitHub (default path) / LLM / Kubernetes / cloud /
+    Grafana Cloud / observability SaaS call; no secret or token
+    written; no production deploy; no PR merge; no branch-protection
+    change; PostgreSQL `trust` auth + Vault dev mode remain
+    local/test only.
+
+- **Next-step suggestions:**
+  1. **Promote the pipeline-triggered PR onto the Grafana dashboard.**
+     Add a panel showing
+     `github_pipeline_integration_total{dry_run="true"}` vs
+     `github_pipeline_integration_failures_total` over time, plus
+     a Tempo TraceQL link from the workflow timeline straight to
+     the github-automation span. Today operators have to follow
+     `trace_id` manually.
+  2. **Persist `stream.audit` to `audit_logs`** so the redundant
+     direct-HTTP audit call in devops-agent can be removed. A
+     thin audit-service consumer that XREADGROUPs stream.audit
+     and INSERTs into audit_logs would let every agent get the
+     same DB visibility retry-scheduler / devops-agent currently
+     have via direct HTTP, without each agent having to wire
+     `AUDIT_SERVICE_URL` env explicitly.
+  3. **One opt-in real-GitHub run against a sandbox repo.** Same
+     follow-up the Stage 17 entry called out — the SDK path is
+     ready; we just need one validated dry-run-disabled
+     end-to-end run with a fine-grained token, recorded in this
+     runbook with the PR URL.
