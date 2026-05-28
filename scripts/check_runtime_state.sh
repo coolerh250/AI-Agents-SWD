@@ -1019,5 +1019,113 @@ else
   echo "TERMINAL_FAILURE_AUDIT_DB_SMOKE: CHECK"
 fi
 
+
+echo
+echo "=== operations API health smoke ==="
+if curl -sS -m 5 http://localhost:8000/operations/health | grep -q '"service": *"operations"'; then
+  echo "OPERATIONS_HEALTH_SMOKE: PASS"
+else
+  echo "OPERATIONS_HEALTH_SMOKE: FAIL"
+fi
+
+echo
+echo "=== operations summary smoke ==="
+op_sum=$(curl -sS -m 15 http://localhost:8000/operations/summary || echo '{}')
+if echo "$op_sum" | grep -q '"production_safety"' \
+   && echo "$op_sum" | grep -q '"workflows_summary"' \
+   && echo "$op_sum" | grep -q '"agents_summary"' \
+   && echo "$op_sum" | grep -q '"github_summary"'; then
+  echo "OPERATIONS_SUMMARY_SMOKE: PASS"
+else
+  echo "OPERATIONS_SUMMARY_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations workflow view smoke ==="
+op_task="ops-smoke-$$"
+curl -sS -m 30 -X POST http://localhost:8004/intake/mock -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$op_task\",\"request\":{\"type\":\"dev.test\",\"description\":\"operations smoke\"}}" \
+  >/dev/null 2>&1 || true
+for i in $(seq 1 30); do
+  op_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$op_task" || echo '{}')
+  op_stage=$(echo "$op_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  if [ "$op_stage" = "completed" ]; then break; fi
+  sleep 2
+done
+sleep 3
+op_wf=$(curl -sS -m 15 "http://localhost:8000/operations/workflows/$op_task" || echo '{}')
+if echo "$op_wf" | grep -q '"audit_timeline"' \
+   && echo "$op_wf" | grep -q '"github"' \
+   && echo "$op_wf" | grep -q '"agents"' \
+   && echo "$op_wf" | grep -q '"production_executed":false'; then
+  echo "OPERATIONS_WORKFLOW_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_WORKFLOW_VIEW_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations agents view smoke ==="
+op_agents=$(curl -sS -m 10 http://localhost:8000/operations/agents || echo '{}')
+if echo "$op_agents" | grep -q '"intake-agent"' \
+   && echo "$op_agents" | grep -q '"devops-agent"' \
+   && echo "$op_agents" | grep -q '"input_stream"' \
+   && echo "$op_agents" | grep -q '"consumer_group"'; then
+  echo "OPERATIONS_AGENTS_SMOKE: PASS"
+else
+  echo "OPERATIONS_AGENTS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations streams view smoke ==="
+op_streams=$(curl -sS -m 10 http://localhost:8000/operations/streams || echo '{}')
+if echo "$op_streams" | grep -q '"stream.audit"' \
+   && echo "$op_streams" | grep -q '"stream.notifications"' \
+   && echo "$op_streams" | grep -q '"stream.deadletter"'; then
+  echo "OPERATIONS_STREAMS_SMOKE: PASS"
+else
+  echo "OPERATIONS_STREAMS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations safety view smoke ==="
+op_safety=$(curl -sS -m 10 http://localhost:8000/operations/safety || echo '{}')
+if echo "$op_safety" | grep -q '"production_executed_true_count": *0' \
+   && echo "$op_safety" | grep -q '"workflow_production_executed_true_count": *0' \
+   && echo "$op_safety" | grep -qE '"result": *"(safe|warning)"'; then
+  echo "OPERATIONS_SAFETY_SMOKE: PASS"
+else
+  echo "OPERATIONS_SAFETY_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations incidents view smoke ==="
+op_inc=$(curl -sS -m 10 http://localhost:8000/operations/incidents?limit=5 || echo '{}')
+if echo "$op_inc" | grep -q '"count":' \
+   && echo "$op_inc" | grep -q '"incidents":'; then
+  echo "OPERATIONS_INCIDENTS_SMOKE: PASS"
+else
+  echo "OPERATIONS_INCIDENTS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations dlq view smoke ==="
+op_dlq=$(curl -sS -m 10 http://localhost:8000/operations/dlq?limit=5 || echo '{}')
+if echo "$op_dlq" | grep -q '"deadletter_length":' \
+   && echo "$op_dlq" | grep -q '"deadletter_terminal_length":'; then
+  echo "OPERATIONS_DLQ_SMOKE: PASS"
+else
+  echo "OPERATIONS_DLQ_SMOKE: CHECK"
+fi
+
+echo
+echo "=== operations github view smoke ==="
+op_gh=$(curl -sS -m 10 "http://localhost:8000/operations/github/$op_task" || echo '{}')
+if echo "$op_gh" | grep -q '"found":' \
+   && echo "$op_gh" | grep -q '"source":'; then
+  echo "OPERATIONS_GITHUB_SMOKE: PASS"
+else
+  echo "OPERATIONS_GITHUB_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

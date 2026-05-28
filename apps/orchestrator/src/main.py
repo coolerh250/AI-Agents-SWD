@@ -10,6 +10,7 @@ from incidents_api import (
     create_incident_with_side_effects,
     resolve_incident_with_side_effects,
 )
+from operations import router as operations_router
 from progress import build_audit_timeline, build_progress, build_retry_timeline
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
@@ -172,6 +173,8 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 app = FastAPI(title="orchestrator", lifespan=lifespan)
 instrument_fastapi(app, "orchestrator")
 install_metrics_endpoint(app)
+# Stage 20: unified read-only operator view. Mounted on /operations/*.
+app.include_router(operations_router)
 
 
 @app.get("/health")

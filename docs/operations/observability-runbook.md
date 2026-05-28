@@ -337,6 +337,7 @@ for production; production must use real auth + a real KMS.
 | `scripts/verify_github_automation.sh`        | github-automation dry-run (+ opt-in real GitHub test) | `GITHUB_AUTOMATION_VERIFY: PASS`     |
 | `scripts/verify_github_pipeline_flow.sh`     | Agent pipeline → github-automation → workflow result  | `GITHUB_PIPELINE_FLOW_VERIFY: PASS`  |
 | `scripts/verify_unified_audit.sh`            | Unified `stream.audit → audit-worker → audit_logs`    | `UNIFIED_AUDIT_VERIFY: PASS`         |
+| `scripts/verify_operations_view.sh`          | Stage 20 Operations Control API end-to-end            | `OPERATIONS_VIEW_VERIFY: PASS`       |
 | `scripts/verify_platform_observability.sh`   | Aggregates all of the above + safety + SLO            | `PLATFORM_OBSERVABILITY_VERIFY: PASS` |
 
 ### 17a. audit-worker (Stage 19)
@@ -395,6 +396,80 @@ for production; production must use real auth + a real KMS.
   — newest pipeline-triggered PR rows.
 * `GET /audit/events/{task_id}` still returns every row for a
   single task, ordered ascending.
+
+### 17ops. Operations Control API (Stage 20)
+
+The orchestrator serves a unified `/operations/*` namespace
+(`apps/orchestrator/src/operations.py`). Every endpoint is read-only
+and degrades safely on a missing data source.
+
+* **Health.** `curl http://localhost:8000/operations/health` returns
+  `{"service":"operations","status":"ok"}`. The other operations
+  endpoints don't require any extra service — they query the same
+  Postgres / Redis / sibling HTTP services this runbook already
+  documents.
+* **Workflow status, all in one place.**
+  `curl http://localhost:8000/operations/workflows/$task | python3 -m json.tool`
+  carries `workflow`, `progress`, `agents`, `audit_timeline`,
+  `incidents`, `deployment`, `github`, `dlq`, `notifications`,
+  `trace`, `safety` plus a top-level `production_executed` boolean.
+  Section 5 of `docs/operations/manual-verification.md` shows the
+  curl recipe.
+* **Agent status.**
+  `curl http://localhost:8000/operations/agents` lists each pipeline
+  agent's `health_status`, `processed_count`, `failed_count`,
+  `recent_executions_count`, `recent_failures_count`, plus the
+  `input_stream` / `output_stream` / `consumer_group` topology so
+  you can cross-reference with the streams view.
+  `curl http://localhost:8000/operations/agents/$name` adds the
+  recent `agent_executions`, recent `audit_logs` rows, and the
+  matching XINFO snapshot.
+* **Stream lag / pending.**
+  `curl http://localhost:8000/operations/streams` returns one row per
+  platform stream with length / consumers / pending / lag /
+  last-delivered-id and a derived `status`
+  (`ok` / `warning` / `informational` / `not_unified_by_design` / `unknown`).
+  `stream.notifications` is labelled `not_unified_by_design` until a
+  notification consumer ships — that is the documented Stage 19
+  follow-up, not a regression.
+* **Production safety.**
+  `curl http://localhost:8000/operations/safety` is the
+  one-shot operator check. Every production counter must be `0`;
+  `github_has_token` exposes the boolean (never the value);
+  `alertmanager_receivers` lists the configured receivers and
+  `external_alert_receivers_present` flips `true` if Slack / Discord
+  / Telegram / PagerDuty / webhook receivers are wired. `result`:
+  `safe` (clean) / `warning` (counters clean + a non-fatal warning)
+  / `unsafe` (any production counter > 0).
+* **GitHub dry-run PR for a task.**
+  `curl http://localhost:8000/operations/github/$task` aggregates
+  the github result from `workflow_states.execution_result.github`,
+  `deployment_records.metadata.github`, and the
+  `github_pr_integration` / `github_automation` rows in `audit_logs`.
+  `found=false` when the task has no github result; `source`
+  enumerates which of the three data sources contributed.
+* **DLQ without replay.**
+  `curl "http://localhost:8000/operations/dlq?limit=20"` returns the
+  most-recent `stream.deadletter` + `stream.deadletter.terminal`
+  events. `?task_id=…` and `?stream=…` filter; `?terminal=true`
+  surfaces only the terminal stream. The endpoint does NOT ACK,
+  replay, or delete anything — operator-driven replay still lives
+  on `POST /deadletter/replay/{message_id}` against the
+  retry-scheduler.
+
+`/operations/summary` rolls the cluster-wide counters up into one
+JSON body — that is the natural starting point for a status check
+("anything red anywhere?"). The per-task / per-agent / per-stream
+endpoints are the drill-down.
+
+Metrics: every call increments
+`operations_requests_total{endpoint,result}` and records a
+`operations_request_duration_seconds{endpoint}` sample, so a Grafana
+panel of "operations API healthiness" is a single PromQL away.
+Each request emits an `operations.<view>` OTel span; the
+unified-workflow view in particular carries the workflow's
+`task_id` so a Tempo TraceQL can pivot from `/operations/workflows/$t`
+straight to the workflow's distributed trace.
 
 ### 17c. Workflow audit_timeline
 

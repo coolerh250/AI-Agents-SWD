@@ -271,6 +271,47 @@ Expected output: `0`.
 
 ---
 
+## 17ops. Verify the Operations Control API (Stage 20)
+
+The orchestrator hosts a unified read-only operator namespace
+(`/operations/*`).
+
+```
+./scripts/verify_operations_view.sh
+```
+
+The script drives one normal workflow + one github-pipeline
+dry-run workflow, waits for both to complete, then exercises every
+`/operations/*` endpoint and ends with
+`OPERATIONS_VIEW_VERIFY: PASS`.
+
+Inspect the endpoints individually:
+
+```
+curl -sS http://localhost:8000/operations/health
+curl -sS http://localhost:8000/operations/summary    | python3 -m json.tool
+curl -sS http://localhost:8000/operations/agents     | python3 -m json.tool
+curl -sS http://localhost:8000/operations/streams    | python3 -m json.tool
+curl -sS http://localhost:8000/operations/safety     | python3 -m json.tool
+curl -sS "http://localhost:8000/operations/incidents?limit=5" | python3 -m json.tool
+curl -sS "http://localhost:8000/operations/dlq?limit=5"       | python3 -m json.tool
+curl -sS "http://localhost:8000/operations/workflows/$task"   | python3 -m json.tool
+curl -sS "http://localhost:8000/operations/github/$task"      | python3 -m json.tool
+```
+
+`/operations/safety` must show every production counter at `0`
+and `result` either `safe` or `warning` (warnings cover external
+Alertmanager receivers and `GITHUB_TOKEN` + `dry_run=false`). The
+local/test stack has none of those configured, so `safe` is the
+expected outcome.
+
+`/operations/workflows/$task` is the single most useful
+operator endpoint — every other status surface (`/workflow/*`,
+`/executions`, `/audit/events/{task_id}`, `/incidents`,
+`/notifications`, `gh pr view`) is reachable from its sections.
+
+---
+
 ## 17a. Verify the unified audit path (Stage 19)
 
 The audit-worker consumes `stream.audit` and writes `audit_logs`:
@@ -320,6 +361,10 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 * [ ] All 19 services + audit-worker reported `running (healthy)`.
 * [ ] `./scripts/run_tests.sh` ended green.
 * [ ] `./scripts/verify_unified_audit.sh` ended `UNIFIED_AUDIT_VERIFY: PASS`.
+* [ ] `./scripts/verify_operations_view.sh` ended `OPERATIONS_VIEW_VERIFY: PASS`.
+* [ ] `curl http://localhost:8000/operations/safety` shows
+      `result=safe` (or `warning` for documented non-fatal items) and
+      every production counter at `0`.
 * [ ] `./scripts/verify_platform_observability.sh` ended
       `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
 * [ ] Manual workflow reached `completed`, trace covered all 7

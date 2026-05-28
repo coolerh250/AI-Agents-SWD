@@ -1,0 +1,1083 @@
+"""Operations Control API — unified read-only operator view.
+
+Stage 20 collapses the platform's scattered status surfaces
+(workflow / agent_executions / audit_logs / incidents / DLQ /
+deployment_records / Redis streams / trace / metrics) into one
+``/operations/*`` namespace served from the orchestrator.
+
+Design contract:
+
+* **Read-only.** Every endpoint queries DB / Redis / sibling HTTP
+  services; nothing is inserted, updated, deleted, ACKed, or
+  replayed. There are no destructive paths in this module.
+* **Safe degradation.** A failing data source NEVER fails the whole
+  view — the relevant section returns its empty shape plus a
+  ``warnings`` entry. The exception is ``/operations/workflows/
+  {task_id}`` which returns 404 only when the workflow row itself
+  doesn't exist (every other section degrades to empty + warning).
+* **No secrets in response.** ``github_has_token`` is the only place
+  the token is observed and it is reduced to a boolean; the token
+  value never leaves the env var.
+* **Metrics + spans.** Every endpoint records
+  ``operations_requests_total{endpoint,result}``,
+  ``operations_request_duration_seconds{endpoint}``, and an
+  ``operations.<view>`` span carrying ``endpoint`` /  ``result`` /
+  ``task_id`` / ``agent`` attributes as appropriate.
+"""
+
+from __future__ import annotations
+
+import contextlib
+import functools
+import json
+import os
+import time
+from collections.abc import Awaitable, Callable
+from datetime import datetime, timezone
+from typing import Any
+
+import httpx
+from fastapi import APIRouter, HTTPException
+
+from progress import build_audit_timeline, build_progress, build_retry_timeline
+from shared.sdk.agent_execution.store import AgentExecutionStore
+from shared.sdk.audit.store import AuditStore
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
+from shared.sdk.incidents import IncidentStore
+from shared.sdk.observability.metrics import (
+    OPERATIONS_REQUEST_DURATION_SECONDS,
+    OPERATIONS_REQUEST_FAILURES_TOTAL,
+    OPERATIONS_REQUESTS_TOTAL,
+)
+from shared.sdk.observability.tracing import start_span
+from shared.sdk.workflow_store.store import WorkflowStore
+
+router = APIRouter(prefix="/operations", tags=["operations"])
+
+# ---------------------------------------------------------------------------
+# Platform topology (kept here so the operations view stays self-contained).
+# ---------------------------------------------------------------------------
+
+PIPELINE_AGENTS: list[dict[str, str]] = [
+    {
+        "name": "intake-agent",
+        "host": "intake-agent",
+        "port": "8010",
+        "input_stream": "stream.tasks",
+        "output_stream": "stream.requirements",
+        "consumer_group": "intake-agent-group",
+    },
+    {
+        "name": "requirement-agent",
+        "host": "requirement-agent",
+        "port": "8011",
+        "input_stream": "stream.requirements",
+        "output_stream": "stream.development",
+        "consumer_group": "requirement-agent-group",
+    },
+    {
+        "name": "development-agent",
+        "host": "development-agent",
+        "port": "8012",
+        "input_stream": "stream.development",
+        "output_stream": "stream.qa",
+        "consumer_group": "development-agent-group",
+    },
+    {
+        "name": "qa-agent",
+        "host": "qa-agent",
+        "port": "8013",
+        "input_stream": "stream.qa",
+        "output_stream": "stream.deployments",
+        "consumer_group": "qa-agent-group",
+    },
+    {
+        "name": "devops-agent",
+        "host": "devops-agent",
+        "port": "8014",
+        "input_stream": "stream.deployments",
+        "output_stream": "stream.devops",
+        "consumer_group": "devops-agent-group",
+    },
+]
+_AGENT_INDEX = {agent["name"]: agent for agent in PIPELINE_AGENTS}
+
+# Streams the operations view inspects. Each row carries the canonical
+# consumer-group name for that stream — surface it so an operator can
+# correlate XINFO output without grepping init_redis_streams.sh.
+PLATFORM_STREAMS: list[dict[str, str]] = [
+    {"name": "stream.tasks", "primary_group": "orchestrator-group"},
+    {"name": "stream.requirements", "primary_group": "requirement-agent-group"},
+    {"name": "stream.development", "primary_group": "development-agent-group"},
+    {"name": "stream.qa", "primary_group": "qa-agent-group"},
+    {"name": "stream.deployments", "primary_group": "devops-agent-group"},
+    {"name": "stream.devops", "primary_group": "orchestrator-workflow-group"},
+    {"name": "stream.approvals", "primary_group": "approval-group"},
+    {"name": "stream.audit", "primary_group": "audit-group"},
+    {"name": "stream.notifications", "primary_group": "notification-group"},
+    {"name": "stream.deadletter", "primary_group": "retry-scheduler-group"},
+    {"name": "stream.deadletter.terminal", "primary_group": "terminal-failure-group"},
+]
+
+DEAD_LETTER_STREAM = "stream.deadletter"
+TERMINAL_FAILURE_STREAM = "stream.deadletter.terminal"
+
+GITHUB_AUTOMATION_URL = os.environ.get("GITHUB_AUTOMATION_URL", "http://github-automation:8005")
+ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "http://alertmanager:9093")
+
+# Workflows considered "recent" by /operations/summary.
+RECENT_WORKFLOW_WINDOW_SECONDS = 24 * 60 * 60
+
+
+# ---------------------------------------------------------------------------
+# Plumbing helpers.
+# ---------------------------------------------------------------------------
+
+
+def _utcnow_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _safe_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _stream_status(consumers: int, pending: int, lag: int, group_present: bool) -> str:
+    if not group_present:
+        return "unknown"
+    if pending > 0:
+        return "warning"
+    if lag > 0 and consumers >= 1:
+        return "warning"
+    if lag > 0 and consumers == 0:
+        return "informational"
+    return "ok"
+
+
+async def _xinfo_stream(bus: RedisStreamEventBus, stream: str) -> dict[str, Any]:
+    """Return a flat snapshot of one Redis stream + its primary group.
+
+    Pure-read: no XGROUP CREATE, no XADD. If the stream does not exist
+    (XINFO returns an error) the helper returns ``length=0`` with
+    ``status=unknown``.
+    """
+    info: dict[str, Any] = {
+        "name": stream,
+        "length": 0,
+        "groups": [],
+        "consumers": 0,
+        "pending": 0,
+        "lag": 0,
+        "last_delivered_id": "",
+        "status": "unknown",
+    }
+    try:
+        length = await bus.client.xlen(stream)
+        info["length"] = _safe_int(length)
+    except Exception:
+        return info
+    groups_raw: list[Any] = []
+    try:
+        groups_raw = await bus.client.xinfo_groups(stream)
+    except Exception:
+        groups_raw = []
+    groups: list[dict[str, Any]] = []
+    consumers_total = 0
+    pending_total = 0
+    lag_total = 0
+    last_delivered_id = ""
+    for entry in groups_raw or []:
+        if not isinstance(entry, dict):
+            continue
+        consumers_total += _safe_int(entry.get("consumers"))
+        pending_total += _safe_int(entry.get("pending"))
+        lag_total += _safe_int(entry.get("lag"))
+        gname = str(entry.get("name") or "")
+        gdelivered = str(entry.get("last-delivered-id") or "")
+        if not last_delivered_id and gdelivered:
+            last_delivered_id = gdelivered
+        groups.append(
+            {
+                "name": gname,
+                "consumers": _safe_int(entry.get("consumers")),
+                "pending": _safe_int(entry.get("pending")),
+                "lag": _safe_int(entry.get("lag")),
+                "last_delivered_id": gdelivered,
+            }
+        )
+    info["groups"] = groups
+    info["consumers"] = consumers_total
+    info["pending"] = pending_total
+    info["lag"] = lag_total
+    info["last_delivered_id"] = last_delivered_id
+    info["status"] = _stream_status(consumers_total, pending_total, lag_total, bool(groups))
+    return info
+
+
+async def _xrevrange_payloads(
+    bus: RedisStreamEventBus, stream: str, count: int = 50
+) -> list[dict[str, Any]]:
+    """Return the most recent ``count`` decoded events from a stream."""
+    try:
+        entries = await bus.client.xrevrange(stream, "+", "-", count=count)
+    except Exception:
+        return []
+    out: list[dict[str, Any]] = []
+    for entry_id, fields in entries or []:
+        raw = fields.get("data", "{}") if isinstance(fields, dict) else "{}"
+        try:
+            payload = json.loads(raw)
+        except (ValueError, TypeError):
+            payload = {"raw": raw}
+        out.append({"id": entry_id, "payload": payload})
+    return out
+
+
+async def _http_get(url: str, timeout: float = 3.0) -> tuple[int, Any]:
+    """GET ``url`` and return ``(status_code, body)``. Always swallows errors."""
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.get(url)
+            try:
+                body: Any = response.json()
+            except Exception:
+                body = {"raw": response.text[:512]}
+            return response.status_code, body
+    except Exception as exc:
+        return 0, {"error": f"{exc.__class__.__name__}: {exc}"}
+
+
+async def _connect(database_url: str | None = None) -> Any:
+    """Open a short-lived asyncpg connection for ad-hoc counts."""
+    import asyncpg
+
+    dsn = database_url or os.environ.get(
+        "DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents"
+    )
+    return await asyncpg.connect(dsn=dsn, timeout=5)
+
+
+async def _scalar(sql: str, *params: Any) -> int:
+    """Best-effort scalar count query. Returns 0 on failure."""
+    conn = None
+    try:
+        conn = await _connect()
+        value = await conn.fetchval(sql, *params)
+        return _safe_int(value)
+    except Exception:
+        return 0
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                await conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Metrics + span instrumentation decorator.
+# ---------------------------------------------------------------------------
+
+
+def _instrument(
+    endpoint: str,
+    span_name: str,
+) -> Callable[[Callable[..., Awaitable[Any]]], Callable[..., Awaitable[Any]]]:
+    """Record request metrics + open an OTel span around an operations route.
+
+    Uses ``functools.wraps`` so FastAPI keeps reading the wrapped function's
+    signature (path params, query params, response model) through ``__wrapped__``
+    — otherwise every route would 422 on its own path params.
+    """
+
+    def decorator(func: Callable[..., Awaitable[Any]]) -> Callable[..., Awaitable[Any]]:
+        @functools.wraps(func)
+        async def wrapper(*args: Any, **kwargs: Any) -> Any:
+            started = time.perf_counter()
+            span_attrs: dict[str, Any] = {
+                "service.name": "orchestrator",
+                "agent": "orchestrator",
+                "endpoint": endpoint,
+            }
+            for key in ("task_id", "agent_name"):
+                value = kwargs.get(key)
+                if value:
+                    span_attrs[key] = str(value)
+            with start_span(span_name, **span_attrs) as span:
+                try:
+                    result = await func(*args, **kwargs)
+                except HTTPException as exc:
+                    OPERATIONS_REQUEST_FAILURES_TOTAL.labels(
+                        endpoint=endpoint,
+                        reason=("not_found" if exc.status_code == 404 else "store_error"),
+                    ).inc()
+                    OPERATIONS_REQUESTS_TOTAL.labels(
+                        endpoint=endpoint,
+                        result=("not_found" if exc.status_code == 404 else "error"),
+                    ).inc()
+                    OPERATIONS_REQUEST_DURATION_SECONDS.labels(endpoint=endpoint).observe(
+                        time.perf_counter() - started
+                    )
+                    with contextlib.suppress(Exception):
+                        span.set_attribute("result", "error")
+                    raise
+                except Exception:
+                    OPERATIONS_REQUEST_FAILURES_TOTAL.labels(
+                        endpoint=endpoint, reason="store_error"
+                    ).inc()
+                    OPERATIONS_REQUESTS_TOTAL.labels(endpoint=endpoint, result="error").inc()
+                    OPERATIONS_REQUEST_DURATION_SECONDS.labels(endpoint=endpoint).observe(
+                        time.perf_counter() - started
+                    )
+                    with contextlib.suppress(Exception):
+                        span.set_attribute("result", "error")
+                    raise
+                OPERATIONS_REQUESTS_TOTAL.labels(endpoint=endpoint, result="ok").inc()
+                OPERATIONS_REQUEST_DURATION_SECONDS.labels(endpoint=endpoint).observe(
+                    time.perf_counter() - started
+                )
+                with contextlib.suppress(Exception):
+                    span.set_attribute("result", "ok")
+                return result
+
+        return wrapper
+
+    return decorator
+
+
+# ---------------------------------------------------------------------------
+# /operations/health
+# ---------------------------------------------------------------------------
+
+
+@router.get("/health")
+def operations_health() -> dict:
+    OPERATIONS_REQUESTS_TOTAL.labels(endpoint="/operations/health", result="ok").inc()
+    return {"service": "operations", "status": "ok", "generated_at": _utcnow_iso()}
+
+
+# ---------------------------------------------------------------------------
+# /operations/summary
+# ---------------------------------------------------------------------------
+
+
+async def _services_summary() -> dict[str, Any]:
+    services = [
+        ("orchestrator", "http://orchestrator:8000/health"),
+        ("policy-engine", "http://policy-engine:8001/health"),
+        ("approval-engine", "http://approval-engine:8002/health"),
+        ("audit-service", "http://audit-service:8003/health"),
+        ("communication-gateway", "http://communication-gateway:8004/health"),
+        ("github-automation", "http://github-automation:8005/health"),
+        ("audit-worker", "http://audit-worker:8006/health"),
+        ("intake-agent", "http://intake-agent:8010/health"),
+        ("requirement-agent", "http://requirement-agent:8011/health"),
+        ("development-agent", "http://development-agent:8012/health"),
+        ("qa-agent", "http://qa-agent:8013/health"),
+        ("devops-agent", "http://devops-agent:8014/health"),
+        ("retry-scheduler", "http://retry-scheduler:8015/health"),
+    ]
+    out: dict[str, Any] = {"total": len(services), "healthy": 0, "services": []}
+    for name, url in services:
+        status, _ = await _http_get(url, timeout=2.0)
+        ok = status == 200
+        if ok:
+            out["healthy"] += 1
+        out["services"].append({"name": name, "url": url, "healthy": ok})
+    return out
+
+
+async def _workflows_summary() -> dict[str, Any]:
+    summary = {
+        "total": await _scalar("SELECT count(*) FROM workflow_states"),
+        "completed": await _scalar("SELECT count(*) FROM workflow_states WHERE stage='completed'"),
+        "failed": await _scalar("SELECT count(*) FROM workflow_states WHERE stage='failed'"),
+        "waiting_approval": await _scalar(
+            "SELECT count(*) FROM workflow_states WHERE stage='waiting_approval'"
+        ),
+        "canceled": await _scalar("SELECT count(*) FROM workflow_states WHERE stage='canceled'"),
+        "aborted": await _scalar("SELECT count(*) FROM workflow_states WHERE stage='aborted'"),
+        "in_progress": await _scalar(
+            "SELECT count(*) FROM workflow_states WHERE stage='in_progress'"
+        ),
+        "recent_24h": await _scalar(
+            "SELECT count(*) FROM workflow_states "
+            "WHERE updated_at >= now() - interval '24 hours'"
+        ),
+    }
+    return summary
+
+
+async def _agents_summary() -> dict[str, Any]:
+    total = await _scalar("SELECT count(*) FROM agent_executions")
+    failed = await _scalar("SELECT count(*) FROM agent_executions WHERE status='failed'")
+    completed = await _scalar("SELECT count(*) FROM agent_executions WHERE status='completed'")
+    return {
+        "count": len(PIPELINE_AGENTS),
+        "agent_executions_total": total,
+        "agent_executions_completed": completed,
+        "agent_executions_failed": failed,
+        "pipeline": [agent["name"] for agent in PIPELINE_AGENTS],
+    }
+
+
+async def _incidents_summary() -> dict[str, Any]:
+    open_count = await _scalar("SELECT count(*) FROM incident_records WHERE status='open'")
+    ack_count = await _scalar("SELECT count(*) FROM incident_records WHERE status='acknowledged'")
+    resolved_count = await _scalar("SELECT count(*) FROM incident_records WHERE status='resolved'")
+    return {
+        "open": open_count,
+        "acknowledged": ack_count,
+        "resolved": resolved_count,
+        "unresolved": open_count + ack_count,
+    }
+
+
+async def _dlq_summary(bus: RedisStreamEventBus) -> dict[str, Any]:
+    deadletter = await _xinfo_stream(bus, DEAD_LETTER_STREAM)
+    terminal = await _xinfo_stream(bus, TERMINAL_FAILURE_STREAM)
+    return {
+        "deadletter_length": deadletter["length"],
+        "deadletter_terminal_length": terminal["length"],
+    }
+
+
+async def _github_summary() -> dict[str, Any]:
+    return {
+        "dry_run_pr_count": await _scalar(
+            "SELECT count(*) FROM audit_logs WHERE decision_type='github_pr_integration'"
+        ),
+        "github_automation_audit_count": await _scalar(
+            "SELECT count(*) FROM audit_logs WHERE decision_type='github_automation'"
+        ),
+        "default_dry_run": os.environ.get("GITHUB_DRY_RUN", "true").strip().lower() != "false",
+        "has_token": bool(os.environ.get("GITHUB_TOKEN", "").strip()),
+        "real_github_test_enabled": (
+            os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
+        ),
+    }
+
+
+async def _audit_summary() -> dict[str, Any]:
+    return {
+        "audit_logs_total": await _scalar("SELECT count(*) FROM audit_logs"),
+        "audit_logs_recent_24h": await _scalar(
+            "SELECT count(*) FROM audit_logs " "WHERE created_at >= now() - interval '24 hours'"
+        ),
+    }
+
+
+async def _production_safety() -> dict[str, Any]:
+    deployment_prod = await _scalar(
+        "SELECT count(*) FROM deployment_records "
+        "WHERE metadata->>'production_executed'='true' OR environment='production'"
+    )
+    deployment_env_prod = await _scalar(
+        "SELECT count(*) FROM deployment_records WHERE environment='production'"
+    )
+    workflow_prod = await _scalar(
+        "SELECT count(*) FROM workflow_states "
+        "WHERE execution_result->>'production_executed'='true'"
+    )
+    unsafe = (deployment_prod > 0) or (deployment_env_prod > 0) or (workflow_prod > 0)
+    return {
+        "deployment_records_production_executed_true": deployment_prod,
+        "deployment_records_environment_production": deployment_env_prod,
+        "workflow_states_production_executed_true": workflow_prod,
+        "result": "unsafe" if unsafe else "safe",
+    }
+
+
+@router.get("/summary")
+@_instrument("/operations/summary", "operations.summary")
+async def operations_summary() -> dict:
+    bus = RedisStreamEventBus()
+    try:
+        services = await _services_summary()
+        workflows = await _workflows_summary()
+        agents = await _agents_summary()
+        incidents = await _incidents_summary()
+        dlq = await _dlq_summary(bus)
+        github = await _github_summary()
+        audit = await _audit_summary()
+        safety = await _production_safety()
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+    return {
+        "generated_at": _utcnow_iso(),
+        "services_summary": services,
+        "workflows_summary": workflows,
+        "agents_summary": agents,
+        "incidents_summary": incidents,
+        "dlq_summary": dlq,
+        "github_summary": github,
+        "audit_summary": audit,
+        "production_safety": safety,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/workflows/{task_id}
+# ---------------------------------------------------------------------------
+
+
+def _build_github_section(
+    workflow: dict[str, Any], deployment_metadata: dict[str, Any]
+) -> dict[str, Any]:
+    state = workflow.get("state") if isinstance(workflow.get("state"), dict) else {}
+    execution_result = (
+        state.get("execution_result")
+        if isinstance(state.get("execution_result"), dict)
+        else (
+            workflow.get("execution_result")
+            if isinstance(workflow.get("execution_result"), dict)
+            else {}
+        )
+    )
+    github = execution_result.get("github") if isinstance(execution_result, dict) else None
+    if not isinstance(github, dict):
+        github = {}
+    if not github and isinstance(deployment_metadata, dict):
+        nested = deployment_metadata.get("github")
+        if isinstance(nested, dict):
+            github = nested
+    return {
+        "found": bool(github),
+        "status": github.get("status", ""),
+        "dry_run": github.get("dry_run") if isinstance(github, dict) else None,
+        "issue_url": github.get("issue_url", ""),
+        "branch": github.get("branch", ""),
+        "pr_url": github.get("pr_url", ""),
+        "pr_number": github.get("pr_number"),
+        "checks_status": github.get("checks_status", ""),
+        "event_type": github.get("event_type", ""),
+        "error": github.get("error", ""),
+    }
+
+
+async def _deployment_record_for(task_id: str) -> dict[str, Any]:
+    """Return the most-recent deployment_records row + decoded metadata."""
+    conn = None
+    try:
+        conn = await _connect()
+        row = await conn.fetchrow(
+            "SELECT id, task_id, environment, status, metadata, "
+            "created_at, updated_at FROM deployment_records "
+            "WHERE task_id = $1 ORDER BY created_at DESC LIMIT 1",
+            task_id,
+        )
+    except Exception:
+        return {}
+    finally:
+        if conn is not None:
+            with contextlib.suppress(Exception):
+                await conn.close()
+    if row is None:
+        return {}
+    metadata = row["metadata"]
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except (ValueError, TypeError):
+            metadata = {}
+    return {
+        "deployment_record_id": str(row["id"]),
+        "task_id": row["task_id"],
+        "environment": row["environment"],
+        "status": row["status"],
+        "metadata": metadata if isinstance(metadata, dict) else {},
+        "created_at": row["created_at"].isoformat() if row["created_at"] else None,
+        "updated_at": row["updated_at"].isoformat() if row["updated_at"] else None,
+    }
+
+
+async def _dlq_events_for(
+    bus: RedisStreamEventBus, task_id: str, limit: int = 50
+) -> dict[str, Any]:
+    deadletter: list[dict[str, Any]] = []
+    terminal: list[dict[str, Any]] = []
+    for entry in await _xrevrange_payloads(bus, DEAD_LETTER_STREAM, count=limit):
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if isinstance(payload, dict) and payload.get("task_id") == task_id:
+            deadletter.append(entry)
+    for entry in await _xrevrange_payloads(bus, TERMINAL_FAILURE_STREAM, count=limit):
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if isinstance(payload, dict) and payload.get("task_id") == task_id:
+            terminal.append(entry)
+    return {
+        "deadletter": deadletter,
+        "deadletter_count": len(deadletter),
+        "terminal": terminal,
+        "terminal_count": len(terminal),
+    }
+
+
+async def _notifications_for(bus: RedisStreamEventBus, task_id: str) -> dict[str, Any]:
+    matches: list[dict[str, Any]] = []
+    for entry in await _xrevrange_payloads(bus, "stream.notifications", count=200):
+        payload = entry.get("payload") if isinstance(entry, dict) else None
+        if isinstance(payload, dict) and payload.get("task_id") == task_id:
+            matches.append(entry)
+    return {"count": len(matches), "events": matches[:20]}
+
+
+@router.get("/workflows/{task_id}")
+@_instrument("/operations/workflows/{task_id}", "operations.workflow_view")
+async def operations_workflow_view(task_id: str) -> dict:
+    warnings: list[str] = []
+    try:
+        workflow = await WorkflowStore().get_workflow_state(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    if workflow is None:
+        raise HTTPException(status_code=404, detail="workflow not found")
+
+    state = workflow.get("state") if isinstance(workflow.get("state"), dict) else {}
+    execution_result = (
+        state.get("execution_result")
+        if isinstance(state.get("execution_result"), dict)
+        else (
+            workflow.get("execution_result")
+            if isinstance(workflow.get("execution_result"), dict)
+            else {}
+        )
+    )
+
+    executions: list[dict[str, Any]] = []
+    try:
+        executions = await AgentExecutionStore().list_executions(task_id=task_id)
+    except Exception:
+        warnings.append("agent_executions_unavailable")
+
+    audit_events: list[dict[str, Any]] = []
+    try:
+        audit_events = await AuditStore().get_audit_logs(task_id)
+    except Exception:
+        warnings.append("audit_logs_unavailable")
+
+    incidents: list[dict[str, Any]] = []
+    try:
+        incidents = [
+            incident.to_dict() for incident in await IncidentStore().list_incidents(task_id=task_id)
+        ]
+    except Exception:
+        warnings.append("incidents_unavailable")
+
+    bus = RedisStreamEventBus()
+    try:
+        try:
+            dlq_events = await _dlq_events_for(bus, task_id)
+        except Exception:
+            warnings.append("dlq_unavailable")
+            dlq_events = {
+                "deadletter": [],
+                "deadletter_count": 0,
+                "terminal": [],
+                "terminal_count": 0,
+            }
+        try:
+            notifications = await _notifications_for(bus, task_id)
+        except Exception:
+            warnings.append("notifications_unavailable")
+            notifications = {"count": 0, "events": []}
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+
+    deployment_record = await _deployment_record_for(task_id)
+    progress = build_progress(
+        workflow,
+        executions,
+        retry_timeline=build_retry_timeline(dlq_events.get("deadletter", [])),
+    )
+
+    production_executed = bool(execution_result.get("production_executed", False))
+    github_section = _build_github_section(
+        workflow,
+        deployment_record.get("metadata") if isinstance(deployment_record, dict) else {},
+    )
+
+    return {
+        "task_id": task_id,
+        "workflow_id": progress.get("workflow_id", ""),
+        "stage": progress.get("current_stage", ""),
+        "execution_status": progress.get("execution_status", ""),
+        "approval_status": progress.get("approval_status", ""),
+        "production_executed": production_executed,
+        "workflow": workflow,
+        "progress": progress,
+        "agents": executions,
+        "audit_timeline": build_audit_timeline(audit_events),
+        "incidents": incidents,
+        "deployment": deployment_record,
+        "github": github_section,
+        "dlq": dlq_events,
+        "notifications": notifications,
+        "trace": {
+            "trace_id": progress.get("traces", {}).get("trace_id", ""),
+            "workflow_id": progress.get("workflow_id", ""),
+        },
+        "safety": {
+            "production_executed": production_executed,
+            "environment": deployment_record.get("environment") if deployment_record else "",
+        },
+        "generated_at": _utcnow_iso(),
+        "warnings": warnings,
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/agents and /operations/agents/{agent_name}
+# ---------------------------------------------------------------------------
+
+
+async def _agent_health(host: str, port: str) -> tuple[str, dict[str, Any]]:
+    url = f"http://{host}:{port}/health"
+    status, body = await _http_get(url, timeout=2.0)
+    return ("ok" if status == 200 else "unhealthy"), {"url": url, "status_code": status}
+
+
+async def _agent_status_body(host: str, port: str) -> tuple[dict[str, Any], dict[str, Any]]:
+    url = f"http://{host}:{port}/status"
+    status, body = await _http_get(url, timeout=2.0)
+    return body if isinstance(body, dict) else {}, {"url": url, "status_code": status}
+
+
+async def _agent_executions_counts(agent_name: str) -> tuple[int, int]:
+    recent = await _scalar(
+        "SELECT count(*) FROM agent_executions WHERE agent = $1 "
+        "AND created_at >= now() - interval '24 hours'",
+        agent_name,
+    )
+    failures = await _scalar(
+        "SELECT count(*) FROM agent_executions WHERE agent = $1 AND status = 'failed' "
+        "AND created_at >= now() - interval '24 hours'",
+        agent_name,
+    )
+    return recent, failures
+
+
+def _shape_agent_overview(
+    base: dict[str, str],
+    health_state: str,
+    health_info: dict[str, Any],
+    status_body: dict[str, Any],
+    status_info: dict[str, Any],
+    recent: int,
+    failures: int,
+) -> dict[str, Any]:
+    return {
+        "name": base["name"],
+        "health_url": health_info["url"],
+        "health_status": health_state,
+        "status_url": status_info["url"],
+        "processed_count": _safe_int(status_body.get("processed_count")),
+        "failed_count": _safe_int(status_body.get("failed_count")),
+        "last_task_id": status_body.get("last_task_id"),
+        "last_error": status_body.get("last_error"),
+        "input_stream": base["input_stream"],
+        "output_stream": base["output_stream"],
+        "consumer_group": base["consumer_group"],
+        "recent_executions_count": recent,
+        "recent_failures_count": failures,
+    }
+
+
+@router.get("/agents")
+@_instrument("/operations/agents", "operations.agent_view")
+async def operations_agents() -> dict:
+    rows: list[dict[str, Any]] = []
+    for base in PIPELINE_AGENTS:
+        health_state, health_info = await _agent_health(base["host"], base["port"])
+        status_body, status_info = await _agent_status_body(base["host"], base["port"])
+        recent, failures = await _agent_executions_counts(base["name"])
+        rows.append(
+            _shape_agent_overview(
+                base, health_state, health_info, status_body, status_info, recent, failures
+            )
+        )
+    return {"count": len(rows), "agents": rows, "generated_at": _utcnow_iso()}
+
+
+@router.get("/agents/{agent_name}")
+@_instrument("/operations/agents/{agent_name}", "operations.agent_view")
+async def operations_agent_detail(agent_name: str) -> dict:
+    base = _AGENT_INDEX.get(agent_name)
+    if base is None:
+        raise HTTPException(status_code=404, detail=f"unknown agent: {agent_name}")
+    health_state, health_info = await _agent_health(base["host"], base["port"])
+    status_body, status_info = await _agent_status_body(base["host"], base["port"])
+    recent, failures = await _agent_executions_counts(agent_name)
+    try:
+        recent_executions = await AgentExecutionStore().list_executions(agent=agent_name)
+    except Exception:
+        recent_executions = []
+    recent_executions = recent_executions[:20]
+    audit_events: list[dict[str, Any]] = []
+    try:
+        audit_events = await AuditStore().list_audit_logs(agent=agent_name, limit=20)
+    except Exception:
+        audit_events = []
+    bus = RedisStreamEventBus()
+    try:
+        stream_info = await _xinfo_stream(bus, base["input_stream"])
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+    overview = _shape_agent_overview(
+        base, health_state, health_info, status_body, status_info, recent, failures
+    )
+    return {
+        **overview,
+        "stream_info": stream_info,
+        "recent_executions": recent_executions,
+        "recent_audit_events": audit_events,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/streams
+# ---------------------------------------------------------------------------
+
+
+@router.get("/streams")
+@_instrument("/operations/streams", "operations.streams_view")
+async def operations_streams() -> dict:
+    bus = RedisStreamEventBus()
+    streams: list[dict[str, Any]] = []
+    try:
+        for entry in PLATFORM_STREAMS:
+            info = await _xinfo_stream(bus, entry["name"])
+            info["primary_group"] = entry["primary_group"]
+            # Documented design: stream.notifications has no consumer yet.
+            # Mark it informational so a dashboard doesn't flap on a known gap.
+            if entry["name"] == "stream.notifications" and info["consumers"] == 0:
+                info["status"] = "not_unified_by_design"
+            streams.append(info)
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+    return {"count": len(streams), "streams": streams, "generated_at": _utcnow_iso()}
+
+
+# ---------------------------------------------------------------------------
+# /operations/safety
+# ---------------------------------------------------------------------------
+
+
+async def _alertmanager_receivers() -> tuple[list[str], list[str], list[str]]:
+    """Return (receivers, external_receivers, warnings)."""
+    status, body = await _http_get(f"{ALERTMANAGER_URL}/api/v2/receivers", timeout=3.0)
+    if status != 200 or not isinstance(body, list):
+        return [], [], ["alertmanager_unavailable"]
+    receivers: list[str] = []
+    external: list[str] = []
+    for entry in body:
+        name = (entry.get("name") if isinstance(entry, dict) else "") or ""
+        receivers.append(str(name))
+        lowered = name.lower()
+        if any(k in lowered for k in ("slack", "discord", "telegram", "pagerduty", "webhook")):
+            external.append(name)
+    return receivers, external, []
+
+
+@router.get("/safety")
+@_instrument("/operations/safety", "operations.safety_view")
+async def operations_safety() -> dict:
+    safety = await _production_safety()
+    receivers, external, recv_warnings = await _alertmanager_receivers()
+    warnings = list(recv_warnings)
+    if external:
+        warnings.append(f"external_alert_receivers_present:{','.join(external)}")
+    has_token = bool(os.environ.get("GITHUB_TOKEN", "").strip())
+    default_dry_run = os.environ.get("GITHUB_DRY_RUN", "true").strip().lower() != "false"
+    real_test = os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
+    if has_token and not default_dry_run:
+        warnings.append("github_token_present_dry_run_false")
+    result = safety["result"]
+    if warnings and result == "safe":
+        # Warnings degrade the verdict to "warning" but only an actual
+        # production count flips to "unsafe".
+        result = "warning"
+    return {
+        "production_executed_true_count": safety["deployment_records_production_executed_true"],
+        "deployment_environment_production_count": safety[
+            "deployment_records_environment_production"
+        ],
+        "workflow_production_executed_true_count": safety[
+            "workflow_states_production_executed_true"
+        ],
+        "github_has_token": has_token,
+        "github_default_dry_run": default_dry_run,
+        "real_github_test_enabled": real_test,
+        "alertmanager_receivers": receivers,
+        "external_alert_receivers_present": bool(external),
+        "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
+        "postgres_auth_note": (
+            "postgres trust auth is local/test only — production must use real auth + KMS"
+        ),
+        "result": result,
+        "warnings": warnings,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/incidents
+# ---------------------------------------------------------------------------
+
+
+@router.get("/incidents")
+@_instrument("/operations/incidents", "operations.incidents_view")
+async def operations_incidents(
+    status: str | None = None,
+    severity: str | None = None,
+    task_id: str | None = None,
+    limit: int = 100,
+) -> dict:
+    store = IncidentStore()
+    try:
+        rows = await store.list_incidents(
+            status=status,
+            severity=severity,
+            task_id=task_id,
+            limit=max(1, min(int(limit or 100), 500)),
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    incidents = [incident.to_dict() for incident in rows]
+    open_count = sum(1 for r in incidents if r.get("status") == "open")
+    ack_count = sum(1 for r in incidents if r.get("status") == "acknowledged")
+    resolved_count = sum(1 for r in incidents if r.get("status") == "resolved")
+    return {
+        "count": len(incidents),
+        "incidents": incidents,
+        "open_count": open_count,
+        "acknowledged_count": ack_count,
+        "resolved_count": resolved_count,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/dlq
+# ---------------------------------------------------------------------------
+
+
+@router.get("/dlq")
+@_instrument("/operations/dlq", "operations.dlq_view")
+async def operations_dlq(
+    task_id: str | None = None,
+    stream: str | None = None,
+    terminal: bool = False,
+    limit: int = 50,
+) -> dict:
+    bus = RedisStreamEventBus()
+    capped_limit = max(1, min(int(limit or 50), 200))
+    try:
+        deadletter_info = await _xinfo_stream(bus, DEAD_LETTER_STREAM)
+        terminal_info = await _xinfo_stream(bus, TERMINAL_FAILURE_STREAM)
+        deadletter_events = await _xrevrange_payloads(bus, DEAD_LETTER_STREAM, count=capped_limit)
+        terminal_events = await _xrevrange_payloads(
+            bus, TERMINAL_FAILURE_STREAM, count=capped_limit
+        )
+    finally:
+        with contextlib.suppress(Exception):
+            await bus.close()
+
+    def _filter(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        if task_id is None and stream is None:
+            return events
+        out: list[dict[str, Any]] = []
+        for entry in events:
+            payload = entry.get("payload") if isinstance(entry, dict) else None
+            if not isinstance(payload, dict):
+                continue
+            if task_id and payload.get("task_id") != task_id:
+                continue
+            if stream and (
+                payload.get("original_stream") != stream and payload.get("source_stream") != stream
+            ):
+                continue
+            out.append(entry)
+        return out
+
+    filtered_deadletter = _filter(deadletter_events)
+    filtered_terminal = _filter(terminal_events)
+
+    response: dict[str, Any] = {
+        "deadletter_length": deadletter_info["length"],
+        "deadletter_terminal_length": terminal_info["length"],
+        "deadletter_events": filtered_deadletter,
+        "terminal_events": filtered_terminal,
+        "deadletter_count": len(filtered_deadletter),
+        "terminal_count": len(filtered_terminal),
+        "generated_at": _utcnow_iso(),
+    }
+    if terminal:
+        # Convenience filter — the caller wants ONLY the terminal stream
+        # contents (matches operator UX).
+        response["events"] = filtered_terminal
+    return response
+
+
+# ---------------------------------------------------------------------------
+# /operations/github/{task_id}
+# ---------------------------------------------------------------------------
+
+
+@router.get("/github/{task_id}")
+@_instrument("/operations/github/{task_id}", "operations.github_view")
+async def operations_github(task_id: str) -> dict:
+    try:
+        workflow = await WorkflowStore().get_workflow_state(task_id)
+    except Exception:
+        workflow = None
+    deployment_record = await _deployment_record_for(task_id)
+    audit_events: list[dict[str, Any]] = []
+    try:
+        rows = await AuditStore().get_audit_logs(task_id)
+        audit_events = [
+            row
+            for row in rows
+            if row.get("decision_type") in ("github_pr_integration", "github_automation")
+        ]
+    except Exception:
+        audit_events = []
+
+    github_section = _build_github_section(
+        workflow or {},
+        deployment_record.get("metadata") if isinstance(deployment_record, dict) else {},
+    )
+    found = bool(github_section.get("found")) or bool(audit_events)
+    sources: list[str] = []
+    if workflow and github_section.get("found"):
+        sources.append("workflow_states.execution_result.github")
+    if (
+        deployment_record
+        and isinstance(deployment_record.get("metadata"), dict)
+        and isinstance(deployment_record["metadata"].get("github"), dict)
+    ):
+        sources.append("deployment_records.metadata.github")
+    if audit_events:
+        sources.append("audit_logs")
+
+    return {
+        "task_id": task_id,
+        "found": found,
+        "dry_run": github_section.get("dry_run"),
+        "status": github_section.get("status", ""),
+        "issue_url": github_section.get("issue_url", ""),
+        "branch": github_section.get("branch", ""),
+        "pr_url": github_section.get("pr_url", ""),
+        "pr_number": github_section.get("pr_number"),
+        "checks_status": github_section.get("checks_status", ""),
+        "event_type": github_section.get("event_type", ""),
+        "error": github_section.get("error", ""),
+        "related_audit_events": audit_events,
+        "source": sources,
+        "generated_at": _utcnow_iso(),
+    }

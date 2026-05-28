@@ -121,6 +121,24 @@ AUDIT_WORKER_PROCESSING_SECONDS = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
 )
 
+# Operations Control API metrics (Stage 20 — unified read-only operator view)
+OPERATIONS_REQUESTS_TOTAL = Counter(
+    "operations_requests_total",
+    "Operations Control API requests (labelled by endpoint and result)",
+    ["endpoint", "result"],  # result = ok | error | not_found
+)
+OPERATIONS_REQUEST_FAILURES_TOTAL = Counter(
+    "operations_request_failures_total",
+    "Operations Control API failures (labelled by endpoint and reason)",
+    ["endpoint", "reason"],  # reason = store_error | not_found | bad_request
+)
+OPERATIONS_REQUEST_DURATION_SECONDS = Histogram(
+    "operations_request_duration_seconds",
+    "Operations Control API per-endpoint duration",
+    ["endpoint"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

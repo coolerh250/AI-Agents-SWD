@@ -301,6 +301,54 @@ The orchestrator's `/workflow/timeline/{task_id}` carries an
 `github_pr_integration` / `github_automation` / `workflow_failed` rows
 inline with the agent timeline.
 
+## Operations Control API (Stage 20)
+
+Stage 20 introduces a unified read-only operator namespace under
+`/operations/*` on the orchestrator (`apps/orchestrator/src/operations.py`).
+It collapses status surfaces that previously required hitting half a dozen
+endpoints into one place:
+
+| Endpoint | Returns |
+|----------|---------|
+| `GET /operations/health` | `{"service":"operations","status":"ok"}` |
+| `GET /operations/summary` | Cluster-wide totals: services / workflows / agents / incidents / DLQ / GitHub / audit / production safety |
+| `GET /operations/workflows/{task_id}` | Unified workflow view: workflow + progress + agents + audit_timeline + incidents + deployment + github + dlq + notifications + trace + safety |
+| `GET /operations/agents` | Pipeline overview — one row per agent with health, processed/failed counts, last task, streams, consumer group, 24h execution counts |
+| `GET /operations/agents/{agent_name}` | Per-agent detail: + recent executions + recent audit events + input-stream XINFO |
+| `GET /operations/streams` | XINFO for each platform stream (`stream.tasks` … `stream.deadletter.terminal`) — length / consumers / pending / lag / last-delivered-id / status |
+| `GET /operations/safety` | Production safety counters + GitHub mode flags + Alertmanager receivers + safe/warning/unsafe verdict |
+| `GET /operations/incidents` | Reuses `IncidentStore.list_incidents` (filters: `status`, `severity`, `task_id`, `limit`) |
+| `GET /operations/dlq` | `stream.deadletter` + `stream.deadletter.terminal` snapshot (filters: `task_id`, `stream`, `terminal=true`) |
+| `GET /operations/github/{task_id}` | Per-task GitHub view from `workflow_states.execution_result.github` + `deployment_records.metadata.github` + `audit_logs(github_pr_integration | github_automation)` |
+
+**Contract:**
+
+* **Read-only.** Nothing in `/operations/*` inserts, updates, deletes,
+  ACKs, replays, or otherwise mutates platform state. A failing data
+  source returns its empty shape plus a `warnings` entry rather than
+  blowing up the whole view (the exception is
+  `/operations/workflows/{task_id}` which returns `404` only when the
+  workflow row itself doesn't exist).
+* **No secrets.** `github_has_token` is exposed as a boolean only —
+  the token value never leaves the env var.
+* **Metrics + spans.** Every endpoint records
+  `operations_requests_total{endpoint,result}`,
+  `operations_request_failures_total{endpoint,reason}`,
+  `operations_request_duration_seconds{endpoint}`, and emits an
+  `operations.<view>` OTel span with `endpoint` / `result` / `task_id`
+  / `agent` attributes.
+* **`stream.notifications` known gap.** The streams view labels its
+  status `not_unified_by_design` when `consumers=0` — a documented Stage
+  19 follow-up, not a regression.
+
+`/operations/safety.result` is `safe` when every production counter
+is `0` and no warning fires; `warning` when counters are `0` but an
+external Alertmanager receiver is configured or `GITHUB_TOKEN` is
+present with `GITHUB_DRY_RUN=false`; `unsafe` only when
+`deployment_records.production_executed=true OR environment=production`
+or `workflow_states.execution_result->>'production_executed'='true'`
+is non-zero.
+
 ## Workflow Persistence & Resume
 
 The orchestrator persists every workflow so it survives a restart and can be
