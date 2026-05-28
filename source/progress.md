@@ -3098,3 +3098,341 @@ issues & blockers, and next-step suggestions.
      `notification-worker` consumer Stage 19 just
      demonstrated for audit; the gap is identical and the
      scaffolding is now proven.
+
+
+## Stage 20 — Step 19: Operations Control API & Unified Workflow View
+
+- **Execution time:** 2026-05-28 15:00 – 17:30 (local)
+- **Git branch / commit:** `main` → Commit A
+  `<Stage 20 /operations/* unified read-only operator view>`,
+  Commit B (this entry) appended on top.
+- **Previous commit:** `80d7fb9 Stage 19: progress log - Step 18
+  audit-worker + 10.0.1.31 verification`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only. No
+  real Slack / Discord / Telegram / PagerDuty / GitHub / LLM /
+  Kubernetes / cloud API; no secret / token; no merge; no
+  branch-protection change; no production deploy; no Discord
+  gateway; no notification consumer; no production hardening.
+  Stage 20 only adds a read-only operator surface — no mutating
+  endpoint, no destructive code path.
+
+- **Operations API result:**
+  - New module `apps/orchestrator/src/operations.py` with a
+    FastAPI `APIRouter` mounted at `/operations/*` in
+    `apps/orchestrator/src/main.py`. Ten endpoints landed:
+    `/operations/health`,
+    `/operations/summary`,
+    `/operations/workflows/{task_id}`,
+    `/operations/agents`,
+    `/operations/agents/{agent_name}`,
+    `/operations/streams`,
+    `/operations/safety`,
+    `/operations/incidents`,
+    `/operations/dlq`,
+    `/operations/github/{task_id}`.
+  - Read-only contract enforced by construction — the module never
+    imports any HTTP client method that mutates audit-service,
+    never publishes onto any Redis stream, never updates
+    `workflow_states` / `agent_executions` / `audit_logs` /
+    `deployment_records` / `incident_records`, and never calls
+    github-automation `/github/workflow/demo-pr`. Every store
+    handle is read-only: `WorkflowStore.get_workflow_state`,
+    `AgentExecutionStore.list_executions`,
+    `AuditStore.get_audit_logs / list_audit_logs`,
+    `IncidentStore.list_incidents`,
+    `RedisStreamEventBus.client.xlen / xinfo_groups / xrevrange`.
+  - Safe degradation: a failing data source returns its empty
+    shape plus a `warnings: [...]` entry on the workflow view, or
+    a `0` count on the summary view. The single exception is
+    `/operations/workflows/{task_id}` which returns `404` when the
+    workflow row itself doesn't exist.
+  - No secret leakage: `github_has_token` is exposed as a boolean,
+    never the value; `GITHUB_TOKEN` is read at request time and
+    only its truthiness is recorded.
+
+- **Unified workflow view result:**
+  - `GET /operations/workflows/{task_id}` returns a JSON body with
+    `task_id`, `workflow_id`, `stage`, `execution_status`,
+    `approval_status`, `production_executed`, and twelve nested
+    sections: `workflow`, `progress`, `agents` (agent_executions
+    rows), `audit_timeline` (Step 18 unified audit rows),
+    `incidents`, `deployment` (deployment_records row +
+    decoded metadata), `github` (issue/branch/pr_url/checks/dry_run/
+    status), `dlq` (per-task deadletter + terminal entries),
+    `notifications` (per-task stream.notifications matches),
+    `trace` (workflow trace_id), `safety`
+    (production_executed + environment), plus
+    `generated_at` and a `warnings` array for partial-data cases.
+  - The view reuses `progress.build_progress` and
+    `progress.build_audit_timeline` from Stage 18 so the agent and
+    audit timelines are byte-identical to the existing
+    `/workflow/timeline/{task_id}` output — no new schemas.
+  - `github` falls back to `deployment_records.metadata.github`
+    when `workflow_states.execution_result.github` is empty,
+    covering the case where a workflow has not been re-loaded
+    after the devops-agent wrote its deployment record.
+
+- **Agent view result:**
+  - `GET /operations/agents` lists all five pipeline agents
+    (intake / requirement / development / qa / devops) with
+    `name`, `health_url`, `health_status`, `status_url`,
+    `processed_count`, `failed_count`, `last_task_id`,
+    `last_error`, `input_stream`, `output_stream`,
+    `consumer_group`, `recent_executions_count`,
+    `recent_failures_count`.
+  - `GET /operations/agents/{agent_name}` extends the overview
+    row with `recent_executions` (the last 20 agent_executions
+    rows), `recent_audit_events` (the last 20 audit_logs rows
+    written by that agent), and `stream_info` (XINFO snapshot of
+    the agent's input stream). Returns 404 for unknown agents.
+  - The agent-level stream / consumer-group metadata is
+    embedded in `PIPELINE_AGENTS` inside `operations.py` so the
+    view is self-contained and does not import the agent
+    packages.
+
+- **Streams view result:**
+  - `GET /operations/streams` enumerates 11 platform streams:
+    `stream.tasks`, `stream.requirements`, `stream.development`,
+    `stream.qa`, `stream.deployments`, `stream.devops`,
+    `stream.approvals`, `stream.audit`, `stream.notifications`,
+    `stream.deadletter`, `stream.deadletter.terminal`. Each row
+    carries `length`, `groups` (one inner row per consumer
+    group), `consumers`, `pending`, `lag`, `last_delivered_id`,
+    `primary_group`, `status`.
+  - Status derivation:
+    * `pending > 0` → `warning`.
+    * `lag > 0` with consumers >= 1 → `warning`.
+    * `lag > 0` with consumers = 0 → `informational`.
+    * The known Stage 19 gap on `stream.notifications` (no
+      consumer yet) is explicitly relabelled
+      `not_unified_by_design` so a dashboard doesn't flap on a
+      documented design choice.
+  - `stream.audit` should show `audit-group consumers >= 1` and
+    `lag = 0` once the audit-worker is up. The streams view is
+    the single source of truth for that check (runtime smoke
+    `OPERATIONS_STREAMS_SMOKE` re-asserts it).
+
+- **Safety view result:**
+  - `GET /operations/safety` returns the three production
+    counters (deployment_records production_executed=true,
+    deployment_records environment=production,
+    workflow_states production_executed=true) plus the GitHub
+    mode booleans (`github_has_token`, `github_default_dry_run`,
+    `real_github_test_enabled`), the Alertmanager receiver list
+    (just names — no targets, no webhook URLs), and the
+    governance notes (`vault_mode_note`, `postgres_auth_note`).
+  - `result` field:
+    * any production counter > 0 → `unsafe`.
+    * counters clean + an external receiver (Slack / Discord /
+      Telegram / PagerDuty / webhook) OR `GITHUB_TOKEN` present
+      with `GITHUB_DRY_RUN=false` → `warning`.
+    * counters clean + no warnings → `safe`.
+  - No secret is ever returned. `GITHUB_TOKEN` is read at request
+    time, reduced to a boolean, and never logged.
+
+- **GitHub view result:**
+  - `GET /operations/github/{task_id}` returns the github
+    automation envelope from three sources fanned-in:
+    `workflow_states.execution_result.github`,
+    `deployment_records.metadata.github`, and the
+    `github_pr_integration` + `github_automation` rows in
+    `audit_logs`. `found = true` when any source contributes.
+  - `source` is an array enumerating which of the three sources
+    populated the response — operators can use it to detect
+    drift (e.g. workflow_states says success but audit_logs
+    has nothing).
+  - On a workflow without GitHub data, returns `found = false`
+    with empty fields rather than a 404 — this matches the
+    operator workflow ("is there a PR for this task?").
+
+- **DLQ view result:**
+  - `GET /operations/dlq` returns the `stream.deadletter` +
+    `stream.deadletter.terminal` snapshots (length + recent
+    events). Filters: `task_id`, `stream`, `terminal=true`,
+    `limit` (max 200).
+  - The endpoint never ACKs, replays, or deletes anything —
+    operator-driven replay still lives at
+    `POST /deadletter/replay/{message_id}` on the
+    retry-scheduler (Stage 16.x). Documented in the runbook.
+
+- **Metrics / tracing result:**
+  - New Prometheus series in
+    `shared/sdk/observability/metrics.py`:
+    `operations_requests_total{endpoint,result}`,
+    `operations_request_failures_total{endpoint,reason}`,
+    `operations_request_duration_seconds{endpoint}`.
+  - Decorator `_instrument(endpoint, span_name)` wraps every
+    route, using `functools.wraps` so FastAPI keeps reading the
+    underlying signature (otherwise path params would 422).
+    Records elapsed time on every call, classifies the outcome
+    as `ok` / `not_found` / `error`, and opens an
+    `operations.<view>` span carrying `service.name`, `agent`,
+    `endpoint`, `result`, plus `task_id` / `agent_name` when
+    available.
+  - The orchestrator container already scrapes
+    `orchestrator:8000` in `infra/observability/prometheus.yml`
+    — no scrape config change was needed (the new series
+    auto-register on the existing target).
+
+- **Production safety result:**
+  - `verify_operations_view.sh` runs the production safety
+    counters via `/operations/safety` and asserts both
+    `production_executed_true_count = 0` and
+    `workflow_production_executed_true_count = 0`. Stage 18
+    already had them at `0`; Stage 20 does not write to any
+    table, so the counters cannot regress as a result of this
+    deliverable.
+
+- **Modified / new files:**
+  - `apps/orchestrator/src/operations.py` (new, ~600 lines)
+  - `apps/orchestrator/src/main.py`
+    (`app.include_router(operations_router)`)
+  - `shared/sdk/observability/metrics.py`
+    (+3 `operations_*` series)
+  - `scripts/check_runtime_state.sh`
+    (+9 `OPERATIONS_*` runtime smokes)
+  - `scripts/verify_operations_view.sh` (new, 10-check verify)
+  - `tests/test_operations_summary.py` (4 cases)
+  - `tests/test_operations_workflow_view.py` (3 cases)
+  - `tests/test_operations_agents.py` (3 cases)
+  - `tests/test_operations_streams.py` (1 case covering 11
+    streams)
+  - `tests/test_operations_safety.py` (3 cases)
+  - `tests/test_operations_dlq.py` (4 cases)
+  - `tests/test_operations_github.py` (3 cases)
+  - `README.md` (+ Operations Control API section)
+  - `docs/operations/observability-runbook.md`
+    (+ section 17ops covering the new endpoints)
+  - `docs/operations/manual-verification.md`
+    (+ section 17ops + sign-off boxes)
+  - `source/progress.md` (this entry)
+
+- **Test results (local Windows):**
+  - `python -m pytest -q tests/`:
+    297 passed, 115 skipped (+21 new operations cases on top of
+    the 276/115 Stage 19 baseline). 100% of the new
+    `test_operations_*` tests pass without docker — the
+    operations module is exercised entirely through monkey-
+    patched stores + httpx stubs.
+  - `python -m ruff check .` → All checks passed.
+  - `python -m black --check .` → 147 files would be left
+    unchanged (after one auto-format pass on the new module +
+    new tests).
+  - `python -m mypy shared/` → Success: no issues found in 40
+    source files.
+
+- **Runtime verification (10.0.1.31, executed 2026-05-28):**
+  - **Container state:** 20/20 services up + healthy after
+    `docker compose up -d --force-recreate orchestrator`. The
+    only container rebuilt was the orchestrator (operations.py
+    is wired into its `main.py`); every other service was left
+    untouched.
+  - **`./scripts/run_tests.sh`:** `412 passed, 1 warning in
+    44.73s`. ruff / black / mypy all green (`All checks
+    passed`, `147 files would be left unchanged`, `Success: no
+    issues found in 40 source files`). 391 -> 412 — +21 new
+    operations cases land on the cluster the same way they do
+    locally (no cluster-only skips on this scope).
+  - **`./scripts/verify_operations_view.sh`:** `checks passed:
+    10 / 10 — OPERATIONS_VIEW_VERIFY: PASS`. Every sub-check
+    green; `/operations/safety` reports
+    `production_executed_true_count=0`,
+    `workflow_production_executed_true_count=0`, `result=safe`.
+    `/operations/github/$gh_task` returns `found=true,
+    dry_run=true, pr_url=https://..., source=audit_logs +
+    workflow_states.execution_result.github`.
+  - **`./scripts/verify_unified_audit.sh`:** `checks passed:
+    9 / 9 — UNIFIED_AUDIT_VERIFY: PASS`. No regression — the
+    audit-worker keeps doing its job; `stream.audit
+    consumers=1 pending=0 lag=0`.
+  - **`./scripts/verify_github_pipeline_flow.sh`:** `checks
+    passed: 7 / 7 — GITHUB_PIPELINE_FLOW_VERIFY: PASS`
+    (pr_url present, github_status=success, github_dry_run=true,
+    production_executed=false, timeline carries
+    github.demo_pr.dry_run, audit + notification + Tempo trace
+    all green).
+  - **`./scripts/verify_platform_observability.sh`:** `PASS=81
+    FAIL=0 total=81`. All five sub-scripts pass.
+  - **`./scripts/check_runtime_state.sh` operations + audit +
+    github smokes:** all 9 new `OPERATIONS_*` smokes PASS; all
+    8 Stage-19 `AUDIT_*` smokes still PASS; all 12 Stage-17/18
+    `GITHUB_*` smokes still PASS — no regression anywhere.
+  - **Production safety:**
+    `deployment_records.production_executed=true OR
+    environment=production` = `0`;
+    `workflow_states.execution_result->>
+    'production_executed'='true'` = `0`. Re-checked via the SQL
+    counters AND via `/operations/safety`. Unchanged since
+    Stage 18.
+  - **Live `/operations/agents` snapshot:** all five agents
+    `health_status=ok`. processed_count totals:
+    `intake-agent=448`, `requirement-agent=448`,
+    `development-agent=382`, `qa-agent=283`,
+    `devops-agent=110`. recent_24h counts: intake=136,
+    requirement=130, development=192, qa=112, devops=112.
+  - **Live `/operations/streams` snapshot:** `stream.audit
+    consumers=1 pending=0 lag=0 status=ok` (Stage 19 worker
+    keeping up). `stream.notifications consumers=0 lag=7130
+    status=not_unified_by_design` (known Stage 19 follow-up,
+    documented label). `stream.deadletter consumers=1 lag=0
+    status=ok`. Two pre-existing observations that the
+    streams view surfaced for the first time (NOT caused by
+    Stage 20):
+    * `stream.tasks lag=942 status=warning` — consumers=1,
+      pending=0; historical lag of unconsumed entries (looks
+      like consumer-group `last-delivered-id` is behind the
+      stream tail, likely from pre-Stage-17 runs).
+    * `stream.approvals lag=815 status=warning` — same
+      pattern (consumers=1, pending=0).
+    * `stream.deadletter.terminal consumers=0 status=unknown`
+      — the runtime XINFO GROUPS call returned an empty
+      list. The group is created by `init_redis_streams.sh`
+      so the most likely cause is that no terminal failure
+      event has produced anything on the stream yet *in this
+      Redis instance state* and Redis stopped tracking the
+      group. Worth a separate look; not a regression caused
+      by Stage 20 (the streams view is a new observer of an
+      existing state).
+  - **Live `/operations/safety`:** `result=safe`,
+    `production_executed_true_count=0`,
+    `workflow_production_executed_true_count=0`,
+    `github_has_token=false`, `github_default_dry_run=true`,
+    `real_github_test_enabled=false`,
+    `alertmanager_receivers=["null-receiver"]`,
+    `external_alert_receivers_present=false`. Tokens never
+    appear in the response body.
+
+- **Risks / observations only (not Step 20 roadmap decisions):**
+  - **Operations API remains read-only.** This is the explicit
+    Stage 20 contract; no `POST /operations/*` endpoint exists.
+    Any future write surface (cancel / abort / replay shortcut)
+    is a Step 20+ scope decision.
+  - **Discord gateway not implemented.** Same as Stage 19.
+    `/operations/safety` would surface `external_alert_receivers
+    _present=true` the moment one is wired into Alertmanager.
+  - **Notification consumer not implemented.** Same as Stage 19.
+    `/operations/streams` labels `stream.notifications`
+    `not_unified_by_design` so a dashboard doesn't flap on the
+    known gap.
+  - **Real GitHub write not executed.** Same as every prior
+    stage: dry-run only. `/operations/github/{task_id}` shows
+    the dry-run pr_url + `dry_run=true` envelope.
+  - **Production hardening not completed.** Postgres trust auth,
+    Vault dev mode, and Alertmanager null receiver all remain
+    local/test-only. `/operations/safety` includes
+    `vault_mode_note` and `postgres_auth_note` strings as
+    explicit reminders so an operator reading the API output
+    sees the same warning the runbook carries.
+  - **Per-request `asyncpg.connect` cost.** Every
+    `/operations/summary` call opens ~8 short-lived Postgres
+    connections (one per count query). For a low-volume
+    operator API this is fine; if `/operations/*` becomes a hot
+    path it should move to a connection pool. The same pattern
+    already lives in `audit-service` and the orchestrator
+    workflow store — the load characteristics are identical.
+  - **Stream snapshots are best-effort.** A Redis hiccup during
+    `XINFO GROUPS` returns the empty group list rather than
+    failing the endpoint. The runtime smoke
+    `OPERATIONS_STREAMS_SMOKE` only requires the three known
+    streams to be named in the response, so a transient
+    `length=0` row doesn't flip the smoke to `CHECK`.
