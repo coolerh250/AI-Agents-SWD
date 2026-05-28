@@ -370,14 +370,20 @@ for production; production must use real auth + a real KMS.
   message is then ACKed so the group's pending list doesn't grow
   unbounded. The retry-scheduler will not re-queue it (the
   deadletter envelope carries no `original_stream`).
-* **Backlog policy.** The worker only consumes **new** events
-  (`>` after `XGROUP CREATE … $`). The ~5.5k Stage-17 entries
-  on `stream.audit` are intentionally not back-filled — replaying
-  them would double-write the rows the audit-service already
-  persisted. To drain on demand:
-  `XGROUP SETID stream.audit audit-group 0-0` and restart
-  audit-worker; the `audit.recorded` filter and the
-  `source_message_id` dedup cache still apply.
+* **Backlog behaviour.** `audit-group` was created with `$`
+  MKSTREAM in Stage 15.5 but had no consumer until Stage 19.
+  On audit-worker startup the first `XREADGROUP >` call drains
+  every event that arrived after group-creation
+  (Pre-Step-18 saw `lag≈5532`). The `audit.recorded` filter
+  classifies them: historical POST echoes are skipped
+  (already in `audit_logs`), historical StreamAgent-only
+  publishes become new rows. After the drain
+  `XINFO GROUPS stream.audit` shows `lag=0`; steady-state is
+  one row per workflow stage per agent. If you ever need to
+  re-drain from the beginning of the stream (e.g. after a
+  retention reset): `XGROUP SETID stream.audit audit-group
+  0-0` and restart audit-worker; the `audit.recorded` filter
+  and the `source_message_id` dedup cache still apply.
 
 ### 17b. /audit/events query API
 

@@ -265,13 +265,19 @@ Key contracts:
   (the `XADD` id); a small in-process LRU short-circuits redeliveries.
   This is runtime cache only — see Stage 19 progress notes for the
   edge-case window after a worker crash.
-* **Backlog policy.** The worker uses `>` (`XREADGROUP "$"` group create)
-  so it only consumes **new** events. The ~5.5k historical Stage 17
-  entries on `stream.audit` are intentionally not back-filled to
-  Postgres — the `audit_recorded` echo filter would otherwise cause
-  partial double-writes for the rows the audit-service already
-  persisted. The backlog can be drained manually with `XGROUP SETID`
-  if and when an operator wants to.
+* **Backlog behaviour.** The `audit-group` consumer group on
+  `stream.audit` was created with `$` MKSTREAM in Stage 15.5's
+  `init_redis_streams.sh` but had no consumer connected until
+  Stage 19. When the audit-worker first comes up, its
+  `XREADGROUP >` call drains every event that arrived AFTER
+  group-creation (the Pre-Step-18 measurement saw `lag≈5532`).
+  The `audit.recorded` filter classifies those events
+  correctly — historical POST echoes are skipped (they are
+  already in `audit_logs`) and historical StreamAgent-only
+  publishes become new `audit_logs` rows. After the first run
+  `XINFO GROUPS stream.audit` reports `lag=0`. The drain is a
+  one-time event; steady-state is one row per workflow stage,
+  per agent.
 * **Direct HTTP audit-write deprecation.** As of Stage 19 the three
   producers `devops-agent` (`github_pr_integration`),
   `retry-scheduler` (`workflow_failed`), and `github-automation`

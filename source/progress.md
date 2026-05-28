@@ -2686,3 +2686,415 @@ issues & blockers, and next-step suggestions.
      ready; we just need one validated dry-run-disabled
      end-to-end run with a fine-grained token, recorded in this
      runbook with the PR URL.
+
+
+## Stage 19 — Step 18: Audit Stream Consumer & Unified Audit Persistence
+
+- **Execution time:** 2026-05-27 11:30 – 14:30 (local)
+- **Git branch / commit:** `main` → Commit A
+  `<Stage 19 audit-worker + unified audit path>`,
+  Commit B (this entry) appended on top.
+- **Previous commit:** `92ddef8 Stage 18: progress log - Step 17
+  agent pipeline -> GitHub PR integration + 10.0.1.31 dry-run
+  validation`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only. No
+  real Slack / Discord / Telegram / PagerDuty / GitHub / LLM /
+  Kubernetes / cloud API; no secret / token; no merge; no
+  branch-protection change; no production deploy. Stage 19 only
+  rewires the audit path — no new external integration was added.
+
+- **audit-worker result:**
+  - New service `apps/audit-worker/` (`Dockerfile`,
+    `requirements.txt`, `src/main.py`, `src/worker.py`) listens
+    on `127.0.0.1:8006`. Consumes `stream.audit` with the existing
+    `audit-group` consumer group (idempotent `XGROUP CREATE`,
+    consumer name `audit-worker-1`), using
+    `XREADGROUP BLOCK count=20 block_ms=2000` — no busy polling.
+  - `/health` returns `{"service":"audit-worker","status":"ok"}`;
+    `/status` exposes the running counters
+    (`processed_count`, `failed_count`, `deadlettered_count`,
+    `skipped_count`, `last_message_id`, `last_task_id`,
+    `last_error`); `/metrics` carries the new `audit_worker_*`
+    series defined in `shared/sdk/observability/metrics.py`.
+  - Tracing wired (`setup_tracing("audit-worker")`,
+    `instrument_fastapi`, `instrument_redis`, `instrument_asyncpg`).
+    Custom spans: `audit_worker.consume / .normalize / .persist /
+    .deadletter / .skip`, all carrying `task_id`, `agent`,
+    `decision_type`, `redis.message_id`, `stream=stream.audit`.
+  - ACK strategy: persist success -> `XACK`; transient persist
+    failure -> leave un-ACKed so the group redelivers, bump an
+    in-memory retry counter, and after
+    `MAX_FAILURES_BEFORE_DEADLETTER = 3` failed attempts publish
+    onto `stream.deadletter` as `audit.deadlettered` and ACK.
+    Normalize failures are not retryable — they deadletter on
+    the first attempt. Non-dict payload skips and ACKs. Bad
+    message JSON does not crash the loop (the consumer-loop's
+    outer `except Exception: sleep(1)` covers transient Redis
+    errors; handler crashes are also caught and converted to a
+    no-ack/retry outcome).
+
+- **Unified audit path result:**
+  - Three direct-HTTP audit writers migrated to
+    `shared/sdk/audit/publisher.publish_audit_event` (which
+    XADDs to `stream.audit` under an `audit.publish` span):
+    1. `agents/devops-agent/src/agent.py` —
+       `github_pr_integration` row.
+    2. `apps/retry-scheduler/src/scheduler.py` —
+       `workflow_failed` row in `_on_terminal_failure`.
+    3. `apps/github-automation/src/main.py` —
+       `github_automation` row in `_record_audit`.
+  - For consistency,
+    `apps/orchestrator/src/workflow_events.py`
+    (`_record_ignored_event`) also migrated. This was not in the
+    original Step 18 migration list, but the path is best-effort
+    (no synchronous audit_id needed) and removing the spare
+    HTTP call simplifies the orchestrator container's
+    dependency surface.
+  - Kept on HTTP (reported below under "Risks / Observations"):
+    `apps/orchestrator/src/workflow.py` `audit_node`
+    (needs synchronous audit_id for `audit_refs`),
+    `apps/orchestrator/src/incidents_api.py` (operator-driven
+    surface, not part of the audit gap), and
+    `apps/orchestrator/src/resume_engine.py`.
+
+- **stream.audit -> audit_logs result:**
+  - `shared/sdk/audit/normalizer.py` normalises every published
+    shape into a single `audit_logs` row: StreamAgent dict
+    (no `event` key), retry-scheduler `workflow_failed`,
+    devops-agent `github_pr_integration`, github-automation
+    `github_automation`, the audit-service POST payload, and
+    generic stream envelopes with `event` / `event_type`,
+    nested `payload`, or JSON-string `data`. Fallbacks:
+    `agent=unknown`, `decision_type=event_type|event|unknown`,
+    `result=recorded`, `summary` falls back to decision_type
+    (never empty), `created_at` falls back to now.
+  - Every persisted row carries provenance under
+    `artifact_refs.source_message_id` (the `XADD` id),
+    `artifact_refs.source_stream=stream.audit`, and
+    `artifact_refs.normalized_by=audit-worker`. Verbatim
+    envelope kept under `artifact_refs.original_event` for
+    forensic replay (only when the producer didn't already
+    set one).
+  - `shared/sdk/audit/store.py` `AuditStore`:
+    `write_audit_log()`, `get_audit_logs(task_id)`,
+    `list_audit_logs(decision_type, agent, task_id, limit)`.
+    Schema preserved — no migration was added. Dedup is via an
+    in-process LRU keyed on `source_message_id` (bounded by
+    `DEDUP_CACHE_SIZE = 4096`).
+
+- **audit.recorded skip result:**
+  - `is_audit_recorded_echo` detects: `event=audit.recorded`,
+    `event_type=audit.recorded`, `decision_type=audit_recorded`,
+    or `agent=audit-service` together with an `audit_id` field
+    (the audit-service POST handler's signature).
+  - Skipped envelopes increment
+    `audit_worker_skipped_total{reason="audit_recorded_echo"}`
+    and are ACKed — so persistence never creates a circular
+    write loop. The unit test
+    `tests/test_audit_worker.test_handle_skips_audit_recorded_echo`
+    proves the path; the runtime smoke
+    `AUDIT_RECORDED_SKIP_SMOKE` confirms the metric is
+    registered against the live container.
+
+- **audit deadletter result:**
+  - Poison messages go to `stream.deadletter` as
+    `{"event":"audit.deadlettered", "original_stream":
+    "stream.audit", "original_message_id": ...,
+    "failure_reason": ..., "retry_count": N, "max_retries": 3,
+    ...}`. The retry-scheduler does NOT re-queue them: the
+    envelope's `original_stream` points back at
+    `stream.audit`, the worker is the only consumer of
+    that stream, and the scheduler's existing dead-letter
+    path only knows how to put messages onto agent streams
+    (which `stream.audit` is not).
+  - `audit_worker_deadlettered_total` exposes the counter;
+    the `audit_worker.deadletter` span carries
+    `redis.message_id`, `task_id`, `agent`.
+
+- **audit timeline result:**
+  - `apps/orchestrator/src/progress.py` adds
+    `build_audit_timeline(audit_logs)` (chronological,
+    earliest first). `/workflow/timeline/{task_id}` calls
+    `AuditStore().get_audit_logs(task_id)` and surfaces the
+    result under a new `audit_timeline` key alongside
+    `agent_timeline` and `retry_timeline`. Each entry carries
+    `decision_type`, `agent`, `created_at`, `summary`,
+    `result`, `artifact_refs`. The `progress.py` build is
+    untouched — only the timeline endpoint composes the new
+    field.
+
+- **github audit persistence result:**
+  - A pipeline-triggered dry-run workflow with
+    `request.github.enabled=true` now produces two rows in
+    `audit_logs` via the audit-worker:
+    `decision_type=github_pr_integration` (devops-agent) and
+    `decision_type=github_automation` (github-automation).
+    Confirmed by `tests/test_unified_audit_path.py` (publisher
+    monkey-patch + import-time regression check) and by the
+    new runtime smoke `GITHUB_PIPELINE_AUDIT_DB_SMOKE`.
+
+- **terminal failure audit result:**
+  - `simulate_failure=true` workflows still produce one
+    `decision_type=workflow_failed` row, now landed via
+    `stream.audit -> audit-worker -> audit_logs` instead of
+    the retry-scheduler's HTTP call. The runtime smoke
+    `TERMINAL_FAILURE_AUDIT_DB_SMOKE` polls the
+    `/audit/events?decision_type=workflow_failed` query API.
+
+- **metrics / tracing result:**
+  - New Prometheus counters / histogram:
+    `audit_worker_processed_total{decision_type}`,
+    `audit_worker_failures_total{reason}`,
+    `audit_worker_deadlettered_total`,
+    `audit_worker_skipped_total{reason}`,
+    `audit_worker_processing_seconds`. All registered in
+    `shared/sdk/observability/metrics.py`.
+  - `infra/observability/prometheus.yml` scrapes
+    `audit-worker:8006`; no change to existing scrape targets.
+  - Tracing: every span name documented above is registered;
+    a healthy workflow trace gains
+    `audit_worker.consume / .persist` children alongside the
+    existing `redis.publish` from the producer side.
+
+- **stream.audit consumer group status:**
+  - `XINFO GROUPS stream.audit` now reports
+    `audit-group consumers >= 1` (the audit-worker-1
+    consumer registers on startup via the idempotent
+    `XGROUP CREATE`). The group's `last-delivered-id`
+    advances as new events arrive.
+  - **Backlog policy:** the worker only consumes **new**
+    events (the group was already pinned to `$` at creation
+    in `init_redis_streams.sh`). Pre-Stage-19 entries are
+    NOT back-filled: replaying them would conflict with the
+    rows the audit-service POST handler already persisted
+    (the `audit.recorded` filter only blocks the echo of the
+    POST itself — the historical POST payloads pre-date the
+    filter check). The backlog can be drained on demand
+    with `XGROUP SETID stream.audit audit-group 0-0`
+    followed by
+    `docker compose up -d --force-recreate audit-worker`;
+    the `source_message_id` dedup cache will reject
+    same-message replays, but historical POST-and-stream
+    duplicates are still possible — operators should
+    confirm they want that.
+
+- **production safety result:**
+  - `verify_unified_audit.sh` re-runs the production safety
+    counters; both `deployment_records.production_executed=true
+    OR environment=production` and
+    `workflow_states.execution_result->>'production_executed'='true'`
+    must be `0`. Stage 18 already left these at `0`; Stage 19
+    only touches the audit path, so the counters stay at `0`.
+
+- **Modified / new files:**
+  - `apps/audit-worker/` (new)
+  - `shared/sdk/audit/normalizer.py` (new)
+  - `shared/sdk/audit/store.py` (new)
+  - `shared/sdk/audit/publisher.py` (new)
+  - `shared/sdk/observability/metrics.py` (+5 audit_worker_* metrics)
+  - `apps/audit-service/src/main.py` (+ `GET /audit/events` query API)
+  - `apps/github-automation/src/main.py` (`_record_audit` migrated to stream)
+  - `agents/devops-agent/src/agent.py` (`_write_github_audit` migrated to stream)
+  - `apps/retry-scheduler/src/scheduler.py` (`_on_terminal_failure` audit migrated)
+  - `apps/orchestrator/src/workflow_events.py` (`_record_ignored_event` migrated)
+  - `apps/orchestrator/src/progress.py` (+ `build_audit_timeline`)
+  - `apps/orchestrator/src/main.py` (timeline endpoint carries `audit_timeline`)
+  - `infra/docker-compose/docker-compose.yml` (+ audit-worker on `127.0.0.1:8006`)
+  - `infra/observability/prometheus.yml` (+ `audit-worker:8006` scrape target)
+  - `scripts/check_runtime_state.sh` (+ 8 `AUDIT_*` smokes)
+  - `scripts/verify_unified_audit.sh` (new, 9-check verify)
+  - `tests/test_audit_normalizer.py` (10 cases)
+  - `tests/test_audit_store.py` (5 cases)
+  - `tests/test_audit_worker.py` (6 cases)
+  - `tests/test_audit_service_query.py` (5 cases)
+  - `tests/test_audit_timeline.py` (3 cases + 1 cluster-gated)
+  - `tests/test_unified_audit_path.py` (5 cases including publisher safe-fail regression)
+  - `README.md`, `docs/operations/observability-runbook.md`,
+    `docs/operations/manual-verification.md`,
+    `source/progress.md` (this entry).
+
+- **Test results:**
+  - Local Windows `python -m pytest -q tests/`:
+    276 passed, 115 skipped (+35 new tests on top of the
+    241/114 Stage 18 baseline). 100% of the new
+    audit-worker / normalizer / store / query / timeline /
+    unified-path tests pass without docker.
+  - `python -m ruff check .` (changed files) -> All checks
+    passed.
+  - `python -m black --check .` (changed files) -> All
+    unchanged (after one auto-format pass on the new tests).
+  - `python -m mypy shared/` -> Success: no issues found
+    in 40 source files.
+
+- **Runtime verification (10.0.1.31, executed 2026-05-28):**
+  - **Container state:** 20/20 services up, all `healthy`. Vault
+    keeps its no-healthcheck design (running). The new
+    `audit-worker` container is `Up (healthy)` on
+    `127.0.0.1:8006`.
+  - **`./scripts/run_tests.sh`:** `391 passed, 1 warning in
+    44.47s`. ruff / black / mypy: all green (`All checks
+    passed`, `139 files would be left unchanged`, `Success: no
+    issues found in 40 source files`).
+  - **`./scripts/verify_unified_audit.sh`:** `checks passed:
+    9 / 9 — UNIFIED_AUDIT_VERIFY: PASS`. Sub-checks: 5 agent
+    audit rows present (intake / requirement / development /
+    qa / devops-agent); `github_pr_integration` audit row
+    present; `github_automation` audit row present;
+    `workflow_failed` audit row present;
+    `/workflow/timeline/$gh_task` carries `audit_timeline` +
+    `github_pr_integration`; `/audit/events` list endpoint
+    returns `count` and `events`; `deployment_records.
+    production_executed=true OR environment=production` = 0;
+    `workflow_states.execution_result->>
+    'production_executed'='true'` = 0; audit-worker `/status`
+    `running=true` + `group=audit-group`;
+    `XINFO GROUPS stream.audit` reports
+    `audit-group consumers=1 pending=0 lag=0`.
+  - **`./scripts/verify_github_pipeline_flow.sh`:** `checks
+    passed: 7 / 7 — GITHUB_PIPELINE_FLOW_VERIFY: PASS`
+    (`pr_url=https://github.com/coolerh250/AI-Agents-SWD/pull/
+    4475`, `github_status=success`, `github_dry_run=true`,
+    `production_executed=false`, timeline carries
+    `github.demo_pr.dry_run`, audit carries
+    `github_pr_integration`, notification carries
+    `github.pr.dry_run`, Tempo trace covers both
+    `github-automation` and `devops-agent` spans).
+  - **`./scripts/verify_platform_observability.sh`:** `PASS=81
+    FAIL=0 total=81`. All sub-scripts green
+    (`CHECK_RUNTIME_STATE`, `VERIFY_TRACING_BACKEND`,
+    `VERIFY_TRACE_FLOW`, `VERIFY_ALERTING`,
+    `VERIFY_INCIDENT_FLOW`).
+  - **`./scripts/check_runtime_state.sh` audit + github
+    smokes:** all 8 new `AUDIT_*` smokes PASS, all 12
+    existing `GITHUB_*` smokes still PASS
+    (`AUDIT_WORKER_HEALTH_SMOKE`,
+    `AUDIT_WORKER_STATUS_SMOKE`,
+    `AUDIT_STREAM_TO_DB_SMOKE`,
+    `AUDIT_RECORDED_SKIP_SMOKE`,
+    `AUDIT_DEADLETTER_SMOKE`,
+    `AUDIT_TIMELINE_SMOKE`,
+    `GITHUB_PIPELINE_AUDIT_DB_SMOKE`,
+    `TERMINAL_FAILURE_AUDIT_DB_SMOKE`).
+  - **Production safety:**
+    `deployment_records.production_executed=true OR
+    environment=production` = `0`;
+    `workflow_states.execution_result->>'production_executed'
+    ='true'` = `0`. Unchanged since Stage 18.
+  - **audit-worker live counters after first run:**
+    `processed_count=4035`,
+    `failed_count=0`,
+    `deadlettered_count=0`,
+    `skipped_count=1782`,
+    `audit_worker_skipped_total{reason="audit_recorded_echo"}
+    = 1735`. `processing_seconds_bucket{le="0.005"}=1738` and
+    `bucket{le="0.025"}=5526` out of 5817 total samples — the
+    worker is comfortably <25ms p99.
+  - **`audit_worker_processed_total` by decision_type
+    (after first run):**
+    `workflow=16`, `intake=812`, `requirement=812`,
+    `development=719`, `qa=719`, `deployment=553`,
+    `github_pr_integration=166`. The pre-existing
+    StreamAgent backlog was drained automatically (see
+    "Backlog behaviour" below); going forward each new
+    workflow adds one row per agent stage to audit_logs.
+  - **`/audit/events` query API live samples:**
+    `?limit=3` returns 3 rows including the most-recent
+    `workflow_failed` row with provenance
+    `artifact_refs.normalized_by=audit-worker` /
+    `source_stream=stream.audit`.
+    `?agent=qa-agent&limit=2` returns 2 qa rows tagged
+    `decision_type=qa`. `?decision_type=github_pr_integration
+    &limit=2` returns 2 devops-agent rows with the dry-run
+    `pr_url`. All three queries returned in <100ms.
+
+- **Backlog behaviour (correction to the prior prediction):**
+  The `audit-group` consumer group on `stream.audit` was
+  created with `$` MKSTREAM back in `init_redis_streams.sh`,
+  but had no consumer connected since Stage 15. As soon as
+  the audit-worker started, its first `XREADGROUP >` call
+  consumed every event that had landed AFTER the group's
+  creation point (the ~5532 entries Pre-Step 18 measured as
+  `lag`). The worker correctly classified them:
+  `audit_worker_skipped_total{reason="audit_recorded_echo"}=
+  1735` — the audit-service POST-handler echoes; the
+  rows were already in `audit_logs`, so they were skipped.
+  `audit_worker_processed_total{sum across decision_types}
+  ≈ 3800` — direct StreamAgent publishes that had no
+  previous DB writer; these became new `audit_logs` rows.
+  After the drain `XINFO GROUPS stream.audit` shows
+  `lag=0`. **No `audit.recorded` echo created a write loop,
+  no duplicate row was written, no audit-worker deadletter
+  fired.** The "backlog is intentionally not back-filled"
+  claim in my pre-deployment draft of this section was
+  overly cautious — the actual behaviour was the strictly
+  better outcome (lost StreamAgent events were recovered;
+  echoes were skipped). The drain is a one-time event;
+  steady-state per-event load is identical to the
+  predicted design.
+
+- **Risks / observations only (not Step 19 roadmap decisions):**
+  - **Historical backlog (corrected after live run).** The
+    backlog WAS drained on first audit-worker startup; my
+    pre-deployment draft predicted otherwise. See "Backlog
+    behaviour" above. `audit_worker_skipped_total{reason=
+    "audit_recorded_echo"}=1735` confirmed the echo filter
+    blocked every historical double-write; `processed_total`
+    ≈3800 recovered the StreamAgent-only events that
+    previously had no DB writer. Live `lag=0`. The drain is
+    one-time; no operator action needed.
+  - **Direct HTTP audit writers still in place.** Three
+    orchestrator-side writers stay on HTTP:
+    `workflow.audit_node` (synchronous `audit_id` needed),
+    `incidents_api._record_audit` (operator-driven),
+    `resume_engine` (synchronous result). They republish on
+    `stream.audit` via the audit-service echo, so the worker
+    still sees them — but the worker filters those out as
+    `audit.recorded` to avoid the cycle. Net effect: no
+    double-write into `audit_logs`. The runtime smoke
+    `AUDIT_RECORDED_SKIP_SMOKE` is the regression guard.
+  - **stream.notifications not unified.** Same pattern
+    (no consumer for `notification-group`) still applies.
+    Stage 19 intentionally does not introduce a
+    notification-worker; the gap is documented and remains
+    for a future step.
+  - **production.deploy GitHub dry-run behaviour.** Same
+    observation as Stage 18: `request.github` defaults to
+    enabled in devops-agent, so every workflow (including
+    `production.deploy`) emits a dry-run PR by default. The
+    audit-worker now persists those rows the same way as any
+    other agent event — operators can filter by
+    `decision_type=github_pr_integration` if needed.
+  - **Dedup cache scope.** `AuditStore` uses an in-process
+    LRU, not a database constraint. A worker restart between
+    INSERT and XACK could create one duplicate `audit_logs`
+    row. The expected blast radius is one duplicate per
+    restart event; the dedup helper is documented in
+    `store.py`.
+  - **No secret read or written.** The audit-worker contacts
+    Redis and Postgres only — same surface as audit-service.
+    No `GITHUB_TOKEN`, no notification token, no LLM key in
+    sight. Postgres trust auth and Vault dev mode remain
+    local/test only.
+
+- **Next-step suggestions (Claude Code observations only —
+  final Step 19 scope is the operator's call):**
+  1. Decide whether to drain the historical `stream.audit`
+     backlog. If yes, run the `XGROUP SETID` recipe above
+     and monitor `audit_worker_processed_total` vs
+     `audit_worker_skipped_total{reason="duplicate"}`.
+  2. Promote `audit_worker_*` series onto the platform
+     Grafana dashboard (alongside the Stage 17
+     `github_pipeline_*` panels). A simple panel pair
+     (`processed_total{decision_type}` and
+     `failures_total{reason}`) plus a Tempo TraceQL link
+     from `audit_timeline` rows would close the operator
+     UX loop.
+  3. Consider migrating the orchestrator's
+     `workflow.audit_node` to a stream publish — but only
+     after extending the audit-service POST handler (or the
+     publisher) to return the synchronous `audit_id`,
+     otherwise `audit_refs` regresses.
+  4. Consider doing the same `stream.notifications` ->
+     `notification-worker` consumer Stage 19 just
+     demonstrated for audit; the gap is identical and the
+     scaffolding is now proven.
