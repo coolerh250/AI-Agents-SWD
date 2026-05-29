@@ -479,6 +479,107 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 
 ---
 
+## 17b. Controlled real GitHub validation (Stage 23)
+
+Stage 23 ships `verify_real_github_validation.sh` and a dedicated
+endpoint, `POST /github/workflow/real-test-pr`. The cluster runs in
+sandbox-only mode by default — the endpoint refuses every real-test
+request with HTTP 409 and writes one
+`audit_logs.decision_type=github_real_test_blocked` row per refusal.
+
+```
+./scripts/verify_real_github_validation.sh
+```
+
+### Expected SKIPPED mode result
+
+When `GITHUB_TOKEN`, `RUN_REAL_GITHUB_TEST`, and `GITHUB_TEST_REPO` are
+unset (the platform default), the script must end with:
+
+```
+REAL_GITHUB_TEST_SKIPPED: PASS
+checks passed: 12 / 12
+REAL_GITHUB_VALIDATION_VERIFY: PASS
+```
+
+The script also asserts:
+
+* `/health` carries `real_github_test_enabled=false` and
+  `test_repo_configured=false`;
+* `/operations/safety` carries the four boolean fields
+  `github_has_token`, `real_github_test_enabled`,
+  `github_test_repo_configured`, and `github_external_write_enabled`,
+  all set to `false`;
+* `/github/workflow/real-test-pr` returns HTTP 409 with a
+  `safety_guard_result` body that has no token-shaped substring;
+* `audit_logs.decision_type=github_real_test_blocked` appears for the
+  refused task_id;
+* `/operations/github/{task_id}.real_test.safety_guard_result.latest_blocked`
+  carries the same reason;
+* `/github/workflow/demo-pr` dry-run flow still works (regression);
+* `deployment_records.production_executed=true` and
+  `workflow_states.production_executed=true` counts are both `0`.
+
+### Optional real GitHub test procedure
+
+The optional path is opt-in only. Run it from a shell where the
+operator has explicitly exported the three env vars:
+
+```
+export GITHUB_TOKEN   # set in the shell only, never committed
+export RUN_REAL_GITHUB_TEST=true
+export GITHUB_TEST_REPO=coolerh250/AI-Agents-SWD
+
+cd /home/itadmin/AI-Agents-SWD
+docker compose -f infra/docker-compose/docker-compose.yml up -d \
+  --force-recreate github-automation orchestrator
+./scripts/verify_real_github_validation.sh
+```
+
+Expected, when the run succeeds:
+
+```
+REAL_GITHUB_TEST_EXECUTED: PASS
+REAL_GITHUB_TEST_AUDIT: PASS
+REAL_GITHUB_TEST_NOTIFICATION: PASS
+REAL_GITHUB_TEST_OPERATIONS_VIEW: PASS
+REAL_GITHUB_TEST_PR_URL=https://github.com/coolerh250/AI-Agents-SWD/pull/<n>
+REAL_GITHUB_VALIDATION_VERIFY: PASS
+```
+
+After verifying:
+
+1. Close the PR on GitHub (do **not** merge).
+2. Delete the head branch `ai-agents-test/<task_id>` on GitHub.
+3. Revoke the PAT and unset `RUN_REAL_GITHUB_TEST`.
+4. Restart `github-automation` so the env returns to sandbox-only.
+
+### Safety SQL `production_executed=false` query
+
+Whether or not the real test ran, the production safety counters must
+remain `0`:
+
+```
+docker exec aiagents-test-postgres-1 psql -U postgres -d aiagents -c "
+select count(*) as deployment_prod_true
+from deployment_records
+where metadata->>'production_executed'='true'
+or environment='production';
+"
+
+docker exec aiagents-test-postgres-1 psql -U postgres -d aiagents -c "
+select count(*) as workflow_prod_true
+from workflow_states
+where execution_result->>'production_executed'='true';
+"
+```
+
+The Stage 23 controlled-real flow targets a sandbox repo only — it
+never writes to `deployment_records` and never sets
+`workflow_states.execution_result.production_executed=true`.
+
+---
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.
@@ -504,6 +605,18 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 * [ ] `curl http://localhost:8000/operations/safety` shows
       `result=safe` (or `warning` for documented non-fatal items) and
       every production counter at `0`.
+* [ ] `./scripts/verify_real_github_validation.sh` ended
+      `REAL_GITHUB_VALIDATION_VERIFY: PASS` and reported
+      `REAL_GITHUB_TEST_SKIPPED: PASS` (unless the operator
+      deliberately opted in to a controlled-real run, in which case
+      `REAL_GITHUB_TEST_EXECUTED: PASS` is present and the PR has
+      been closed + the branch deleted after verification).
+* [ ] `curl http://localhost:8005/health` shows
+      `real_github_test_enabled=false` and `test_repo_configured=false`
+      (unless an opt-in controlled-real run was deliberately set up).
+* [ ] `POST /github/workflow/real-test-pr` returns HTTP 409 unless
+      `GITHUB_TOKEN`, `RUN_REAL_GITHUB_TEST=true`, and
+      `GITHUB_TEST_REPO` are all set.
 * [ ] `./scripts/verify_platform_observability.sh` ended
       `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
 * [ ] Manual workflow reached `completed`, trace covered all 7

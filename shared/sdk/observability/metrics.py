@@ -95,6 +95,34 @@ GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL = Counter(
     ["reason"],  # http_error | safe_failure | disabled (informational)
 )
 
+# Controlled real GitHub validation metrics (Stage 23)
+GITHUB_REAL_TEST_ATTEMPTS_TOTAL = Counter(
+    "github_real_test_attempts_total",
+    "Controlled real GitHub test attempts (labelled by repo+result)",
+    ["repo", "result"],  # result: attempted (guard passed, run started)
+)
+GITHUB_REAL_TEST_SUCCESS_TOTAL = Counter(
+    "github_real_test_success_total",
+    "Controlled real GitHub tests that completed the full PR flow",
+    ["repo", "result"],  # result: completed
+)
+GITHUB_REAL_TEST_BLOCKED_TOTAL = Counter(
+    "github_real_test_blocked_total",
+    "Controlled real GitHub tests refused by the safety guard",
+    ["repo", "reason"],
+)
+GITHUB_REAL_TEST_FAILURES_TOTAL = Counter(
+    "github_real_test_failures_total",
+    "Controlled real GitHub tests that started but failed mid-flow",
+    ["repo", "reason"],
+)
+GITHUB_REAL_TEST_DURATION_SECONDS = Histogram(
+    "github_real_test_duration_seconds",
+    "Controlled real GitHub test wall-clock duration (full PR flow)",
+    ["repo", "result"],
+    buckets=(0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10, 30, 60),
+)
+
 # Audit-worker metrics (Stage 19 stream.audit -> audit_logs persistence)
 AUDIT_WORKER_PROCESSED_TOTAL = Counter(
     "audit_worker_processed_total",

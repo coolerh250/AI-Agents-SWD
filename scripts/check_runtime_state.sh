@@ -1354,4 +1354,79 @@ else
 fi
 
 echo
+echo "=== Stage 23 controlled-real GitHub validation smokes ==="
+
+# 1. guard refuses by default (no token / no opt-in / no GITHUB_TEST_REPO)
+rgv_task="rgv-smoke-$$"
+rgv_body=$(cat <<JSON
+{
+  "task_id":"$rgv_task",
+  "workflow_id":"wf-$rgv_task",
+  "repo":"coolerh250/AI-Agents-SWD",
+  "base_branch":"main",
+  "branch_name":"ai-agents-test/$rgv_task",
+  "title":"[AI-Agents-SWD Test] runtime guard smoke",
+  "body":"## Summary\nGuard smoke\n\n## Changed Files\n- docs/github-real-test/$rgv_task.md\n\n## Risk Assessment\nLow\n\n## Test Result\nGuard only\n\n## Rollback Plan\nNo write expected\n\n## Safety Notes\nGuard runtime smoke.",
+  "file_path":"docs/github-real-test/$rgv_task.md",
+  "file_content":"task_id=$rgv_task\nworkflow_id=wf-$rgv_task\ngenerated_by=github-automation\nreal_github_test=true\nproduction_executed=false\n",
+  "dry_run":false
+}
+JSON
+)
+rgv_code=$(curl -sS -m 10 -o /tmp/rgv_smoke.$$ -w "%{http_code}" \
+  -X POST http://localhost:8005/github/workflow/real-test-pr \
+  -H "Content-Type: application/json" \
+  -d "$rgv_body" || echo "000")
+rgv_resp=$(cat /tmp/rgv_smoke.$$ 2>/dev/null || echo '{}')
+rm -f /tmp/rgv_smoke.$$
+echo "  real-test-pr guard HTTP: $rgv_code"
+if [ "$rgv_code" = "409" ] && echo "$rgv_resp" | grep -q '"safety_guard_result"'; then
+  echo "GITHUB_REAL_GUARD_SMOKE: PASS"
+else
+  echo "GITHUB_REAL_GUARD_SMOKE: CHECK ($rgv_code)"
+fi
+
+# 2. default mode reports REAL_GITHUB_TEST_SKIPPED
+if [ "${RUN_REAL_GITHUB_TEST:-false}" = "true" ] && [ -n "${GITHUB_TOKEN:-}" ] && [ -n "${GITHUB_TEST_REPO:-}" ]; then
+  echo "GITHUB_REAL_TEST_SKIPPED_SMOKE: SKIP (opt-in env present)"
+else
+  echo "GITHUB_REAL_TEST_SKIPPED_SMOKE: PASS"
+fi
+
+# 3. metrics registered
+rgv_metrics=$(curl -sS -m 10 http://localhost:8005/metrics || echo '')
+if echo "$rgv_metrics" | grep -qE '(^|# HELP |# TYPE )github_real_test_attempts_total' \
+   && echo "$rgv_metrics" | grep -qE '(^|# HELP |# TYPE )github_real_test_blocked_total' \
+   && echo "$rgv_metrics" | grep -qE '(^|# HELP |# TYPE )github_real_test_duration_seconds'; then
+  echo "GITHUB_REAL_METRICS_SMOKE: PASS"
+else
+  echo "GITHUB_REAL_METRICS_SMOKE: CHECK"
+fi
+
+# 4. operations /safety carries the four github_* booleans
+rgv_safety=$(curl -sS -m 10 http://localhost:8000/operations/safety || echo '{}')
+if echo "$rgv_safety" | grep -q '"github_has_token":' \
+   && echo "$rgv_safety" | grep -q '"real_github_test_enabled":' \
+   && echo "$rgv_safety" | grep -q '"github_test_repo_configured":' \
+   && echo "$rgv_safety" | grep -q '"github_external_write_enabled":'; then
+  echo "GITHUB_REAL_OPERATIONS_SMOKE: PASS"
+else
+  echo "GITHUB_REAL_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 5. dry-run regression — /github/workflow/demo-pr still dry-runs cleanly
+rgv_demo_task="rgv-demo-$$"
+rgv_demo=$(curl -sS -m 15 -X POST http://localhost:8005/github/workflow/demo-pr \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$rgv_demo_task\",\"dry_run\":true,\"branch_name\":\"ai-agents-swd/$rgv_demo_task\"}" \
+  || echo '{}')
+if echo "$rgv_demo" | grep -q '"dry_run":true' \
+   && echo "$rgv_demo" | grep -q '"pull_request"' \
+   && echo "$rgv_demo" | grep -q '"event_type":"github.pr.dry_run"'; then
+  echo "GITHUB_DRY_RUN_REGRESSION_SMOKE: PASS"
+else
+  echo "GITHUB_DRY_RUN_REGRESSION_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

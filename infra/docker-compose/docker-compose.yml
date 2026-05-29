@@ -195,6 +195,12 @@ services:
       POLICY_ENGINE_URL: http://policy-engine:8001
       APPROVAL_ENGINE_URL: http://approval-engine:8002
       AUDIT_SERVICE_URL: http://audit-service:8003
+      # Stage 23 controlled-real GitHub validation surface — the
+      # orchestrator's /operations/safety only inspects the presence
+      # of these env vars; the token value is never read here.
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
+      GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -242,6 +248,12 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
       GITHUB_DRY_RUN: "true"
+      # Stage 23 controlled-real GitHub validation. Default to OFF — only
+      # set RUN_REAL_GITHUB_TEST=true + GITHUB_TEST_REPO via the shell env
+      # when an operator explicitly opts in. The token value, when present,
+      # is read at call time from GITHUB_TOKEN and never echoed.
+      RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
+      GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
       AUDIT_SERVICE_URL: http://audit-service:8003
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317

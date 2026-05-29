@@ -17,11 +17,13 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+from real_guard import evaluate_real_test_request
 
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.github import GitHubClient, GitHubClientError
@@ -32,6 +34,11 @@ from shared.sdk.observability.metrics import (
     GITHUB_CHECKS_READ_TOTAL,
     GITHUB_ISSUE_CREATED_TOTAL,
     GITHUB_PR_CREATED_TOTAL,
+    GITHUB_REAL_TEST_ATTEMPTS_TOTAL,
+    GITHUB_REAL_TEST_BLOCKED_TOTAL,
+    GITHUB_REAL_TEST_DURATION_SECONDS,
+    GITHUB_REAL_TEST_FAILURES_TOTAL,
+    GITHUB_REAL_TEST_SUCCESS_TOTAL,
     install_metrics_endpoint,
 )
 from shared.sdk.observability.tracing import (
@@ -223,6 +230,10 @@ def health() -> dict:
         "default_repo": DEFAULT_REPO,
         "default_dry_run": DEFAULT_DRY_RUN,
         "has_token": bool(os.environ.get("GITHUB_TOKEN", "").strip()),
+        "real_github_test_enabled": (
+            os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
+        ),
+        "test_repo_configured": bool(os.environ.get("GITHUB_TEST_REPO", "").strip()),
     }
 
 
@@ -422,3 +433,329 @@ async def demo_pr(req: DemoPRRequest) -> dict:
         )
         result["event_type"] = event_type
         return result
+
+
+# ---------- Stage 23: controlled real GitHub validation ---------------------
+
+
+class RealTestPRRequest(BaseModel):
+    task_id: str
+    workflow_id: str = ""
+    repo: str
+    base_branch: str = "main"
+    branch_name: str
+    title: str
+    body: str
+    file_path: str
+    file_content: str
+    dry_run: bool | None = None
+
+
+def build_real_test_pr_body(req: RealTestPRRequest) -> str:
+    """Return the caller-supplied PR body untouched, but assert the six
+    required sections are present. The guard runs the same check before
+    a real write — this helper only renders.
+    """
+    return req.body or ""
+
+
+def _blocked_summary(reason: str) -> str:
+    return f"real GitHub test blocked at safety guard: {reason}"
+
+
+async def _record_real_test_audit(
+    *,
+    task_id: str,
+    workflow_id: str,
+    decision_type: str,
+    summary: str,
+    result: str,
+    artifact_refs: dict[str, Any],
+) -> None:
+    with contextlib.suppress(Exception):
+        await publish_audit_event(
+            task_id=task_id,
+            workflow_id=workflow_id,
+            agent="github-automation",
+            decision_type=decision_type,
+            summary=summary,
+            result=result,
+            artifact_refs=artifact_refs,
+        )
+
+
+async def _publish_real_test_notification(
+    task_id: str,
+    event_type: str,
+    message: str,
+    *,
+    pr_url: str = "",
+    repo: str = "",
+    branch: str = "",
+    sandbox: bool = True,
+) -> None:
+    """Best-effort notification publish. ``sandbox=True`` even on success
+    because the controlled-real flow targets a sandbox repo and explicitly
+    forbids production write."""
+    with contextlib.suppress(Exception):
+        client = NotificationClient()
+        try:
+            notification = client.build_notification(task_id, event_type, message)
+            notification["pr_url"] = pr_url
+            notification["repo"] = repo
+            notification["branch"] = branch
+            notification["sandbox"] = sandbox
+            notification["production_executed"] = False
+            await client.event_bus.publish_event(NotificationClient.STREAM, notification)
+        finally:
+            with contextlib.suppress(Exception):
+                await client.close()
+
+
+@app.post("/github/workflow/real-test-pr")
+async def real_test_pr(req: RealTestPRRequest) -> dict:
+    """Controlled-real GitHub PR flow. Sandbox-by-default. Refuses with
+    HTTP 409 + structured ``safety_guard_result`` unless every Stage 23
+    pre-condition holds. The token is never echoed in the response.
+    """
+    started = time.perf_counter()
+    repo_value = (req.repo or "").strip()
+
+    with start_span(
+        "github.real_test.guard",
+        **{
+            "github.repo": repo_value,
+            "github.operation": "real_test_pr_guard",
+            "task_id": req.task_id,
+            "workflow_id": req.workflow_id,
+            "github.dry_run": "false",
+            "github.real_github_test": "true",
+        },
+    ):
+        guard = evaluate_real_test_request(
+            repo=req.repo,
+            base_branch=req.base_branch,
+            branch_name=req.branch_name,
+            title=req.title,
+            body=req.body,
+            file_path=req.file_path,
+            file_content=req.file_content,
+            dry_run=req.dry_run,
+        )
+
+    if not guard.allowed:
+        GITHUB_REAL_TEST_BLOCKED_TOTAL.labels(
+            repo=repo_value or "unknown", reason=guard.reason
+        ).inc()
+        await _record_real_test_audit(
+            task_id=req.task_id,
+            workflow_id=req.workflow_id,
+            decision_type="github_real_test_blocked",
+            summary=_blocked_summary(guard.reason),
+            result="blocked",
+            artifact_refs={
+                "repo": repo_value,
+                "reason": guard.reason,
+                "dry_run": False,
+                "real_github_test": True,
+                "production_executed": False,
+                "details": guard.details,
+            },
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "operation": "real_test_pr",
+                "safety_guard_result": guard.to_safe_dict(),
+            },
+        )
+
+    GITHUB_REAL_TEST_ATTEMPTS_TOTAL.labels(repo=repo_value, result="attempted").inc()
+
+    # The guard guarantees dry_run is exactly False at this point.
+    client = GitHubClient(repo=repo_value, dry_run=False)
+    result: dict[str, Any] = {
+        "dry_run": False,
+        "real_github_test": True,
+        "production_executed": False,
+        "repo": repo_value,
+        "task_id": req.task_id,
+        "workflow_id": req.workflow_id,
+        "branch_name": req.branch_name,
+        "base_branch": req.base_branch,
+        "created_at": _utcnow_iso(),
+        "safety_guard_result": guard.to_safe_dict(),
+    }
+    try:
+        with start_span(
+            "github.real_test.create_issue",
+            **{
+                "github.repo": repo_value,
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            issue = await client.create_issue(
+                title=req.title,
+                body=req.body,
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+            )
+            GITHUB_ISSUE_CREATED_TOTAL.labels(dry_run="false").inc()
+            result["issue"] = issue.to_dict()
+
+        with start_span(
+            "github.real_test.create_branch",
+            **{
+                "github.repo": repo_value,
+                "github.branch": req.branch_name,
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            branch = await client.create_branch(
+                req.branch_name,
+                base_branch=req.base_branch,
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+            )
+            GITHUB_BRANCH_CREATED_TOTAL.labels(dry_run="false").inc()
+            result["branch"] = branch.to_dict()
+
+        with start_span(
+            "github.real_test.create_file",
+            **{
+                "github.repo": repo_value,
+                "github.branch": req.branch_name,
+                "github.file_path": req.file_path,
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            file = await client.create_or_update_file(
+                req.file_path,
+                req.file_content,
+                message=f"[AI-Agents-SWD Test] add {req.file_path}",
+                branch=req.branch_name,
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+            )
+            result["file"] = file.to_dict()
+
+        with start_span(
+            "github.real_test.create_pr",
+            **{
+                "github.repo": repo_value,
+                "github.branch": req.branch_name,
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            pr = await client.create_pull_request(
+                title=req.title,
+                body=build_real_test_pr_body(req),
+                head_branch=req.branch_name,
+                base_branch=req.base_branch,
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+            )
+            GITHUB_PR_CREATED_TOTAL.labels(dry_run="false").inc()
+            result["pull_request"] = pr.to_dict()
+
+        with start_span(
+            "github.real_test.read_checks",
+            **{
+                "github.repo": repo_value,
+                "github.branch": req.branch_name,
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            checks = await client.read_checks(
+                req.branch_name,
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+            )
+            GITHUB_CHECKS_READ_TOTAL.labels(dry_run="false").inc()
+            result["checks"] = checks.to_dict()
+    except GitHubClientError as exc:
+        elapsed = time.perf_counter() - started
+        GITHUB_AUTOMATION_FAILURES_TOTAL.labels(operation="real_test_pr").inc()
+        GITHUB_REAL_TEST_FAILURES_TOTAL.labels(repo=repo_value, reason=exc.__class__.__name__).inc()
+        GITHUB_REAL_TEST_DURATION_SECONDS.labels(repo=repo_value, result="failed").observe(elapsed)
+        await _record_real_test_audit(
+            task_id=req.task_id,
+            workflow_id=req.workflow_id,
+            decision_type="github_real_test_failed",
+            summary=f"real GitHub test failed: {exc.__class__.__name__}",
+            result="failed",
+            artifact_refs={
+                "repo": repo_value,
+                "branch": req.branch_name,
+                "dry_run": False,
+                "real_github_test": True,
+                "production_executed": False,
+                "error": str(exc),
+            },
+        )
+        raise HTTPException(
+            status_code=exc.status_code or 502,
+            detail={"operation": "real_test_pr", "error": str(exc)},
+        ) from exc
+
+    elapsed = time.perf_counter() - started
+    GITHUB_REAL_TEST_SUCCESS_TOTAL.labels(repo=repo_value, result="completed").inc()
+    GITHUB_REAL_TEST_DURATION_SECONDS.labels(repo=repo_value, result="completed").observe(elapsed)
+
+    pr_url = result["pull_request"].get("url", "")
+    issue_url = result["issue"].get("url", "")
+    checks_status = ""
+    if isinstance(result["checks"], dict):
+        runs = result["checks"].get("checks") or []
+        if isinstance(runs, list) and runs:
+            checks_status = runs[0].get("status", "") or ""
+
+    event_type = "github.real_test_pr.created"
+    message = (
+        f"github-automation real-test-pr completed (repo={repo_value}, "
+        f"branch={req.branch_name}, pr={pr_url})"
+    )
+    await _publish_real_test_notification(
+        req.task_id,
+        event_type,
+        message,
+        pr_url=pr_url,
+        repo=repo_value,
+        branch=req.branch_name,
+        sandbox=True,
+    )
+    await _record_real_test_audit(
+        task_id=req.task_id,
+        workflow_id=req.workflow_id,
+        decision_type="github_real_test",
+        summary=(f"real GitHub test completed (repo={repo_value}, " f"branch={req.branch_name})"),
+        result="ok",
+        artifact_refs={
+            "issue_url": issue_url,
+            "branch": req.branch_name,
+            "pr_url": pr_url,
+            "checks_status": checks_status,
+            "repo": repo_value,
+            "dry_run": False,
+            "real_github_test": True,
+            "production_executed": False,
+        },
+    )
+    result["event_type"] = event_type
+    result["checks_status"] = checks_status
+    return result

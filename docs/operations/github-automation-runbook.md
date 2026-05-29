@@ -336,3 +336,101 @@ build. `docker compose build github-automation && docker compose up -d --force-r
 * Read secrets from disk or Vault. (The Vault dev container in the
   Compose stack is unrelated.)
 * Echo `GITHUB_TOKEN` in any response, log, or artifact.
+
+---
+
+## 13. Stage 23 — Controlled Real GitHub Validation
+
+Stage 23 ships `POST /github/workflow/real-test-pr`, a strictly-guarded
+endpoint that runs the full `issue → branch → file → PR → checks` flow
+against a pinned sandbox repository. The default cluster mode is
+**sandbox-only**: the endpoint refuses every request with HTTP 409.
+
+### Required environment
+
+All three must be set; missing any one ⇒ guard refuses:
+
+| Env var                 | Required value                              |
+|-------------------------|---------------------------------------------|
+| `GITHUB_TOKEN`          | A sandbox-scoped fine-grained PAT.          |
+| `RUN_REAL_GITHUB_TEST`  | Literal string `true`.                      |
+| `GITHUB_TEST_REPO`      | The single repo the flow may write to.      |
+
+### Fine-grained token requirements
+
+Mint a fine-grained PAT scoped to **only** the sandbox repo
+(`GITHUB_TEST_REPO`), with these permissions (no more):
+
+* Issues — Read & write
+* Pull requests — Read & write
+* Contents — Read & write (needed to create the branch and the scoped doc file)
+* Metadata — Read (auto)
+
+Do **not** grant: Admin, Workflows, Pages, Secrets, Branch protection,
+Discussions, or Code-security alerts. Set an expiry ≤ 30 days and
+rotate after the test. Store the PAT only in the shell that invokes
+`docker compose up -d` — never in `.env`, never in the repo.
+
+### Sandbox repo recommendation
+
+Use either the platform's existing test repo
+(`coolerh250/AI-Agents-SWD`) or a fresh empty repository the operator
+owns. The guard pins `repo == GITHUB_TEST_REPO`; any other value is
+rejected with reason `repo_mismatch`.
+
+### Branch naming rule
+
+Every controlled-real branch must begin with `ai-agents-test/`. The
+operator is expected to delete the branch manually after inspection.
+The platform never deletes the branch.
+
+### PR title rule
+
+Every controlled-real PR title must begin with `[AI-Agents-SWD Test]`.
+
+### File-scope rule
+
+Every controlled-real file write must land under
+`docs/github-real-test/`. The file's content must include
+`task_id`, `workflow_id`, `generated_by=github-automation`,
+`real_github_test=true`, and `production_executed=false`.
+
+### No-merge policy
+
+The endpoint never merges the PR. The operator must close the PR
+manually after inspection.
+
+### Cleanup policy
+
+After verifying the controlled-real PR:
+
+1. Close the PR on GitHub (do **not** merge).
+2. Delete the head branch on GitHub.
+3. Revoke / rotate the PAT used for the test.
+
+### Audit / notification / operations verification
+
+After a successful controlled-real run, every layer carries it:
+
+* `audit_logs` — one row with
+  `decision_type=github_real_test, agent=github-automation` and
+  `artifact_refs` including `issue_url`, `branch`, `pr_url`,
+  `checks_status`, `repo`, `dry_run=false`, `real_github_test=true`,
+  `production_executed=false`.
+* `stream.notifications` — one event with
+  `event_type=github.real_test_pr.created`, `pr_url`, `repo`,
+  `branch`, `sandbox=true`, `production_executed=false`.
+* `/operations/github/{task_id}.real_test.safety_guard_result.latest_success`
+  carries the same `issue_url` / `branch` / `pr_url`.
+* `/operations/safety` shows
+  `github_external_write_enabled=true` while the env vars are set, and
+  the platform verdict downgrades from `safe` to `warning`.
+
+### Rollback note
+
+The controlled-real flow is additive — it opens a PR, it does not
+modify existing files. To roll back: close the PR, delete the head
+branch, revoke the PAT, unset `RUN_REAL_GITHUB_TEST`, restart the
+`github-automation` container. The platform's `production_executed`
+counters stay at `0` regardless of how many controlled-real PRs were
+opened, because the flow targets a sandbox repo and never deploys.

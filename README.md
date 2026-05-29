@@ -1265,6 +1265,170 @@ together. The workflow_states row keeps
 `execution_result.production_executed = false` regardless of
 `dry_run`.
 
+## Controlled Real GitHub Validation (Stage 23)
+
+Stage 23 adds a strictly-guarded endpoint that lets an operator open
+**one** real GitHub PR against a pinned sandbox repository — without
+merging it, modifying branch protection, deleting branches, or touching
+any production resource. By default the cluster runs in **sandbox-only**
+mode: the endpoint returns HTTP 409 and writes an
+`audit_logs.decision_type=github_real_test_blocked` row.
+
+### Required environment (all three must be set to opt in)
+
+```
+GITHUB_TOKEN=<a sandbox-scoped fine-grained PAT, never committed>
+RUN_REAL_GITHUB_TEST=true
+GITHUB_TEST_REPO=coolerh250/AI-Agents-SWD   # or another sandbox repo
+```
+
+Missing any one of the three → the guard refuses every real-test request
+with `safety_guard_result.reason` set to one of `missing_github_token`,
+`run_real_github_test_not_true`, or `missing_github_test_repo`.
+
+### Sandbox repo requirement
+
+`GITHUB_TEST_REPO` pins the only repo the controlled-real flow may write
+to. The guard rejects any request whose `repo` does not equal that env
+var (reason `repo_mismatch`). This makes it impossible to redirect a
+real PR to an unintended repository by tampering with the request body.
+
+### Allowed actions
+
+The controlled-real flow walks `issue → branch → file → PR → checks`.
+Every step is annotated with `dry_run=false`, `real_github_test=true`,
+`production_executed=false` in audit / notification / metrics / spans.
+
+### Forbidden actions
+
+The guard rejects, at the safe-error path before any GitHub API call:
+
+* `branch_name` not starting with `ai-agents-test/`
+* `title` not starting with `[AI-Agents-SWD Test]`
+* `base_branch` in `production` / `prod` / `release/*`
+* `dry_run` not exactly `false`
+* `file_path` outside `docs/github-real-test/`
+* `file_content` missing any of `task_id`, `workflow_id`,
+  `generated_by=github-automation`, `real_github_test=true`,
+  `production_executed=false`
+* PR body missing any of `## Summary`, `## Changed Files`,
+  `## Risk Assessment`, `## Test Result`, `## Rollback Plan`, or
+  `## Safety Notes`
+
+The endpoint never merges the PR, never modifies branch protection,
+never deletes a branch, never creates a release, never triggers a
+production deployment.
+
+### How to verify SKIPPED mode (default)
+
+```
+./scripts/verify_real_github_validation.sh
+```
+
+Expected (no opt-in env set):
+
+```
+REAL_GITHUB_TEST_SKIPPED: PASS
+REAL_GITHUB_VALIDATION_VERIFY: PASS
+```
+
+The script also asserts the guard refuses with HTTP 409 and that the
+response carries no token-shaped substring.
+
+### How to run the controlled real test (opt-in)
+
+After exporting the three env vars above and restarting the
+`github-automation` + `orchestrator` containers:
+
+```
+export GITHUB_TOKEN=<sandbox PAT>
+export RUN_REAL_GITHUB_TEST=true
+export GITHUB_TEST_REPO=coolerh250/AI-Agents-SWD
+docker compose -f infra/docker-compose/docker-compose.yml up -d \
+  --force-recreate github-automation orchestrator
+./scripts/verify_real_github_validation.sh
+```
+
+The script then issues ONE controlled-real PR and asserts:
+
+* the PR + issue + branch URLs come back in the response;
+* `audit_logs.decision_type=github_real_test` is written;
+* `event_type=github.real_test_pr.created` is published on
+  `stream.notifications` with `sandbox=true`,
+  `production_executed=false`;
+* `/operations/github/{task_id}` carries
+  `real_test.safety_guard_result.latest_success`.
+
+The PR is **never merged**. The operator is expected to close it and
+delete the head branch manually after inspection.
+
+### How to inspect `/operations/github/{task_id}`
+
+```
+curl -sS http://localhost:8000/operations/github/<task_id> | python -m json.tool
+```
+
+Returns the existing dry-run section plus a Stage 23 `real_test` block:
+
+```
+{
+  "real_test": {
+    "found": true,
+    "dry_run": false,
+    "real_github_test": true,
+    "production_executed": false,
+    "issue_url": "...",
+    "branch": "ai-agents-test/<task_id>",
+    "pr_url": "...",
+    "checks_status": "completed",
+    "safety_guard_result": { "latest_success": {...}, "latest_blocked": {...} }
+  }
+}
+```
+
+`/operations/safety` carries four new booleans (no token value):
+
+```
+{
+  "github_has_token": false,
+  "real_github_test_enabled": false,
+  "github_test_repo_configured": false,
+  "github_external_write_enabled": false
+}
+```
+
+`github_external_write_enabled = github_has_token AND
+real_github_test_enabled AND github_test_repo_configured`. Whenever it
+is `true`, `/operations/safety` adds a `github_external_write_enabled`
+warning to the response so the platform's verdict downgrades from
+`safe` to `warning`.
+
+### Metrics
+
+```
+github_real_test_attempts_total{repo,result}
+github_real_test_success_total{repo,result}
+github_real_test_blocked_total{repo,reason}
+github_real_test_failures_total{repo,reason}
+github_real_test_duration_seconds{repo,result}
+```
+
+### Tracing
+
+The endpoint emits one custom span per stage:
+
+```
+github.real_test.guard
+github.real_test.create_issue
+github.real_test.create_branch
+github.real_test.create_file
+github.real_test.create_pr
+github.real_test.read_checks
+```
+
+Every span carries `github.dry_run=false`,
+`github.real_github_test=true`, and the `task_id` / `workflow_id`.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

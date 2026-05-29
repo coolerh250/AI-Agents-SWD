@@ -124,6 +124,15 @@ DEAD_LETTER_STREAM = "stream.deadletter"
 TERMINAL_FAILURE_STREAM = "stream.deadletter.terminal"
 
 GITHUB_AUTOMATION_URL = os.environ.get("GITHUB_AUTOMATION_URL", "http://github-automation:8005")
+
+# Stage 23: audit decision_types emitted by the controlled-real GitHub
+# validation flow. /operations/github/{task_id} and the workflow view
+# both surface them under a dedicated ``real_test`` section.
+REAL_TEST_DECISION_TYPES = (
+    "github_real_test",
+    "github_real_test_blocked",
+    "github_real_test_failed",
+)
 ALERTMANAGER_URL = os.environ.get("ALERTMANAGER_URL", "http://alertmanager:9093")
 
 # Workflows considered "recent" by /operations/summary.
@@ -726,6 +735,21 @@ async def operations_workflow_view(task_id: str) -> dict:
         workflow,
         deployment_record.get("metadata") if isinstance(deployment_record, dict) else {},
     )
+    # Stage 23: surface real-test events on the workflow view too. The
+    # operator can see whether a controlled-real PR was attempted or
+    # blocked without leaving /operations/workflows.
+    real_test_rows = [
+        row for row in audit_events if row.get("decision_type") in REAL_TEST_DECISION_TYPES
+    ]
+    real_test_summary = _summarise_real_test_events(real_test_rows)
+    github_section = dict(github_section)
+    github_section["real_test"] = {
+        "found": bool(real_test_rows),
+        "production_executed": False,
+        "latest_success": real_test_summary.get("latest_success", {}),
+        "latest_blocked": real_test_summary.get("latest_blocked", {}),
+        "latest_failed": real_test_summary.get("latest_failed", {}),
+    }
 
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
@@ -942,8 +966,14 @@ async def operations_safety() -> dict:
     has_token = bool(os.environ.get("GITHUB_TOKEN", "").strip())
     default_dry_run = os.environ.get("GITHUB_DRY_RUN", "true").strip().lower() != "false"
     real_test = os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
+    test_repo_configured = bool(os.environ.get("GITHUB_TEST_REPO", "").strip())
+    # Stage 23: external write only happens when token + opt-in + sandbox
+    # repo are all set. Mirrors the discord_external_send_enabled gate.
+    github_external_write_enabled = has_token and real_test and test_repo_configured
     if has_token and not default_dry_run:
         warnings.append("github_token_present_dry_run_false")
+    if github_external_write_enabled:
+        warnings.append("github_external_write_enabled")
     # Stage 22: surface Discord opt-in pre-conditions as booleans only.
     # The token value never leaves the env var.
     discord_has_token = bool(os.environ.get("DISCORD_BOT_TOKEN", "").strip())
@@ -972,6 +1002,8 @@ async def operations_safety() -> dict:
         "github_has_token": has_token,
         "github_default_dry_run": default_dry_run,
         "real_github_test_enabled": real_test,
+        "github_test_repo_configured": test_repo_configured,
+        "github_external_write_enabled": github_external_write_enabled,
         "discord_has_token": discord_has_token,
         "discord_test_channel_configured": discord_test_channel_configured,
         "discord_real_test_enabled": discord_real_test_enabled,
@@ -1092,6 +1124,60 @@ async def operations_dlq(
 # ---------------------------------------------------------------------------
 
 
+def _summarise_real_test_events(
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Collapse Stage 23 audit events into one view-friendly summary.
+
+    Returns the most-recent success / blocked / failure refs without
+    leaking token-shaped fields. Empty dict when no Stage 23 events
+    are present.
+    """
+    success: dict[str, Any] = {}
+    blocked: dict[str, Any] = {}
+    failed: dict[str, Any] = {}
+    for row in events:
+        decision = row.get("decision_type") or ""
+        refs = row.get("artifact_refs") if isinstance(row.get("artifact_refs"), dict) else {}
+        bucket = (
+            success
+            if decision == "github_real_test"
+            else (
+                blocked
+                if decision == "github_real_test_blocked"
+                else failed if decision == "github_real_test_failed" else None
+            )
+        )
+        if bucket is None or bucket:
+            # already captured the most-recent (audit query is newest-first)
+            continue
+        bucket.update(
+            {
+                "issue_url": refs.get("issue_url", ""),
+                "branch": refs.get("branch", ""),
+                "pr_url": refs.get("pr_url", ""),
+                "checks_status": refs.get("checks_status", ""),
+                "repo": refs.get("repo", ""),
+                "dry_run": refs.get("dry_run"),
+                "real_github_test": refs.get("real_github_test"),
+                "production_executed": refs.get("production_executed"),
+                "reason": refs.get("reason", ""),
+                "error": refs.get("error", ""),
+                "details": refs.get("details", {}),
+                "summary": row.get("summary", ""),
+                "created_at": row.get("created_at"),
+            }
+        )
+    summary: dict[str, Any] = {}
+    if success:
+        summary["latest_success"] = success
+    if blocked:
+        summary["latest_blocked"] = blocked
+    if failed:
+        summary["latest_failed"] = failed
+    return summary
+
+
 @router.get("/github/{task_id}")
 @_instrument("/operations/github/{task_id}", "operations.github_view")
 async def operations_github(task_id: str) -> dict:
@@ -1101,21 +1187,24 @@ async def operations_github(task_id: str) -> dict:
         workflow = None
     deployment_record = await _deployment_record_for(task_id)
     audit_events: list[dict[str, Any]] = []
+    real_test_events: list[dict[str, Any]] = []
     try:
         rows = await AuditStore().get_audit_logs(task_id)
-        audit_events = [
-            row
-            for row in rows
-            if row.get("decision_type") in ("github_pr_integration", "github_automation")
-        ]
+        for row in rows:
+            decision = row.get("decision_type") or ""
+            if decision in ("github_pr_integration", "github_automation"):
+                audit_events.append(row)
+            elif decision in REAL_TEST_DECISION_TYPES:
+                real_test_events.append(row)
     except Exception:
         audit_events = []
+        real_test_events = []
 
     github_section = _build_github_section(
         workflow or {},
         deployment_record.get("metadata") if isinstance(deployment_record, dict) else {},
     )
-    found = bool(github_section.get("found")) or bool(audit_events)
+    found = bool(github_section.get("found")) or bool(audit_events) or bool(real_test_events)
     sources: list[str] = []
     if workflow and github_section.get("found"):
         sources.append("workflow_states.execution_result.github")
@@ -1127,6 +1216,21 @@ async def operations_github(task_id: str) -> dict:
         sources.append("deployment_records.metadata.github")
     if audit_events:
         sources.append("audit_logs")
+    if real_test_events:
+        sources.append("audit_logs.real_test")
+
+    real_test_summary = _summarise_real_test_events(real_test_events)
+    real_test_section: dict[str, Any] = {
+        "found": bool(real_test_events),
+        "dry_run": False if real_test_summary.get("latest_success") else None,
+        "real_github_test": bool(real_test_summary.get("latest_success")),
+        "production_executed": False,
+        "issue_url": (real_test_summary.get("latest_success") or {}).get("issue_url", ""),
+        "branch": (real_test_summary.get("latest_success") or {}).get("branch", ""),
+        "pr_url": (real_test_summary.get("latest_success") or {}).get("pr_url", ""),
+        "checks_status": (real_test_summary.get("latest_success") or {}).get("checks_status", ""),
+        "safety_guard_result": real_test_summary,
+    }
 
     return {
         "task_id": task_id,
@@ -1141,6 +1245,7 @@ async def operations_github(task_id: str) -> dict:
         "event_type": github_section.get("event_type", ""),
         "error": github_section.get("error", ""),
         "related_audit_events": audit_events,
+        "real_test": real_test_section,
         "source": sources,
         "generated_at": _utcnow_iso(),
     }
