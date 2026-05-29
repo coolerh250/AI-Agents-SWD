@@ -167,6 +167,38 @@ DISCORD_REQUEST_DURATION_SECONDS = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
 )
 
+# Notification-worker metrics (Stage 22 — controlled Discord delivery)
+NOTIFICATION_WORKER_PROCESSED_TOTAL = Counter(
+    "notification_worker_processed_total",
+    "Notification events consumed from stream.notifications",
+    ["event_type"],
+)
+NOTIFICATION_WORKER_DELIVERED_TOTAL = Counter(
+    "notification_worker_delivered_total",
+    "Notifications dispatched as real Discord deliveries",
+    ["event_type", "channel"],
+)
+NOTIFICATION_WORKER_SIMULATED_TOTAL = Counter(
+    "notification_worker_simulated_total",
+    "Notifications recorded as sandbox simulations (no external API call)",
+    ["event_type", "channel"],
+)
+NOTIFICATION_WORKER_FAILURES_TOTAL = Counter(
+    "notification_worker_failures_total",
+    "Notification deliveries that failed (labelled by reason)",
+    ["reason"],  # render_error | store_error | discord_error | deadletter_error
+)
+NOTIFICATION_WORKER_SKIPPED_TOTAL = Counter(
+    "notification_worker_skipped_total",
+    "Notifications skipped without delivery (labelled by reason)",
+    ["reason"],  # duplicate | empty | sandbox_self_test
+)
+NOTIFICATION_WORKER_PROCESSING_SECONDS = Histogram(
+    "notification_worker_processing_seconds",
+    "End-to-end notification-worker processing time per event",
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

@@ -1245,5 +1245,113 @@ else
   echo "DISCORD_METRICS_SMOKE: CHECK"
 fi
 
+
+echo
+echo "=== notification-worker /health smoke ==="
+if curl -sS -m 5 http://localhost:8008/health | grep -q '"service": *"notification-worker"'; then
+  echo "NOTIFICATION_WORKER_HEALTH_SMOKE: PASS"
+else
+  echo "NOTIFICATION_WORKER_HEALTH_SMOKE: FAIL"
+fi
+
+echo
+echo "=== notification-worker /status smoke ==="
+nw_status=$(curl -sS -m 10 http://localhost:8008/status || echo '{}')
+echo "$nw_status" | head -c 400 || true
+echo
+if echo "$nw_status" | grep -q '"input_stream": *"stream.notifications"' \
+   && echo "$nw_status" | grep -q '"group": *"notification-worker-group"' \
+   && echo "$nw_status" | grep -q '"mode":' \
+   && echo "$nw_status" | grep -q '"external_send_enabled":'; then
+  echo "NOTIFICATION_WORKER_STATUS_SMOKE: PASS"
+else
+  echo "NOTIFICATION_WORKER_STATUS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== stream.notifications -> notification_deliveries smoke ==="
+nw_task="nw-smoke-$$"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages \
+  -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.test description=\\\"nw smoke\\\" task_id=$nw_task\",\"channel_id\":\"sandbox-nw\",\"user_id\":\"runtime-smoke\"}" \
+  >/dev/null 2>&1 || true
+for i in $(seq 1 30); do
+  nw_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$nw_task" || echo '{}')
+  nw_stage=$(echo "$nw_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  if [ "$nw_stage" = "completed" ]; then break; fi
+  sleep 2
+done
+sleep 5
+nw_dels=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries/$nw_task" || echo '{}')
+nw_count=$(echo "$nw_dels" | sed -n 's/.*"count": *\([0-9]*\).*/\1/p' | head -n1)
+echo "deliveries for $nw_task: $nw_count"
+if [ -n "$nw_count" ] && [ "$nw_count" -ge 2 ]; then
+  echo "NOTIFICATION_STREAM_DELIVERY_SMOKE: PASS"
+else
+  echo "NOTIFICATION_STREAM_DELIVERY_SMOKE: CHECK ($nw_count)"
+fi
+
+echo
+echo "=== notification_deliveries sandbox flag smoke ==="
+if echo "$nw_dels" | grep -q '"sandbox":true' \
+   && echo "$nw_dels" | grep -q '"external_sent":false'; then
+  echo "NOTIFICATION_DELIVERY_DB_SMOKE: PASS"
+else
+  echo "NOTIFICATION_DELIVERY_DB_SMOKE: CHECK"
+fi
+
+echo
+echo "=== notification_delivery audit smoke (audit-worker persisted) ==="
+nw_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=notification_delivery&limit=5" || echo '{}')
+if echo "$nw_audit" | grep -q '"decision_type": *"notification_delivery"' \
+   && echo "$nw_audit" | grep -q '"agent": *"notification-worker"'; then
+  echo "NOTIFICATION_DELIVERY_AUDIT_SMOKE: PASS"
+else
+  echo "NOTIFICATION_DELIVERY_AUDIT_SMOKE: CHECK"
+fi
+
+echo
+echo "=== /discord/deliveries top-level list smoke ==="
+dg_all=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries?limit=5" || echo '{}')
+if echo "$dg_all" | grep -q '"count":' && echo "$dg_all" | grep -q '"deliveries":'; then
+  echo "DISCORD_DELIVERIES_API_SMOKE: PASS"
+else
+  echo "DISCORD_DELIVERIES_API_SMOKE: CHECK"
+fi
+
+echo
+echo "=== /operations/workflows includes notification_deliveries smoke ==="
+op_view=$(curl -sS -m 10 "http://localhost:8000/operations/workflows/$nw_task" || echo '{}')
+if echo "$op_view" | grep -q '"notification_deliveries"' \
+   && echo "$op_view" | grep -q '"simulated_count":'; then
+  echo "OPERATIONS_NOTIFICATION_DELIVERY_SMOKE: PASS"
+else
+  echo "OPERATIONS_NOTIFICATION_DELIVERY_SMOKE: CHECK"
+fi
+
+echo
+echo "=== notification-worker /discord/real/test-message guard smoke ==="
+rt_code=$(curl -sS -m 5 -o /tmp/nw_rt.$$ -w "%{http_code}" -X POST http://localhost:8008/discord/real/test-message \
+  -H "Content-Type: application/json" \
+  -d '{"content":"sandbox guard verification"}' || echo "000")
+rm -f /tmp/nw_rt.$$
+echo "real-test guard HTTP: $rt_code"
+if [ "$rt_code" = "409" ]; then
+  echo "DISCORD_REAL_TEST_GUARD_SMOKE: PASS"
+else
+  echo "DISCORD_REAL_TEST_GUARD_SMOKE: CHECK"
+fi
+
+echo
+echo "=== notification-worker /metrics smoke ==="
+nw_metrics=$(curl -sS -m 10 http://localhost:8008/metrics || echo '')
+if echo "$nw_metrics" | grep -qE '(^|# HELP |# TYPE )notification_worker_processed_total' \
+   && echo "$nw_metrics" | grep -qE '(^|# HELP |# TYPE )notification_worker_simulated_total' \
+   && echo "$nw_metrics" | grep -qE '(^|# HELP |# TYPE )notification_worker_processing_seconds'; then
+  echo "NOTIFICATION_WORKER_METRICS_SMOKE: PASS"
+else
+  echo "NOTIFICATION_WORKER_METRICS_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

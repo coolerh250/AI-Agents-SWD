@@ -44,6 +44,7 @@ from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.audit.store import AuditStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.incidents import IncidentStore
+from shared.sdk.notifications.store import NotificationDeliveryStore
 from shared.sdk.observability.metrics import (
     OPERATIONS_REQUEST_DURATION_SECONDS,
     OPERATIONS_REQUEST_FAILURES_TOTAL,
@@ -372,6 +373,7 @@ async def _services_summary() -> dict[str, Any]:
         ("github-automation", "http://github-automation:8005/health"),
         ("audit-worker", "http://audit-worker:8006/health"),
         ("discord-gateway", "http://discord-gateway:8007/health"),
+        ("notification-worker", "http://notification-worker:8008/health"),
         ("intake-agent", "http://intake-agent:8010/health"),
         ("requirement-agent", "http://requirement-agent:8011/health"),
         ("development-agent", "http://development-agent:8012/health"),
@@ -490,6 +492,29 @@ async def _production_safety() -> dict[str, Any]:
     }
 
 
+async def _notification_delivery_summary() -> dict[str, Any]:
+    """Aggregated Stage 22 notification delivery counters."""
+    try:
+        counts = await NotificationDeliveryStore().counts()
+    except Exception:
+        counts = {
+            "total": 0,
+            "simulated": 0,
+            "delivered": 0,
+            "failed": 0,
+            "skipped": 0,
+            "external_sent": 0,
+        }
+    return {
+        "total_deliveries": counts["total"],
+        "simulated_deliveries": counts["simulated"],
+        "delivered_deliveries": counts["delivered"],
+        "external_sent_deliveries": counts["external_sent"],
+        "failed_deliveries": counts["failed"],
+        "skipped_deliveries": counts["skipped"],
+    }
+
+
 @router.get("/summary")
 @_instrument("/operations/summary", "operations.summary")
 async def operations_summary() -> dict:
@@ -503,6 +528,7 @@ async def operations_summary() -> dict:
         github = await _github_summary()
         audit = await _audit_summary()
         safety = await _production_safety()
+        notification_delivery = await _notification_delivery_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -515,6 +541,7 @@ async def operations_summary() -> dict:
         "dlq_summary": dlq,
         "github_summary": github,
         "audit_summary": audit,
+        "notification_delivery_summary": notification_delivery,
         "production_safety": safety,
     }
 
@@ -700,6 +727,24 @@ async def operations_workflow_view(task_id: str) -> dict:
         deployment_record.get("metadata") if isinstance(deployment_record, dict) else {},
     )
 
+    # Stage 22: notification delivery section.
+    delivery_rows: list[dict[str, Any]] = []
+    try:
+        delivery_rows = await NotificationDeliveryStore().list_deliveries(
+            task_id=task_id, limit=100
+        )
+    except Exception:
+        warnings.append("notification_deliveries_unavailable")
+    latest_delivery = delivery_rows[0] if delivery_rows else None
+    notification_deliveries_section = {
+        "count": len(delivery_rows),
+        "latest_status": (latest_delivery or {}).get("status", ""),
+        "external_sent_count": sum(1 for d in delivery_rows if d.get("external_sent")),
+        "simulated_count": sum(1 for d in delivery_rows if d.get("status") == "simulated"),
+        "failed_count": sum(1 for d in delivery_rows if d.get("status") == "failed"),
+        "deliveries": delivery_rows,
+    }
+
     return {
         "task_id": task_id,
         "workflow_id": progress.get("workflow_id", ""),
@@ -716,6 +761,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "github": github_section,
         "dlq": dlq_events,
         "notifications": notifications,
+        "notification_deliveries": notification_deliveries_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -898,6 +944,18 @@ async def operations_safety() -> dict:
     real_test = os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
     if has_token and not default_dry_run:
         warnings.append("github_token_present_dry_run_false")
+    # Stage 22: surface Discord opt-in pre-conditions as booleans only.
+    # The token value never leaves the env var.
+    discord_has_token = bool(os.environ.get("DISCORD_BOT_TOKEN", "").strip())
+    discord_test_channel_configured = bool(os.environ.get("DISCORD_TEST_CHANNEL_ID", "").strip())
+    discord_real_test_enabled = (
+        os.environ.get("RUN_REAL_DISCORD_TEST", "false").strip().lower() == "true"
+    )
+    discord_external_send_enabled = (
+        discord_has_token and discord_test_channel_configured and discord_real_test_enabled
+    )
+    if discord_external_send_enabled:
+        warnings.append("discord_external_send_enabled")
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -914,6 +972,10 @@ async def operations_safety() -> dict:
         "github_has_token": has_token,
         "github_default_dry_run": default_dry_run,
         "real_github_test_enabled": real_test,
+        "discord_has_token": discord_has_token,
+        "discord_test_channel_configured": discord_test_channel_configured,
+        "discord_real_test_enabled": discord_real_test_enabled,
+        "discord_external_send_enabled": discord_external_send_enabled,
         "alertmanager_receivers": receivers,
         "external_alert_receivers_present": bool(external),
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",

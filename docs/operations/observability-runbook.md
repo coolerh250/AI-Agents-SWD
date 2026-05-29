@@ -339,6 +339,7 @@ for production; production must use real auth + a real KMS.
 | `scripts/verify_unified_audit.sh`            | Unified `stream.audit → audit-worker → audit_logs`    | `UNIFIED_AUDIT_VERIFY: PASS`         |
 | `scripts/verify_operations_view.sh`          | Stage 20 Operations Control API end-to-end            | `OPERATIONS_VIEW_VERIFY: PASS`       |
 | `scripts/verify_discord_gateway.sh`          | Stage 21 Discord Gateway sandbox end-to-end           | `DISCORD_GATEWAY_VERIFY: PASS`       |
+| `scripts/verify_notification_delivery.sh`    | Stage 22 controlled Discord notification delivery     | `NOTIFICATION_DELIVERY_VERIFY: PASS` |
 | `scripts/verify_platform_observability.sh`   | Aggregates all of the above + safety + SLO            | `PLATFORM_OBSERVABILITY_VERIFY: PASS` |
 
 ### 17a. audit-worker (Stage 19)
@@ -397,6 +398,66 @@ for production; production must use real auth + a real KMS.
   — newest pipeline-triggered PR rows.
 * `GET /audit/events/{task_id}` still returns every row for a
   single task, ordered ascending.
+
+### 17n. Notification delivery worker (Stage 22)
+
+The notification-worker (`apps/notification-worker/`, port `8008`) is
+sandbox-by-default. Operator checks:
+
+* **Health.** `curl http://localhost:8008/health` returns
+  `{"service":"notification-worker","status":"ok","mode":"sandbox","has_discord_token":false,"real_discord_enabled":false}`.
+* **Status.** `curl http://localhost:8008/status` shows
+  `running=true`, `mode=sandbox`, `input_stream=stream.notifications`,
+  `group=notification-worker-group`, plus counters
+  (`processed_count`, `delivered_count`, `simulated_count`,
+  `failed_count`, `skipped_count`).
+* **Metrics.** `curl http://localhost:8008/metrics | grep ^notification_worker_`
+  exposes the new `notification_worker_*` series.
+* **Confirm sandbox delivery.**
+  ```
+  curl "http://localhost:8007/discord/deliveries/$task" | python3 -m json.tool
+  ```
+  Expect `external_sent_count = 0`, `simulated_count >= 2`
+  (`discord.task.received` + `discord.task.completed`).
+* **Confirm external_sent=false.**
+  ```
+  curl "http://localhost:8000/operations/safety" \
+    | python3 -m json.tool | grep -E 'discord_(has_token|test_channel|real_test_enabled|external_send)'
+  ```
+  `discord_external_send_enabled` must be `false` unless the opt-in
+  env vars are deliberately loaded into the container.
+* **Real-Discord guard.**
+  ```
+  curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
+    http://localhost:8008/discord/real/test-message \
+    -H 'Content-Type: application/json' \
+    -d '{"content":"sandbox guard verification"}'
+  ```
+  Expected: `409`. The audit row `decision_type=discord_real_test_skipped`
+  documents the refusal:
+  ```
+  curl "http://localhost:8003/audit/events?decision_type=discord_real_test_skipped&limit=3" \
+    | python3 -m json.tool
+  ```
+* **Notification delivery audit.**
+  ```
+  curl "http://localhost:8003/audit/events?decision_type=notification_delivery&limit=5" \
+    | python3 -m json.tool
+  ```
+  Each row's `artifact_refs` carries `sandbox=true`,
+  `external_sent=false`, `delivery_id`, `source_message_id`,
+  `event_type`.
+
+### Backlog policy
+
+`notification-worker` uses the existing `notification-group`
+consumer group, which the Stage 15.5 `init_redis_streams.sh`
+created with `MKSTREAM $`. On first startup the worker drains every
+event the group has yet to deliver. Older entries that arrived before
+`notification-worker` came online still hit the
+`source_message_id` partial unique index, so a duplicate replay (e.g.
+after `XGROUP SETID`) is safe — duplicate inserts return `None` and
+the worker counts them as `skipped_total{reason="duplicate"}`.
 
 ### 17d. Discord Gateway sandbox (Stage 21)
 

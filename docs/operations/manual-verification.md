@@ -271,6 +271,72 @@ Expected output: `0`.
 
 ---
 
+## 17n. Verify the controlled notification delivery (Stage 22)
+
+```
+./scripts/verify_notification_delivery.sh
+```
+
+The script drives one Discord sandbox dev.test task, waits for the
+workflow to complete, then asserts the unified delivery /
+operations / audit path. It ends with
+`NOTIFICATION_DELIVERY_VERIFY: PASS`.
+
+Manual smoke:
+
+```
+curl http://localhost:8008/health
+curl http://localhost:8008/status | python3 -m json.tool
+curl http://localhost:8008/metrics | grep ^notification_worker_
+
+# Inspect deliveries for a task
+curl -sS "http://localhost:8007/discord/deliveries/$task" | python3 -m json.tool
+
+# Inspect the unified operations view (Stage 20 endpoint now carries
+# the notification_deliveries section)
+curl -sS "http://localhost:8000/operations/workflows/$task" | python3 -m json.tool \
+  | grep -A8 notification_deliveries
+
+# Confirm the controlled real-Discord guard
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST \
+  http://localhost:8008/discord/real/test-message \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"sandbox real Discord guard verification"}'
+# expected: 409 (unless DISCORD_BOT_TOKEN + DISCORD_TEST_CHANNEL_ID +
+# RUN_REAL_DISCORD_TEST=true are deliberately loaded into the
+# notification-worker container)
+
+# Production safety must remain at 0
+docker compose -f infra/docker-compose/docker-compose.yml \
+  exec -T postgres psql -U postgres -d aiagents -tAc \
+  "SELECT count(*) FROM deployment_records
+    WHERE metadata->>'production_executed'='true' OR environment='production';"
+docker compose -f infra/docker-compose/docker-compose.yml \
+  exec -T postgres psql -U postgres -d aiagents -tAc \
+  "SELECT count(*) FROM workflow_states
+    WHERE execution_result->>'production_executed'='true';"
+```
+
+The controlled real-Discord test is **opt-in only** and is **not**
+part of any default verify run. Operator recipe (sets the env in the
+shell; never commits it):
+
+```
+export DISCORD_BOT_TOKEN
+export DISCORD_TEST_CHANNEL_ID
+export RUN_REAL_DISCORD_TEST=true
+docker compose -f infra/docker-compose/docker-compose.yml \
+  up -d --force-recreate notification-worker
+curl -sS -X POST http://localhost:8008/discord/real/test-message \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"manual controlled live test"}'
+```
+
+The response includes the Discord `message_id` — never the bot
+credential.
+
+---
+
 ## 17d. Verify the Discord Gateway sandbox (Stage 21)
 
 The Discord Gateway is sandbox by default. Run:
@@ -421,6 +487,14 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 * [ ] `./scripts/verify_unified_audit.sh` ended `UNIFIED_AUDIT_VERIFY: PASS`.
 * [ ] `./scripts/verify_operations_view.sh` ended `OPERATIONS_VIEW_VERIFY: PASS`.
 * [ ] `./scripts/verify_discord_gateway.sh` ended `DISCORD_GATEWAY_VERIFY: PASS`.
+* [ ] `./scripts/verify_notification_delivery.sh` ended `NOTIFICATION_DELIVERY_VERIFY: PASS`.
+* [ ] `curl http://localhost:8008/health` shows `mode=sandbox` and
+      the `has_discord_token` flag is `false` (unless an opt-in
+      controlled-real run was deliberately set up).
+* [ ] `POST /discord/real/test-message` on `notification-worker`
+      returns HTTP 409 unless `DISCORD_BOT_TOKEN`,
+      `DISCORD_TEST_CHANNEL_ID`, and `RUN_REAL_DISCORD_TEST=true` are
+      all set.
 * [ ] `curl http://localhost:8007/health` shows
       `mode=sandbox` and the `has_token` flag is `false` (unless
       an opt-in real Discord test was deliberately enabled).

@@ -102,6 +102,35 @@ services:
       retries: 5
       start_period: 15s
 
+  notification-worker:
+    build:
+      context: ../..
+      dockerfile: apps/notification-worker/Dockerfile
+    environment:
+      NOTIFICATION_WORKER_MODE: sandbox
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
+      RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      ORCHESTRATOR_PUBLIC_URL: http://localhost:8000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: notification-worker
+    ports:
+      - "127.0.0.1:8008:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   discord-gateway:
     build:
       context: ../..

@@ -215,6 +215,7 @@ calls them over HTTP; each service URL is read from an environment variable
 | `audit-service`   | 8003 | `AUDIT_SERVICE_URL`  | Persists and serves audit events |
 | `audit-worker`    | 8006 | —                    | Consumes `stream.audit`, persists into `audit_logs` |
 | `discord-gateway` | 8007 | —                    | Discord-sandbox intake + lookup proxy (default mode: `sandbox`) |
+| `notification-worker` | 8008 | —                | Consumes `stream.notifications`, records delivery rows (default mode: `sandbox`) |
 
 All service ports bind to `127.0.0.1` on the host.
 
@@ -454,6 +455,110 @@ opt-in flags.
 The `operations_view` field is the verbatim
 `/operations/workflows/{task_id}` body the orchestrator already
 serves (Stage 20).
+
+## Notification Delivery Worker (Stage 22)
+
+Stage 22 introduces a controlled Discord delivery surface
+(`apps/notification-worker/`) on `127.0.0.1:8008`. The default mode is
+`sandbox` — every event consumed from `stream.notifications` is
+persisted as a row in the new `notification_deliveries` table with
+`status='simulated'`, `sandbox=true`, `external_sent=false`. The real
+Discord API is contacted ONLY when **all three** of the following are
+true:
+
+* `DISCORD_BOT_TOKEN` is non-empty,
+* `DISCORD_TEST_CHANNEL_ID` is non-empty,
+* `RUN_REAL_DISCORD_TEST=true`.
+
+Even then the worker sends a single message to `DISCORD_TEST_CHANNEL_ID`
+only, prefixed with `[AI-Agents-SWD sandbox]`, and never serializes the
+token value into a response body or log line.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET  /health` | `{"service":"notification-worker","status":"ok","mode":"sandbox"\|"controlled-real","has_discord_token":bool,"real_discord_enabled":bool}` |
+| `GET  /status` | Running counters (`processed_count`, `delivered_count`, `simulated_count`, `failed_count`, `skipped_count`, `last_message_id`, `last_task_id`, `last_error`) + mode + opt-in flags |
+| `GET  /summary` | `/status` + aggregated `delivery_counts` from `notification_deliveries` |
+| `GET  /deliveries` | List notification_deliveries (filters: `task_id`, `status`, `limit`) |
+| `GET  /metrics` | `notification_worker_processed_total{event_type}`, `notification_worker_delivered_total{event_type,channel}`, `notification_worker_simulated_total{event_type,channel}`, `notification_worker_failures_total{reason}`, `notification_worker_skipped_total{reason}`, `notification_worker_processing_seconds` |
+| `POST /discord/real/test-message` | **Opt-in only.** Send ONE controlled-real Discord message to `DISCORD_TEST_CHANNEL_ID`; refused with HTTP 409 unless all three env vars above are set. |
+
+### notification_deliveries
+
+Migration `006_notification_delivery.sql` adds one table:
+
+```
+notification_deliveries (
+  id UUID PRIMARY KEY,
+  task_id TEXT,
+  event_type TEXT,
+  channel TEXT DEFAULT 'discord',
+  target TEXT,
+  status TEXT,          -- pending|simulated|delivered|failed|skipped
+  sandbox BOOLEAN,
+  external_sent BOOLEAN,
+  message_id TEXT,
+  error TEXT,
+  source_message_id TEXT,
+  metadata JSONB,
+  created_at TIMESTAMPTZ,
+  delivered_at TIMESTAMPTZ
+)
+```
+
+`source_message_id` carries the Redis `XADD` id of the consumed event;
+a partial unique index on it gives the worker a free `ON CONFLICT DO
+NOTHING` dedup check.
+
+### discord-gateway integration
+
+discord-gateway gained two delivery-aware endpoints on the existing
+service (port `8007`):
+
+* `GET /discord/deliveries` — list notification_deliveries (same
+  filters as `notification-worker /deliveries`).
+* `GET /discord/deliveries/{task_id}` — per-task delivery breakdown
+  (`count`, `external_sent_count`, `simulated_count`,
+  `failed_count`).
+
+`GET /discord/tasks/{task_id}` was extended with
+`notification_deliveries_count`, `latest_delivery_status`,
+`latest_delivery_message_id`, `external_sent`, and a
+`delivery_breakdown` block so the operator UX still gets the answer in
+one round trip.
+
+### Operations integration
+
+* `/operations/workflows/{task_id}` adds a `notification_deliveries`
+  section (`count`, `latest_status`, `external_sent_count`,
+  `simulated_count`, `failed_count`, `deliveries`).
+* `/operations/summary` adds a `notification_delivery_summary` block
+  (`total_deliveries`, `simulated_deliveries`,
+  `delivered_deliveries`, `external_sent_deliveries`,
+  `failed_deliveries`, `skipped_deliveries`).
+* `/operations/safety` adds Discord booleans:
+  `discord_has_token`, `discord_test_channel_configured`,
+  `discord_real_test_enabled`, `discord_external_send_enabled`. The
+  token value is never returned. `result` stays `safe` when every
+  production counter is `0`; flips to `warning` when
+  `discord_external_send_enabled=true` (a Discord credential was
+  loaded into the container) or one of the existing Stage-20 warnings
+  fires; `unsafe` only when a production counter is non-zero.
+
+### Audit integration
+
+Every consumed notification produces an audit event via the Stage 19
+publisher and is persisted by audit-worker:
+
+| decision_type | When |
+|---|---|
+| `notification_delivery` | sandbox simulation recorded |
+| `discord_real_test_sent` | controlled-real Discord delivery succeeded |
+| `notification_delivery_failed` | Discord call raised |
+| `discord_real_test_skipped` | `POST /discord/real/test-message` refused (opt-in env missing) |
+
+`artifact_refs` always carries `task_id`, `event_type`, `sandbox`,
+`external_sent`, `delivery_id`, `source_message_id`.
 
 ## Workflow Persistence & Resume
 

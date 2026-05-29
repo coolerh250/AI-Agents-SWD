@@ -35,6 +35,7 @@ from client import DiscordClient, DiscordSafetyError
 from parser import ParseError, parse_discord_message
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.notifications.client import NotificationClient
+from shared.sdk.notifications.store import NotificationDeliveryStore
 from shared.sdk.observability.metrics import (
     DISCORD_INTAKE_FAILURES_TOTAL,
     DISCORD_MESSAGES_RECEIVED_TOTAL,
@@ -547,6 +548,17 @@ async def lookup_task(task_id: str) -> dict:
     incidents = body.get("incidents") if isinstance(body.get("incidents"), list) else []
     progress = body.get("progress") if isinstance(body.get("progress"), dict) else {}
     completed_agents = progress.get("completed_agents") if isinstance(progress, dict) else []
+
+    # Stage 22: enrich the discord task lookup with notification delivery
+    # bookkeeping so an operator can see whether the platform notified
+    # them at all.
+    deliveries: list[dict[str, Any]] = []
+    with contextlib.suppress(Exception):
+        deliveries = await NotificationDeliveryStore().list_deliveries(task_id=task_id, limit=50)
+    external_sent = sum(1 for d in deliveries if d.get("external_sent"))
+    simulated = sum(1 for d in deliveries if d.get("status") == "simulated")
+    failed = sum(1 for d in deliveries if d.get("status") == "failed")
+    latest = deliveries[0] if deliveries else None
     return {
         "task_id": task_id,
         "stage": body.get("stage", ""),
@@ -562,7 +574,52 @@ async def lookup_task(task_id: str) -> dict:
         "production_executed": bool(body.get("production_executed", False)),
         "operations_url": f"/operations/workflows/{task_id}",
         "operations_view": body,
+        "notification_deliveries_count": len(deliveries),
+        "latest_delivery_status": (latest or {}).get("status", ""),
+        "latest_delivery_message_id": (latest or {}).get("message_id", "") or "",
+        "external_sent": bool(external_sent),
+        "delivery_breakdown": {
+            "simulated": simulated,
+            "external_sent": external_sent,
+            "failed": failed,
+        },
         "sandbox": True,
+    }
+
+
+@app.get("/discord/deliveries")
+async def list_deliveries(
+    task_id: str | None = None,
+    status: str | None = None,
+    limit: int = 50,
+) -> dict:
+    try:
+        rows = await NotificationDeliveryStore().list_deliveries(
+            task_id=task_id, status=status, limit=limit
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"notification store unavailable: {exc}"
+        ) from exc
+    return {"count": len(rows), "deliveries": rows, "generated_at": _utcnow_iso()}
+
+
+@app.get("/discord/deliveries/{task_id}")
+async def get_deliveries_for_task(task_id: str) -> dict:
+    try:
+        rows = await NotificationDeliveryStore().list_deliveries(task_id=task_id, limit=200)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"notification store unavailable: {exc}"
+        ) from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "deliveries": rows,
+        "external_sent_count": sum(1 for r in rows if r.get("external_sent")),
+        "simulated_count": sum(1 for r in rows if r.get("status") == "simulated"),
+        "failed_count": sum(1 for r in rows if r.get("status") == "failed"),
+        "generated_at": _utcnow_iso(),
     }
 
 
