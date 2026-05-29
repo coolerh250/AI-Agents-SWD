@@ -34,8 +34,16 @@ CREATE INDEX IF NOT EXISTS idx_notification_deliveries_created_at
 -- source_message_id is the Redis XADD id of the consumed event. A unique
 -- index gives the SDK a cheap idempotent write check without changing the
 -- conflict semantics of the existing operator workflow.
+--
+-- Postgres treats NULLs as distinct in a unique index by default (PG < 15
+-- behaviour, also the platform default), so rows whose source_message_id
+-- is NULL (e.g. an operator-driven manual delivery) can still coexist
+-- without violating the constraint. Older revisions of this migration
+-- used a partial WHERE source_message_id IS NOT NULL clause; that worked
+-- but did not satisfy the simple ``ON CONFLICT (source_message_id)``
+-- predicate the SDK uses. Drop the partial variant if present.
+DROP INDEX IF EXISTS uq_notification_deliveries_source_message_id;
 CREATE UNIQUE INDEX IF NOT EXISTS uq_notification_deliveries_source_message_id
-    ON notification_deliveries (source_message_id)
-    WHERE source_message_id IS NOT NULL;
+    ON notification_deliveries (source_message_id);
 
 COMMIT;
