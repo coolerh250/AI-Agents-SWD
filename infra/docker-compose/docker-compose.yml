@@ -142,6 +142,7 @@ services:
       COMMUNICATION_GATEWAY_URL: http://communication-gateway:8004
       ORCHESTRATOR_URL: http://orchestrator:8000
       REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
       GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
@@ -149,9 +150,10 @@ services:
     ports:
       - "127.0.0.1:8007:8007"
     depends_on:
-      - communication-gateway
-      - orchestrator
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
       interval: 10s

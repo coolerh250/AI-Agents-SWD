@@ -45,6 +45,7 @@ from shared.sdk.observability.metrics import (
     install_metrics_endpoint,
 )
 from shared.sdk.observability.tracing import (
+    instrument_asyncpg,
     instrument_fastapi,
     instrument_httpx,
     instrument_redis,
@@ -63,6 +64,7 @@ DISCORD_GATEWAY_MODE = (
 setup_tracing("discord-gateway")
 instrument_httpx()
 instrument_redis()
+instrument_asyncpg()
 
 
 # ---------------------------------------------------------------------------

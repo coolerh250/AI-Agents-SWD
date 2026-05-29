@@ -3,6 +3,7 @@ uvicorn
 pydantic
 redis
 httpx
+asyncpg
 prometheus_client
 opentelemetry-api
 opentelemetry-sdk
@@ -10,3 +11,4 @@ opentelemetry-exporter-otlp-proto-grpc
 opentelemetry-instrumentation-fastapi
 opentelemetry-instrumentation-httpx
 opentelemetry-instrumentation-redis
+opentelemetry-instrumentation-asyncpg
