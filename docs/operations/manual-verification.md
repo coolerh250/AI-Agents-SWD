@@ -314,16 +314,18 @@ curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8007/discord/
 ```
 
 The optional real Discord test is **not** part of the default
-verify run; it is opt-in only and must NEVER print the token:
+verify run; it is opt-in only and must NEVER print the bot credential:
 
 ```
-DISCORD_BOT_TOKEN=ghp-or-bot-token RUN_REAL_DISCORD_TEST=true \
-  curl -sS -X POST http://localhost:8007/discord/real/test-message \
-    -H 'Content-Type: application/json' \
-    -d '{"channel_id":"<discord-test-channel-id>","message":"manual sandbox smoke"}'
+export DISCORD_BOT_TOKEN  # set in your shell; never commit it
+export RUN_REAL_DISCORD_TEST=true
+curl -sS -X POST http://localhost:8007/discord/real/test-message \
+  -H 'Content-Type: application/json' \
+  -d '{"channel_id":"<discord-test-channel-id>","message":"manual sandbox smoke"}'
 ```
 
-The response carries the Discord `message_id` only — never the token.
+The response carries the Discord `message_id` only — never the bot
+credential.
 
 ---
 
@@ -420,8 +422,8 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 * [ ] `./scripts/verify_operations_view.sh` ended `OPERATIONS_VIEW_VERIFY: PASS`.
 * [ ] `./scripts/verify_discord_gateway.sh` ended `DISCORD_GATEWAY_VERIFY: PASS`.
 * [ ] `curl http://localhost:8007/health` shows
-      `mode=sandbox` and `has_token=false` (unless an opt-in real
-      Discord test was deliberately enabled).
+      `mode=sandbox` and the `has_token` flag is `false` (unless
+      an opt-in real Discord test was deliberately enabled).
 * [ ] `POST /discord/real/test-message` returns HTTP 409 unless
       `DISCORD_BOT_TOKEN` and `RUN_REAL_DISCORD_TEST=true` are
       both set.
