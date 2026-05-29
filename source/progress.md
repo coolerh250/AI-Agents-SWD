@@ -3436,3 +3436,355 @@ issues & blockers, and next-step suggestions.
     `OPERATIONS_STREAMS_SMOKE` only requires the three known
     streams to be named in the response, so a transient
     `length=0` row doesn't flip the smoke to `CHECK`.
+
+
+## Stage 21 — Step 20: Discord Gateway Sandbox Integration
+
+- **Execution time:** 2026-05-29 09:00 – 12:00 (local)
+- **Git branch / commit:** `main` -> Commit A
+  `<Stage 21 discord-gateway sandbox + parser + ops proxy>`,
+  Commit B (this entry) appended on top.
+- **Previous commit:** `5d91a9a Stage 20: progress log - Step 19
+  Operations Control API + 10.0.1.31 verification`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only. No
+  real Slack / Telegram / PagerDuty / LLM / Kubernetes / cloud /
+  Grafana Cloud / observability SaaS call. No real Discord API
+  unless `DISCORD_BOT_TOKEN` AND `RUN_REAL_DISCORD_TEST=true` are
+  both set — neither flag is set in the test cluster. No real
+  GitHub write, no merge, no branch-protection change, no
+  production deploy. Stage 21 only adds a new sandbox ingestion
+  surface; no existing service contract changed.
+
+- **discord-gateway result:**
+  - New service `apps/discord-gateway/` (`Dockerfile`,
+    `requirements.txt`, `src/parser.py`, `src/client.py`,
+    `src/main.py`) listens on `127.0.0.1:8007`. Default
+    `DISCORD_GATEWAY_MODE=sandbox`.
+  - Endpoints: `GET /health`, `GET /status`, `GET /metrics`,
+    `POST /discord/messages`, `POST /discord/events/mock`,
+    `GET /discord/messages`, `GET /discord/tasks/{task_id}`,
+    `POST /discord/notify/test`,
+    `POST /discord/real/test-message` (opt-in, 409 by default).
+  - Tracing: `setup_tracing("discord-gateway")`,
+    `instrument_fastapi`, `instrument_httpx`, `instrument_redis`.
+    Custom spans: `discord.parse_message`,
+    `discord.dispatch_task`, `discord.publish_notification`,
+    `discord.write_audit`, `discord.operation_lookup`. Each span
+    carries `task_id`, `discord.channel_id`, `discord.user_id`,
+    `command_type`, `sandbox=true` attributes as appropriate.
+  - FastAPI lifespan handler manages a running flag the
+    `/status` endpoint surfaces (no `@app.on_event` — that path
+    is deprecated). Lifespan uses the same `contextlib.async
+    contextmanager` pattern as orchestrator / retry-scheduler.
+
+- **Parser result:**
+  - `parser.parse_discord_message` accepts all five command
+    flavours (slash, natural, production, github-options-on,
+    github-disabled). Output matches the existing
+    `communication-gateway /intake/mock` payload:
+    `{task_id, source: discord-sandbox, request: {type,
+    description, github: {enabled, dry_run, repo,
+    base_branch}, discord: {channel_id, user_id, message_id}},
+    command_type}`.
+  - Defaults: `type=dev.test`, `github.enabled=true`,
+    `github.dry_run=true`, `github.repo=coolerh250/AI-Agents-SWD`,
+    `github.base_branch=main`. Auto-task-id when not supplied:
+    `discord-<unix-ts>-<short-uuid>`.
+  - Error contract: `ParseError -> 400` for empty messages,
+    unsupported prefixes, and missing descriptions. The FastAPI
+    route maps the exception to a safe HTTP 400 detail; the
+    service never crashes on malformed input.
+
+- **Sandbox intake result:**
+  - The dev.test intake path drives the task through the
+    existing `communication-gateway /intake/mock`
+    orchestrator-mode call. No new dispatch path was added —
+    the same Stage 15.5 pipeline handles intake / requirement /
+    development / qa / devops. `publish_to_stream` is hard-coded
+    to `false` so workflow_states gets created (and
+    `/operations/workflows/{task_id}` can surface progress).
+  - The intake response carries `task_id`, `stage`,
+    `approval_required`, `operations_url`, `message`,
+    `dry_run=true`, `sandbox=true`, `command_type`,
+    `request_type`, `event_type`. `operations_url` always
+    points at `/operations/workflows/{task_id}`.
+
+- **Production approval result:**
+  - `production.deploy` messages still go through the
+    orchestrator approval gate. The intake response comes back
+    with `stage=waiting_approval`,
+    `approval_required=true`,
+    `event_type=discord.task.waiting_approval`. No agent
+    dispatch fires before approval; `production_executed`
+    stays `false` because the orchestrator never reaches the
+    devops-agent stage. The audit row carries
+    `decision_type=discord_intake` with
+    `result=waiting_approval` so an operator can filter by
+    `agent=discord-gateway, result=waiting_approval` in
+    `audit_logs`.
+
+- **Audit / notification result:**
+  - Audit: uses Stage 19 `shared/sdk/audit/publisher.publish_
+    audit_event` to publish to `stream.audit`; audit-worker
+    persists with `decision_type=discord_intake` (or
+    `discord_notification_test`).
+    `artifact_refs={channel_id, user_id, message_id,
+    sandbox:true, operations_url}`. No direct HTTP call to
+    audit-service — the gateway respects the Stage 19 unified
+    path. Visible via
+    `GET /audit/events?decision_type=discord_intake` and on
+    `/workflow/timeline/{task_id}` /
+    `/operations/workflows/{task_id}` `audit_timeline`.
+  - Notifications: published directly onto
+    `stream.notifications` via `NotificationClient.event_bus.
+    publish_event` so the payload can include the
+    Discord-specific `channel_id`/`user_id` fields the standard
+    `send_notification` helper does not carry. Every event has
+    `sandbox: true` and an `event_type` chosen from the
+    documented vocabulary (`discord.task.received`,
+    `discord.task.dispatched`, `discord.task.completed`,
+    `discord.task.waiting_approval`,
+    `discord.notification.test`). The metric
+    `discord_notifications_published_total{event_type,
+    sandbox}` records every publish.
+
+- **Operations lookup result:**
+  - `GET /discord/tasks/{task_id}` proxies
+    `orchestrator /operations/workflows/{task_id}` (Stage 20)
+    and reduces it to the operator-friendly fields a Discord UX
+    cares about: `stage`, `execution_status`,
+    `completed_agents`, `github.pr_url`, `github.dry_run`,
+    `github.status`, `audit_timeline_count`,
+    `incidents_count`, `production_executed`,
+    `operations_url`. The full unified body is inlined under
+    `operations_view` so an operator never has to make two
+    round trips.
+  - 404 from the underlying operations view passes through as
+    a 404; 5xx from the orchestrator maps to a 502 detail.
+    The proxy itself does NO mutation — it is the same
+    read-only contract Stage 20 introduced.
+
+- **Metrics / tracing result:**
+  - New Prometheus counters / histogram:
+    `discord_messages_received_total{command_type, sandbox}`,
+    `discord_tasks_dispatched_total{command_type, result,
+    sandbox}`,
+    `discord_intake_failures_total{reason}` (reason in
+    `parse_error|gateway_error|dispatch_error`),
+    `discord_notifications_published_total{event_type,
+    sandbox}`,
+    `discord_request_duration_seconds{endpoint}`.
+  - `infra/observability/prometheus.yml` adds the
+    `discord-gateway:8007` scrape target.
+  - Tracing spans listed under "discord-gateway result"
+    above. The `discord.operation_lookup` span on
+    `/discord/tasks/{task_id}` propagates `task_id` and
+    `sandbox=true` so a Tempo TraceQL can follow the lookup
+    into the orchestrator's `operations.workflow_view` span
+    (Stage 20).
+
+- **Optional real Discord test status:**
+  - **NOT executed.** The cluster does not carry
+    `DISCORD_BOT_TOKEN` and `RUN_REAL_DISCORD_TEST` is unset,
+    so `POST /discord/real/test-message` is hard-gated at 409.
+    `client.DiscordClient.can_make_real_call()` returns
+    `False`; the route returns a safe detail
+    "real Discord test is not enabled - set
+    DISCORD_BOT_TOKEN and RUN_REAL_DISCORD_TEST=true to opt in".
+  - The token value is never logged, never echoed in a
+    response body, never written to compose / README /
+    progress.md / runbook. The token presence is only ever
+    reduced to a boolean (`has_token`) on `/health` and
+    `/status`.
+
+- **Production safety result:**
+  - Stage 21 introduces a NEW ingestion source but no new
+    write path into deployment_records or workflow_states
+    beyond what the orchestrator already does. The production
+    counters cannot regress as a result of this deliverable:
+    `deployment_records.production_executed=true OR
+    environment=production = 0`;
+    `workflow_states.execution_result->>
+    'production_executed'='true' = 0`.
+
+- **Modified / new files:**
+  - `apps/discord-gateway/` (new, ~650 lines across
+    `parser.py`, `client.py`, `main.py`,
+    `requirements.txt`, `Dockerfile`)
+  - `apps/orchestrator/src/operations.py` (+ discord-gateway
+    in the services list shown by `/operations/summary`)
+  - `shared/sdk/observability/metrics.py` (+5 `discord_*`
+    metrics)
+  - `infra/docker-compose/docker-compose.yml`
+    (+ discord-gateway on `127.0.0.1:8007`)
+  - `infra/observability/prometheus.yml`
+    (+ `discord-gateway:8007` scrape target)
+  - `scripts/check_runtime_state.sh`
+    (+ 9 `DISCORD_*` runtime smokes)
+  - `scripts/verify_discord_gateway.sh` (new, 12-check
+    verify covering health, status, dev.test intake,
+    operations lookup, audit_logs, notifications,
+    production approval gate, and the real-Discord refusal)
+  - `tests/test_discord_parser.py` (10 cases)
+  - `tests/test_discord_gateway_service.py` (4 cases)
+  - `tests/test_discord_intake_flow.py` (4 cases)
+  - `tests/test_discord_production_approval.py` (1 case)
+  - `tests/test_discord_audit_notification.py` (2 cases)
+  - `tests/test_discord_operations_lookup.py` (2 cases)
+  - `tests/test_discord_metrics_tracing.py` (3 cases)
+  - `README.md`, `docs/operations/observability-runbook.md`,
+    `docs/operations/manual-verification.md`,
+    `source/progress.md` (this entry).
+
+- **Test results (local Windows):**
+  - `python -m pytest -q tests/`:
+    323 passed, 115 skipped (+26 new discord cases on top of
+    the 297/115 Stage 20 baseline). 100% of the new
+    discord parser / service / intake / production-approval /
+    audit-notification / operations-lookup / metrics tests
+    pass without docker; the route logic is exercised
+    entirely through monkey-patched httpx + audit/
+    notification publishers.
+  - `python -m ruff check .` -> All checks passed.
+  - `python -m black --check .` -> All clean (after one
+    auto-format pass on the new tests).
+  - `python -m mypy shared/` -> Success: no issues found in
+    40 source files.
+
+- **Runtime verification (10.0.1.31, executed 2026-05-29):**
+  - **Container state:** 21/21 services up. discord-gateway
+    is healthy on `127.0.0.1:8007`; vault keeps its
+    no-healthcheck design. The orchestrator was rebuilt to
+    pick up the new entry in
+    `/operations/summary.services_summary`; every other
+    container was untouched.
+  - **`./scripts/run_tests.sh`:** `438 passed, 1 warning in
+    47.09s` after the doc-secrets fix. ruff / black / mypy
+    all green (`All checks passed`, `157 files would be left
+    unchanged`, `Success: no issues found in 40 source
+    files`). 412 -> 438 — +26 new discord cases land on the
+    cluster the same way they do locally (no cluster-only
+    skips on this scope).
+  - **Fix commit:** the manual-verification doc test
+    `test_doc_does_not_embed_secrets` forbids the literal
+    `token=` (case-insensitive) anywhere in the doc body.
+    The first draft included `has_token=false` and a
+    `DISCORD_BOT_TOKEN=...` env-var assignment line that
+    matched the guard. Reworded to "the `has_token` flag is
+    `false`" and `export DISCORD_BOT_TOKEN` in commit
+    `e96c1bf Step 20 fix: manual-verification doc - avoid
+    literal token= substring` — no semantic change to the
+    verification instructions; doc test green and the
+    cluster run repeated cleanly.
+  - **`./scripts/verify_discord_gateway.sh`:** `checks
+    passed: 12 / 12 — DISCORD_GATEWAY_VERIFY: PASS`. Every
+    sub-check green: health (`mode=sandbox`,
+    `has_token=false`), status (running + sandbox +
+    `real_test_enabled=false`), dev.test intake accepted,
+    `/discord/tasks/{task_id}` returned the unified view,
+    `/operations/workflows/{task_id}` mirrored it with the
+    full 12-section operations body, 5/5 pipeline agents in
+    `completed_agents`, `github.dry_run=true` +
+    `pr_url=https://github.com/coolerh250/AI-Agents-SWD/
+    pull/4523`, `audit_logs` carried
+    `decision_type=discord_intake, agent=discord-gateway`,
+    `stream.notifications` carried `discord.task.completed`,
+    production.deploy correctly stopped at
+    `stage=waiting_approval, approval_required=true,
+    event_type=discord.task.waiting_approval` with
+    `production_executed != true`, and
+    `POST /discord/real/test-message` was refused with HTTP
+    409.
+  - **`./scripts/verify_operations_view.sh`:** `checks
+    passed: 10 / 10 — OPERATIONS_VIEW_VERIFY: PASS` (Stage
+    20 surface unchanged).
+  - **`./scripts/verify_unified_audit.sh`:** `checks passed:
+    9 / 9 — UNIFIED_AUDIT_VERIFY: PASS` (Stage 19
+    audit-worker keeps doing its job; the Discord intake
+    events are part of the new flow).
+  - **`./scripts/verify_github_pipeline_flow.sh`:** `checks
+    passed: 7 / 7 — GITHUB_PIPELINE_FLOW_VERIFY: PASS`
+    (Stage 17/18 pipeline unchanged).
+  - **`./scripts/verify_platform_observability.sh`:**
+    `PASS=81 FAIL=0 total=81`. All sub-scripts green; no
+    Stage 21 regression on tracing / SLO / alerting /
+    incident lifecycle.
+  - **`./scripts/check_runtime_state.sh`:** all 9 new
+    `DISCORD_*` smokes PASS; all 9 Stage-20
+    `OPERATIONS_*` smokes still PASS; all 8 Stage-19
+    `AUDIT_*` smokes still PASS; all 12 Stage-17/18
+    `GITHUB_*` smokes still PASS — no regression anywhere.
+  - **Production safety:**
+    `deployment_records.production_executed=true OR
+    environment=production` = `0`;
+    `workflow_states.execution_result->>
+    'production_executed'='true'` = `0`. Re-checked via SQL
+    counters AND via `/operations/safety`. Unchanged since
+    Stage 18.
+  - **Live discord-gateway metrics after the verify run:**
+    `discord_messages_received_total{command_type="slash",
+    sandbox="true"} = 8`,
+    `discord_tasks_dispatched_total{result="ok",
+    sandbox="true"} = 8`,
+    `discord_notifications_published_total{
+    event_type="discord.task.received",
+    sandbox="true"} = 8`,
+    `discord_notifications_published_total{
+    event_type="discord.task.dispatched",
+    sandbox="true"} = 5`,
+    `discord_notifications_published_total{
+    event_type="discord.task.waiting_approval",
+    sandbox="true"} = 3`. Latency histogram on
+    `/discord/messages` shows every observation
+    `<= 0.25s` — comfortably below the 1s budget.
+  - **Live audit_logs row for the production-deploy
+    sandbox message:**
+    `task_id=discord-prod-smoke-...,
+    agent=discord-gateway,
+    decision_type=discord_intake,
+    result=waiting_approval`; artifact_refs include
+    `channel_id=sandbox-prod, user_id=runtime-smoke,
+    sandbox=true,
+    operations_url=/operations/workflows/discord-prod-smoke-...,
+    normalized_by=audit-worker,
+    source_stream=stream.audit`. The Stage 19 unified audit
+    path correctly persisted the Discord intake.
+  - **Optional real Discord test:** **SKIPPED** by design.
+    `DISCORD_BOT_TOKEN` is unset on the cluster and
+    `RUN_REAL_DISCORD_TEST` is not `true`;
+    `POST /discord/real/test-message` returned 409 with the
+    documented safety detail. No credential value was
+    written anywhere; no Discord API call was made.
+
+- **Risks / observations only (not Step 21 roadmap decisions):**
+  - **Sandbox only.** `/health.mode=sandbox` and
+    `/status.real_test_enabled=false` are the contract; the
+    only real-Discord code path is opt-in and refused by
+    default. The cluster verifies the refusal as part of
+    `verify_discord_gateway.sh`.
+  - **No real Discord API.** The opt-in pre-conditions are
+    documented in README / runbook / manual-verification; this
+    stage did not exercise them.
+  - **No notification consumer.** Same Stage 19 follow-up
+    note applies — Discord notifications publish to
+    `stream.notifications` (which has no consumer yet) +
+    are observable via the existing
+    `communication-gateway /notifications` query. Stage 21
+    did not change this gap. `/operations/streams` still
+    labels the stream `not_unified_by_design`.
+  - **No real GitHub write.** Default `github.dry_run=true`
+    for every Discord-sourced task, including
+    `production.deploy`. The safety contract for real GitHub
+    writes is still owned by github-automation and the
+    `RUN_REAL_GITHUB_TEST` / `GITHUB_TOKEN` pre-conditions
+    documented in the github-automation runbook.
+  - **Production hardening not completed.** Postgres trust
+    auth, Vault dev mode, Alertmanager null receiver all
+    remain local/test-only. `/operations/safety` and the
+    runbook continue to flag this. Stage 21 added no new
+    secret writer.
+  - **In-memory recent-message buffer.** `/discord/messages`
+    (GET) returns the last 200 messages observed by the
+    process; this is sandbox-only state. A restart drops it.
+    Acceptable for the operator UX this stage targets;
+    documented in the service module docstring.
