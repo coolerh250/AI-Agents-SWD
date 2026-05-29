@@ -102,6 +102,34 @@ services:
       retries: 5
       start_period: 15s
 
+  discord-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/discord-gateway/Dockerfile
+    environment:
+      DISCORD_GATEWAY_MODE: sandbox
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
+      COMMUNICATION_GATEWAY_URL: http://communication-gateway:8004
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      REDIS_URL: redis://redis:6379
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: discord-gateway
+    ports:
+      - "127.0.0.1:8007:8007"
+    depends_on:
+      - communication-gateway
+      - orchestrator
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
   audit-worker:
     build:
       context: ../..

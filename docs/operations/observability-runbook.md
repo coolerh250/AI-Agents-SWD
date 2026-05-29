@@ -338,6 +338,7 @@ for production; production must use real auth + a real KMS.
 | `scripts/verify_github_pipeline_flow.sh`     | Agent pipeline → github-automation → workflow result  | `GITHUB_PIPELINE_FLOW_VERIFY: PASS`  |
 | `scripts/verify_unified_audit.sh`            | Unified `stream.audit → audit-worker → audit_logs`    | `UNIFIED_AUDIT_VERIFY: PASS`         |
 | `scripts/verify_operations_view.sh`          | Stage 20 Operations Control API end-to-end            | `OPERATIONS_VIEW_VERIFY: PASS`       |
+| `scripts/verify_discord_gateway.sh`          | Stage 21 Discord Gateway sandbox end-to-end           | `DISCORD_GATEWAY_VERIFY: PASS`       |
 | `scripts/verify_platform_observability.sh`   | Aggregates all of the above + safety + SLO            | `PLATFORM_OBSERVABILITY_VERIFY: PASS` |
 
 ### 17a. audit-worker (Stage 19)
@@ -396,6 +397,65 @@ for production; production must use real auth + a real KMS.
   — newest pipeline-triggered PR rows.
 * `GET /audit/events/{task_id}` still returns every row for a
   single task, ordered ascending.
+
+### 17d. Discord Gateway sandbox (Stage 21)
+
+The Discord Gateway (`apps/discord-gateway/`, port `8007`) is
+**sandbox-only** by default — every endpoint runs without
+contacting `discord.com`. Operator checks:
+
+* **Health.** `curl http://localhost:8007/health` returns
+  `{"service":"discord-gateway","status":"ok","mode":"sandbox","has_token":false}`.
+  If `has_token` is `true` the bot token env var is set; this is the
+  only place the token's presence is observed.
+* **Status.** `curl http://localhost:8007/status` shows
+  `running`, `mode=sandbox`, `received_count`,
+  `dispatched_count`, `failed_count`, `last_task_id`,
+  `last_error`, plus `real_test_enabled` (must be `false` unless
+  `RUN_REAL_DISCORD_TEST=true`).
+* **Metrics.** `curl http://localhost:8007/metrics | grep ^discord_`
+  exposes `discord_messages_received_total{command_type,sandbox}`,
+  `discord_tasks_dispatched_total{command_type,result,sandbox}`,
+  `discord_intake_failures_total{reason}`,
+  `discord_notifications_published_total{event_type,sandbox}`,
+  `discord_request_duration_seconds{endpoint}`.
+* **Create a sandbox task.**
+  ```
+  curl -sS -X POST http://localhost:8007/discord/messages \
+    -H 'Content-Type: application/json' \
+    -d '{"content":"/ai task type=dev.test description=\"verify discord\"","channel_id":"sandbox-ops","user_id":"operator"}'
+  ```
+  The response carries the new `task_id`, the workflow `stage`, and
+  `operations_url=/operations/workflows/{task_id}`.
+* **Follow the task end-to-end.**
+  `curl http://localhost:8007/discord/tasks/$task | python3 -m json.tool`
+  proxies the unified workflow view and surfaces
+  `completed_agents`, `github.pr_url`, `audit_timeline_count`,
+  `incidents_count`, `production_executed`. The verbatim
+  `/operations/workflows/{task_id}` body is also inlined under
+  `operations_view` for one-shot inspection.
+* **Confirm discord audit event landed.**
+  ```
+  curl "http://localhost:8003/audit/events?decision_type=discord_intake&limit=5" \
+    | python3 -m json.tool
+  ```
+  Each row's `artifact_refs` carries `channel_id`, `user_id`,
+  `message_id`, `sandbox: true`, `operations_url`.
+* **Confirm discord notifications landed.**
+  ```
+  curl "http://localhost:8004/notifications?count=200" \
+    | python3 -m json.tool | grep discord.task
+  ```
+  Expect `discord.task.received` + one of
+  `discord.task.dispatched / .waiting_approval / .completed`.
+* **No real Discord API call.** The runtime smoke checks the
+  refusal: `curl -sS -X POST http://localhost:8007/discord/real/test-message`
+  returns HTTP 409 with detail
+  `real Discord test is not enabled — set DISCORD_BOT_TOKEN and
+  RUN_REAL_DISCORD_TEST=true to opt in` whenever either flag is
+  missing. The runbook's optional real-test recipe is the only
+  documented way to lift the gate; the default verify run never
+  flips it.
 
 ### 17ops. Operations Control API (Stage 20)
 

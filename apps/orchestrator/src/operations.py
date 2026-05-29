@@ -371,6 +371,7 @@ async def _services_summary() -> dict[str, Any]:
         ("communication-gateway", "http://communication-gateway:8004/health"),
         ("github-automation", "http://github-automation:8005/health"),
         ("audit-worker", "http://audit-worker:8006/health"),
+        ("discord-gateway", "http://discord-gateway:8007/health"),
         ("intake-agent", "http://intake-agent:8010/health"),
         ("requirement-agent", "http://requirement-agent:8011/health"),
         ("development-agent", "http://development-agent:8012/health"),

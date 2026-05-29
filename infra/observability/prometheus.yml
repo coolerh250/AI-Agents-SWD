@@ -54,3 +54,6 @@ scrape_configs:
   - job_name: audit-worker
     static_configs:
       - targets: ['audit-worker:8006']
+  - job_name: discord-gateway
+    static_configs:
+      - targets: ['discord-gateway:8007']

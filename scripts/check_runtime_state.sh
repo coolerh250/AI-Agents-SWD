@@ -1127,5 +1127,123 @@ else
   echo "OPERATIONS_GITHUB_SMOKE: CHECK"
 fi
 
+
+echo
+echo "=== discord-gateway /health smoke ==="
+if curl -sS -m 5 http://localhost:8007/health | grep -q '"service": *"discord-gateway"'; then
+  echo "DISCORD_GATEWAY_HEALTH_SMOKE: PASS"
+else
+  echo "DISCORD_GATEWAY_HEALTH_SMOKE: FAIL"
+fi
+
+echo
+echo "=== discord-gateway /status smoke ==="
+dg_status=$(curl -sS -m 10 http://localhost:8007/status || echo '{}')
+echo "$dg_status" | head -c 400 || true
+echo
+if echo "$dg_status" | grep -q '"mode": *"sandbox"' \
+   && echo "$dg_status" | grep -q '"running":' \
+   && echo "$dg_status" | grep -q '"received_count":' \
+   && echo "$dg_status" | grep -q '"real_test_enabled": *false'; then
+  echo "DISCORD_GATEWAY_STATUS_SMOKE: PASS"
+else
+  echo "DISCORD_GATEWAY_STATUS_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord /discord/messages dev.test intake smoke ==="
+dg_task="discord-smoke-$$"
+dg_msg=$(curl -sS -m 30 -X POST http://localhost:8007/discord/messages \
+  -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.test description=\\\"runtime smoke\\\" task_id=$dg_task\",\"channel_id\":\"sandbox-ch\",\"user_id\":\"runtime-smoke\"}" \
+  || echo '{}')
+echo "$dg_msg" | head -c 400 || true
+echo
+if echo "$dg_msg" | grep -q '"sandbox": *true' \
+   && echo "$dg_msg" | grep -q '"operations_url":'; then
+  echo "DISCORD_MESSAGE_INTAKE_SMOKE: PASS"
+else
+  echo "DISCORD_MESSAGE_INTAKE_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord /discord/events/mock intake smoke ==="
+dg_event_task="discord-event-smoke-$$"
+dg_event=$(curl -sS -m 30 -X POST http://localhost:8007/discord/events/mock \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$dg_event_task\",\"channel_id\":\"sandbox-evt\",\"author\":{\"id\":\"mock-user\"},\"id\":\"evt-1\",\"data\":{\"name\":\"ai\",\"options\":[{\"name\":\"task\",\"value\":\"\"},{\"name\":\"type\",\"value\":\"dev.test\"},{\"name\":\"description\",\"value\":\"events-mock smoke\"}]}}" \
+  || echo '{}')
+if echo "$dg_event" | grep -q '"sandbox": *true' \
+   && echo "$dg_event" | grep -q '"command_type": *"slash"'; then
+  echo "DISCORD_EVENT_MOCK_SMOKE: PASS"
+else
+  echo "DISCORD_EVENT_MOCK_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord production.deploy approval gate smoke ==="
+dg_prod_task="discord-prod-smoke-$$"
+dg_prod=$(curl -sS -m 30 -X POST http://localhost:8007/discord/messages \
+  -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=production.deploy description=\\\"smoke production\\\" task_id=$dg_prod_task\",\"channel_id\":\"sandbox-prod\",\"user_id\":\"runtime-smoke\"}" \
+  || echo '{}')
+if echo "$dg_prod" | grep -q '"stage": *"waiting_approval"' \
+   && echo "$dg_prod" | grep -q '"approval_required": *true' \
+   && echo "$dg_prod" | grep -q '"event_type": *"discord.task.waiting_approval"'; then
+  echo "DISCORD_PRODUCTION_APPROVAL_SMOKE: PASS"
+else
+  echo "DISCORD_PRODUCTION_APPROVAL_SMOKE: CHECK"
+fi
+
+echo
+echo "=== wait for $dg_task to complete then look up via /discord/tasks ==="
+for i in $(seq 1 30); do
+  dg_prog=$(curl -sS -m 10 "http://localhost:8000/workflow/progress/$dg_task" || echo '{}')
+  dg_stage=$(echo "$dg_prog" | sed -n 's/.*"current_stage": *"\([^"]*\)".*/\1/p')
+  if [ "$dg_stage" = "completed" ]; then break; fi
+  sleep 2
+done
+sleep 4
+dg_lookup=$(curl -sS -m 10 "http://localhost:8007/discord/tasks/$dg_task" || echo '{}')
+if echo "$dg_lookup" | grep -q '"sandbox": *true' \
+   && echo "$dg_lookup" | grep -q '"operations_url":' \
+   && echo "$dg_lookup" | grep -q '"production_executed": *false'; then
+  echo "DISCORD_TASK_LOOKUP_SMOKE: PASS"
+else
+  echo "DISCORD_TASK_LOOKUP_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord notification stream smoke ==="
+dg_notifs=$(curl -sS -m 10 "http://localhost:8004/notifications?count=200" || echo '{}')
+if echo "$dg_notifs" | grep -q 'discord.task.received' \
+   || echo "$dg_notifs" | grep -q 'discord.task.dispatched' \
+   || echo "$dg_notifs" | grep -q 'discord.task.completed'; then
+  echo "DISCORD_NOTIFICATION_SMOKE: PASS"
+else
+  echo "DISCORD_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord audit_logs smoke (decision_type=discord_intake via audit-worker) ==="
+dg_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=discord_intake&limit=5" || echo '{}')
+if echo "$dg_audit" | grep -q '"decision_type": *"discord_intake"' \
+   && echo "$dg_audit" | grep -q '"agent": *"discord-gateway"'; then
+  echo "DISCORD_AUDIT_DB_SMOKE: PASS"
+else
+  echo "DISCORD_AUDIT_DB_SMOKE: CHECK"
+fi
+
+echo
+echo "=== discord /metrics smoke ==="
+dg_metrics=$(curl -sS -m 10 http://localhost:8007/metrics || echo '')
+if echo "$dg_metrics" | grep -qE '(^|# HELP |# TYPE )discord_messages_received_total' \
+   && echo "$dg_metrics" | grep -qE '(^|# HELP |# TYPE )discord_tasks_dispatched_total' \
+   && echo "$dg_metrics" | grep -qE '(^|# HELP |# TYPE )discord_notifications_published_total'; then
+  echo "DISCORD_METRICS_SMOKE: PASS"
+else
+  echo "DISCORD_METRICS_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

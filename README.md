@@ -214,6 +214,7 @@ calls them over HTTP; each service URL is read from an environment variable
 | `approval-engine` | 8002 | `APPROVAL_ENGINE_URL`| Creates / decides approval requests |
 | `audit-service`   | 8003 | `AUDIT_SERVICE_URL`  | Persists and serves audit events |
 | `audit-worker`    | 8006 | —                    | Consumes `stream.audit`, persists into `audit_logs` |
+| `discord-gateway` | 8007 | —                    | Discord-sandbox intake + lookup proxy (default mode: `sandbox`) |
 
 All service ports bind to `127.0.0.1` on the host.
 
@@ -348,6 +349,111 @@ present with `GITHUB_DRY_RUN=false`; `unsafe` only when
 `deployment_records.production_executed=true OR environment=production`
 or `workflow_states.execution_result->>'production_executed'='true'`
 is non-zero.
+
+## Discord Gateway Sandbox (Stage 21)
+
+Stage 21 introduces a sandbox Discord intake service
+(`apps/discord-gateway/`) on `127.0.0.1:8007`. The default mode is
+`sandbox` — no real Discord API is contacted at any point unless the
+opt-in pre-conditions documented below are met. The gateway turns
+Discord-shaped messages into platform tasks by reusing the same
+`communication-gateway /intake/mock` contract every other client uses,
+so the downstream pipeline is unchanged.
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET  /health` | `{"service":"discord-gateway","status":"ok","mode":"sandbox","has_token":false}` |
+| `GET  /status` | Running counters (`received_count`, `dispatched_count`, `failed_count`, `last_task_id`, `last_error`) + mode + `real_test_enabled` |
+| `GET  /metrics` | Prometheus surface — `discord_messages_received_total{command_type,sandbox}`, `discord_tasks_dispatched_total{command_type,result,sandbox}`, `discord_intake_failures_total{reason}`, `discord_notifications_published_total{event_type,sandbox}`, `discord_request_duration_seconds{endpoint}` |
+| `POST /discord/messages` | Simplified text payload — `{content, channel_id, user_id, message_id, task_id}` |
+| `POST /discord/events/mock` | Discord-like INTERACTION/MESSAGE payload with `data.options` |
+| `GET  /discord/messages` | The last 20 sandbox messages the gateway has seen (in-memory ring) |
+| `GET  /discord/tasks/{task_id}` | Proxies `/operations/workflows/{task_id}` and reduces it to the operator-friendly fields the Discord UX needs |
+| `POST /discord/notify/test` | Publishes a `discord.notification.test` event onto `stream.notifications` + a `discord_notification_test` audit row (sandbox only) |
+| `POST /discord/real/test-message` | **Opt-in only.** Sends ONE Discord message via the real API; refused with HTTP 409 unless `DISCORD_BOT_TOKEN` is set AND `RUN_REAL_DISCORD_TEST=true` |
+
+### Command syntax
+
+| Shape | Example |
+|-------|---------|
+| Slash-like | `/ai task type=dev.test description="create user management module"` |
+| Natural | `ai task: create user management module` |
+| Production (still goes through the approval gate) | `/ai task type=production.deploy description="deploy to production"` |
+| GitHub options | `/ai task type=dev.test description="update docs" github.enabled=true github.dry_run=true` |
+| Disable GitHub for one task | `/ai task type=dev.test description="test only" github.enabled=false` |
+
+`task_id` defaults to `discord-<timestamp>-<shortid>`; the caller can
+override via `task_id=…`. `request.type` defaults to `dev.test`,
+`request.github.enabled` and `request.github.dry_run` default to `true`,
+and `request.github.repo` defaults to `coolerh250/AI-Agents-SWD`.
+
+### Sandbox contract
+
+* The default mode is `sandbox` — every endpoint runs without ever
+  contacting `discord.com`. Notifications are published to the existing
+  `stream.notifications` Redis stream with `sandbox: true` plus one of
+  `discord.task.received` / `discord.task.dispatched` /
+  `discord.task.waiting_approval` / `discord.task.completed` /
+  `discord.notification.test`. There is no new notification consumer
+  in Stage 21; the events are observable through
+  `GET /notifications` on communication-gateway.
+* Audit events go through `shared/sdk/audit/publisher` (Stage 19) onto
+  `stream.audit`; the audit-worker persists them with
+  `decision_type=discord_intake` or `discord_notification_test`. So a
+  task created from Discord is queryable via
+  `GET /audit/events?decision_type=discord_intake` and via
+  `audit_timeline` on `/operations/workflows/{task_id}` and
+  `/workflow/timeline/{task_id}`.
+* `production.deploy` still goes through the orchestrator approval
+  gate — the Discord intake returns
+  `stage=waiting_approval, approval_required=true,
+  event_type=discord.task.waiting_approval`. No agent dispatch and no
+  `production_executed` flip ever happens from this path.
+* GitHub PRs remain dry-run by default. The Discord parser sets
+  `request.github.dry_run=true` even for production tasks; the safety
+  contract is owned by the orchestrator, not by the parser.
+
+### Optional real Discord test guard
+
+The single real-Discord code path is `POST /discord/real/test-message`.
+It is hard-gated by **all** of:
+
+* `DISCORD_BOT_TOKEN` is set (non-empty), and
+* `RUN_REAL_DISCORD_TEST=true`, and
+* a `channel_id` is supplied.
+
+If any of these is missing the route returns HTTP 409 with a safe
+detail. When the route does run, it issues exactly one `POST
+/channels/{channel_id}/messages` with the body prefixed by
+`[AI-Agents-SWD sandbox]`; the token never appears in the response.
+No production deploy is ever executed from this path; no real GitHub
+write is ever executed from this path. The default verify run
+(`verify_discord_gateway.sh`) asserts the route is refused without the
+opt-in flags.
+
+### Operations integration
+
+`/discord/tasks/{task_id}` returns:
+
+```
+{
+  "task_id": "...",
+  "stage": "completed",
+  "execution_status": "completed",
+  "completed_agents": ["intake-agent", ..., "devops-agent"],
+  "github": {"pr_url": "...", "dry_run": true, "status": "success"},
+  "audit_timeline_count": 7,
+  "incidents_count": 0,
+  "production_executed": false,
+  "operations_url": "/operations/workflows/{task_id}",
+  "operations_view": {...full unified view...},
+  "sandbox": true
+}
+```
+
+The `operations_view` field is the verbatim
+`/operations/workflows/{task_id}` body the orchestrator already
+serves (Stage 20).
 
 ## Workflow Persistence & Resume
 

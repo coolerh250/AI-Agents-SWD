@@ -139,6 +139,34 @@ OPERATIONS_REQUEST_DURATION_SECONDS = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
 )
 
+# Discord Gateway sandbox metrics (Stage 21)
+DISCORD_MESSAGES_RECEIVED_TOTAL = Counter(
+    "discord_messages_received_total",
+    "Discord-sandbox messages received by the gateway",
+    ["command_type", "sandbox"],
+)
+DISCORD_TASKS_DISPATCHED_TOTAL = Counter(
+    "discord_tasks_dispatched_total",
+    "Discord-sandbox messages that produced a workflow dispatch",
+    ["command_type", "result", "sandbox"],
+)
+DISCORD_INTAKE_FAILURES_TOTAL = Counter(
+    "discord_intake_failures_total",
+    "Discord-sandbox intake failures (labelled by reason)",
+    ["reason"],  # parse_error | gateway_error | dispatch_error
+)
+DISCORD_NOTIFICATIONS_PUBLISHED_TOTAL = Counter(
+    "discord_notifications_published_total",
+    "Discord-sandbox notifications published to stream.notifications",
+    ["event_type", "sandbox"],
+)
+DISCORD_REQUEST_DURATION_SECONDS = Histogram(
+    "discord_request_duration_seconds",
+    "Discord-gateway per-endpoint duration",
+    ["endpoint"],
+    buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

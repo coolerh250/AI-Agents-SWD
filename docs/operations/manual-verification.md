@@ -271,6 +271,62 @@ Expected output: `0`.
 
 ---
 
+## 17d. Verify the Discord Gateway sandbox (Stage 21)
+
+The Discord Gateway is sandbox by default. Run:
+
+```
+./scripts/verify_discord_gateway.sh
+```
+
+The script drives one dev.test sandbox message and one
+production.deploy sandbox message, asserts the unified audit /
+notification / operations path picks up the Discord origin, and
+confirms that `/discord/real/test-message` is refused without the
+opt-in env vars. It ends with
+`DISCORD_GATEWAY_VERIFY: PASS`.
+
+Manual smoke:
+
+```
+curl http://localhost:8007/health
+curl http://localhost:8007/status | python3 -m json.tool
+curl http://localhost:8007/metrics | grep ^discord_
+
+# Create a dev.test sandbox task
+curl -sS -X POST http://localhost:8007/discord/messages \
+  -H 'Content-Type: application/json' \
+  -d '{"content":"/ai task type=dev.test description=\"manual discord sandbox verification\"","channel_id":"sandbox","user_id":"operator"}' \
+  | python3 -m json.tool
+
+# Follow the task
+curl -sS "http://localhost:8007/discord/tasks/$task" | python3 -m json.tool
+
+# Audit / notification confirmation
+curl -sS "http://localhost:8003/audit/events?decision_type=discord_intake&limit=5" | python3 -m json.tool
+curl -sS "http://localhost:8004/notifications?count=200" | python3 -m json.tool | grep discord.task
+
+# Real-Discord opt-in MUST be refused
+curl -sS -o /dev/null -w "%{http_code}\n" -X POST http://localhost:8007/discord/real/test-message \
+  -H 'Content-Type: application/json' \
+  -d '{"channel_id":"sandbox","message":"should-not-go"}'
+# expected: 409
+```
+
+The optional real Discord test is **not** part of the default
+verify run; it is opt-in only and must NEVER print the token:
+
+```
+DISCORD_BOT_TOKEN=ghp-or-bot-token RUN_REAL_DISCORD_TEST=true \
+  curl -sS -X POST http://localhost:8007/discord/real/test-message \
+    -H 'Content-Type: application/json' \
+    -d '{"channel_id":"<discord-test-channel-id>","message":"manual sandbox smoke"}'
+```
+
+The response carries the Discord `message_id` only — never the token.
+
+---
+
 ## 17ops. Verify the Operations Control API (Stage 20)
 
 The orchestrator hosts a unified read-only operator namespace
@@ -362,6 +418,13 @@ curl -sS "http://localhost:8000/workflow/timeline/$task" \
 * [ ] `./scripts/run_tests.sh` ended green.
 * [ ] `./scripts/verify_unified_audit.sh` ended `UNIFIED_AUDIT_VERIFY: PASS`.
 * [ ] `./scripts/verify_operations_view.sh` ended `OPERATIONS_VIEW_VERIFY: PASS`.
+* [ ] `./scripts/verify_discord_gateway.sh` ended `DISCORD_GATEWAY_VERIFY: PASS`.
+* [ ] `curl http://localhost:8007/health` shows
+      `mode=sandbox` and `has_token=false` (unless an opt-in real
+      Discord test was deliberately enabled).
+* [ ] `POST /discord/real/test-message` returns HTTP 409 unless
+      `DISCORD_BOT_TOKEN` and `RUN_REAL_DISCORD_TEST=true` are
+      both set.
 * [ ] `curl http://localhost:8000/operations/safety` shows
       `result=safe` (or `warning` for documented non-fatal items) and
       every production counter at `0`.
