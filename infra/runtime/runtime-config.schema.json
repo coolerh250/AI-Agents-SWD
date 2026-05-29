@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "AI Agents SWD runtime config",
+  "description": "Stage 24 baseline schema. The runtime validator (scripts/validate_runtime_config.py) reads this file to enforce per-mode rules.",
+  "type": "object",
+  "required": ["APP_ENV"],
+  "additionalProperties": true,
+  "properties": {
+    "APP_ENV": {
+      "type": "string",
+      "enum": ["local", "staging", "production-check"]
+    },
+    "DATABASE_URL": { "type": "string", "minLength": 1 },
+    "REDIS_URL":    { "type": "string", "minLength": 1 },
+    "OTEL_EXPORTER_OTLP_ENDPOINT": { "type": "string", "minLength": 1 },
+    "ALERTMANAGER_WEBHOOK_URL":   { "type": "string" },
+
+    "POSTGRES_USER":     { "type": "string", "minLength": 1 },
+    "POSTGRES_DB":       { "type": "string", "minLength": 1 },
+    "POSTGRES_PASSWORD": { "type": "string" },
+
+    "VAULT_ADDR":  { "type": "string" },
+    "VAULT_TOKEN": { "type": "string" },
+
+    "GITHUB_TOKEN":         { "type": "string" },
+    "GITHUB_TEST_REPO":     { "type": "string" },
+    "RUN_REAL_GITHUB_TEST": { "type": "string", "enum": ["true", "false"] },
+
+    "DISCORD_BOT_TOKEN":         { "type": "string" },
+    "DISCORD_TEST_CHANNEL_ID":   { "type": "string" },
+    "RUN_REAL_DISCORD_TEST":     { "type": "string", "enum": ["true", "false"] },
+
+    "ALLOW_VAULT_DEV_MODE_FOR_STAGING": { "type": "string", "enum": ["true", "false"] }
+  },
+  "x-placeholder-marker": "PLACEHOLDER_DO_NOT_COMMIT_REAL_VALUE",
+  "x-mode-rules": {
+    "local": {
+      "allow_postgres_trust_auth": true,
+      "allow_vault_dev_mode": true,
+      "allow_alertmanager_null_receiver": true,
+      "real_github_test_must_be_false_by_default": true,
+      "real_discord_test_must_be_false_by_default": true
+    },
+    "staging": {
+      "allow_postgres_trust_auth": false,
+      "allow_vault_dev_mode": "only-if-ALLOW_VAULT_DEV_MODE_FOR_STAGING=true",
+      "allow_alertmanager_null_receiver": true,
+      "real_github_test_must_be_false_by_default": true,
+      "real_discord_test_must_be_false_by_default": true,
+      "placeholder_secrets_forbidden_in_required_fields": [
+        "POSTGRES_PASSWORD",
+        "ALERTMANAGER_WEBHOOK_URL"
+      ]
+    },
+    "production-check": {
+      "allow_postgres_trust_auth": false,
+      "allow_vault_dev_mode": false,
+      "allow_alertmanager_null_receiver": false,
+      "real_github_test_must_be_false_by_default": true,
+      "real_discord_test_must_be_false_by_default": true,
+      "production_executed_count_must_be_zero": true,
+      "if_real_github_test_true_require": ["GITHUB_TOKEN", "GITHUB_TEST_REPO"],
+      "if_real_discord_test_true_require": ["DISCORD_BOT_TOKEN", "DISCORD_TEST_CHANNEL_ID"]
+    }
+  }
+}

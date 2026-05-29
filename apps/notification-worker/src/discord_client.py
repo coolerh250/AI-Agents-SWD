@@ -22,6 +22,8 @@ from typing import Any
 
 import httpx
 
+from shared.sdk.secrets import EnvSecretProvider, SecretRef, default_provider
+
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
 
@@ -30,7 +32,11 @@ class DiscordDeliverySafetyError(RuntimeError):
 
 
 class NotificationDiscordClient:
-    """Sandbox-by-default Discord client for the notification worker."""
+    """Sandbox-by-default Discord client for the notification worker.
+
+    Stage 24: token is held in a :class:`SecretRef` — the value lives in
+    the env var, the instance never carries a plain-string copy.
+    """
 
     def __init__(
         self,
@@ -40,9 +46,12 @@ class NotificationDiscordClient:
         real_enabled: bool | None = None,
         timeout: float = 10.0,
     ) -> None:
-        self._token = (
-            token if token is not None else os.environ.get("DISCORD_BOT_TOKEN", "")
-        ).strip()
+        if token is not None:
+            stripped = token.strip()
+            provider = EnvSecretProvider({"DISCORD_BOT_TOKEN": stripped})
+            self._token_ref: SecretRef = provider.get_secret("DISCORD_BOT_TOKEN")
+        else:
+            self._token_ref = default_provider().get_secret("DISCORD_BOT_TOKEN")
         self._channel_id = (
             test_channel_id
             if test_channel_id is not None
@@ -57,7 +66,7 @@ class NotificationDiscordClient:
 
     @property
     def has_token(self) -> bool:
-        return bool(self._token)
+        return self._token_ref.present
 
     @property
     def has_test_channel(self) -> bool:
@@ -88,7 +97,7 @@ class NotificationDiscordClient:
             raise DiscordDeliverySafetyError("RUN_REAL_DISCORD_TEST is not 'true'")
         url = f"{DISCORD_API_BASE}/channels/{self._channel_id}/messages"
         body = {"content": f"[AI-Agents-SWD sandbox] {content}"}
-        headers = {"Authorization": f"Bot {self._token}"}
+        headers = {"Authorization": f"Bot {self._token_ref.reveal()}"}
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(url, json=body, headers=headers)
             response.raise_for_status()

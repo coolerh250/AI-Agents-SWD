@@ -24,6 +24,8 @@ from typing import Any
 
 import httpx
 
+from shared.sdk.secrets import EnvSecretProvider, SecretRef, default_provider
+
 DISCORD_API_BASE = "https://discord.com/api/v10"
 
 
@@ -32,7 +34,12 @@ class DiscordSafetyError(RuntimeError):
 
 
 class DiscordClient:
-    """Thin opt-in client. Default mode is sandbox (`_real_test_enabled` is False)."""
+    """Thin opt-in client. Default mode is sandbox (`_real_test_enabled` is False).
+
+    Stage 24: the token is held in a :class:`SecretRef` so accidental
+    serialisation of the client (vars / repr / logging) renders the
+    token as ``***REDACTED***`` instead of leaking the value.
+    """
 
     def __init__(
         self,
@@ -41,9 +48,15 @@ class DiscordClient:
         real_test_enabled: bool | None = None,
         timeout: float = 10.0,
     ) -> None:
-        self._token = (
-            token if token is not None else os.environ.get("DISCORD_BOT_TOKEN", "")
-        ).strip()
+        if token is not None:
+            # Test path — wrap whatever the caller passed in a SecretRef
+            # using a one-shot EnvSecretProvider over a {token: value}
+            # dict so placeholder values still register as "not present".
+            stripped = token.strip()
+            provider = EnvSecretProvider({"DISCORD_BOT_TOKEN": stripped})
+            self._token_ref: SecretRef = provider.get_secret("DISCORD_BOT_TOKEN")
+        else:
+            self._token_ref = default_provider().get_secret("DISCORD_BOT_TOKEN")
         if real_test_enabled is None:
             real_test_enabled = (
                 os.environ.get("RUN_REAL_DISCORD_TEST", "false").strip().lower() == "true"
@@ -53,7 +66,7 @@ class DiscordClient:
 
     @property
     def has_token(self) -> bool:
-        return bool(self._token)
+        return self._token_ref.present
 
     @property
     def real_test_enabled(self) -> bool:
@@ -78,7 +91,7 @@ class DiscordClient:
             raise DiscordSafetyError("channel_id is required")
         url = f"{DISCORD_API_BASE}/channels/{channel_id}/messages"
         body = {"content": f"[AI-Agents-SWD sandbox] {content}"}
-        headers = {"Authorization": f"Bot {self._token}"}
+        headers = {"Authorization": f"Bot {self._token_ref.reveal()}"}
         async with httpx.AsyncClient(timeout=self._timeout) as client:
             response = await client.post(url, json=body, headers=headers)
             response.raise_for_status()

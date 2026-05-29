@@ -1429,6 +1429,139 @@ github.real_test.read_checks
 Every span carries `github.dry_run=false`,
 `github.real_github_test=true`, and the `task_id` / `workflow_id`.
 
+## Staging Runtime Hardening (Stage 24)
+
+Stage 24 ships a **staging-readiness baseline** — runtime config
+validator, secrets baseline, staging compose template, backup /
+restore scripts, production safety gate, and a runtime health
+snapshot. Nothing in Stage 24 promotes the platform to production;
+the local cluster on `10.0.1.31` keeps its existing trust-auth /
+Vault-dev-mode / null-receiver posture.
+
+### Runtime config validation
+
+```
+./scripts/validate_runtime_config.sh --mode local
+./scripts/validate_runtime_config.sh --mode staging --env-file .env.staging
+./scripts/validate_runtime_config.sh --mode production-check
+```
+
+Modes:
+
+* **local** — current cluster default. Trust-auth / Vault dev-mode /
+  null-receiver tolerated; opt-in real-test consistency still enforced.
+* **staging** — placeholder secrets in required fields fail;
+  trust-auth fails; Vault dev-mode fails unless
+  `ALLOW_VAULT_DEV_MODE_FOR_STAGING=true` (downgraded to a warning).
+* **production-check** — read-only audit pass. No trust-auth, no
+  Vault dev-mode, no null-receiver, and (when the validator can read
+  the sentinel) `production_executed=true` count must be `0`.
+
+The validator never echoes secret values; findings reference variable
+names and a `present: bool` flag only.
+
+### Secrets baseline
+
+[`shared/sdk/secrets/`](shared/sdk/secrets/) adds a small
+`SecretProvider` abstraction:
+
+```python
+from shared.sdk.secrets import default_provider
+token = default_provider().get_secret("GITHUB_TOKEN")
+if token:                              # SecretRef.__bool__
+    headers["Authorization"] = f"Bearer {token.reveal()}"
+```
+
+`SecretRef` redacts itself in `repr` / `str` / `model_dump`. The
+`VaultPlaceholderProvider` exposes the same interface for a future
+real-Vault integration without changing any call site. `redact_mapping`
+strips every secret-shaped key (token / secret / password / api_key /
+credential / private_key) from a dict, so audit / log / response
+bodies can route through one helper.
+
+The Discord clients in `apps/discord-gateway` and
+`apps/notification-worker`, plus the GitHub-automation `/health`
+endpoint, now read tokens through `SecretProvider` — `has_token`
+remains a boolean and the value never lives in a plain-string
+attribute on the client instance.
+
+### Staging compose template
+
+[`infra/docker-compose/docker-compose.staging.yml`](infra/docker-compose/docker-compose.staging.yml)
+is a **template**, not a drop-in replacement for the existing
+`docker-compose.yml`. It demonstrates:
+
+* `POSTGRES_PASSWORD` required via `${VAR:?error}` substitution;
+* no `POSTGRES_HOST_AUTH_METHOD=trust`;
+* separate `postgres-staging-data` volume so a staging upgrade can't
+  accidentally clobber the local/test data;
+* no Vault dev-mode container — staging is expected to point at a
+  real Vault.
+
+To validate the template:
+
+```
+docker compose -f infra/docker-compose/docker-compose.staging.yml config
+```
+
+### Backup / restore
+
+```
+./scripts/backup_postgres.sh
+./scripts/verify_backup_restore.sh
+ALLOW_RESTORE=true ./scripts/restore_postgres.sh backups/aiagents-<ts>.dump
+```
+
+The backup script writes to `backups/` (gitignored). The restore
+script refuses unless `ALLOW_RESTORE=true` is set AND a backup file
+is passed as the first positional argument; it also refuses outright
+when `APP_ENV` is `production` / `production-check`. The verify
+script takes a fresh backup, asserts `pg_restore -l` parses the TOC,
+confirms the live DB's table count was untouched, and asserts the
+restore guard refuses without `ALLOW_RESTORE=true`.
+
+### Production safety gate
+
+```
+./scripts/production_safety_gate.sh
+```
+
+Read-only. Inspects `deployment_records`, `workflow_states`,
+`/operations/safety`, and Alertmanager receivers. Exits `0` (PASS)
+when every production counter is `0` and the platform is still in
+sandbox-by-default; exits `1` (FAIL) otherwise.
+
+### Runtime health snapshot
+
+```
+./scripts/runtime_health_snapshot.sh
+cat source/runtime-health.log
+```
+
+Writes a flat summary to `source/runtime-health.log` (gitignored).
+The file carries `docker compose ps`, `/operations/summary`,
+`/operations/safety`, Prometheus targets up/down, stream lag, open
+incidents, DLQ counts, and the production-safety counters. The Stage
+24 verify script greps for token-shaped substrings as a regression
+guard.
+
+### Aggregate verifier
+
+```
+./scripts/verify_staging_hardening.sh
+```
+
+Runs every Stage 24 artefact in sequence: validator (local mode),
+production safety gate, backup/restore smoke, runtime health
+snapshot, no-token-leak grep, staging template no-trust-auth check,
+env example placeholder-only check, `production_executed=false`
+SQL, and the SecretProvider redaction self-test. Ends with
+`STAGING_HARDENING_VERIFY: PASS` when all 9 checks pass.
+
+See [`docs/operations/staging-runtime-hardening.md`](docs/operations/staging-runtime-hardening.md)
+for the full operator runbook, fine-grained token requirements, and
+the staging readiness checklist.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

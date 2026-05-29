@@ -580,6 +580,92 @@ never writes to `deployment_records` and never sets
 
 ---
 
+## 17c. Staging runtime hardening (Stage 24)
+
+Stage 24 ships an aggregate verifier and four standalone scripts. The
+local cluster on `10.0.1.31` keeps its existing trust-auth /
+Vault-dev-mode / null-receiver posture; Stage 24 only adds the tools
+an operator would use to promote the platform to staging.
+
+```
+./scripts/verify_staging_hardening.sh
+```
+
+Expected (default local cluster):
+
+```
+RUNTIME_CONFIG_VALIDATION: PASS
+PRODUCTION_SAFETY_GATE: PASS
+BACKUP_RESTORE_VERIFY: PASS
+RUNTIME_HEALTH_SNAPSHOT_DONE: PASS
+HEALTH_LOG_NO_TOKEN: PASS
+STAGING_TEMPLATE_NO_TRUST_AUTH: PASS
+ENV_EXAMPLES_PLACEHOLDER_ONLY: PASS
+PRODUCTION_EXECUTED_FALSE: PASS
+SECRET_REDACTION: PASS
+checks passed: 9 / 9
+STAGING_HARDENING_VERIFY: PASS
+```
+
+### Standalone scripts
+
+* `./scripts/validate_runtime_config.sh --mode local` — must end
+  `RUNTIME_CONFIG_VALIDATION: PASS`.
+* `./scripts/production_safety_gate.sh` — must end
+  `PRODUCTION_SAFETY_GATE: PASS`. Inspects `deployment_records`,
+  `workflow_states`, `/operations/safety`, Alertmanager receivers.
+* `./scripts/runtime_health_snapshot.sh` — writes
+  `source/runtime-health.log`. The file must contain no token-shaped
+  substring; `verify_staging_hardening.sh` greps for token-prefix
+  patterns (the GitHub PAT prefixes and the HTTP auth-header prefixes
+  used by GitHub / Discord) as a regression guard.
+* `./scripts/verify_backup_restore.sh` — takes a fresh `pg_dump`,
+  asserts `pg_restore -l` parses the TOC, confirms the live DB's
+  table count is untouched, and asserts the restore guard refuses
+  without `ALLOW_RESTORE=true`. Cleans up the temporary file.
+
+### Backup / restore smoke
+
+`backups/` is gitignored. The verify script's expected output:
+
+```
+backup_file=backups/aiagents-<ts>.dump
+tables_before=<N>
+pg_restore_toc_lines=<>=5
+tables_after=<same as before>
+restore_refusal: RESTORE_POSTGRES: FAIL (ALLOW_RESTORE!=true ...)
+BACKUP_RESTORE_VERIFY: PASS
+```
+
+If you ever need to restore (do **not** run this against the test
+cluster casually):
+
+```
+ALLOW_RESTORE=true ./scripts/restore_postgres.sh backups/aiagents-<ts>.dump
+```
+
+The restore script refuses outright when `APP_ENV` is `production` or
+`production-check`.
+
+### Sign-off checklist additions
+
+The Stage 24 items below are appended to the Section 18 sign-off list:
+
+* [ ] `./scripts/verify_staging_hardening.sh` ended
+      `STAGING_HARDENING_VERIFY: PASS`.
+* [ ] `./scripts/validate_runtime_config.sh --mode local` ended
+      `RUNTIME_CONFIG_VALIDATION: PASS`.
+* [ ] `./scripts/production_safety_gate.sh` ended
+      `PRODUCTION_SAFETY_GATE: PASS` with every production counter at `0`.
+* [ ] `./scripts/runtime_health_snapshot.sh` produced
+      `source/runtime-health.log`; the file is at most a few KB and
+      contains no token-shaped substring.
+* [ ] `backups/aiagents-<ts>.dump` exists locally on the host (was
+      created by `verify_backup_restore.sh`) but was NOT committed to
+      the repo.
+
+---
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

@@ -28,6 +28,7 @@ from real_guard import evaluate_real_test_request
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.github import GitHubClient, GitHubClientError
 from shared.sdk.notifications.client import NotificationClient
+from shared.sdk.secrets import default_provider
 from shared.sdk.observability.metrics import (
     GITHUB_AUTOMATION_FAILURES_TOTAL,
     GITHUB_BRANCH_CREATED_TOTAL,
@@ -229,7 +230,10 @@ def health() -> dict:
         "status": "ok",
         "default_repo": DEFAULT_REPO,
         "default_dry_run": DEFAULT_DRY_RUN,
-        "has_token": bool(os.environ.get("GITHUB_TOKEN", "").strip()),
+        # Stage 24: token presence is read through the SecretProvider so a
+        # placeholder value never reports as "present". The value itself
+        # never leaves the env var.
+        "has_token": default_provider().has_secret("GITHUB_TOKEN"),
         "real_github_test_enabled": (
             os.environ.get("RUN_REAL_GITHUB_TEST", "false").strip().lower() == "true"
         ),

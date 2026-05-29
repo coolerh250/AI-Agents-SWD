@@ -1,0 +1,60 @@
+# Stage 24 staging template.
+#
+# This file is NOT a drop-in replacement for docker-compose.yml. It is a
+# minimal staging-flavoured baseline that demonstrates how the operator
+# would harden the runtime:
+#
+#   * Postgres rejects trust-auth — POSTGRES_PASSWORD must be set in the
+#     shell that invokes `docker compose -f ... up`.
+#   * Postgres uses a separate volume (postgres-staging-data) so a
+#     staging upgrade can't accidentally clobber the local/test data
+#     volume already present in docker-compose.yml.
+#   * Vault is NOT started here — staging is expected to point at a
+#     real Vault server via VAULT_ADDR.
+#   * Only the data plane is templated. App services are inherited from
+#     the main compose file via `docker compose -f docker-compose.yml -f
+#     docker-compose.staging.yml up` so the staging operator can verify
+#     the app stack with the new DB credentials without duplicating
+#     every service block.
+#
+# Every secret is referenced via env-var substitution. No real value
+# lives in this file; the operator must supply
+# `POSTGRES_PASSWORD` (and optionally the other Stage 23 / Stage 22
+# opt-in tokens) before launch.
+name: aiagents-staging
+
+services:
+  postgres:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-aiagents_app}
+      POSTGRES_DB: ${POSTGRES_DB:-aiagents}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for staging}
+      # Intentionally absent: POSTGRES_HOST_AUTH_METHOD.
+      # The image defaults to md5 / scram-sha-256, which requires a
+      # password — exactly what we want here.
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-staging-data:/var/lib/postgresql/data
+    healthcheck:
+      test:
+        - "CMD-SHELL"
+        - "pg_isready -U ${POSTGRES_USER:-aiagents_app} -d ${POSTGRES_DB:-aiagents}"
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres-staging-data:
+    driver: local

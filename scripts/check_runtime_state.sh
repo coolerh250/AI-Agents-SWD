@@ -1429,4 +1429,64 @@ else
 fi
 
 echo
+echo "=== Stage 24 staging hardening smokes ==="
+
+# 1. runtime config validator (local mode must PASS)
+rgv_local=$(./scripts/validate_runtime_config.sh --mode local 2>&1 || true)
+if echo "$rgv_local" | grep -q "RUNTIME_CONFIG_VALIDATION: PASS"; then
+  echo "RUNTIME_CONFIG_LOCAL_SMOKE: PASS"
+else
+  echo "RUNTIME_CONFIG_LOCAL_SMOKE: CHECK"
+fi
+
+# 2. production safety gate (read-only)
+psg_out=$(./scripts/production_safety_gate.sh 2>&1 || true)
+if echo "$psg_out" | grep -q "PRODUCTION_SAFETY_GATE: PASS"; then
+  echo "PRODUCTION_SAFETY_GATE_SMOKE: PASS"
+else
+  echo "PRODUCTION_SAFETY_GATE_SMOKE: CHECK"
+fi
+
+# 3. backup/restore smoke
+bru_out=$(./scripts/verify_backup_restore.sh 2>&1 || true)
+if echo "$bru_out" | grep -q "BACKUP_RESTORE_VERIFY: PASS"; then
+  echo "BACKUP_RESTORE_SMOKE: PASS"
+else
+  echo "BACKUP_RESTORE_SMOKE: CHECK"
+fi
+
+# 4. runtime health snapshot
+rhs_out=$(./scripts/runtime_health_snapshot.sh 2>&1 || true)
+if echo "$rhs_out" | grep -q "RUNTIME_HEALTH_SNAPSHOT_DONE: PASS" \
+   && [ -f source/runtime-health.log ]; then
+  echo "RUNTIME_HEALTH_SNAPSHOT_SMOKE: PASS"
+else
+  echo "RUNTIME_HEALTH_SNAPSHOT_SMOKE: CHECK"
+fi
+
+# 5. SecretProvider redaction self-test
+if python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.secrets import EnvSecretProvider, redact_mapping
+p = EnvSecretProvider({'GITHUB_TOKEN': 'ghp_NEVER_LEAK'})
+ref = p.get_secret('GITHUB_TOKEN')
+assert 'ghp_NEVER_LEAK' not in repr(ref) + str(ref)
+assert redact_mapping({'GITHUB_TOKEN': 'x'})['GITHUB_TOKEN'] == '***REDACTED***'
+" >/dev/null 2>&1; then
+  echo "SECRET_REDACTION_SMOKE: PASS"
+else
+  echo "SECRET_REDACTION_SMOKE: CHECK"
+fi
+
+# 6. staging compose template carries no trust-auth + uses env placeholders
+if [ -f infra/docker-compose/docker-compose.staging.yml ] \
+   && ! grep -q "POSTGRES_HOST_AUTH_METHOD: trust" infra/docker-compose/docker-compose.staging.yml \
+   && grep -q 'POSTGRES_PASSWORD: \${POSTGRES_PASSWORD' infra/docker-compose/docker-compose.staging.yml; then
+  echo "STAGING_TEMPLATE_SMOKE: PASS"
+else
+  echo "STAGING_TEMPLATE_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

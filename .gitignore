@@ -15,8 +15,16 @@ dist/
 build/
 
 # ===== Logs =====
+# *.log catches Stage 24's source/runtime-health.log — that file is a
+# regeneratable snapshot (scripts/runtime_health_snapshot.sh writes it)
+# and must never be committed.
 *.log
 logs/
+
+# ===== Stage 24 backup artifacts (never commit) =====
+backups/
+*.dump
+*.sql.gz
 
 # ===== Environment & local secrets (never commit secrets) =====
 .env
@@ -24,6 +32,11 @@ logs/
 *.env
 !.env.example
 secrets/
+# Stage 24: shared/sdk/secrets/ holds the SecretProvider SDK (no real
+# secret bytes). The directory name collided with the broader
+# secrets/ ignore above — unignore the Python sources only.
+!shared/sdk/secrets/
+!shared/sdk/secrets/*.py
 *.secret
 *.key
 *.pem
