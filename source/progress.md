@@ -3788,3 +3788,373 @@ issues & blockers, and next-step suggestions.
     process; this is sandbox-only state. A restart drops it.
     Acceptable for the operator UX this stage targets;
     documented in the service module docstring.
+
+
+## Stage 22 — Step 21: Controlled Real Discord Validation & Notification Delivery Worker
+
+- **Execution time:** 2026-05-29 13:00 – 17:00 (local)
+- **Git branch / commit:** `main` -> Commit A
+  `<Stage 22 notification-worker + controlled Discord + delivery records>`,
+  Commit B (this entry) appended on top.
+- **Previous commit:** `4e70899 Stage 21: progress log - Step 20
+  Discord Gateway sandbox + 10.0.1.31 verification`.
+- **Deployment target:** local/test runtime on 10.0.1.31 only. No
+  real Slack / Telegram / PagerDuty / LLM / Kubernetes / cloud /
+  Grafana Cloud / observability SaaS call. No real Discord API
+  unless `DISCORD_BOT_TOKEN` + `DISCORD_TEST_CHANNEL_ID` +
+  `RUN_REAL_DISCORD_TEST=true` are all set on the
+  notification-worker container — none of them is set in the test
+  cluster. No real GitHub write, no merge, no branch-protection
+  change, no production deploy. Stage 22 only adds a controlled
+  notification delivery surface; no existing service contract
+  changed beyond the documented operations integration additions.
+
+- **notification-worker result:**
+  - New service `apps/notification-worker/` (`Dockerfile`,
+    `requirements.txt`, `src/discord_client.py`, `src/worker.py`,
+    `src/main.py`) listens on `127.0.0.1:8008`. Default
+    `NOTIFICATION_WORKER_MODE=sandbox`; the env-derived mode label
+    appears on `/health` and `/status`.
+  - Endpoints: `GET /health`, `GET /status`, `GET /summary`,
+    `GET /metrics`, `GET /deliveries`,
+    `POST /discord/real/test-message` (default 409).
+  - Consumer: `XREADGROUP BLOCK` on `stream.notifications` using
+    the existing `notification-group` consumer group (consumer
+    name `notification-worker-1`). No busy polling. Idempotent
+    `XGROUP CREATE` on startup.
+  - ACK strategy: persist success -> XACK; transient delivery
+    failure (real-mode only) -> no ACK, retry, deadletter onto
+    `stream.deadletter` as `notification.deadlettered` after 3
+    failed attempts. Normalize failures (non-dict payload, render
+    error) skip + ACK so the group's pending list doesn't grow.
+
+- **Sandbox delivery result:**
+  - Default path turns every consumed event into a row in
+    `notification_deliveries` (`status=simulated`,
+    `sandbox=true`, `external_sent=false`, `channel=discord`,
+    `target=sandbox-channel`). The rendered Discord message is
+    stored under `metadata.rendered_message` so an operator can
+    see exactly what would have been sent.
+  - `render_discord_message` is intentionally explicit — it
+    never dumps the full payload. The summary line carries
+    `[event_type] task_id status=… production_executed=false
+    ops=/operations/workflows/<task_id> [pr=… msg=…]`. A
+    regression test (`test_render_discord_message_never_dumps_
+    full_payload`) guards against accidental secret smuggling.
+
+- **Real Discord guard result:**
+  - `apps/notification-worker/src/discord_client.py`
+    `NotificationDiscordClient` refuses any real call unless all
+    three pre-conditions are met: `DISCORD_BOT_TOKEN` non-empty,
+    `DISCORD_TEST_CHANNEL_ID` non-empty,
+    `RUN_REAL_DISCORD_TEST=true`. The client raises
+    `DiscordDeliverySafetyError` otherwise; the FastAPI route
+    maps it to HTTP 409 with a safe detail.
+  - Even when enabled, the client targets `DISCORD_TEST_
+    CHANNEL_ID` only and prefixes the body with
+    `[AI-Agents-SWD sandbox]`. The token value travels only in
+    the `Authorization` header; it never appears in any
+    response, log, audit row, or migration.
+  - Audit decision_types specific to the guard:
+    `discord_real_test_skipped` (refusal),
+    `discord_real_test_sent` (controlled-real send),
+    `notification_delivery_failed` (Discord call raised).
+
+- **notification_deliveries result:**
+  - Migration `migrations/006_notification_delivery.sql` is
+    idempotent (`CREATE TABLE IF NOT EXISTS` +
+    `CREATE INDEX IF NOT EXISTS`). It adds a single table
+    `notification_deliveries` with the documented columns plus
+    three indexes (`task_id`, `status`, `created_at DESC`) and a
+    partial unique index on `source_message_id` so the
+    `ON CONFLICT (source_message_id) DO NOTHING` dedup contract
+    is enforced at the database level.
+  - `shared/sdk/notifications/store.py`
+    `NotificationDeliveryStore` exposes
+    `create_delivery`, `get_delivery`, `list_deliveries`,
+    `mark_delivered`, `mark_failed`, `counts`. Schema-only
+    surface — no business logic. The dedup behaviour relies on
+    the database constraint, not on an in-process cache, so a
+    worker restart cannot create duplicates.
+
+- **Audit result:**
+  - Every consumed notification produces an audit event via the
+    Stage 19 `publish_audit_event` publisher; the audit-worker
+    persists it into `audit_logs`. Decision types:
+    `notification_delivery` (sandbox simulation),
+    `discord_real_test_sent` (controlled-real success),
+    `notification_delivery_failed` (Discord call raised),
+    `discord_real_test_skipped`
+    (`/discord/real/test-message` refused).
+  - Artifact_refs always carries `task_id`, `event_type`,
+    `sandbox`, `external_sent`, `delivery_id`,
+    `source_message_id` so the operator can correlate the audit
+    row back to its `notification_deliveries` row + the original
+    Redis envelope.
+
+- **Operations integration result:**
+  - `/operations/summary` gains
+    `notification_delivery_summary` (total / simulated /
+    delivered / external_sent / failed / skipped counts).
+  - `/operations/workflows/{task_id}` gains a
+    `notification_deliveries` section (count, latest_status,
+    external_sent_count, simulated_count, failed_count,
+    deliveries[]).
+  - `/operations/safety` gains four Discord booleans
+    (`discord_has_token`, `discord_test_channel_configured`,
+    `discord_real_test_enabled`,
+    `discord_external_send_enabled`). The token VALUE is never
+    returned. `result` flips to `warning` when
+    `discord_external_send_enabled=true` so an operator
+    inspecting safety sees the live Discord credential
+    immediately.
+  - `discord-gateway` gains `GET /discord/deliveries` +
+    `GET /discord/deliveries/{task_id}`. The existing
+    `GET /discord/tasks/{task_id}` gains
+    `notification_deliveries_count`, `latest_delivery_status`,
+    `latest_delivery_message_id`, `external_sent`,
+    `delivery_breakdown` so the Discord operator UX never has
+    to make a second round trip to learn the delivery state.
+  - `/operations/summary.services_summary` includes the new
+    `notification-worker` container so the Stage 20 dashboard
+    sees it.
+
+- **Metrics / tracing result:**
+  - New Prometheus counters / histogram (registered in
+    `shared/sdk/observability/metrics.py`):
+    `notification_worker_processed_total{event_type}`,
+    `notification_worker_delivered_total{event_type, channel}`,
+    `notification_worker_simulated_total{event_type, channel}`,
+    `notification_worker_failures_total{reason}`,
+    `notification_worker_skipped_total{reason}`,
+    `notification_worker_processing_seconds`.
+  - `infra/observability/prometheus.yml` adds the
+    `notification-worker:8008` scrape target.
+  - Custom spans:
+    `notification.consume` /
+    `notification.render_discord_message` /
+    `notification.simulate_delivery` /
+    `notification.real_discord_send` /
+    `notification.persist_delivery` /
+    `notification.write_audit` /
+    `notification.deadletter`. Each carries `task_id`,
+    `event_type`, `channel`, `sandbox`, `external_sent`,
+    `redis.message_id`, `stream=stream.notifications` as
+    appropriate.
+
+- **Production safety result:**
+  - Stage 22 adds a new write path (`notification_deliveries`)
+    but never touches `deployment_records` or
+    `workflow_states`. The production counters cannot regress
+    as a result of this deliverable.
+    `deployment_records.production_executed=true OR
+    environment=production = 0`;
+    `workflow_states.execution_result->>
+    'production_executed'='true' = 0`.
+
+- **Modified / new files:**
+  - `apps/notification-worker/` (new, ~750 lines across
+    `Dockerfile`, `requirements.txt`,
+    `src/discord_client.py`, `src/worker.py`, `src/main.py`)
+  - `apps/discord-gateway/src/main.py` (+
+    `/discord/deliveries` + `/discord/deliveries/{task_id}` +
+    delivery-aware enrichments on
+    `/discord/tasks/{task_id}`)
+  - `apps/orchestrator/src/operations.py` (+
+    `notification_delivery_summary`, +
+    `notification_deliveries` section on the workflow view, +
+    Discord safety booleans, + notification-worker in the
+    services list)
+  - `shared/sdk/notifications/store.py` (new)
+  - `shared/sdk/observability/metrics.py` (+6
+    `notification_worker_*` series)
+  - `migrations/006_notification_delivery.sql` (new)
+  - `infra/docker-compose/docker-compose.yml`
+    (+ notification-worker on `127.0.0.1:8008`)
+  - `infra/observability/prometheus.yml`
+    (+ `notification-worker:8008` scrape target)
+  - `scripts/check_runtime_state.sh` (+ 9 `NOTIFICATION_*` /
+    discord runtime smokes)
+  - `scripts/verify_notification_delivery.sh` (new, 9-check
+    verify covering health, status, delivery rows, audit,
+    operations integration, real-Discord refusal, production
+    safety)
+  - `tests/test_notification_delivery_store.py` (7 cases)
+  - `tests/test_notification_worker.py` (7 cases)
+  - `tests/test_discord_delivery_policy.py` (4 cases)
+  - `tests/test_discord_delivery_records.py` (5 cases)
+  - `tests/test_notification_worker_metrics.py` (2 cases)
+  - `tests/test_operations_notification_delivery.py` (4 cases)
+  - `README.md`, `docs/operations/observability-runbook.md`,
+    `docs/operations/manual-verification.md`,
+    `source/progress.md` (this entry).
+
+- **Test results (local Windows):**
+  - `python -m pytest -q tests/`:
+    `352 passed, 115 skipped` (+29 new notification cases on
+    top of the 323/115 Stage 21 baseline). 100% of the new
+    notification-worker / store / policy / records / metrics /
+    operations-integration tests pass without docker.
+  - `python -m ruff check .` -> All checks passed.
+  - `python -m black --check .` -> 167 files would be left
+    unchanged (after one auto-format pass on the new module +
+    new tests).
+  - `python -m mypy shared/` -> Success: no issues found in 41
+    source files.
+
+- **Runtime verification (10.0.1.31, executed 2026-05-29):**
+  - **Container state:** 22/22 services up. notification-worker
+    is healthy on `127.0.0.1:8008`; discord-gateway / orchestrator
+    rebuilt + restarted to pick up the operations / discord-task
+    enrichments. Vault keeps its no-healthcheck design.
+  - **Migrations:** `006_notification_delivery.sql` applied
+    cleanly (`BEGIN -> CREATE TABLE -> 4 CREATE INDEX -> COMMIT`)
+    then re-applied with the unique-index fix (idempotent
+    `DROP INDEX IF EXISTS` + `CREATE UNIQUE INDEX IF NOT EXISTS`).
+  - **`./scripts/run_tests.sh`:** `467 passed, 1 warning in
+    47.68s` after the two in-flight fixes. ruff / black / mypy
+    all green (`All checks passed`, `167 files would be left
+    unchanged`, `Success: no issues found in 41 source files`).
+    438 -> 467 — +29 new notification cases land on the cluster
+    the same way they do locally (no cluster-only skips on this
+    scope).
+  - **Fix commits during deployment:**
+    1. `7df9f98 Step 21 fix: discord-gateway needs asyncpg +
+       DATABASE_URL for NotificationDeliveryStore`. Stage 22
+       wired `NotificationDeliveryStore` into discord-gateway
+       so `/discord/deliveries` could query the new table, but
+       the gateway's `requirements.txt` did not list `asyncpg`
+       and the compose block did not pass `DATABASE_URL`. The
+       container exited with `ModuleNotFoundError: No module
+       named 'asyncpg'` on cluster startup. Fix: add asyncpg
+       + opentelemetry-instrumentation-asyncpg, wire
+       `instrument_asyncpg()`, add `DATABASE_URL` and
+       `depends_on postgres` to the compose block. Same shape
+       as every other Postgres-touching service.
+    2. `a929473 Step 21 fix: notification_deliveries unique
+       index - drop partial WHERE clause`. Original migration
+       used a partial unique index
+       (`WHERE source_message_id IS NOT NULL`); Postgres
+       refused the SDK's `ON CONFLICT (source_message_id) DO
+       NOTHING` with "no unique or exclusion constraint
+       matching the ON CONFLICT specification". 273 worker
+       INSERTs failed and retried before the migration was
+       patched. Fix: drop the partial variant, recreate as a
+       plain unique index; NULL values remain distinct in a
+       regular unique index so operator-driven deliveries
+       without a `source_message_id` still coexist. Cluster
+       re-apply is one idempotent migration run; subsequent
+       INSERTs succeeded immediately.
+  - **`./scripts/verify_notification_delivery.sh`:** `checks
+    passed: 9 / 9 — NOTIFICATION_DELIVERY_VERIFY: PASS`. Every
+    sub-check green: `/health` returns
+    `mode=sandbox, has_discord_token=false`, `/status` shows
+    `running=true, group=notification-worker-group,
+    input_stream=stream.notifications`, the dev.test sandbox
+    intake produced 10 `notification_deliveries` rows (event
+    types: `discord.task.received`,
+    `discord.task.dispatched`, `discord.task.completed`,
+    `workflow.completed`, plus the per-stage agent
+    completions). Every row has `sandbox=true,
+    external_sent=false`. `audit_logs` carries
+    `decision_type=notification_delivery,
+    agent=notification-worker` rows with the documented
+    artifact_refs.
+    `/operations/workflows/{task_id}` surfaces the
+    `notification_deliveries` section with the breakdown.
+    `POST /discord/real/test-message` refused with HTTP 409 +
+    the documented safety detail; production safety counters
+    both `0`.
+  - **`./scripts/verify_discord_gateway.sh`:** `checks
+    passed: 12 / 12 — DISCORD_GATEWAY_VERIFY: PASS` (Stage 21
+    surface unchanged after the asyncpg fix).
+  - **`./scripts/verify_operations_view.sh`:** `checks
+    passed: 10 / 10 — OPERATIONS_VIEW_VERIFY: PASS`.
+  - **`./scripts/verify_unified_audit.sh`:** `checks passed:
+    9 / 9 — UNIFIED_AUDIT_VERIFY: PASS` (the audit-worker
+    keeps capturing every new
+    `decision_type=notification_delivery /
+    discord_real_test_skipped` row).
+  - **`./scripts/verify_github_pipeline_flow.sh`:** `checks
+    passed: 7 / 7 — GITHUB_PIPELINE_FLOW_VERIFY: PASS`.
+  - **`./scripts/verify_platform_observability.sh`:**
+    `PASS=81 FAIL=0 total=81`. All sub-scripts green.
+  - **`./scripts/check_runtime_state.sh`:** all 9 new
+    `NOTIFICATION_*` / discord-delivery smokes PASS; all 9
+    Stage-21 `DISCORD_*` smokes still PASS; all 9
+    Stage-20 `OPERATIONS_*` smokes still PASS; all 8
+    Stage-19 `AUDIT_*` smokes still PASS; all 12
+    Stage-17/18 `GITHUB_*` smokes still PASS.
+  - **Production safety:**
+    `deployment_records.production_executed=true OR
+    environment=production` = `0`;
+    `workflow_states.execution_result->>
+    'production_executed'='true'` = `0`. Re-checked via SQL
+    counters AND via `/operations/safety`. Unchanged since
+    Stage 18.
+  - **Live `/operations/safety` after the verify run:**
+    `result=safe`,
+    `discord_has_token=false`,
+    `discord_test_channel_configured=false`,
+    `discord_real_test_enabled=false`,
+    `discord_external_send_enabled=false`. None of the four
+    Discord opt-in env vars is set in the cluster.
+  - **Live notification-worker metrics:**
+    `notification_worker_processed_total` totals (sample):
+    `workflow.dispatched=38`, `discord.task.received=11`,
+    `agent.intake_completed=44`, `requirement.completed=44`,
+    `development.completed=37`, `qa.completed=37`,
+    `github.pr.dry_run=76`, `workflow.completed=35`,
+    `workflow.waiting_approval=13`,
+    `discord.task.waiting_approval=3`, `workflow.failed=7`,
+    `incident.acknowledged=4`, `incident.resolved=4`,
+    `workflow.resumed=4`, `discord.task.dispatched=8`.
+    `notification_worker_failures_total=0`,
+    `notification_worker_skipped_total{reason="duplicate"}`
+    visible whenever the worker replays the residual pending
+    list — same Stage-19 audit-worker pattern.
+  - **Optional real Discord test:** **SKIPPED** by design.
+    `DISCORD_BOT_TOKEN` / `DISCORD_TEST_CHANNEL_ID` /
+    `RUN_REAL_DISCORD_TEST` are unset on the cluster. Route
+    returned HTTP 409 + the documented safety detail; one
+    `decision_type=discord_real_test_skipped` audit row was
+    written per refusal so the contract is observable in
+    `audit_logs`.
+
+- **Risks / observations only (not Step 22 roadmap decisions):**
+  - **Sandbox only by default.** `/health.mode=sandbox` and
+    `/status.external_send_enabled=false` are the contract.
+    The controlled-real path is opt-in and refused by default;
+    the cluster verifies the refusal as part of
+    `verify_notification_delivery.sh` and the runtime smoke
+    `DISCORD_REAL_TEST_GUARD_SMOKE`.
+  - **Real Discord test skipped.** Cluster doesn't carry
+    `DISCORD_BOT_TOKEN`; `RUN_REAL_DISCORD_TEST` is unset;
+    `DISCORD_TEST_CHANNEL_ID` is unset. The
+    `/discord/real/test-message` route returns 409 with the
+    documented safety detail and writes one
+    `discord_real_test_skipped` audit row so the contract is
+    observable.
+  - **No real GitHub write.** Stage 22 did not add any new
+    GitHub code path. The pipeline-level safety contract
+    (Stage 17 dry-run default) is unchanged.
+  - **Production hardening not completed.** Postgres trust
+    auth, Vault dev mode, Alertmanager null receiver remain
+    local/test-only. Stage 22 added no new secret writer
+    beyond the opt-in Discord bot credential (which lives
+    only in the env var, never in code / migrations / docs /
+    audit / responses).
+  - **Notification backlog policy.** The worker uses the
+    existing `notification-group` (created with `$` at
+    Stage 15.5) so it drains every event the group hasn't
+    delivered on first startup — same behaviour Stage 19's
+    audit-worker demonstrated. The
+    `source_message_id` partial unique index protects against
+    duplicates on any future replay (`XGROUP SETID`).
+  - **Sandbox `rendered_message` storage.** The summary line
+    written under `metadata.rendered_message` is bounded to
+    short, explicit fields (event_type, task_id, status,
+    operations_url, optional pr_url + message). The test
+    `test_render_discord_message_never_dumps_full_payload`
+    guards against any future producer accidentally
+    smuggling a secret into the rendered string.
