@@ -4158,3 +4158,229 @@ issues & blockers, and next-step suggestions.
     `test_render_discord_message_never_dumps_full_payload`
     guards against any future producer accidentally
     smuggling a secret into the rendered string.
+
+---
+
+## Stage 23 — Step 22: Controlled Real GitHub Validation
+
+- **Execution window:** 2026-05-29 (UTC+8 working day) —
+  authored locally on `main`, deployed to 10.0.1.31, verified.
+- **Branch / commits (push order):**
+  - Local + cluster deliverable: `9dd368c` (Step 22
+    controlled real GitHub validation + safety guard + audit/
+    notification/operations wiring)
+  - Stage 23 progress log: this commit
+- **Repo:** https://github.com/coolerh250-AI-Agents-SWD.git
+  (workspace path on test server: `/home/itadmin/AI-Agents-SWD`).
+- **Modified / added files (Stage 23 deliverable):**
+  - `apps/github-automation/src/main.py` — `POST /github/workflow/
+    real-test-pr` endpoint + `RealTestPRRequest` + `build_real_test
+    _pr_body` + safe audit/notification publishers (no token in any
+    response). `/health` gains `real_github_test_enabled` +
+    `test_repo_configured` booleans (no token value).
+  - `apps/github-automation/src/real_guard.py` (new) — pure
+    `evaluate_real_test_request(...)` returning a `GuardResult`. Pins
+    branch prefix (`ai-agents-test/`), title prefix
+    (`[AI-Agents-SWD Test]`), file scope
+    (`docs/github-real-test/`), file-content markers
+    (`task_id` / `workflow_id` / `generated_by=github-automation` /
+    `real_github_test=true` / `production_executed=false`), PR-body
+    sections (six sections including the new mandatory
+    `## Safety Notes`), repo equality with `GITHUB_TEST_REPO`,
+    and forbidden base branches (`production` / `prod` /
+    `release/*`). `dry_run` must be exactly `False` (the
+    pydantic default `None` is treated as not-opt-in).
+  - `shared/sdk/observability/metrics.py` — five new
+    `github_real_test_*` series:
+    `github_real_test_attempts_total{repo,result}`,
+    `github_real_test_success_total{repo,result}`,
+    `github_real_test_blocked_total{repo,reason}`,
+    `github_real_test_failures_total{repo,reason}`,
+    `github_real_test_duration_seconds{repo,result}`.
+  - `apps/orchestrator/src/operations.py` — module-level
+    `REAL_TEST_DECISION_TYPES` constant; new
+    `_summarise_real_test_events(...)` helper; `/operations/safety`
+    gains `github_test_repo_configured` +
+    `github_external_write_enabled` booleans + a
+    `github_external_write_enabled` warning (verdict downgrades
+    from `safe` → `warning`); `/operations/github/{task_id}`
+    surfaces a `real_test` section with
+    `safety_guard_result.{latest_success,latest_blocked,latest
+    _failed}`; `/operations/workflows/{task_id}.github.real_test`
+    carries the same trio for the unified workflow view.
+  - `infra/docker-compose/docker-compose.yml` — pass-through
+    `RUN_REAL_GITHUB_TEST` + `GITHUB_TEST_REPO` env vars on both
+    `github-automation` and `orchestrator` (default `false` / empty).
+  - `tests/conftest.py` — preload `real_guard` under its canonical
+    module name so `apps/github-automation/src/main.py` can
+    `from real_guard import` when loaded via `spec_from_file_location`.
+  - `tests/test_github_real_guard.py` (new, 18 cases) — guard
+    matrix, including parametrised
+    forbidden-base-branch and dry_run-not-explicit-false checks.
+  - `tests/test_github_real_workflow_endpoint.py` (new, 13 cases) —
+    every failure mode returns HTTP 409 with structured
+    `safety_guard_result`; full-flow happy-path test stubs
+    `GitHubClient` so no real API call leaves the process; token
+    leak check asserts the response body never contains the env
+    token value.
+  - `tests/test_github_real_pr_template.py` (new, 7 cases) — pins
+    the six required PR sections (including `## Safety Notes`), the
+    required file markers, and the three allowed prefixes
+    (branch / title / file path).
+  - `tests/test_github_real_operations.py` (new, 4 cases) — asserts
+    `/operations/safety` carries the four `github_*` booleans
+    without leaking the token, and `/operations/github/{task_id}`
+    surfaces both blocked and success real-test events.
+  - `tests/test_github_real_metrics.py` (new, 2 cases) — asserts
+    every Stage 23 series is registered on the default
+    Prometheus registry and that one blocked request labels the
+    `github_real_test_blocked_total` counter.
+  - `scripts/verify_real_github_validation.sh` (new, 12 checks) —
+    default mode asserts `REAL_GITHUB_TEST_SKIPPED: PASS` + HTTP
+    409 with no token leak + audit row + operations view + dry-run
+    regression + production safety. Optional opt-in path (all three
+    env vars set) additionally asserts PR / issue / branch URLs,
+    `github.real_test_pr.created` notification, audit row,
+    `/operations/github/{task_id}.real_test.latest_success`.
+  - `scripts/check_runtime_state.sh` — five new Stage 23 smokes:
+    `GITHUB_REAL_GUARD_SMOKE`, `GITHUB_REAL_TEST_SKIPPED_SMOKE`,
+    `GITHUB_REAL_METRICS_SMOKE`,
+    `GITHUB_REAL_OPERATIONS_SMOKE`,
+    `GITHUB_DRY_RUN_REGRESSION_SMOKE`.
+  - `docs/operations/manual-verification.md` — new section 17b
+    (Controlled real GitHub validation), Stage 23 sign-off items
+    (three new bullets).
+  - `docs/operations/github-automation-runbook.md` — new section
+    13 (Stage 23 controlled real GitHub validation procedure).
+  - `README.md` — new top-level section "Controlled Real GitHub
+    Validation (Stage 23)" covering required env, sandbox repo
+    requirement, allowed actions, forbidden actions, safety guard,
+    how to verify SKIPPED mode, how to run the controlled real
+    test, how to inspect `/operations/github/{task_id}`.
+- **Deployment target:** test server `10.0.1.31`, repo path
+  `/home/itadmin/AI-Agents-SWD`, container topology unchanged
+  (22 services). Only `github-automation` and `orchestrator` were
+  rebuilt + force-recreated; the observability quartet
+  (`prometheus` / `grafana` / `alertmanager` / `tempo`) was
+  force-recreated to pick up the same scrape topology.
+- **Test results (local + cluster, no real GitHub API call):**
+  - **Local quality gates (pre-push):** `pytest -q` 65 focused
+    Stage-23 + regression cases PASS; the slower full sweep
+    (`./scripts/run_tests.sh`) on the cluster shows
+    **511 passed, 0 failed, 115 skipped**.
+  - **Cluster runtime smokes (`./scripts/check_runtime_state.sh`):**
+    every prior smoke PASS, plus the five new Stage 23 smokes
+    PASS: `GITHUB_REAL_GUARD_SMOKE`,
+    `GITHUB_REAL_TEST_SKIPPED_SMOKE`,
+    `GITHUB_REAL_METRICS_SMOKE`,
+    `GITHUB_REAL_OPERATIONS_SMOKE`,
+    `GITHUB_DRY_RUN_REGRESSION_SMOKE`.
+  - **`./scripts/verify_real_github_validation.sh`** —
+    `checks passed: 12 / 12` ⇒
+    `REAL_GITHUB_VALIDATION_VERIFY: PASS` with
+    `REAL_GITHUB_TEST_SKIPPED: PASS`. The script verified
+    `/health.real_github_test_enabled=false`,
+    `/operations/safety.github_*` four booleans all `false`,
+    `/github/workflow/real-test-pr` returning HTTP 409 +
+    `safety_guard_result.allowed=false`, no token leak in the
+    refused response, audit row
+    `decision_type=github_real_test_blocked`,
+    `/operations/github/{task_id}.real_test.latest_blocked`,
+    `/github/workflow/demo-pr` dry-run regression PASS,
+    `deployment_records.production_executed=true` and
+    `workflow_states.production_executed=true` counts both `0`.
+  - **`./scripts/verify_github_automation.sh`** — 7/7 PASS
+    (Stage 17 dry-run flow unchanged; "OPTIONAL: real GitHub test
+    SKIPPED" as expected).
+  - **`./scripts/verify_github_pipeline_flow.sh`** — 7/7 PASS
+    (`tempo.trace.github-automation: PASS`; pipeline integration
+    unchanged).
+  - **`./scripts/verify_discord_gateway.sh`** — 12/12 PASS.
+  - **`./scripts/verify_notification_delivery.sh`** — 9/9 PASS.
+  - **`./scripts/verify_operations_view.sh`** — 10/10 PASS.
+  - **`./scripts/verify_unified_audit.sh`** — 9/9 PASS.
+  - **`./scripts/verify_platform_observability.sh`** —
+    `PASS=81  FAIL=0` ⇒ `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
+  - **Production safety SQL** — both queries return `0`:
+    `deployment_records` with
+    `metadata->>'production_executed'='true'` or
+    `environment='production'` is `0`; `workflow_states` with
+    `execution_result->>'production_executed'='true'` is `0`.
+  - **Manual `curl` verification** of section 11 — HTTP 409 with
+    `safety_guard_result.{allowed:false, reason:missing_github_
+    token, repo:coolerh250/AI-Agents-SWD, details:{}}` and the
+    word `token` does not appear in any response body other than
+    the structured guard field names (no token value present).
+  - **Quality gates:** local `ruff check .` clean, `black --check`
+    clean, `mypy shared/` clean (41 source files).
+- **Container roster (10.0.1.31, post-deploy):** 22 services all
+  `running (healthy)` (`postgres`, `redis`, `vault`, `orchestrator`,
+  `policy-engine`, `approval-engine`, `audit-service`,
+  `communication-gateway`, `intake-agent`, `requirement-agent`,
+  `development-agent`, `qa-agent`, `devops-agent`,
+  `github-automation`, `retry-scheduler`, `audit-worker`,
+  `discord-gateway`, `notification-worker`, `prometheus`,
+  `grafana`, `alertmanager`, `tempo`).
+- **Risks / observations only (not Step 23 roadmap decisions):**
+  - **Sandbox-only by default.** `/health.real_github_test_enabled
+    =false`, `/health.test_repo_configured=false`, and
+    `/operations/safety.github_external_write_enabled=false` are
+    the contract. The controlled-real path is opt-in and refused by
+    default; the cluster verifies the refusal as part of
+    `verify_real_github_validation.sh` and
+    `check_runtime_state.sh` (`GITHUB_REAL_GUARD_SMOKE`).
+  - **Real GitHub test skipped.** Cluster doesn't carry
+    `GITHUB_TOKEN`; `RUN_REAL_GITHUB_TEST` is unset;
+    `GITHUB_TEST_REPO` is unset. The `/github/workflow/real-test-pr`
+    route returns 409 with the documented `safety_guard_result`
+    body. One `decision_type=github_real_test_blocked` audit row
+    was written per refusal so the contract is observable.
+    `production_executed_true_count=0` everywhere.
+  - **Sandbox repo pinning.** When the optional opt-in path is
+    enabled, the guard's `repo == GITHUB_TEST_REPO` check makes it
+    impossible to redirect a real PR to an unintended repository by
+    tampering with the request body. The cluster default leaves
+    `GITHUB_TEST_REPO` empty so the route refuses with reason
+    `missing_github_token` (token is the first check) — the repo-
+    mismatch path is exercised by the unit tests instead.
+  - **No merge, no branch protection change.** The endpoint walks
+    `issue → branch → file → PR → checks` and stops. There is no
+    code path that calls `PATCH /repos/:owner/:repo/branches/:branch
+    /protection`, no path that POSTs to `/merge`, no path that
+    `DELETE /repos/:owner/:repo/git/refs/heads/:branch`. Cleanup
+    is the operator's manual responsibility (close PR, delete
+    branch, revoke PAT).
+  - **No production deploy.** The Stage 23 flow targets a sandbox
+    repo and writes one file under `docs/github-real-test/`. No
+    `deployment_records` row is created. The platform's
+    `production_executed=false` counters stay at `0`.
+  - **Token handling.** `GITHUB_TOKEN`, when set, is read at call
+    time by `GitHubClient._headers()` only — every other layer
+    (operations view, audit, notification, metrics, spans, /health,
+    /safety) reduces it to a boolean. The endpoint's safe-error
+    path returns the structured `safety_guard_result` without any
+    token-shaped substring; the test
+    `test_response_never_contains_token` and the verify script's
+    token-leak greps guard against any future regression.
+  - **`audit_logs` shape.** Stage 23 introduces three new
+    `decision_type` values (`github_real_test`,
+    `github_real_test_blocked`, `github_real_test_failed`). They
+    are persisted by the existing Stage 19 unified
+    `stream.audit → audit-worker → audit_logs` path —
+    no new persistence code path was added.
+  - **In-flight fixes.** None. Stage 23 was deployed cleanly in
+    one push (deliverable `9dd368c`); the Stage-22 in-flight
+    asyncpg and unique-index fixes did not recur.
+  - **Production hardening not completed.** Postgres trust auth,
+    Vault dev mode, Alertmanager null receiver remain
+    local/test-only. Stage 23 added no new secret writer beyond
+    the opt-in `GITHUB_TOKEN` (which lives only in the env var,
+    never in code / migrations / docs / audit / responses).
+  - **Notification backlog policy.** Unchanged from Stage 22.
+    The Stage 23 endpoint publishes one
+    `github.real_test_pr.created` event per controlled-real
+    success; the existing `notification-worker` consumes it and
+    writes one `status=delivered, sandbox=true, external_sent=true`
+    delivery row when a real Discord channel is configured (the
+    cluster default does not have one, so a sandbox `simulated`
+    row is written instead).

@@ -41,9 +41,7 @@ def _preload_module(module_name: str, path: Path) -> None:
 
 
 _preload_module("scheduler", _REPO_ROOT / "apps" / "retry-scheduler" / "src" / "scheduler.py")
-_preload_module(
-    "real_guard", _REPO_ROOT / "apps" / "github-automation" / "src" / "real_guard.py"
-)
+_preload_module("real_guard", _REPO_ROOT / "apps" / "github-automation" / "src" / "real_guard.py")
 
 
 @pytest.fixture
