@@ -4384,3 +4384,191 @@ issues & blockers, and next-step suggestions.
     delivery row when a real Discord channel is configured (the
     cluster default does not have one, so a sandbox `simulated`
     row is written instead).
+
+---
+
+## Stage 24 — Step 23: Staging Runtime Hardening & Secrets Baseline
+
+- **Execution window:** 2026-05-29 (UTC+8 working day) — authored
+  locally on `main`, deployed to 10.0.1.31, verified.
+- **Branch / commits (push order):**
+  - Deliverable: `fe82c52` (Step 23 staging runtime hardening
+    baseline — Stage 24).
+  - Stage 24 progress log: this commit.
+- **Repo:** https://github.com/coolerh250/AI-Agents-SWD.git
+  (workspace path on test server: `/home/itadmin/AI-Agents-SWD`).
+- **Modified / added files (Stage 24 deliverable):**
+  - `infra/runtime/env.schema.example` (new) — canonical env
+    template with placeholder-only secrets.
+  - `infra/runtime/env.staging.example` (new) — staging-flavoured
+    template; pins `APP_ENV=staging`, removes trust-auth tolerance.
+  - `infra/runtime/runtime-config.schema.json` (new) — per-mode
+    rule table the validator reads.
+  - `infra/runtime/README.md` (new) — local vs staging diff + the
+    do-not-commit list.
+  - `infra/docker-compose/docker-compose.staging.yml` (new) — staging
+    template (template, not replacement). Postgres uses
+    `POSTGRES_PASSWORD` via env substitution + drops
+    `POSTGRES_HOST_AUTH_METHOD=trust` + separate
+    `postgres-staging-data` volume + no Vault dev-mode container.
+  - `shared/sdk/secrets/__init__.py`, `models.py`, `provider.py`
+    (new) — `SecretProvider` abstraction with env / vault-placeholder
+    backends; `SecretRef` that redacts itself in repr / str /
+    `model_dump`; `redact` / `redact_mapping` helpers.
+  - `apps/discord-gateway/src/client.py` — token now lives in
+    `_token_ref: SecretRef`; the `Authorization` header reads the
+    value via `_token_ref.reveal()`. `has_token` is still a bool.
+  - `apps/notification-worker/src/discord_client.py` — same SecretRef
+    wrap for the controlled-real Discord delivery client.
+  - `apps/github-automation/src/main.py` — `/health.has_token`
+    reads through `default_provider().has_secret("GITHUB_TOKEN")` so
+    a placeholder value reports as "not present".
+  - `scripts/validate_runtime_config.py` + `.sh` (new) — three
+    modes (`local` / `staging` / `production-check`). Findings
+    never include secret values.
+  - `scripts/backup_postgres.sh` (new) — `pg_dump --format=custom`
+    to `backups/aiagents-<ts>.dump`.
+  - `scripts/restore_postgres.sh` (new) — refuses unless
+    `ALLOW_RESTORE=true` AND backup file argument supplied AND
+    `APP_ENV` is not `production` / `production-check`.
+  - `scripts/verify_backup_restore.sh` (new) — fresh `pg_dump` +
+    `pg_restore -l` TOC parse + table-count-unchanged + restore
+    refusal smoke. Ends `BACKUP_RESTORE_VERIFY: PASS`.
+  - `scripts/production_safety_gate.sh` (new) — read-only gate.
+    Inspects `deployment_records` / `workflow_states` /
+    `/operations/safety` / Alertmanager receivers / Vault note /
+    Postgres note. Exits 0 on PASS, 1 on FAIL.
+  - `scripts/runtime_health_snapshot.sh` (new) — writes
+    `source/runtime-health.log` (gitignored) with the platform
+    health summary. No token-shaped substring.
+  - `scripts/verify_staging_hardening.sh` (new) — aggregate
+    verifier with 9 checks.
+  - `scripts/check_runtime_state.sh` — 6 new Stage 24 smokes
+    (`RUNTIME_CONFIG_LOCAL_SMOKE`,
+    `PRODUCTION_SAFETY_GATE_SMOKE`,
+    `BACKUP_RESTORE_SMOKE`,
+    `RUNTIME_HEALTH_SNAPSHOT_SMOKE`,
+    `SECRET_REDACTION_SMOKE`,
+    `STAGING_TEMPLATE_SMOKE`).
+  - `tests/conftest.py` — preload `validate_runtime_config` under
+    the canonical module name so the Python 3.14 dataclass
+    re-registration race doesn't bite the validator tests.
+  - `tests/test_runtime_config_validator.py` (new, 14 cases).
+  - `tests/test_secret_provider.py` (new, 13 cases).
+  - `tests/test_staging_compose_template.py` (new, 8 cases).
+  - `tests/test_backup_restore_scripts.py` (new, 10 cases).
+  - `tests/test_production_safety_gate.py` (new, 7 cases).
+  - `tests/test_runtime_health_snapshot.py` (new, 6 cases).
+  - `docs/operations/staging-runtime-hardening.md` (new) — operator
+    runbook.
+  - `docs/operations/manual-verification.md` — new section 17c +
+    five sign-off checklist items.
+  - `README.md` — new "Staging Runtime Hardening (Stage 24)"
+    section.
+  - `.gitignore` — adds `backups/`, `*.dump`, `*.sql.gz`; unignores
+    `shared/sdk/secrets/*.py` (the broader `secrets/` pattern was
+    catching the new SDK dir).
+- **Deployment target:** test server `10.0.1.31`, repo path
+  `/home/itadmin/AI-Agents-SWD`, container topology unchanged
+  (22 services). Only `github-automation`, `discord-gateway`,
+  `notification-worker` rebuilt + force-recreated; the observability
+  quartet (`prometheus` / `grafana` / `alertmanager` / `tempo`) was
+  force-recreated to pick up the same scrape topology.
+- **Test results (local + cluster, no real GitHub / Discord call):**
+  - **Local quality gates (pre-push):** ruff clean, black clean,
+    mypy clean (44 source files), full pytest sweep
+    **456 passed / 0 failed / 115 skipped** in 593s.
+  - **Cluster `./scripts/run_tests.sh`:** **571 passed, 1 warning**
+    (the `test_github_tracing_metrics.py` deprecation warning is
+    pre-existing). All optional linters clean.
+  - **Cluster `./scripts/check_runtime_state.sh`:** every prior
+    smoke PASS, plus 6 new Stage 24 smokes PASS:
+    `RUNTIME_CONFIG_LOCAL_SMOKE`,
+    `PRODUCTION_SAFETY_GATE_SMOKE`,
+    `BACKUP_RESTORE_SMOKE`,
+    `RUNTIME_HEALTH_SNAPSHOT_SMOKE`,
+    `SECRET_REDACTION_SMOKE`,
+    `STAGING_TEMPLATE_SMOKE`.
+  - **`./scripts/verify_staging_hardening.sh`** —
+    `checks passed: 9 / 9` ⇒ `STAGING_HARDENING_VERIFY: PASS`.
+    Detail:
+    - `RUNTIME_CONFIG_VALIDATION: PASS`
+    - `PRODUCTION_SAFETY_GATE: PASS`
+    - `BACKUP_RESTORE_VERIFY: PASS` (backup file size = 1,515,861
+      bytes; 9 tables before == 9 tables after; restore refusal
+      observed)
+    - `RUNTIME_HEALTH_SNAPSHOT_DONE: PASS` (log size = 6,570 bytes)
+    - `HEALTH_LOG_NO_TOKEN: PASS`
+    - `STAGING_TEMPLATE_NO_TRUST_AUTH: PASS`
+    - `ENV_EXAMPLES_PLACEHOLDER_ONLY: PASS`
+    - `PRODUCTION_EXECUTED_FALSE: PASS`
+    - `SECRET_REDACTION: PASS`
+  - **`./scripts/verify_real_github_validation.sh`** — 12/12 PASS,
+    `REAL_GITHUB_TEST_SKIPPED: PASS`.
+  - **`./scripts/verify_notification_delivery.sh`** — 9/9 PASS.
+  - **`./scripts/verify_discord_gateway.sh`** — 12/12 PASS.
+  - **`./scripts/verify_operations_view.sh`** — 10/10 PASS.
+  - **`./scripts/verify_unified_audit.sh`** — 9/9 PASS.
+  - **`./scripts/verify_github_pipeline_flow.sh`** — 7/7 PASS
+    (`tempo.trace.github-automation: PASS`).
+  - **`./scripts/verify_platform_observability.sh`** —
+    `PASS=81  FAIL=0` ⇒ `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
+  - **Production safety SQL** — both queries return `0`.
+  - **Extra Stage 24 validation:**
+    `./scripts/validate_runtime_config.sh --mode local` ⇒
+    `RUNTIME_CONFIG_VALIDATION: PASS`;
+    `./scripts/production_safety_gate.sh` ⇒
+    `PRODUCTION_SAFETY_GATE: PASS`;
+    `./scripts/runtime_health_snapshot.sh` ⇒ written to
+    `source/runtime-health.log` (6,570 bytes, no token-shaped
+    substring); the snapshot's head shows `git HEAD = fe82c52` and
+    all 22 services `running (healthy)`.
+- **Container roster (10.0.1.31, post-deploy):** 22 services all
+  `running (healthy)` — `postgres`, `redis`, `vault`,
+  `orchestrator`, `policy-engine`, `approval-engine`,
+  `audit-service`, `communication-gateway`, `intake-agent`,
+  `requirement-agent`, `development-agent`, `qa-agent`,
+  `devops-agent`, `github-automation`, `retry-scheduler`,
+  `audit-worker`, `discord-gateway`, `notification-worker`,
+  `prometheus`, `grafana`, `alertmanager`, `tempo`.
+- **Risks / observations only (not Step 24 roadmap decisions):**
+  - **Still local/test.** The local cluster on `10.0.1.31` keeps
+    `POSTGRES_HOST_AUTH_METHOD=trust`, Vault `server -dev`, and
+    the Alertmanager `null-receiver`. Stage 24 is strictly
+    additive — it documents the gap and ships the tools an
+    operator would use to close it, without changing the running
+    cluster's posture.
+  - **Vault dev mode.** Unchanged. The validator's `staging` mode
+    rejects this unless `ALLOW_VAULT_DEV_MODE_FOR_STAGING=true`
+    is set as an explicit escape hatch.
+  - **Postgres trust auth.** Unchanged on `docker-compose.yml`.
+    `docker-compose.staging.yml` demonstrates the staging swap.
+  - **Alertmanager null receiver.** Unchanged.
+  - **Backup limitations.** The Stage 24 backup script targets the
+    local cluster's trust-auth path. For staging an operator
+    supplies `PGPASSWORD` in the shell that runs the script. The
+    backup file is binary `pg_dump -Fc`; archives are not
+    encrypted at rest by the script itself (gitignored under
+    `backups/`).
+  - **Production readiness gap.** Stage 24 does not produce
+    a production-ready platform. The validator's
+    `production-check` mode is an audit gate that a future stage
+    could run against a real Vault + real Postgres + real
+    Alertmanager. Nothing in this stage authorises a production
+    deploy.
+  - **Other:**
+    - SecretRef wrap: the Stage 24 SDK shim does not change the
+      observable behaviour of `/health` / `/operations/safety`
+      (`has_token` remains a bool); only the internal storage on
+      the Discord client instances changed from `str` to
+      `SecretRef`. The unit suite asserts the redaction contract;
+      the existing Discord delivery tests still pass.
+    - `source/runtime-health.log` is regeneratable and gitignored
+      (covered by the existing `*.log` rule). The Stage 24 verify
+      script greps the file for token-shaped substrings as a
+      regression guard.
+    - The .gitignore negation for `shared/sdk/secrets/*.py` is
+      narrow — it does NOT re-enable `__pycache__/` inside that
+      directory (the build-artifact pyc files stay ignored).
+    - Following Stage 22 / Stage 23, Claude Code does not decide
+      the Step 24 roadmap.
