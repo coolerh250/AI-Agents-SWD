@@ -69,10 +69,24 @@ def test_staging_template_uses_separate_volume():
     assert "postgres-staging-data" in volumes
 
 
-def test_staging_template_does_not_start_vault_dev_mode():
+def test_staging_template_vault_dev_mode_documented_as_escape_hatch():
+    """Stage 25 expanded the staging template to a full 22-service stack
+    and explicitly included the dev-mode vault container behind the
+    documented ``ALLOW_VAULT_DEV_MODE_FOR_STAGING=true`` escape hatch.
+
+    The validator's ``staging`` mode rejects vault dev-mode unless the
+    escape hatch is set (covered by
+    ``test_runtime_config_validator.test_staging_vault_dev_mode_*``).
+    The compose file itself must call this out in a comment so an
+    operator reading the YAML can see the limitation in-place.
+    """
+    text = _STAGING.read_text(encoding="utf-8")
+    assert "ALLOW_VAULT_DEV_MODE_FOR_STAGING" in text
     doc = _load_yaml(_STAGING)
-    services = doc.get("services") or {}
-    assert "vault" not in services
+    if "vault" in (doc.get("services") or {}):
+        # If the dev-mode vault is included, the template MUST mention
+        # the escape hatch + the fact that it's a documented limitation.
+        assert "staging limitation" in text.lower() or "escape hatch" in text.lower()
 
 
 def test_staging_template_name_distinct_from_local():

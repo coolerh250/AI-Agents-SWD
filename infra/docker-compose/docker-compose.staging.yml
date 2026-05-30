@@ -1,46 +1,53 @@
-# Stage 24 staging template.
+# Stage 25 staging bring-up compose.
 #
-# This file is NOT a drop-in replacement for docker-compose.yml. It is a
-# minimal staging-flavoured baseline that demonstrates how the operator
-# would harden the runtime:
+# Self-contained sibling of docker-compose.yml. It runs the SAME 22
+# services with three deliberate differences:
 #
-#   * Postgres rejects trust-auth — POSTGRES_PASSWORD must be set in the
-#     shell that invokes `docker compose -f ... up`.
-#   * Postgres uses a separate volume (postgres-staging-data) so a
-#     staging upgrade can't accidentally clobber the local/test data
-#     volume already present in docker-compose.yml.
-#   * Vault is NOT started here — staging is expected to point at a
-#     real Vault server via VAULT_ADDR.
-#   * Only the data plane is templated. App services are inherited from
-#     the main compose file via `docker compose -f docker-compose.yml -f
-#     docker-compose.staging.yml up` so the staging operator can verify
-#     the app stack with the new DB credentials without duplicating
-#     every service block.
+#   1. Postgres requires a real password (no trust auth). POSTGRES_PASSWORD
+#      MUST be set in the shell that invokes `docker compose -p
+#      aiagents-staging -f infra/docker-compose/docker-compose.staging.yml
+#      up`. The Postgres image's md5 / scram-sha-256 default kicks in.
+#   2. Every host port binding is offset by +10000 so this stack can run
+#      in parallel with the local/test stack on the same loopback host
+#      (the existing aiagents-test cluster on 10.0.1.31 keeps its
+#      5432 / 6379 / 8000-8015 / 9090 / 9093 / 3000 / 3200 ports). The
+#      INTERNAL container ports are unchanged so service-to-service URLs
+#      (`http://postgres:5432`, `http://orchestrator:8000`, etc.) stay
+#      identical.
+#   3. Volume names are prefixed `postgres-staging-` / `prometheus-
+#      staging-` / etc. so the staging data plane never collides with the
+#      local/test data plane.
 #
-# Every secret is referenced via env-var substitution. No real value
-# lives in this file; the operator must supply
-# `POSTGRES_PASSWORD` (and optionally the other Stage 23 / Stage 22
-# opt-in tokens) before launch.
+# Vault remains in `server -dev` mode here. The Stage 24 validator's
+# `staging` mode refuses this unless ALLOW_VAULT_DEV_MODE_FOR_STAGING=true
+# is set — Step 24 deliberately uses that escape hatch and documents it
+# as a staging limitation. Production-check rejects vault dev mode
+# unconditionally.
+#
+# Nothing in this file changes the local/test compose flow. The
+# `aiagents-test` project keeps running with its existing 22 containers
+# while `aiagents-staging` brings up 22 sibling containers behind a
+# separate docker network + separate volumes + separate host ports.
+
 name: aiagents-staging
 
 services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-aiagents_app}
-      POSTGRES_DB: ${POSTGRES_DB:-aiagents}
+      POSTGRES_USER: ${STAGING_POSTGRES_USER:-aiagents_app}
+      POSTGRES_DB: ${STAGING_POSTGRES_DB:-aiagents}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set for staging}
-      # Intentionally absent: POSTGRES_HOST_AUTH_METHOD.
-      # The image defaults to md5 / scram-sha-256, which requires a
-      # password — exactly what we want here.
+      # Intentionally absent: POSTGRES_HOST_AUTH_METHOD. The image's
+      # default scram-sha-256 path requires the password above.
     ports:
-      - "127.0.0.1:5432:5432"
+      - "127.0.0.1:15432:5432"
     volumes:
       - postgres-staging-data:/var/lib/postgresql/data
     healthcheck:
       test:
         - "CMD-SHELL"
-        - "pg_isready -U ${POSTGRES_USER:-aiagents_app} -d ${POSTGRES_DB:-aiagents}"
+        - "pg_isready -U ${STAGING_POSTGRES_USER:-aiagents_app} -d ${STAGING_POSTGRES_DB:-aiagents}"
       interval: 10s
       timeout: 5s
       retries: 5
@@ -48,13 +55,493 @@ services:
   redis:
     image: redis:7
     ports:
-      - "127.0.0.1:6379:6379"
+      - "127.0.0.1:16379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
 
+  vault:
+    # Staging limitation (documented). Real staging would point
+    # VAULT_ADDR at an external server; Step 24 uses the dev container
+    # under the ALLOW_VAULT_DEV_MODE_FOR_STAGING=true escape hatch.
+    image: hashicorp/vault:1.17
+    command: server -dev
+    environment:
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+    cap_add:
+      - IPC_LOCK
+    ports:
+      - "127.0.0.1:18200:8200"
+
+  policy-engine:
+    build:
+      context: ../..
+      dockerfile: apps/policy-engine/Dockerfile
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: policy-engine
+    ports:
+      - "127.0.0.1:18001:8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8001/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  approval-engine:
+    build:
+      context: ../..
+      dockerfile: apps/approval-engine/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: approval-engine
+    ports:
+      - "127.0.0.1:18002:8002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  audit-service:
+    build:
+      context: ../..
+      dockerfile: apps/audit-service/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: audit-service
+    ports:
+      - "127.0.0.1:18003:8003"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8003/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  notification-worker:
+    build:
+      context: ../..
+      dockerfile: apps/notification-worker/Dockerfile
+    environment:
+      NOTIFICATION_WORKER_MODE: sandbox
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
+      RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      ORCHESTRATOR_PUBLIC_URL: http://localhost:18000
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: notification-worker
+    ports:
+      - "127.0.0.1:18008:8008"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8008/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  discord-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/discord-gateway/Dockerfile
+    environment:
+      DISCORD_GATEWAY_MODE: sandbox
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
+      COMMUNICATION_GATEWAY_URL: http://communication-gateway:8004
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: discord-gateway
+    ports:
+      - "127.0.0.1:18007:8007"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8007/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  audit-worker:
+    build:
+      context: ../..
+      dockerfile: apps/audit-worker/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: audit-worker
+    ports:
+      - "127.0.0.1:18006:8006"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8006/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  orchestrator:
+    build:
+      context: ../..
+      dockerfile: apps/orchestrator/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      POLICY_ENGINE_URL: http://policy-engine:8001
+      APPROVAL_ENGINE_URL: http://approval-engine:8002
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
+      GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: orchestrator
+    ports:
+      - "127.0.0.1:18000:8000"
+    depends_on:
+      - policy-engine
+      - approval-engine
+      - audit-service
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  communication-gateway:
+    build:
+      context: ../..
+      dockerfile: apps/communication-gateway/Dockerfile
+    environment:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: communication-gateway
+    ports:
+      - "127.0.0.1:18004:8004"
+    depends_on:
+      - orchestrator
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8004/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  github-automation:
+    build:
+      context: ../..
+      dockerfile: apps/github-automation/Dockerfile
+    environment:
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      GITHUB_DRY_RUN: "true"
+      RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
+      GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      REDIS_URL: redis://redis:6379
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: github-automation
+    ports:
+      - "127.0.0.1:18005:8005"
+    depends_on:
+      - audit-service
+      - redis
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8005/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  intake-agent:
+    build:
+      context: ../..
+      dockerfile: agents/intake-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: intake-agent
+    ports:
+      - "127.0.0.1:18010:8010"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8010/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  requirement-agent:
+    build:
+      context: ../..
+      dockerfile: agents/requirement-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: requirement-agent
+    ports:
+      - "127.0.0.1:18011:8011"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8011/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  development-agent:
+    build:
+      context: ../..
+      dockerfile: agents/development-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: development-agent
+    ports:
+      - "127.0.0.1:18012:8012"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8012/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  qa-agent:
+    build:
+      context: ../..
+      dockerfile: agents/qa-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: qa-agent
+    ports:
+      - "127.0.0.1:18013:8013"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8013/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  devops-agent:
+    build:
+      context: ../..
+      dockerfile: agents/devops-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
+      GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      GITHUB_DRY_RUN: "true"
+      GITHUB_INTEGRATION_DEFAULT: "true"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: devops-agent
+    ports:
+      - "127.0.0.1:18014:8014"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8014/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  retry-scheduler:
+    build:
+      context: ../..
+      dockerfile: apps/retry-scheduler/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: retry-scheduler
+    ports:
+      - "127.0.0.1:18015:8015"
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8015/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  tempo:
+    image: grafana/tempo:2.6.1
+    command: ["-config.file=/etc/tempo/tempo.yml"]
+    user: "0:0"
+    volumes:
+      - ../observability/tempo/tempo.yml:/etc/tempo/tempo.yml:ro
+      - tempo-staging-data:/var/tempo
+    ports:
+      - "127.0.0.1:13200:3200"
+      - "127.0.0.1:14317:4317"
+      - "127.0.0.1:14318:4318"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3200/ready || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+      - --web.external-url=http://localhost:19093
+    volumes:
+      - ../observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager-staging-data:/alertmanager
+    ports:
+      - "127.0.0.1:19093:9093"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9093/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      - --web.enable-lifecycle
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/prometheus/rules:/etc/prometheus/rules:ro
+      - prometheus-staging-data:/prometheus
+    ports:
+      - "127.0.0.1:19090:9090"
+    depends_on:
+      - orchestrator
+      - communication-gateway
+      - alertmanager
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/ready"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  grafana:
+    image: grafana/grafana:11.3.0
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_INSTALL_PLUGINS: ""
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-staging-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:13000:3000"
+    depends_on:
+      - prometheus
+      - tempo
+      - alertmanager
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost:3000/api/health || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
 volumes:
   postgres-staging-data:
     driver: local
+  prometheus-staging-data:
+  grafana-staging-data:
+  tempo-staging-data:
+  alertmanager-staging-data:

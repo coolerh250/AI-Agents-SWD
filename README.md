@@ -1562,6 +1562,162 @@ See [`docs/operations/staging-runtime-hardening.md`](docs/operations/staging-run
 for the full operator runbook, fine-grained token requirements, and
 the staging readiness checklist.
 
+## Staging Environment Bring-up (Stage 25)
+
+Stage 25 takes the Stage 24 staging hardening baseline and actually
+brings up a parallel staging cluster on the same host. The staging
+project uses the docker compose project name `aiagents-staging` (not
+`aiagents-test`), every host port is offset by **+10000** so it
+coexists with the local/test stack, every Postgres consumer uses
+**password auth** (no trust), and the staging data lives in its own
+set of volumes (`postgres-staging-data`, `prometheus-staging-data`, …).
+
+The default verify path tears the staging stack DOWN after asserting
+the end-to-end flow, so the test cluster doesn't carry two 22-service
+stacks at once.
+
+### Generating the staging env file
+
+```
+./scripts/generate_staging_env.sh
+```
+
+Writes `infra/runtime/.env.staging.local` (gitignored) from the
+placeholder template with a freshly-generated random `POSTGRES_PASSWORD`.
+The other secret-shaped fields keep the placeholder marker so the
+validator catches half-configured envs. Re-running refuses to
+overwrite unless `ALLOW_OVERWRITE=true` is set.
+
+### Bringing the staging stack up
+
+```
+./scripts/start_staging_runtime.sh [--rebuild]
+```
+
+The script validates the env via `validate_runtime_config.sh --mode
+staging`, brings up `aiagents-staging` (docker compose project) on
+the +10000 host ports, waits for Postgres + Redis, applies every
+migration in `migrations/` against the staging DB, initialises Redis
+Streams, and restarts the consumer services so they pick up the
+freshly migrated tables.
+
+| Service | Local host port | Staging host port |
+|---------|-----------------|--------------------|
+| postgres | 5432 | **15432** |
+| redis | 6379 | **16379** |
+| vault | 8200 | **18200** |
+| orchestrator | 8000 | **18000** |
+| policy-engine | 8001 | **18001** |
+| approval-engine | 8002 | **18002** |
+| audit-service | 8003 | **18003** |
+| communication-gateway | 8004 | **18004** |
+| github-automation | 8005 | **18005** |
+| audit-worker | 8006 | **18006** |
+| discord-gateway | 8007 | **18007** |
+| notification-worker | 8008 | **18008** |
+| intake-agent | 8010 | **18010** |
+| 4 other agents | 8011-8014 | **18011-18014** |
+| retry-scheduler | 8015 | **18015** |
+| prometheus | 9090 | **19090** |
+| grafana | 3000 | **13000** |
+| alertmanager | 9093 | **19093** |
+| tempo | 3200 / 4317 / 4318 | **13200 / 14317 / 14318** |
+
+Service-to-service URLs (`http://postgres:5432`, `http://orchestrator:8000`,
+…) use docker's internal DNS and stay unchanged.
+
+### Stopping the staging stack
+
+```
+./scripts/stop_staging_runtime.sh             # keep volumes
+./scripts/stop_staging_runtime.sh --volumes   # purge staging volumes too
+```
+
+### End-to-end staging verification
+
+```
+./scripts/verify_staging_runtime.sh                # default: --down after PASS
+./scripts/verify_staging_runtime.sh --keep-running # leave staging running
+./scripts/verify_staging_runtime.sh --no-rebuild   # skip docker build
+```
+
+Runs 12 checks: env present + placeholder-safe → validator staging
+mode → start staging → health → Postgres password auth → migrations
+applied → e2e workflow through discord-gateway → github dry-run on
+the staging pipeline → `audit_timeline` → `notification_deliveries`
+sandbox count → `/operations/safety` + `production_executed=0` →
+local/test stack still healthy → tear-down (or keep-running). Ends
+with `STAGING_RUNTIME_VERIFY: PASS` when all 12 pass.
+
+### Staging DB password auth
+
+```
+docker compose -p aiagents-staging \
+  -f infra/docker-compose/docker-compose.staging.yml \
+  --env-file infra/runtime/.env.staging.local \
+  exec postgres psql -U aiagents_app -d aiagents -c '\dt'
+```
+
+The staging Postgres image has `POSTGRES_HOST_AUTH_METHOD` deliberately
+omitted; it defaults to `scram-sha-256` and refuses every connection
+that doesn't carry the password. The validator's `staging` mode
+asserts this contract.
+
+### Staging backup / restore
+
+```
+./scripts/verify_staging_backup_restore.sh
+```
+
+Runs a read-only `pg_dump` against the staging Postgres, confirms
+`pg_restore -l` parses the archive's TOC, asserts the staging DB's
+table count is unchanged, and asserts the restore guard
+(`scripts/restore_postgres.sh`) refuses without `ALLOW_RESTORE=true`.
+The script samples the local/test DB before + after to assert the
+staging operation never touches the `aiagents-test` data plane.
+
+### Staging runtime health snapshot
+
+```
+./scripts/runtime_health_snapshot.sh --env staging
+cat source/runtime-health-staging.log
+```
+
+Writes a flat summary to `source/runtime-health-staging.log`
+(gitignored by `*.log`) with the staging `docker compose ps`,
+`/operations/summary` / `/operations/safety` (booleans only), the
+staging Prometheus targets up/down, the staging stream lag table,
+and the staging `production_executed=true` counters (which must be
+`0`). No token-shaped substring may appear in the file; the verify
+script greps for one as a regression guard.
+
+### Local/test vs staging differences
+
+| Concern | Local/test (`aiagents-test`) | Staging (`aiagents-staging`) |
+|---|---|---|
+| docker compose project | `aiagents-test` | `aiagents-staging` |
+| Postgres auth | `POSTGRES_HOST_AUTH_METHOD=trust` | password (`scram-sha-256` default) |
+| Postgres user | `postgres` (superuser) | `aiagents_app` |
+| Postgres volume | `postgres-data` | `postgres-staging-data` |
+| Vault | `server -dev` | `server -dev` (documented escape hatch) |
+| Alertmanager receivers | `null-receiver` only | `null-receiver` only |
+| Host ports | 5432 / 6379 / 8000-8015 / 9090 / 9093 / 3000 / 3200 | +10000 offset |
+| Default mode | always running | brought up + verified + torn down by `verify_staging_runtime.sh` |
+
+### This is NOT production-ready
+
+Staging bring-up is staging bring-up. The platform's
+`production_executed=true` counter MUST stay at `0` for both stacks
+throughout. The Stage 25 baseline still:
+
+* uses Vault `server -dev` (documented escape hatch); a real Vault
+  is required before production handoff;
+* uses Alertmanager null-receiver; a real notifier is required;
+* never opens a real Discord / GitHub call by default.
+
+See [`docs/operations/staging-runtime-hardening.md`](docs/operations/staging-runtime-hardening.md)
+for the full operator runbook + the staging readiness checklist.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

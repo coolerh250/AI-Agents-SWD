@@ -31,6 +31,11 @@ backups/
 .env.*
 *.env
 !.env.example
+# Stage 25: generated staging env files carry a random Postgres password.
+# Keep the `.env.staging.local` shape gitignored regardless of where it
+# sits in the tree.
+infra/runtime/.env.staging.local
+infra/runtime/.env.*.local
 secrets/
 # Stage 24: shared/sdk/secrets/ holds the SecretProvider SDK (no real
 # secret bytes). The directory name collided with the broader

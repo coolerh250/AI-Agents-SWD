@@ -1489,4 +1489,57 @@ else
 fi
 
 echo
+echo "=== Stage 25 staging bring-up readiness smokes (lightweight, no compose up) ==="
+
+# 1. env generator syntax + idempotent re-run on a tmp workspace
+gen_tmp=$(mktemp -d 2>/dev/null || mktemp -d -t rgen)
+mkdir -p "$gen_tmp/scripts" "$gen_tmp/infra/runtime"
+cp scripts/generate_staging_env.sh "$gen_tmp/scripts/" 2>/dev/null
+cp infra/runtime/env.staging.example "$gen_tmp/infra/runtime/" 2>/dev/null
+gen_out=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3)
+gen_skip=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3)
+rm -rf "$gen_tmp"
+if echo "$gen_out" | grep -q "GENERATE_STAGING_ENV: PASS" \
+   && echo "$gen_skip" | grep -q "GENERATE_STAGING_ENV: SKIP"; then
+  echo "STAGING_ENV_GENERATION_SMOKE: PASS"
+else
+  echo "STAGING_ENV_GENERATION_SMOKE: CHECK"
+fi
+
+# 2. validator can parse staging mode against the placeholder template
+val_out=$(./scripts/validate_runtime_config.sh --mode staging --env-file infra/runtime/env.staging.example 2>&1)
+# We expect FAIL because the template carries placeholder secrets (by design).
+if echo "$val_out" | grep -q "RUNTIME_CONFIG_VALIDATION: FAIL" \
+   && echo "$val_out" | grep -q "placeholder_secret"; then
+  echo "STAGING_CONFIG_VALIDATION_SMOKE: PASS"
+else
+  echo "STAGING_CONFIG_VALIDATION_SMOKE: CHECK"
+fi
+
+# 3. staging compose template is parseable + carries the +10000 offset
+if grep -qE 'POSTGRES_PASSWORD: \$\{POSTGRES_PASSWORD:\?' infra/docker-compose/docker-compose.staging.yml \
+   && grep -qE '127\.0\.0\.1:18000:8000' infra/docker-compose/docker-compose.staging.yml \
+   && grep -qE '127\.0\.0\.1:15432:5432' infra/docker-compose/docker-compose.staging.yml; then
+  echo "STAGING_COMPOSE_TEMPLATE_SMOKE: PASS"
+else
+  echo "STAGING_COMPOSE_TEMPLATE_SMOKE: CHECK"
+fi
+
+# 4. staging runtime scripts pass bash -n
+runtime_script_ok=1
+for s in scripts/start_staging_runtime.sh scripts/stop_staging_runtime.sh \
+         scripts/check_staging_runtime.sh scripts/verify_staging_runtime.sh \
+         scripts/verify_staging_backup_restore.sh; do
+  if ! bash -n "$s" 2>/dev/null; then
+    runtime_script_ok=0
+    echo "  $s: syntax FAIL"
+  fi
+done
+if [ "$runtime_script_ok" = "1" ]; then
+  echo "STAGING_RUNTIME_SCRIPT_SMOKE: PASS"
+else
+  echo "STAGING_RUNTIME_SCRIPT_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

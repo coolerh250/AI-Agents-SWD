@@ -666,6 +666,120 @@ The Stage 24 items below are appended to the Section 18 sign-off list:
 
 ---
 
+## 17d. Staging environment bring-up (Stage 25)
+
+Stage 25 actually brings up a sibling cluster on `aiagents-staging`
+under host ports offset by +10000. The local/test stack stays
+untouched. Default `verify_staging_runtime.sh` tears the staging
+stack down after the assertions; pass `--keep-running` to leave it
+up for manual inspection.
+
+```
+./scripts/verify_staging_runtime.sh
+```
+
+Expected (default mode):
+
+```
+STAGING_ENV_PRESENT: PASS
+STAGING_VALIDATOR: PASS
+STAGING_VAULT_DEV_MODE_ALLOWED: WARN (documented escape hatch)
+STAGING_START: PASS
+STAGING_HEALTH: PASS
+STAGING_POSTGRES_PASSWORD_AUTH: PASS
+STAGING_MIGRATIONS_APPLIED: PASS
+STAGING_E2E_WORKFLOW: PASS
+STAGING_GITHUB_DRY_RUN: PASS
+STAGING_AUDIT_TIMELINE: PASS
+STAGING_NOTIFICATION_DELIVERY: PASS
+STAGING_OPERATIONS_SAFETY: PASS
+STAGING_PRODUCTION_SAFETY: PASS
+LOCAL_TEST_UNAFFECTED: PASS
+STAGING_STOP: PASS
+checks passed: 12 / 12
+STAGING_RUNTIME_VERIFY: PASS
+```
+
+### Standalone staging commands
+
+* `./scripts/generate_staging_env.sh` — produces
+  `infra/runtime/.env.staging.local` (gitignored, chmod 600). Refuses
+  to overwrite without `ALLOW_OVERWRITE=true`.
+* `./scripts/start_staging_runtime.sh [--rebuild]` — validates +
+  brings staging up + applies migrations + initialises Redis Streams.
+* `./scripts/stop_staging_runtime.sh [--volumes]` — tears staging
+  down; `--volumes` purges the staging data volumes too.
+* `./scripts/check_staging_runtime.sh` — read-only health summary on
+  +10000 host ports.
+* `./scripts/verify_staging_backup_restore.sh` — fresh `pg_dump`
+  against staging Postgres, asserts the local/test DB is untouched.
+* `./scripts/runtime_health_snapshot.sh --env staging` — writes
+  `source/runtime-health-staging.log`.
+
+### Local/test regression after staging bring-up
+
+After staging has been brought up and torn down, re-run the standard
+local/test suite to confirm no regression:
+
+```
+./scripts/check_runtime_state.sh
+./scripts/verify_discord_gateway.sh
+./scripts/verify_notification_delivery.sh
+./scripts/verify_operations_view.sh
+./scripts/verify_unified_audit.sh
+./scripts/verify_github_pipeline_flow.sh
+./scripts/verify_real_github_validation.sh
+./scripts/verify_platform_observability.sh
+```
+
+All must remain green.
+
+### Staging production safety SQL
+
+If the staging stack is left running (`--keep-running`), query the
+staging Postgres directly:
+
+```
+docker compose -p aiagents-staging \
+  -f infra/docker-compose/docker-compose.staging.yml \
+  --env-file infra/runtime/.env.staging.local \
+  exec postgres psql -U aiagents_app -d aiagents -c "
+select count(*) as deployment_prod_true
+from deployment_records
+where metadata->>'production_executed'='true'
+or environment='production';
+"
+```
+
+Both counts must be `0` on staging too. If the verify script tore
+the staging stack down (default), the query simply isn't applicable
+until the next `start_staging_runtime.sh`.
+
+### Stage 25 sign-off checklist additions
+
+* [ ] `./scripts/verify_staging_runtime.sh` ended
+      `STAGING_RUNTIME_VERIFY: PASS` (12 / 12) with the staging
+      stack torn down (or, when run with `--keep-running`, the
+      staging stack is healthy and `production_executed=0`).
+* [ ] `./scripts/verify_staging_backup_restore.sh` ended
+      `STAGING_BACKUP_RESTORE_VERIFY: PASS`; the local/test DB's
+      table count was sampled identical before + after.
+* [ ] `./scripts/runtime_health_snapshot.sh --env staging` produced
+      `source/runtime-health-staging.log` with no token-shaped
+      substring.
+* [ ] `infra/runtime/.env.staging.local` exists on the host with
+      `chmod 600` permissions and was NOT committed to the repo.
+* [ ] After staging tear-down, every previous local/test verify
+      script (`verify_discord_gateway.sh`,
+      `verify_notification_delivery.sh`,
+      `verify_operations_view.sh`,
+      `verify_unified_audit.sh`,
+      `verify_github_pipeline_flow.sh`,
+      `verify_real_github_validation.sh`,
+      `verify_platform_observability.sh`) still PASS.
+
+---
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

@@ -1,25 +1,82 @@
 #!/usr/bin/env bash
-# Stage 24 runtime health snapshot.
+# Stage 24/25 runtime health snapshot.
 #
-# Writes a flat, human-readable summary of the live cluster to
-# ``source/runtime-health.log``. The snapshot is intentionally lossy —
-# only counts and status booleans — so the file can be re-generated
-# safely and never picks up a secret.
+# Default behaviour writes the local/test cluster snapshot to
+# ``source/runtime-health.log``. Pass ``--env staging`` to instead
+# snapshot the aiagents-staging cluster on its +10000 host ports;
+# output lands in ``source/runtime-health-staging.log``.
 #
-# The Stage 24 verify script (verify_staging_hardening.sh) greps the
-# generated log to assert no token-shaped substring leaked in.
+# The snapshot is intentionally lossy — only counts and status
+# booleans — so the file can be re-generated safely and never picks
+# up a secret. Verify scripts grep for token-shaped substrings as a
+# regression guard.
 #
 # Run from the repository root.
 set -uo pipefail
 
-COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose/docker-compose.yml}"
-ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
-PROM="${PROMETHEUS_URL:-http://localhost:9090}"
-POSTGRES_SERVICE="${POSTGRES_SERVICE:-postgres}"
-POSTGRES_USER="${POSTGRES_USER:-postgres}"
-POSTGRES_DB="${POSTGRES_DB:-aiagents}"
+ENV_TARGET="local"
+COMPOSE_PROJECT=""
+for arg in "$@"; do
+  case "$arg" in
+    --env=local|--env=staging)
+      ENV_TARGET="${arg#--env=}"
+      ;;
+    --env)
+      shift || true
+      ;;
+    local|staging)
+      # Only honour these as positional arguments after a bare --env
+      if [ "$arg" = "staging" ] || [ "$arg" = "local" ]; then
+        ENV_TARGET="$arg"
+      fi
+      ;;
+  esac
+done
+# Support ``--env staging`` (two-token form) by re-scanning.
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "--env" ]; then
+    case "$arg" in
+      local|staging) ENV_TARGET="$arg" ;;
+    esac
+  fi
+  prev="$arg"
+done
 
-out="source/runtime-health.log"
+if [ "$ENV_TARGET" = "staging" ]; then
+  COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose/docker-compose.staging.yml}"
+  COMPOSE_PROJECT="${STAGING_COMPOSE_PROJECT:-aiagents-staging}"
+  ENV_FILE="${STAGING_ENV_FILE:-infra/runtime/.env.staging.local}"
+  ORCH="${ORCHESTRATOR_URL:-http://localhost:18000}"
+  PROM="${PROMETHEUS_URL:-http://localhost:19090}"
+  POSTGRES_SERVICE="${POSTGRES_SERVICE:-postgres}"
+  pg_user_from_env=""
+  if [ -f "$ENV_FILE" ]; then
+    pg_user_from_env=$(grep -E '^STAGING_POSTGRES_USER=' "$ENV_FILE" | cut -d= -f2- || true)
+  fi
+  POSTGRES_USER="${POSTGRES_USER:-${pg_user_from_env:-aiagents_app}}"
+  POSTGRES_DB="${POSTGRES_DB:-aiagents}"
+  out="source/runtime-health-staging.log"
+  if [ -f "$ENV_FILE" ]; then
+    ENV_FLAG="--env-file $ENV_FILE"
+  else
+    export POSTGRES_PASSWORD="snapshot-noop"
+    ENV_FLAG=""
+  fi
+else
+  COMPOSE_FILE="${COMPOSE_FILE:-infra/docker-compose/docker-compose.yml}"
+  COMPOSE_PROJECT="${COMPOSE_PROJECT:-aiagents-test}"
+  ENV_FLAG=""
+  ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
+  PROM="${PROMETHEUS_URL:-http://localhost:9090}"
+  POSTGRES_SERVICE="${POSTGRES_SERVICE:-postgres}"
+  POSTGRES_USER="${POSTGRES_USER:-postgres}"
+  POSTGRES_DB="${POSTGRES_DB:-aiagents}"
+  out="source/runtime-health.log"
+fi
+
+COMPOSE="docker compose -p ${COMPOSE_PROJECT} -f ${COMPOSE_FILE}"
+
 mkdir -p "$(dirname "$out")"
 : > "$out"
 
@@ -29,8 +86,11 @@ mkdir -p "$(dirname "$out")"
   echo "## git HEAD"
   git log -1 --pretty='%h %s' 2>/dev/null || echo "(no git context)"
   echo
+  echo "## env"
+  echo "target=$ENV_TARGET project=$COMPOSE_PROJECT compose=$COMPOSE_FILE"
+  echo
   echo "## docker compose ps"
-  docker compose -f "$COMPOSE_FILE" ps --format "table {{.Service}}\t{{.Status}}" 2>/dev/null \
+  $COMPOSE $ENV_FLAG ps --format "table {{.Service}}\t{{.Status}}" 2>/dev/null \
     || echo "(docker compose unavailable)"
   echo
   echo "## /operations/summary"
@@ -89,11 +149,11 @@ except Exception as e:
 " 2>/dev/null || echo "(prom unavailable)"
   echo
   echo "## production_executed counters (Postgres)"
-  dep=$(docker compose -f "$COMPOSE_FILE" exec -T "$POSTGRES_SERVICE" \
+  dep=$($COMPOSE $ENV_FLAG exec -T "$POSTGRES_SERVICE" \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
     "SELECT count(*) FROM deployment_records WHERE metadata->>'production_executed'='true' OR environment='production';" \
     2>/dev/null | tr -d '[:space:]')
-  wf=$(docker compose -f "$COMPOSE_FILE" exec -T "$POSTGRES_SERVICE" \
+  wf=$($COMPOSE $ENV_FLAG exec -T "$POSTGRES_SERVICE" \
     psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -tAc \
     "SELECT count(*) FROM workflow_states WHERE execution_result->>'production_executed'='true';" \
     2>/dev/null | tr -d '[:space:]')
