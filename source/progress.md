@@ -4572,3 +4572,236 @@ issues & blockers, and next-step suggestions.
       directory (the build-artifact pyc files stay ignored).
     - Following Stage 22 / Stage 23, Claude Code does not decide
       the Step 24 roadmap.
+
+---
+
+## Stage 25 — Step 24: Staging Environment Bring-up & End-to-End Validation
+
+- **Execution window:** 2026-05-29 → 2026-05-30 (UTC+8). Authored
+  locally on `main`, deployed to 10.0.1.31, full staging bring-up
+  verified end-to-end, then staging torn down. Local/test stack
+  unaffected throughout.
+- **Branch / commits (push order):**
+  - Deliverable: `836e72b` (Step 24 staging environment bring-up
+    + end-to-end validation — Stage 25).
+  - Fix #1: `d94c525` — check_runtime_state.sh `set -e` interaction
+    with validator FAIL exit code; wrap the deliberate-FAIL
+    validator call with `|| true` so the remaining Stage 25 smokes
+    run.
+  - Fix #2: `49a6690` — verify_staging_runtime.sh check-count
+    bookkeeping (14 individual pass() calls, not 12); the cluster
+    run originally printed `checks passed: 14 / 12 ⇒
+    STAGING_RUNTIME_VERIFY: CHECK` while every individual check was
+    PASS. With the corrected total the summary line reads
+    `14 / 14 ⇒ STAGING_RUNTIME_VERIFY: PASS`.
+  - Stage 25 progress log: this commit.
+- **Repo:** https://github.com/coolerh250/AI-Agents-SWD.git (workspace
+  path on test server: `/home/itadmin/AI-Agents-SWD`).
+- **Modified / added files (Stage 25 deliverable + two fixes):**
+  - `infra/docker-compose/docker-compose.staging.yml` — expanded
+    from a 2-service stub to a full 22-service self-contained
+    staging stack. `name: aiagents-staging`. Host ports offset
+    +10000 (postgres 15432, redis 16379, vault 18200, orchestrator
+    18000, policy-engine 18001, …, prometheus 19090, grafana 13000,
+    tempo 13200/14317/14318, alertmanager 19093). Internal docker
+    DNS ports unchanged. `POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}`
+    required form. Every `DATABASE_URL` interpolates
+    `${POSTGRES_PASSWORD}`. Postgres user `aiagents_app` (not the
+    local `postgres` superuser). Volumes prefixed `-staging-data`.
+    Dev-mode vault retained behind the documented escape hatch.
+  - `scripts/generate_staging_env.sh` (new) — writes
+    `infra/runtime/.env.staging.local` (gitignored, chmod 600) with
+    a randomly-generated base64 `POSTGRES_PASSWORD`; refuses
+    overwrite without `ALLOW_OVERWRITE=true`.
+  - `scripts/start_staging_runtime.sh` (new) — auto-enables
+    `ALLOW_VAULT_DEV_MODE_FOR_STAGING=true` in the env file, runs
+    `validate_runtime_config.sh --mode staging` (refuses to
+    proceed unless PASS), `docker compose -p aiagents-staging up
+    -d`, waits for Postgres + Redis, applies every migration,
+    initialises Redis Streams, restarts the consumer services,
+    prints the staging port map.
+  - `scripts/stop_staging_runtime.sh` (new) — `docker compose down`;
+    `--volumes` / `--purge` flags purge the staging volumes.
+  - `scripts/check_staging_runtime.sh` (new) — `docker compose ps`
+    + `/health` poll on every staging service via +10000 ports.
+  - `scripts/verify_staging_runtime.sh` (new) — 14 individual
+    pass() checks. Default tears staging down; `--keep-running`
+    keeps it up; `--no-rebuild` skips the docker compose build.
+  - `scripts/verify_staging_backup_restore.sh` (new) — fresh
+    `pg_dump` against staging DB, asserts `pg_restore -l` TOC
+    parses, asserts table count unchanged, asserts restore guard
+    refuses without `ALLOW_RESTORE=true`, samples local/test
+    `aiagents-test` DB table count before + after as a regression
+    guard.
+  - `scripts/runtime_health_snapshot.sh` — gains `--env staging`
+    mode that writes `source/runtime-health-staging.log` via the
+    staging compose project + +10000 host ports.
+  - `scripts/check_runtime_state.sh` — 4 new lightweight Stage 25
+    smokes (`STAGING_ENV_GENERATION_SMOKE`,
+    `STAGING_CONFIG_VALIDATION_SMOKE`,
+    `STAGING_COMPOSE_TEMPLATE_SMOKE`,
+    `STAGING_RUNTIME_SCRIPT_SMOKE`). The full staging bring-up is
+    reserved for `verify_staging_runtime.sh` so the runtime check
+    stays fast.
+  - `tests/test_staging_env_generation.py` (new, 8 cases).
+  - `tests/test_staging_runtime_scripts.py` (new, 16 cases).
+  - `tests/test_staging_compose_project.py` (new, 10 cases) —
+    asserts project name distinct, full service set present,
+    host-port +10000 offset proven, no port collision with local,
+    password substitution required, volume naming.
+  - `tests/test_staging_db_auth.py` (new, 7 cases).
+  - `tests/test_staging_runtime_verifier.py` (new, 10 cases).
+  - `tests/test_staging_health_snapshot.py` (new, 10 cases).
+  - `tests/test_staging_compose_template.py` — updated to allow
+    the Stage 25 documented vault dev-mode escape hatch.
+  - `README.md` — new "Staging Environment Bring-up (Stage 25)"
+    section with the +10000 port table, local vs staging diff
+    table, and the "this is NOT production-ready" disclaimer.
+  - `docs/operations/staging-runtime-hardening.md` — appended
+    Stage 25 procedures (env generation, start/stop/check/verify,
+    backup/restore, health snapshot, known limitations).
+  - `docs/operations/manual-verification.md` — new section 17d +
+    five Stage 25 sign-off checklist items.
+  - `.gitignore` — explicit ignore for
+    `infra/runtime/.env.staging.local` and
+    `infra/runtime/.env.*.local`.
+- **Deployment target:** test server `10.0.1.31`, repo path
+  `/home/itadmin/AI-Agents-SWD`. Staging stack brought up in
+  parallel under project `aiagents-staging`, e2e workflow run,
+  staging torn down. Local/test `aiagents-test` project (22
+  containers) untouched throughout.
+- **Test results (local + cluster, no real GitHub / Discord call):**
+  - **Local quality gates (pre-push):** ruff clean, black clean,
+    mypy clean (44 source files); full pytest sweep **521 passed
+    / 0 failed / 115 skipped** in 597s.
+  - **Cluster `./scripts/run_tests.sh`:** **636 passed, 1 warning**
+    (pre-existing `test_github_tracing_metrics.py` deprecation).
+    ruff clean, black clean, mypy clean.
+  - **Cluster `./scripts/check_runtime_state.sh`:** every prior
+    smoke PASS, plus all 4 Stage 25 smokes PASS:
+    `STAGING_ENV_GENERATION_SMOKE`,
+    `STAGING_CONFIG_VALIDATION_SMOKE`,
+    `STAGING_COMPOSE_TEMPLATE_SMOKE`,
+    `STAGING_RUNTIME_SCRIPT_SMOKE`.
+  - **`./scripts/verify_staging_runtime.sh`** (run with
+    `--keep-running` so the backup verify could reuse it):
+    `checks passed: 14 / 14` ⇒ `STAGING_RUNTIME_VERIFY: PASS`.
+    Sequence:
+    `STAGING_ENV_PRESENT: PASS` →
+    `STAGING_VALIDATOR: PASS` (validator's `staging` mode against
+    the env file; vault escape hatch enabled, no FAIL) →
+    `STAGING_START: PASS` (full 22-service bring-up under
+    `aiagents-staging`) →
+    `STAGING_HEALTH: PASS` (orchestrator / audit-service /
+    communication-gateway / audit-worker all OK on +10000 ports;
+    `ok_count=11/11` additional services) →
+    `STAGING_POSTGRES_PASSWORD_AUTH: PASS`
+    (`POSTGRES_HOST_AUTH_METHOD` unset inside staging container) →
+    `STAGING_MIGRATIONS_APPLIED: PASS` (9 public tables) →
+    `STAGING_E2E_WORKFLOW: PASS` (task `staging-e2e-1780111254`
+    seeded via staging discord-gateway, reached
+    `current_stage=completed`) →
+    `STAGING_GITHUB_DRY_RUN: PASS` →
+    `STAGING_AUDIT_TIMELINE: PASS` →
+    `STAGING_NOTIFICATION_DELIVERY: PASS` →
+    `STAGING_OPERATIONS_SAFETY: PASS`
+    (`/operations/safety.result=safe`) →
+    `STAGING_PRODUCTION_SAFETY: PASS` (both staging counters = 0) →
+    `LOCAL_TEST_UNAFFECTED: PASS` (local orchestrator + github-
+    automation still reachable on port 8000 / 8005) →
+    `STAGING_LEFT_RUNNING: PASS` (via `--keep-running`).
+  - **`./scripts/verify_staging_backup_restore.sh`** —
+    `STAGING_BACKUP_RESTORE_VERIFY: PASS`. Backup file size
+    28,663 bytes; `pg_restore -l` TOC = 60 lines; staging table
+    count unchanged (9 == 9); restore refusal observed
+    (`RESTORE_POSTGRES: FAIL (ALLOW_RESTORE!=true ...)`); local/test
+    table count unchanged (9 == 9) — the staging operation did
+    NOT touch the `aiagents-test` data plane.
+  - **`./scripts/verify_staging_hardening.sh`** (Stage 24 still
+    intact) — `checks passed: 9 / 9` ⇒
+    `STAGING_HARDENING_VERIFY: PASS`.
+  - **Local/test regression after staging bring-up** (staging
+    torn down before these ran):
+    - `./scripts/verify_real_github_validation.sh` — 12/12 PASS.
+    - `./scripts/verify_notification_delivery.sh` — 9/9 PASS.
+    - `./scripts/verify_discord_gateway.sh` — 12/12 PASS.
+    - `./scripts/verify_operations_view.sh` — 10/10 PASS.
+    - `./scripts/verify_unified_audit.sh` — 9/9 PASS.
+    - `./scripts/verify_github_pipeline_flow.sh` — 7/7 PASS.
+    - `./scripts/verify_platform_observability.sh` —
+      `PASS=81  FAIL=0` ⇒ `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
+  - **Production safety SQL** — both stacks return `0` on both
+    queries:
+    - aiagents-test: `deployment_records.production_executed=true
+      OR environment='production'` = 0;
+      `workflow_states.production_executed=true` = 0.
+    - aiagents-staging (queried via password auth before
+      tear-down): `deployment_records...` = 0;
+      `workflow_states...` = 0.
+  - **Health snapshots** —
+    `source/runtime-health.log` = 6,647 bytes;
+    `source/runtime-health-staging.log` = 6,609 bytes. Both grep
+    clean for token-shaped substrings (`exit 1` from
+    `grep -E 'ghp_|github_pat_|Bearer [...]|Bot [...]'`).
+- **Container roster:**
+  - During staging up: 22 `aiagents-test-*` + 22
+    `aiagents-staging-*` = 44 healthy containers; loopback ports
+    do not collide (local 5432/6379/8xxx/9xxx/3xxx vs staging
+    15432/16379/18xxx/19xxx/13xxx).
+  - After tear-down (final state): 22 `aiagents-test-*`
+    `running (healthy)`, 0 `aiagents-staging-*`.
+- **Risks / observations only (not Step 25 roadmap decisions):**
+  - **Staging still not production.** The platform's
+    `production_executed=true` counter remains 0 for both stacks.
+    The staging stack is sandbox-only by default (Stage 22 / 23
+    opt-in gates unchanged). No real Discord / GitHub call was
+    made during the bring-up.
+  - **Vault dev mode escape hatch.** Stage 25 retains
+    `hashicorp/vault:1.17 server -dev` in the staging compose under
+    `ALLOW_VAULT_DEV_MODE_FOR_STAGING=true` (auto-enabled by
+    `start_staging_runtime.sh`). The validator downgrades this to
+    a warning, not a failure, so the bring-up proceeds. A real
+    staging deployment must point `VAULT_ADDR` at an external
+    Vault server before production hand-off.
+  - **Backup limitations.** The staging backup verifier writes
+    `backups/aiagents-staging-<ts>.dump` (~28 KB) via password
+    auth. The dump is not encrypted at rest by the script itself;
+    `backups/` is gitignored.
+  - **Staging runtime kept or stopped.** The cluster verification
+    used `--keep-running` so the backup-verify script could reuse
+    the running staging Postgres, then ran
+    `./scripts/stop_staging_runtime.sh` after the backup verify
+    completed. Final cluster state: staging stack torn down,
+    `aiagents-staging-*` containers absent, volumes retained
+    (`postgres-staging-data` etc., not purged) so the next
+    `start_staging_runtime.sh --no-rebuild` can re-up quickly
+    against the same DB state.
+  - **Local/test unaffected.** Confirmed at two layers: (a)
+    `LOCAL_TEST_UNAFFECTED: PASS` inside `verify_staging_runtime.sh`;
+    (b) all seven Stage 23 / Stage 24 verify scripts re-ran green
+    after staging tear-down with the local/test stack reporting
+    `production_executed=0` and 22/22 containers
+    `running (healthy)`.
+  - **Two in-flight fixes.** The deliverable (`836e72b`) was
+    followed by two surgical script fixes (`d94c525` for the
+    `set -e` interaction with the deliberate-FAIL validator call
+    in `check_runtime_state.sh`, and `49a6690` for the
+    `total=12` → `total=14` bookkeeping in
+    `verify_staging_runtime.sh`). Neither changed any application
+    code or test contract.
+  - **Resource use during parallel run.** 44 concurrent containers
+    on the test server during the bring-up window. The default
+    `verify_staging_runtime.sh --down` path tears the staging
+    stack down after the assertions to minimise the long-term
+    footprint. Operators that pass `--keep-running` should
+    monitor the host.
+  - **Other:**
+    - `infra/runtime/.env.staging.local` is generated fresh per
+      bring-up under chmod 600; gitignored; never committed.
+      Verified by the env-file `ls -l` listing during the verify
+      run.
+    - The `aiagents-staging` Postgres user `aiagents_app` owns
+      the DB and applied every migration cleanly; the
+      `uuid-ossp` extension was created under the same user.
+    - Following Stage 22 / Stage 23 / Stage 24, Claude Code does
+      not decide the Step 25 roadmap.
