@@ -1496,8 +1496,8 @@ gen_tmp=$(mktemp -d 2>/dev/null || mktemp -d -t rgen)
 mkdir -p "$gen_tmp/scripts" "$gen_tmp/infra/runtime"
 cp scripts/generate_staging_env.sh "$gen_tmp/scripts/" 2>/dev/null
 cp infra/runtime/env.staging.example "$gen_tmp/infra/runtime/" 2>/dev/null
-gen_out=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3)
-gen_skip=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3)
+gen_out=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3 || true)
+gen_skip=$( (cd "$gen_tmp" && bash scripts/generate_staging_env.sh) 2>&1 | tail -3 || true)
 rm -rf "$gen_tmp"
 if echo "$gen_out" | grep -q "GENERATE_STAGING_ENV: PASS" \
    && echo "$gen_skip" | grep -q "GENERATE_STAGING_ENV: SKIP"; then
@@ -1506,9 +1506,11 @@ else
   echo "STAGING_ENV_GENERATION_SMOKE: CHECK"
 fi
 
-# 2. validator can parse staging mode against the placeholder template
-val_out=$(./scripts/validate_runtime_config.sh --mode staging --env-file infra/runtime/env.staging.example 2>&1)
-# We expect FAIL because the template carries placeholder secrets (by design).
+# 2. validator can parse staging mode against the placeholder template.
+# The validator exits 1 on FAIL — that's the EXPECTED result here (the
+# template still carries placeholder secrets by design), so swallow the
+# non-zero return code with `|| true` so set -e doesn't abort.
+val_out=$(./scripts/validate_runtime_config.sh --mode staging --env-file infra/runtime/env.staging.example 2>&1 || true)
 if echo "$val_out" | grep -q "RUNTIME_CONFIG_VALIDATION: FAIL" \
    && echo "$val_out" | grep -q "placeholder_secret"; then
   echo "STAGING_CONFIG_VALIDATION_SMOKE: PASS"
