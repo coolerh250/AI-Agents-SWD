@@ -45,7 +45,11 @@ echo "  project=$PROJECT compose=$COMPOSE_FILE env_file=$ENV_FILE"
 echo "  post_action=$ACTION rebuild=$REBUILD"
 
 checks=0
-total=12
+# 14 individual pass() calls: env_present, validator, start, health,
+# postgres_password_auth, migrations_applied, e2e_workflow, github_dry_run,
+# audit_timeline, notification_delivery, operations_safety,
+# production_safety, local_test_unaffected, stop/keep.
+total=14
 fail() {
   echo "  $1: FAIL"
 }
