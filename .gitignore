@@ -36,6 +36,11 @@ backups/
 # sits in the tree.
 infra/runtime/.env.staging.local
 infra/runtime/.env.*.local
+# Stage 26: mock-vault local fixture carries a generated DB password.
+# Never commit. The committed example template ships placeholder
+# values only.
+infra/runtime/.mock-vault-secrets.local.json
+infra/runtime/.mock-vault-secrets.*.local.json
 secrets/
 # Stage 24: shared/sdk/secrets/ holds the SecretProvider SDK (no real
 # secret bytes). The directory name collided with the broader

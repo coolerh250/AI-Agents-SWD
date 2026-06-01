@@ -152,11 +152,19 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
       ORCHESTRATOR_PUBLIC_URL: http://localhost:18000
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-mock-vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      VAULT_KV_PATH: ${VAULT_KV_PATH:-aiagents/staging}
+      MOCK_VAULT_SECRETS_FILE: ${MOCK_VAULT_SECRETS_FILE:-/run/secrets/mock-vault-secrets.json}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: notification-worker
     ports:
       - "127.0.0.1:18008:8008"
+    volumes:
+      - ${STAGING_MOCK_VAULT_HOST_FILE:-../runtime/.mock-vault-secrets.local.json}:/run/secrets/mock-vault-secrets.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -182,11 +190,19 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://${STAGING_POSTGRES_USER:-aiagents_app}:${POSTGRES_PASSWORD}@postgres:5432/${STAGING_POSTGRES_DB:-aiagents}
       GITHUB_DEFAULT_REPO: coolerh250/AI-Agents-SWD
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-mock-vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      VAULT_KV_PATH: ${VAULT_KV_PATH:-aiagents/staging}
+      MOCK_VAULT_SECRETS_FILE: ${MOCK_VAULT_SECRETS_FILE:-/run/secrets/mock-vault-secrets.json}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: discord-gateway
     ports:
       - "127.0.0.1:18007:8007"
+    volumes:
+      - ${STAGING_MOCK_VAULT_HOST_FILE:-../runtime/.mock-vault-secrets.local.json}:/run/secrets/mock-vault-secrets.json:ro
     depends_on:
       postgres:
         condition: service_healthy
@@ -236,11 +252,19 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
       GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-mock-vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      VAULT_KV_PATH: ${VAULT_KV_PATH:-aiagents/staging}
+      MOCK_VAULT_SECRETS_FILE: ${MOCK_VAULT_SECRETS_FILE:-/run/secrets/mock-vault-secrets.json}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
     ports:
       - "127.0.0.1:18000:8000"
+    volumes:
+      - ${STAGING_MOCK_VAULT_HOST_FILE:-../runtime/.mock-vault-secrets.local.json}:/run/secrets/mock-vault-secrets.json:ro
     depends_on:
       - policy-engine
       - approval-engine
@@ -285,6 +309,12 @@ services:
       GITHUB_DRY_RUN: "true"
       RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
       GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-mock-vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      VAULT_KV_PATH: ${VAULT_KV_PATH:-aiagents/staging}
+      MOCK_VAULT_SECRETS_FILE: ${MOCK_VAULT_SECRETS_FILE:-/run/secrets/mock-vault-secrets.json}
       AUDIT_SERVICE_URL: http://audit-service:8003
       REDIS_URL: redis://redis:6379
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
@@ -292,6 +322,8 @@ services:
       OTEL_SERVICE_NAME: github-automation
     ports:
       - "127.0.0.1:18005:8005"
+    volumes:
+      - ${STAGING_MOCK_VAULT_HOST_FILE:-../runtime/.mock-vault-secrets.local.json}:/run/secrets/mock-vault-secrets.json:ro
     depends_on:
       - audit-service
       - redis

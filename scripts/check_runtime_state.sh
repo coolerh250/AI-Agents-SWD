@@ -1544,4 +1544,66 @@ else
 fi
 
 echo
+echo "=== Stage 26 secrets-integration smokes (no compose up) ==="
+
+# 1. inventory file + lister
+sm_inv=$(./scripts/list_required_secrets.py 2>&1 | tail -3 || true)
+if echo "$sm_inv" | grep -q "REQUIRED_SECRETS_INVENTORY: PASS"; then
+  echo "SECRETS_INVENTORY_SMOKE: PASS"
+else
+  echo "SECRETS_INVENTORY_SMOKE: CHECK"
+fi
+
+# 2. provider selection — SDK self-test
+if python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.secrets import provider_from_env, EnvSecretProvider, MockVaultSecretProvider, VaultKvSecretProvider
+assert isinstance(provider_from_env({}), EnvSecretProvider)
+assert isinstance(provider_from_env({'SECRET_PROVIDER': 'mock-vault'}), MockVaultSecretProvider)
+assert isinstance(provider_from_env({'SECRET_PROVIDER': 'vault'}), VaultKvSecretProvider)
+" >/dev/null 2>&1; then
+  echo "SECRET_PROVIDER_SMOKE: PASS"
+else
+  echo "SECRET_PROVIDER_SMOKE: CHECK"
+fi
+
+# 3. mock-vault bootstrap on a tmp workspace
+mv_tmp=$(mktemp -d 2>/dev/null || mktemp -d -t rmv)
+mkdir -p "$mv_tmp/scripts" "$mv_tmp/infra/runtime"
+cp scripts/bootstrap_mock_vault_secrets.sh "$mv_tmp/scripts/" 2>/dev/null
+cp infra/runtime/mock-vault-secrets.example.json "$mv_tmp/infra/runtime/" 2>/dev/null
+mv_out=$( (cd "$mv_tmp" && bash scripts/bootstrap_mock_vault_secrets.sh) 2>&1 | tail -3 || true)
+rm -rf "$mv_tmp"
+if echo "$mv_out" | grep -q "BOOTSTRAP_MOCK_VAULT_SECRETS: PASS"; then
+  echo "MOCK_VAULT_BOOTSTRAP_SMOKE: PASS"
+else
+  echo "MOCK_VAULT_BOOTSTRAP_SMOKE: CHECK"
+fi
+
+# 4. rotation smoke
+rot_out=$(./scripts/verify_secret_rotation_smoke.sh 2>&1 | tail -8 || true)
+if echo "$rot_out" | grep -q "SECRET_ROTATION_SMOKE: PASS"; then
+  echo "SECRET_ROTATION_SMOKE: PASS"
+else
+  echo "SECRET_ROTATION_SMOKE: CHECK"
+fi
+
+# 5. leak scan over the repo
+leak_out=$(./scripts/scan_for_secret_leaks.sh 2>&1 | tail -3 || true)
+if echo "$leak_out" | grep -q "SECRET_LEAK_SCAN: PASS"; then
+  echo "SECRET_LEAK_SCAN_SMOKE: PASS"
+else
+  echo "SECRET_LEAK_SCAN_SMOKE: CHECK"
+fi
+
+# 6. staging-secrets verify in light mode (no compose up)
+ssec_out=$(./scripts/verify_staging_secrets.sh --no-bring-up 2>&1 | tail -10 || true)
+if echo "$ssec_out" | grep -q "STAGING_SECRETS_VERIFY: PASS"; then
+  echo "STAGING_SECRETS_SMOKE: PASS"
+else
+  echo "STAGING_SECRETS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

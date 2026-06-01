@@ -128,6 +128,11 @@ keep = {
   'discord_has_token', 'discord_real_test_enabled',
   'discord_test_channel_configured', 'discord_external_send_enabled',
   'alertmanager_receivers', 'external_alert_receivers_present',
+  # Stage 26 — boolean / provider-name only, never a value.
+  'secret_provider', 'secret_provider_status',
+  'vault_configured', 'vault_reachable',
+  'mock_vault_enabled', 'mock_vault_file_present',
+  'missing_required_secrets',
   'result', 'warnings'
 }
 out = {k: v for k, v in data.items() if k in keep}

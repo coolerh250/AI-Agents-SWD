@@ -127,6 +127,16 @@ fi
 # 7. cleanup the staging-internal copy
 $COMPOSE --env-file "$ENV_FILE" exec -T postgres rm -f /tmp/aiagents-staging-verify.dump >/dev/null 2>&1 || true
 
+# 8. Stage 26 — leak scan over docs / runtime-health logs / scripts.
+# Doesn't read the backup file (custom-format pg_dump is binary).
+echo
+echo "=== Stage 26 secret-leak scan ==="
+if ! ./scripts/scan_for_secret_leaks.sh 2>&1 | tail -3; then
+  echo "STAGING_BACKUP_RESTORE_VERIFY: FAIL (secret leak scan failed)"
+  rm -f "$out"
+  exit 1
+fi
+
 echo
 echo "  backup_file=$out (kept; gitignored)"
 echo "STAGING_BACKUP_RESTORE_VERIFY: PASS"

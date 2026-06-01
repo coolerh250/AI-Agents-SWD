@@ -780,6 +780,33 @@ until the next `start_staging_runtime.sh`.
 
 ---
 
+## 17e. External secrets baseline (Stage 26)
+
+```
+./scripts/list_required_secrets.py
+./scripts/bootstrap_mock_vault_secrets.sh
+SECRET_PROVIDER=mock-vault ./scripts/validate_runtime_config.sh \
+  --mode staging --env-file infra/runtime/.env.staging.local
+./scripts/verify_secret_rotation_smoke.sh
+./scripts/scan_for_secret_leaks.sh
+./scripts/verify_staging_secrets.sh
+```
+
+Expect every script to end `PASS`. Confirm:
+
+* `infra/runtime/.mock-vault-secrets.local.json` exists with mode `600`
+  and is **gitignored**.
+* `validate_runtime_config.py --mode production-check` refuses both
+  `SECRET_PROVIDER=mock-vault` and `SECRET_PROVIDER=env` — see
+  [`secrets-management.md`](secrets-management.md).
+* `GET http://localhost:18000/operations/safety` (during the staging
+  bring-up) includes the four Stage 26 fields `secret_provider`,
+  `vault_configured`, `mock_vault_enabled`, and the listing field
+  `missing_required_secrets`. No value-shaped string appears anywhere
+  in the response.
+* `source/runtime-health.log` and `source/runtime-health-staging.log`
+  carry no real-token prefix substring (the scanner sweeps them).
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

@@ -955,6 +955,42 @@ async def _alertmanager_receivers() -> tuple[list[str], list[str], list[str]]:
     return receivers, external, []
 
 
+def _secret_provider_status() -> dict[str, Any]:
+    """Stage 26: snapshot the active SecretProvider posture for /safety.
+
+    Returns boolean/string fields only — never a secret value. The
+    provider is constructed lazily so a failing Vault read never breaks
+    the safety endpoint.
+    """
+    chosen = (os.environ.get("SECRET_PROVIDER") or "env").strip().lower()
+    info: dict[str, Any] = {
+        "secret_provider": chosen,
+        "vault_configured": bool(os.environ.get("VAULT_ADDR", "").strip())
+        and bool(os.environ.get("VAULT_TOKEN", "").strip()),
+        "vault_reachable": False,
+        "mock_vault_enabled": chosen == "mock-vault",
+        "mock_vault_file_present": False,
+        "secret_provider_status": "unknown",
+        "missing_required_secrets": [],
+    }
+    try:
+        from shared.sdk.secrets import provider_from_env  # type: ignore
+
+        provider = provider_from_env()
+        status = provider.status
+        info["secret_provider_status"] = status.get("provider", chosen)
+        info["vault_reachable"] = bool(status.get("reachable")) if chosen == "vault" else False
+        info["mock_vault_file_present"] = bool(status.get("mock_file_present"))
+        # Probe the canonical required secret list (boolean per name).
+        required = ("POSTGRES_PASSWORD", "GITHUB_TOKEN", "DISCORD_BOT_TOKEN", "VAULT_TOKEN")
+        info["missing_required_secrets"] = [
+            name for name in required if not provider.has_secret(name)
+        ]
+    except Exception:
+        info["secret_provider_status"] = "error"
+    return info
+
+
 @router.get("/safety")
 @_instrument("/operations/safety", "operations.safety_view")
 async def operations_safety() -> dict:
@@ -986,6 +1022,16 @@ async def operations_safety() -> dict:
     )
     if discord_external_send_enabled:
         warnings.append("discord_external_send_enabled")
+    secret_status = _secret_provider_status()
+    # The missing-required-secrets list is exposed as a field, NOT
+    # appended to `warnings`. Local mode legitimately runs without the
+    # opt-in tokens, so a missing list is normal there. The verdict
+    # only degrades for genuinely-unsafe postures below.
+    if secret_status.get("secret_provider") == "vault" and not secret_status.get("vault_reachable"):
+        warnings.append("vault_unreachable")
+    if secret_status.get("secret_provider") == "mock-vault":
+        warnings.append("mock_vault_provider_in_use")
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1010,6 +1056,13 @@ async def operations_safety() -> dict:
         "discord_external_send_enabled": discord_external_send_enabled,
         "alertmanager_receivers": receivers,
         "external_alert_receivers_present": bool(external),
+        "secret_provider": secret_status["secret_provider"],
+        "secret_provider_status": secret_status["secret_provider_status"],
+        "vault_configured": secret_status["vault_configured"],
+        "vault_reachable": secret_status["vault_reachable"],
+        "mock_vault_enabled": secret_status["mock_vault_enabled"],
+        "mock_vault_file_present": secret_status["mock_vault_file_present"],
+        "missing_required_secrets": secret_status["missing_required_secrets"],
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
             "postgres trust auth is local/test only — production must use real auth + KMS"

@@ -45,11 +45,11 @@ echo "  project=$PROJECT compose=$COMPOSE_FILE env_file=$ENV_FILE"
 echo "  post_action=$ACTION rebuild=$REBUILD"
 
 checks=0
-# 14 individual pass() calls: env_present, validator, start, health,
+# 15 individual pass() calls: env_present, validator, start, health,
 # postgres_password_auth, migrations_applied, e2e_workflow, github_dry_run,
 # audit_timeline, notification_delivery, operations_safety,
-# production_safety, local_test_unaffected, stop/keep.
-total=14
+# production_safety, local_test_unaffected, stop/keep, secret_leak_scan.
+total=15
 fail() {
   echo "  $1: FAIL"
 }
@@ -257,6 +257,18 @@ else
   echo "=== 12. staging left running (--keep-running) ==="
   pass "STAGING_LEFT_RUNNING"
 fi
+
+# 13. Stage 26 secret leak scan
+echo
+echo "=== 13. scan_for_secret_leaks.sh ==="
+if ./scripts/scan_for_secret_leaks.sh 2>&1 | tail -5 | tee /tmp/vsl.$$ ; then
+  if grep -q "SECRET_LEAK_SCAN: PASS" /tmp/vsl.$$; then
+    pass "STAGING_SECRET_LEAK_SCAN"
+  else
+    fail "STAGING_SECRET_LEAK_SCAN"
+  fi
+fi
+rm -f /tmp/vsl.$$
 
 echo
 echo "checks passed: $checks / $total"

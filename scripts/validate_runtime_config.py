@@ -48,6 +48,9 @@ SECRET_FIELDS = (
     "ALERTMANAGER_WEBHOOK_URL",
 )
 
+# Stage 26: SECRET_PROVIDER selection.
+SUPPORTED_SECRET_PROVIDERS = ("env", "vault", "mock-vault")
+
 
 @dataclass
 class Finding:
@@ -70,6 +73,7 @@ class Report:
     mode: str
     env_keys_present: list[str] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    secret_provider: str = "env"
 
     def add(self, finding: Finding) -> None:
         self.findings.append(finding)
@@ -82,6 +86,7 @@ class Report:
         return {
             "mode": self.mode,
             "passed": self.passed,
+            "secret_provider": self.secret_provider,
             "findings": [f.to_dict() for f in self.findings],
             "env_keys_observed": sorted(set(self.env_keys_present)),
         }
@@ -330,6 +335,106 @@ def _check_alertmanager_receiver(env: dict[str, str], report: Report, *, mode: s
     # infra/observability/alertmanager/alertmanager.yml.
 
 
+def _check_secret_provider(env: dict[str, str], report: Report, *, mode: str) -> None:
+    """Stage 26: validate the SECRET_PROVIDER selection per mode.
+
+    Rules:
+
+    * unknown ``SECRET_PROVIDER`` -> FAIL in every mode.
+    * ``vault`` requires ``VAULT_ADDR`` + ``VAULT_TOKEN`` to be set
+      (non-empty, non-placeholder).
+    * ``mock-vault`` is a WARN in ``staging`` (documented escape
+      hatch for the validation flow); FAIL in ``production-check``.
+    * ``production-check`` also FAILs when ``SECRET_PROVIDER=env`` is
+      the only provider — env is acceptable for local but production
+      must point at a real secret store.
+    """
+    choice = (env.get("SECRET_PROVIDER") or "env").strip().lower()
+    if choice not in SUPPORTED_SECRET_PROVIDERS:
+        report.add(
+            Finding(
+                code="secret_provider_unknown",
+                message=(
+                    f"SECRET_PROVIDER={choice!r} is not one of "
+                    f"{sorted(SUPPORTED_SECRET_PROVIDERS)}."
+                ),
+                severity="fail",
+                field="SECRET_PROVIDER",
+            )
+        )
+        return
+
+    if choice == "vault":
+        addr = (env.get("VAULT_ADDR") or "").strip()
+        if not addr:
+            report.add(
+                Finding(
+                    code="vault_addr_missing",
+                    message="SECRET_PROVIDER=vault requires VAULT_ADDR to be set.",
+                    severity="fail",
+                    field="VAULT_ADDR",
+                )
+            )
+        token = (env.get("VAULT_TOKEN") or "").strip()
+        if not token or _is_placeholder(token):
+            report.add(
+                Finding(
+                    code="vault_token_missing",
+                    message=(
+                        "SECRET_PROVIDER=vault requires VAULT_TOKEN to be a real "
+                        "value (placeholder rejected)."
+                    ),
+                    severity="fail",
+                    field="VAULT_TOKEN",
+                )
+            )
+        return
+
+    if choice == "mock-vault":
+        if mode == "production-check":
+            report.add(
+                Finding(
+                    code="mock_vault_forbidden_in_production",
+                    message=(
+                        "SECRET_PROVIDER=mock-vault is allowed only in "
+                        "local/staging. Production must point at a real "
+                        "secret store."
+                    ),
+                    severity="fail",
+                    field="SECRET_PROVIDER",
+                )
+            )
+            return
+        if mode == "staging":
+            report.add(
+                Finding(
+                    code="mock_vault_in_staging",
+                    message=(
+                        "SECRET_PROVIDER=mock-vault is the staging validation "
+                        "escape hatch — not a production-ready secret store."
+                    ),
+                    severity="warn",
+                    field="SECRET_PROVIDER",
+                )
+            )
+        return
+
+    # choice == "env"
+    if mode == "production-check":
+        report.add(
+            Finding(
+                code="env_provider_in_production",
+                message=(
+                    "SECRET_PROVIDER=env is unacceptable in production-check. "
+                    "Wire VAULT_ADDR/VAULT_TOKEN and switch to "
+                    "SECRET_PROVIDER=vault."
+                ),
+                severity="fail",
+                field="SECRET_PROVIDER",
+            )
+        )
+
+
 def _check_production_executed(env: dict[str, str], report: Report) -> None:
     """Cheap, deferred check the validator can run when DATABASE_URL is
     reachable. Only invoked for ``production-check`` mode. We don't
@@ -358,7 +463,11 @@ def _check_production_executed(env: dict[str, str], report: Report) -> None:
 
 
 def evaluate(mode: str, env: dict[str, str]) -> Report:
-    report = Report(mode=mode, env_keys_present=list(env.keys()))
+    report = Report(
+        mode=mode,
+        env_keys_present=list(env.keys()),
+        secret_provider=(env.get("SECRET_PROVIDER") or "env").strip().lower(),
+    )
     if mode not in ("local", "staging", "production-check"):
         report.add(
             Finding(
@@ -372,6 +481,9 @@ def evaluate(mode: str, env: dict[str, str]) -> Report:
     _check_real_test_defaults(env, report)
     _check_real_github_guard_consistency(env, report)
     _check_real_discord_guard_consistency(env, report)
+    # Stage 26: SECRET_PROVIDER applies to every mode (local tolerates
+    # mock-vault without warning so the local cluster can exercise it).
+    _check_secret_provider(env, report, mode=mode)
 
     if mode == "local":
         # local mode tolerates dev-mode Vault / trust-auth / null-receiver.
@@ -397,7 +509,10 @@ def evaluate(mode: str, env: dict[str, str]) -> Report:
 
 
 def _render_text(report: Report) -> str:
-    lines = [f"RUNTIME_CONFIG_VALIDATION_MODE={report.mode}"]
+    lines = [
+        f"RUNTIME_CONFIG_VALIDATION_MODE={report.mode}",
+        f"SECRET_PROVIDER={report.secret_provider}",
+    ]
     for finding in report.findings:
         marker = {"fail": "FAIL", "warn": "WARN", "info": "INFO"}[finding.severity]
         field_part = f" field={finding.field}" if finding.field else ""

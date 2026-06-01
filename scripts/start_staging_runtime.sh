@@ -49,6 +49,29 @@ if [ ! -f "$ENV_FILE" ]; then
   }
 fi
 
+# 1b. ensure mock-vault file exists (Stage 26 default provider). The
+# staging compose mounts ../runtime/.mock-vault-secrets.local.json into
+# every secret-aware service; bind mount fails if the host file is
+# missing, so bootstrap it on demand. Skip when the operator opted in
+# to a real Vault via SECRET_PROVIDER=vault.
+chosen_provider="$(grep -E '^SECRET_PROVIDER=' "$ENV_FILE" 2>/dev/null | tail -n1 | cut -d= -f2-)"
+chosen_provider="${SECRET_PROVIDER:-${chosen_provider:-mock-vault}}"
+if [ "$chosen_provider" = "mock-vault" ]; then
+  MOCK_VAULT_FILE="${MOCK_VAULT_SECRETS_FILE:-infra/runtime/.mock-vault-secrets.local.json}"
+  if [ ! -f "$MOCK_VAULT_FILE" ]; then
+    echo "  $MOCK_VAULT_FILE missing — bootstrapping mock-vault fixture"
+    ./scripts/bootstrap_mock_vault_secrets.sh || {
+      echo "START_STAGING_RUNTIME: FAIL (mock vault bootstrap failed)"
+      exit 1
+    }
+  fi
+elif [ "$chosen_provider" = "vault" ]; then
+  if [ -z "${VAULT_ADDR:-}" ] || [ -z "${VAULT_TOKEN:-}" ]; then
+    echo "START_STAGING_RUNTIME: FAIL (SECRET_PROVIDER=vault requires VAULT_ADDR + VAULT_TOKEN)"
+    exit 1
+  fi
+fi
+
 # 2. validate. Vault dev-mode requires the escape hatch.
 if ! grep -q '^ALLOW_VAULT_DEV_MODE_FOR_STAGING=true' "$ENV_FILE"; then
   # The Step 24 staging compose still ships the dev-mode vault container.

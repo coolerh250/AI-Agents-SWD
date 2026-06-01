@@ -1718,6 +1718,66 @@ throughout. The Stage 25 baseline still:
 See [`docs/operations/staging-runtime-hardening.md`](docs/operations/staging-runtime-hardening.md)
 for the full operator runbook + the staging readiness checklist.
 
+## External Secrets Baseline (Stage 26)
+
+Stage 26 wires a Vault-compatible read path behind the Stage 24 SecretRef
+abstraction and adds a staging-validation mock-vault so the platform can
+exercise the rotation contract without contacting a real Vault server.
+
+### `SECRET_PROVIDER` modes
+
+| Value         | Backend                                  | Use case                                          |
+| ------------- | ---------------------------------------- | ------------------------------------------------- |
+| `env`         | `os.environ`                             | Local/test default; production-check refuses this |
+| `vault`       | Vault KV v2 over HTTP                    | Real staging / production secret store            |
+| `mock-vault`  | Local JSON at `MOCK_VAULT_SECRETS_FILE`  | Staging validation only; production-check refuses |
+
+`shared/sdk/secrets/provider.py` exposes the concrete classes and a
+`provider_from_env()` factory that picks the right one based on
+`SECRET_PROVIDER`. Every provider returns `SecretRef`, which renders as
+`***REDACTED***` in any accidental log / response / audit row; the raw value
+is only revealed via `SecretRef.reveal()`.
+
+### Mock-vault staging validation
+
+```
+./scripts/bootstrap_mock_vault_secrets.sh        # writes .mock-vault-secrets.local.json (chmod 600, gitignored)
+SECRET_PROVIDER=mock-vault \
+  ./scripts/validate_runtime_config.sh --mode staging --env-file infra/runtime/.env.staging.local
+./scripts/verify_secret_rotation_smoke.sh        # provider re-reads after the file changes
+./scripts/scan_for_secret_leaks.sh               # no real-token substring in docs / scripts / runtime-health logs
+./scripts/verify_staging_secrets.sh              # end-to-end: inventory + bootstrap + validator + rotation + leak scan + staging /operations/safety
+```
+
+The mock-vault file ships placeholder values for GitHub / Discord and
+refuses to return any value that matches a real-token prefix
+(the GitHub PAT prefixes, Slack `xoxb-`, HTTP auth `Bot ` / `Bearer `,
+or `sk-` prefixes) unless the operator sets
+`MOCK_VAULT_ALLOW_REAL_TOKEN_SHAPES=true`.
+
+### `/operations/safety` secret fields
+
+The Stage 26 safety view exposes these booleans / strings (never a value):
+
+* `secret_provider` — `env` | `vault` | `mock-vault`
+* `secret_provider_status` — provider name as reported by the SDK
+* `vault_configured` — `VAULT_ADDR` + `VAULT_TOKEN` both present (boolean)
+* `vault_reachable` — last Vault read succeeded
+* `mock_vault_enabled`, `mock_vault_file_present`
+* `missing_required_secrets` — list of names the provider could not resolve
+  (name shape only, no values)
+
+### Not production-ready
+
+The mock-vault provider is for staging validation only. Production must
+point `SECRET_PROVIDER=vault` at a real KV v2 store with `VAULT_ADDR` and
+`VAULT_TOKEN` provisioned outside the repo. `validate_runtime_config.py
+--mode production-check` refuses both `mock-vault` and `env`-only
+configurations.
+
+See [`docs/operations/secrets-management.md`](docs/operations/secrets-management.md)
+for the full inventory, rotation, and leak-scan procedure.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
