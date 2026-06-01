@@ -112,8 +112,11 @@ rm -f /tmp/vss_leak.$$
 # 7. staging runtime (optional bring-up)
 if [ "$BRING_UP" = "1" ]; then
   echo
-  echo "=== 7. start_staging_runtime.sh (SECRET_PROVIDER=mock-vault) ==="
-  SECRET_PROVIDER=mock-vault ./scripts/start_staging_runtime.sh 2>&1 | tail -8 | tee /tmp/vss_start.$$ || true
+  echo "=== 7. start_staging_runtime.sh (SECRET_PROVIDER=mock-vault, --rebuild) ==="
+  # --rebuild ensures the staging orchestrator image is fresh; the
+  # Stage 26 secret_provider field on /operations/safety only renders
+  # when the orchestrator image was built from the current source.
+  SECRET_PROVIDER=mock-vault ./scripts/start_staging_runtime.sh --rebuild 2>&1 | tail -8 | tee /tmp/vss_start.$$ || true
   if grep -q "START_STAGING_RUNTIME: PASS" /tmp/vss_start.$$; then
     pass "STAGING_RUNTIME_STARTED"
   else
