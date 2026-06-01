@@ -300,7 +300,6 @@ class RequirementAgent(StreamAgent):
             # separately via send_notification above.
             "event_type": "requirement.completed",
             "message": (
-                f"task {task_id} ready for development "
-                f"(mode={classification.execution_mode})"
+                f"task {task_id} ready for development " f"(mode={classification.execution_mode})"
             ),
         }
