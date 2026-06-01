@@ -27,7 +27,7 @@ _WORK_ITEM_COLUMNS = (
 
 _DISCUSSION_COLUMNS = (
     "discussion_id, task_id, workflow_id, agent, role, message_type, content, "
-    "confidence, references, created_at"
+    "confidence, refs, created_at"
 )
 
 _CLARIFICATION_COLUMNS = (
@@ -92,7 +92,7 @@ def _row_to_discussion(row: asyncpg.Record) -> AgentDiscussion:
         message_type=row["message_type"] or "analysis",
         content=row["content"] or "",
         confidence=float(row["confidence"] or 0.5),
-        references=_decode_json(row["references"], {}) or {},
+        references=_decode_json(row["refs"], {}) or {},
         created_at=_iso(row["created_at"]),
     )
 
@@ -378,7 +378,7 @@ class TaskExecutionStore:
                 row = await conn.fetchrow(
                     "INSERT INTO agent_discussions "
                     "(task_id, workflow_id, agent, role, message_type, content, "
-                    " confidence, references) "
+                    " confidence, refs) "
                     "VALUES ($1, $2, $3, $4, $5, $6, $7, $8::jsonb) "
                     f"RETURNING {_DISCUSSION_COLUMNS}",
                     task_id,

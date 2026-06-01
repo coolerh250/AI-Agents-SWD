@@ -65,7 +65,10 @@ CREATE TABLE IF NOT EXISTS agent_discussions (
     message_type   TEXT NOT NULL DEFAULT 'analysis',
     content        TEXT NOT NULL DEFAULT '',
     confidence     NUMERIC(4,3) NOT NULL DEFAULT 0.500,
-    references     JSONB NOT NULL DEFAULT '{}'::jsonb,
+    -- ``references`` is a reserved keyword in PostgreSQL (FOREIGN KEY
+    -- … REFERENCES). Use ``refs`` for the JSONB column instead so the
+    -- migration parses without needing quoted identifiers everywhere.
+    refs           JSONB NOT NULL DEFAULT '{}'::jsonb,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 

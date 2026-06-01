@@ -96,7 +96,7 @@ def _discussion_row(task_id: str = "t1") -> _FakeRow:
             "message_type": "analysis",
             "content": "looks ok",
             "confidence": 0.8,
-            "references": json.dumps({"k": "v"}),
+            "refs": json.dumps({"k": "v"}),
             "created_at": datetime.now(timezone.utc),
         }
     )
