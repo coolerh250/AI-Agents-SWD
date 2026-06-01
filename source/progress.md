@@ -5043,3 +5043,235 @@ issues & blockers, and next-step suggestions.
     leak scanner like every other committed file.
   - Following Stage 22 / 23 / 24 / 25, Claude Code does not decide
     the Step 26 roadmap.
+
+---
+
+## Stage 27 — Step 26: Discord-Driven Flexible Task Execution Loop
+
+- **Execution time:** 2026-06-01, ~03:30 hours local + 10.0.1.31
+  verification window.
+- **Branch / commits:** `main`
+  - Deliverable: `cc62f9d` Step 26: Discord-driven flexible task
+    execution loop (Stage 27)
+  - Fix #1: `6335d91` rename `agent_discussions.references` -> `refs`
+    (PostgreSQL reserved word — the CREATE TABLE failed with a
+    syntax error)
+  - Fix #2: `3f5b7e5` parse `work_item.status` with python in
+    `verify_flexible_task_execution_loop.sh` (greedy sed regex
+    matched the LAST `"status"` field, which leaked the
+    clarification status into the work-item check)
+  - Fix #3: `56263c4` preserve `requirement.completed` event_type +
+    skip clarification gate on empty descriptions (existing test
+    fixtures and runtime smokes publish task.created with no
+    description; the Stage 27 short-description rule broke
+    `test_agent_stream_flow`, `test_failure_retry_flow`,
+    `test_github_pipeline_flow`, and the platform observability
+    incident-from-terminal path)
+  - Fix #4: `a65915d` black formatting for requirement-agent
+  - This Stage 27 progress entry: pending commit at the end of the
+    Stage 27 workflow.
+
+- **Modified files (high-level):**
+  - **New tables:**
+    - `migrations/007_flexible_task_execution_loop.sql` — three
+      additive tables: `task_work_items` (one per Discord intake),
+      `agent_discussions` (append-only per-agent log, column named
+      `refs` because PG reserves `references`),
+      `clarification_requests` (operator round-trip).
+  - **New SDK module:**
+    - `shared/sdk/task_execution/` — `models.py` (TaskWorkItem,
+      AgentDiscussion, ClarificationRequest), `store.py`
+      (TaskExecutionStore with full CRUD + counts), `mode_classifier
+      .py` (deterministic — NO LLM). `__init__.py` exports the
+      classifier, the store, and the dataclasses.
+  - **Updated agents:**
+    - `agents/requirement-agent` — now creates the work item,
+      classifies the mode, writes a requirement-agent
+      `agent_discussions` row, and branches: needs_clarification
+      OR ready_for_development. Preserves the historical
+      `requirement.completed` event_type via the StreamAgent's
+      auto-notification AND publishes a new
+      `task.ready_for_development` notification via
+      `send_notification`.
+    - intake / development / qa / devops agents — each appends one
+      `agent_discussions` row (analysis / execution_plan /
+      validation_note / risk respectively). The devops-agent also
+      flips the work item to `completed` when the pipeline finishes.
+  - **Discord-gateway endpoints:**
+    - `GET /discord/clarifications/{task_id}` — open + answered
+      list + work_item snapshot.
+    - `POST /discord/clarifications/{clarification_id}/answer` —
+      record answer, publish `clarification.answered` notification +
+      `clarification_answered` audit, call
+      `/workflow/resume-after-clarification/{task_id}` on the
+      orchestrator. Sandbox-only; no real Discord API.
+  - **Orchestrator workflow gate:**
+    - `POST /workflow/resume-after-clarification/{task_id}` —
+      refuses while open clarifications remain; otherwise
+      re-classifies using ONLY the operator's answers (so the
+      original "TBD" doesn't keep the loop stuck), flips to
+      ready_for_development, republishes the intake event on
+      stream.tasks.
+  - **Operations API:**
+    - Every workflow view now carries a `task_execution` section
+      (work_item + agent_discussions + clarification_requests +
+      execution_plan + assumptions + open_questions + risks +
+      ready_for_development boolean).
+    - `/operations/summary.task_execution_summary` — per-mode +
+      per-status counts.
+    - New routes:
+      `GET /operations/tasks/work-items` (filter by status /
+      execution_mode)
+      `GET /operations/tasks/work-items/{task_id}`
+  - **Metrics + tracing:**
+    - 6 new counters: `task_work_items_total`,
+      `task_execution_mode_total`, `clarification_requests_total`,
+      `task_ready_for_development_total`, `task_blocked_total`,
+      `agent_discussions_total`.
+    - 5 new spans: `task_execution.create_work_item`,
+      `task_execution.classify_mode`,
+      `task_execution.create_clarification`,
+      `task_execution.answer_clarification`,
+      `task_execution.record_agent_discussion`.
+  - **New verify script:**
+    - `scripts/verify_flexible_task_execution_loop.sh` — 20-check
+      verifier across four scenarios (simple_task,
+      delivery_task, needs_clarification + answer + resume,
+      scrum_project).
+  - **Updated runtime smoke:**
+    - `scripts/check_runtime_state.sh` — adds 8 lightweight Stage
+      27 smokes (TASK_WORK_ITEM, EXECUTION_MODE_CLASSIFIER,
+      AGENT_DISCUSSION, CLARIFICATION_REQUEST,
+      CLARIFICATION_ANSWER, TASK_READY_FOR_DEVELOPMENT,
+      TASK_WORKFLOW_GATE, OPERATIONS_TASK_EXECUTION_VIEW,
+      DISCORD_CLARIFICATION_API, TASK_EXECUTION_AUDIT,
+      TASK_EXECUTION_NOTIFICATION). Eleven counter entries plus
+      the existing Stage 25/26 smokes.
+  - **Tests:** 9 new pytest files (47 cases): classifier rules,
+    store CRUD with asyncpg stub, dataclasses, agent discussion
+    writes, requirement-agent clarification branch, workflow
+    gate + resume endpoint, operations view + tasks/work-items
+    routes, discord clarification API, prometheus metrics.
+  - **Docs:**
+    - `README.md` — new "Discord-Driven Flexible Task Execution
+      Loop (Stage 27)" section with execution-mode table,
+      clarification flow, agent discussion roster, operations
+      API summary, "not in this stage" caveats.
+    - `docs/operations/flexible-task-execution-loop.md` (new) —
+      full operator runbook with curl examples.
+    - `docs/operations/manual-verification.md` — section 17f with
+      the four-scenario verification recipe.
+
+- **Deployment target:** local lint / format / type / test, then
+  `10.0.1.31` (`/home/itadmin/AI-Agents-SWD`).
+
+- **Test results / verification (10.0.1.31, branch `main` at
+  `a65915d`):**
+
+  | Command | Result | Key marker |
+  | --- | --- | --- |
+  | `./scripts/run_tests.sh` | PASS | 745 passed; ruff / black / mypy green |
+  | `./scripts/check_runtime_state.sh` | PASS | All 11 new Stage 27 smokes PASS; Stage 25/26 smokes still PASS |
+  | `./scripts/verify_flexible_task_execution_loop.sh` | PASS | 20 / 20; FLEXIBLE_TASK_EXECUTION_VERIFY: PASS |
+  | `./scripts/verify_staging_secrets.sh` | PASS | 10 / 10; STAGING_SECRETS_VERIFY: PASS |
+  | `./scripts/verify_staging_runtime.sh` | PASS | 15 / 15; STAGING_RUNTIME_VERIFY: PASS |
+  | `./scripts/verify_staging_backup_restore.sh` | PASS | dump TOC + restore guard + local untouched + leak scan |
+  | `./scripts/verify_real_github_validation.sh` | PASS | 12 / 12; REAL_GITHUB_TEST_SKIPPED: PASS |
+  | `./scripts/verify_notification_delivery.sh` | PASS | 9 / 9 |
+  | `./scripts/verify_discord_gateway.sh` | PASS | 12 / 12; sandbox mode confirmed |
+  | `./scripts/verify_operations_view.sh` | PASS | 10 / 10 |
+  | `./scripts/verify_unified_audit.sh` | PASS | 9 / 9 |
+  | `./scripts/verify_github_pipeline_flow.sh` | PASS | 7 / 7 |
+  | `./scripts/verify_platform_observability.sh` | PASS | 81 / 81 |
+
+  - **Production safety counters** (BOTH stacks):
+    - aiagents-test `deployment_records.production_executed=true`: 0
+    - aiagents-test `workflow_states.production_executed=true`: 0
+    - aiagents-staging `deployment_records.production_executed=true`: 0
+    - aiagents-staging `workflow_states.production_executed=true`: 0
+
+- **Issues & blockers (resolved during the run):**
+  - **Fix #1 (`6335d91`).** `agent_discussions.references` failed
+    `CREATE TABLE` because `REFERENCES` is a PostgreSQL reserved
+    keyword used in foreign-key syntax. Renamed the SQL column to
+    `refs`; the dataclass / API attribute stays `references` so the
+    operator-facing JSON shape is unchanged.
+  - **Fix #2 (`3f5b7e5`).** The verifier's greedy sed regex
+    `s/.*"status": *"\([^"]*\)".*/\1/p` matched the LAST `status`
+    field on the single-line FastAPI JSON response — that was the
+    clarification's `open` / `answered` status, not the work
+    item's. Replaced both status extractions with `python3 -c` JSON
+    parses; verifier now PASSes 20 / 20 deterministically.
+  - **Fix #3 (`56263c4`).** Two backwards-compat fixes for the
+    requirement-agent rewrite:
+    a. Preserve `event_type=requirement.completed` for the
+       StreamAgent's auto-notification (the test
+       `test_agent_flow_writes_audit_and_notifications` and a
+       handful of runtime smokes grep for this string). The new
+       `task.ready_for_development` notification is published via
+       a side-channel `send_notification` call.
+    b. Empty / whitespace-only descriptions no longer trigger the
+       clarification gate. Existing test fixtures publish
+       `task.created` with no description; the Stage 27
+       "description_too_short" rule was treating those as
+       needs_clarification and blocking
+       `test_failure_retry_flow` (the development-agent never
+       ran), `test_github_pipeline_flow` (no dispatch), and the
+       platform observability incident-from-terminal path.
+       Now only PRESENT-but-tiny descriptions trigger; explicit
+       signals (`TBD`, `?`, `請再確認` …) still trigger correctly.
+  - **Fix #4 (`a65915d`).** Black wanted to merge two adjacent
+    f-string literals on one line. Applied locally + pushed; no
+    code semantics changed.
+
+- **Risks / observations only (Claude Code does NOT decide the Step
+  27 roadmap):**
+  - **Deterministic, no LLM.** The classifier is a pure rule
+    matcher over English + Chinese keyword sets. Future stages
+    that flip to an LLM-backed classifier need to add fallback
+    + cost guards before they ship.
+  - **Development still mock.** development-agent still produces a
+    mock `code_change` artifact — no real code is generated, no
+    branches are committed. The `task_execution.execution_plan`
+    JSON captures the intended pipeline but the platform doesn't
+    yet act on it.
+  - **Scrum optional only.** Scrum mode requires an explicit
+    keyword in the description; `simple_task` / `delivery_task`
+    work items never get `acceptance_criteria` /
+    `definition_of_done` / `scrum_metadata` (Scenario D's
+    SCENARIO_D_SCRUM_NOT_LEAKING check guards this on every run).
+  - **Real Discord / GitHub still skipped.** The discord-gateway
+    clarification endpoints do NOT contact the real Discord API.
+    Stage 22 / Stage 23 opt-in gates are unchanged; verifier
+    confirms `github_external_write_enabled=false` and
+    `discord_external_send_enabled=false`.
+  - **Production deploy disabled.** `production_executed=true`
+    count is `0` on BOTH stacks throughout the verification
+    window; the workflow node still sets
+    `production_executed=False` on every dispatch.
+  - **Next capability gap.** Identifying gaps is the user's job —
+    Claude Code does not decide the Step 27 roadmap. Visible items
+    that emerged during this run (NOT a recommendation, just
+    observations):
+    - The discord-gateway endpoint set still grows linearly with
+      each lifecycle event; a per-task websocket / SSE channel
+      may be more ergonomic for future operator UIs.
+    - Agent discussion confidence is hard-coded per agent today;
+      a future classifier upgrade would surface a real value.
+    - Workflow re-classification only happens at the
+      orchestrator's `/workflow/resume-after-clarification`
+      endpoint; an in-process subscription to
+      `clarification.answered` notifications would let the
+      orchestrator self-recover without the
+      discord-gateway HTTP call.
+  - **Other:**
+    - 4 surgical fixes during the run, all narrow and reversible.
+      No application logic, audit contract, or safety guard was
+      modified outside the documented backwards-compat
+      restoration.
+    - Local / test data plane unaffected — verified by
+      `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED` plus
+      the staging-backup verifier's before/after table-count
+      guard. Both green.
+    - Following Stage 22 / 23 / 24 / 25 / 26, Claude Code does
+      not decide the Step 27 roadmap.
