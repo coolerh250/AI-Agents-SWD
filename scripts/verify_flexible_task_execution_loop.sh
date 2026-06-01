@@ -97,7 +97,7 @@ echo "  final stage: $stage_b"
 sleep 4
 wi_b=$(curl -sS -m 10 "${ORCH}/operations/tasks/work-items/${tb}" || echo '{}')
 mode_b=$(echo "$wi_b" | sed -n 's/.*"execution_mode": *"\([^"]*\)".*/\1/p' | head -n1)
-status_b=$(echo "$wi_b" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -n1)
+status_b=$(echo "$wi_b" | python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('work_item') or {}).get('status',''))" 2>/dev/null)
 [ "$mode_b" = "delivery_task" ] && pass "SCENARIO_B_EXECUTION_MODE" || fail "SCENARIO_B_EXECUTION_MODE ($mode_b)"
 
 ops_b=$(curl -sS -m 15 "${ORCH}/operations/workflows/${tb}" || echo '{}')
@@ -148,7 +148,9 @@ echo "  seed: $(echo "$seed" | head -c 240)"
 
 sleep 8
 wi_c=$(curl -sS -m 10 "${ORCH}/operations/tasks/work-items/${tc}" || echo '{}')
-status_c=$(echo "$wi_c" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -n1)
+# Parse work_item.status (the sed greedy match would otherwise grab
+# clarification_requests[].status, which is "open" here).
+status_c=$(echo "$wi_c" | python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('work_item') or {}).get('status',''))" 2>/dev/null)
 echo "  initial status: $status_c"
 if [ "$status_c" = "needs_clarification" ]; then
   pass "SCENARIO_C_NEEDS_CLARIFICATION"
@@ -202,7 +204,7 @@ if [ -n "$clar_id" ]; then
   stage_c=$(_wait_stage "$tc" completed 30)
   echo "  final stage after resume: $stage_c"
   wi_c2=$(curl -sS -m 10 "${ORCH}/operations/tasks/work-items/${tc}" || echo '{}')
-  status_c2=$(echo "$wi_c2" | sed -n 's/.*"status": *"\([^"]*\)".*/\1/p' | head -n1)
+  status_c2=$(echo "$wi_c2" | python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('work_item') or {}).get('status',''))" 2>/dev/null)
   echo "  final status: $status_c2"
   if [ "$status_c2" = "ready_for_development" ] || [ "$status_c2" = "completed" ]; then
     pass "SCENARIO_C_READY_AFTER_RESUME"
