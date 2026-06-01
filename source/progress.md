@@ -4805,3 +4805,241 @@ issues & blockers, and next-step suggestions.
       `uuid-ossp` extension was created under the same user.
     - Following Stage 22 / Stage 23 / Stage 24, Claude Code does
       not decide the Step 25 roadmap.
+
+---
+
+## Stage 26 — Step 25: External Secrets & Staging Vault Integration
+
+- **Execution time:** 2026-06-01, ~02:30 hours local + 10.0.1.31
+  verification window.
+- **Branch / commits:** `main`
+  - Deliverable: `83aec7d` Step 25: external secrets + staging Vault
+    integration (Stage 26)
+  - Fix #1: `3ee8da8` Step 25 fix: verify_staging_secrets.sh
+    `--rebuild` for fresh orchestrator image
+  - Fix #2: `c6e46a0` Step 25 fix: mark new Stage 26 scripts
+    executable
+  - Fix #3: `88991ed` Step 25 fix: persist +x bit for all scripts
+    that need it
+  - This Stage 26 progress entry: pending commit at the end of the
+    Stage 26 workflow.
+
+- **Modified files (high-level):**
+  - **New secrets baseline:**
+    - `infra/runtime/secrets.inventory.yml` — single source of
+      truth for the 7 required secrets (POSTGRES_PASSWORD,
+      GITHUB_TOKEN, DISCORD_BOT_TOKEN, DISCORD_TEST_CHANNEL_ID,
+      ALERTMANAGER_WEBHOOK_URL, VAULT_TOKEN, VAULT_ADDR).
+    - `scripts/list_required_secrets.py` — text / JSON inventory
+      lister; validates inventory structure; never prints a value.
+    - `infra/runtime/mock-vault-secrets.example.json` — placeholder
+      template for the mock-vault provider.
+    - `scripts/bootstrap_mock_vault_secrets.sh` — writes the local
+      `.mock-vault-secrets.local.json` (chmod 600, gitignored) with
+      a generated DB password; never synthesises a token-shaped
+      value.
+  - **SDK updates:**
+    - `shared/sdk/secrets/provider.py` — adds
+      `VaultKvSecretProvider` (Vault KV v2 over HTTP; token held in
+      a `SecretRef` so a stray repr / str / audit row renders
+      `***REDACTED***`), `MockVaultSecretProvider` (file-backed
+      JSON; refuses real-token-shaped values unless explicitly
+      opted in), and a `provider_from_env()` factory driven by
+      `SECRET_PROVIDER`.
+    - `shared/sdk/secrets/__init__.py` — exports the new classes +
+      `SUPPORTED_PROVIDERS`.
+  - **Validator + compose:**
+    - `scripts/validate_runtime_config.py` — new SECRET_PROVIDER
+      rules (`vault` requires VAULT_ADDR + non-placeholder
+      VAULT_TOKEN; `mock-vault` WARN in staging, FAIL in
+      production-check; `env`-only FAIL in production-check).
+    - `infra/docker-compose/docker-compose.staging.yml` — every
+      secret-aware service ships `SECRET_PROVIDER`, `VAULT_ADDR`,
+      `VAULT_TOKEN`, `VAULT_KV_MOUNT`, `VAULT_KV_PATH`,
+      `MOCK_VAULT_SECRETS_FILE` env vars and bind-mounts the host
+      mock-vault file at `/run/secrets/mock-vault-secrets.json`.
+    - `scripts/start_staging_runtime.sh` — auto-bootstraps the
+      mock-vault file when `SECRET_PROVIDER=mock-vault`; refuses
+      `SECRET_PROVIDER=vault` without VAULT_ADDR + VAULT_TOKEN.
+    - `infra/runtime/env.staging.example` — adds the new env keys
+      (`SECRET_PROVIDER=mock-vault`, `VAULT_KV_MOUNT`,
+      `VAULT_KV_PATH`, `MOCK_VAULT_SECRETS_FILE`).
+  - **Operations + safety:**
+    - `apps/orchestrator/src/operations.py` — `/operations/safety`
+      gains `secret_provider`, `secret_provider_status`,
+      `vault_configured`, `vault_reachable`, `mock_vault_enabled`,
+      `mock_vault_file_present`, `missing_required_secrets`. No
+      value-shaped string anywhere in the response.
+  - **New verify scripts:**
+    - `scripts/verify_secret_rotation_smoke.sh` — drives the
+      provider's reload contract (write A, read, reload, write B,
+      read, assert change + no leak).
+    - `scripts/scan_for_secret_leaks.sh` — POSIX-ERE sweep over
+      README, docs, source, runtime-health logs, runtime templates,
+      compose files, scripts. Literal-substring allow-list; the
+      scanner + `secrets-management.md` + leak-scanner test files
+      are skipped because they document the regex patterns. A
+      `leak-scan: allow` pragma whitelists future fixtures.
+    - `scripts/verify_staging_secrets.sh` — end-to-end orchestrator:
+      inventory + bootstrap + staging validator + production-check
+      refuses mock-vault + rotation smoke + leak scan + staging
+      bring-up (with `--rebuild`) + `/operations/safety` carries
+      the Stage 26 fields + no real GitHub / Discord + tear-down.
+  - **Updated verify + health scripts:**
+    - `scripts/runtime_health_snapshot.sh` — boolean-only safety
+      filter keeps the new Stage 26 fields; still no value
+      substring in the log.
+    - `scripts/verify_staging_runtime.sh` — adds the 15th check
+      `STAGING_SECRET_LEAK_SCAN`.
+    - `scripts/verify_staging_backup_restore.sh` — runs the leak
+      scan as a regression guard after the backup smoke.
+    - `scripts/check_runtime_state.sh` — adds 6 lightweight Stage
+      26 smokes: `SECRETS_INVENTORY_SMOKE`,
+      `SECRET_PROVIDER_SMOKE`, `MOCK_VAULT_BOOTSTRAP_SMOKE`,
+      `SECRET_ROTATION_SMOKE`, `SECRET_LEAK_SCAN_SMOKE`,
+      `STAGING_SECRETS_SMOKE`.
+  - **Tests (8 new files, 60 cases):**
+    - `tests/test_secrets_inventory.py` (8) — YAML structure +
+      lister script.
+    - `tests/test_vault_secret_provider.py` (6) — stubbed HTTP;
+      safe error paths; token never in status.
+    - `tests/test_mock_vault_provider.py` (9) — file-backed reads,
+      rotation via `reload()`, real-token-shape refusal.
+    - `tests/test_secret_provider_selection.py` (6) — factory
+      dispatch (env / vault / mock-vault / unknown /
+      case-insensitive).
+    - `tests/test_runtime_config_secret_provider.py` (9) — per-mode
+      validator rules.
+    - `tests/test_staging_secrets_scripts.py` (15) — static checks
+      on the new scripts (existence, `bash -n`, no real-token
+      substring outside the scanner itself).
+    - `tests/test_secret_leak_scanner.py` (4) — functional scanner
+      against a temp tree + meta-check on the real repo.
+    - `tests/test_operations_secret_safety.py` (3) —
+      `/operations/safety` helper exposes the new fields and never
+      carries a value.
+  - **Docs:**
+    - `README.md` — new "External Secrets Baseline (Stage 26)"
+      section: SECRET_PROVIDER mode table, mock-vault flow,
+      `/operations/safety` field list, production restrictions.
+    - `docs/operations/secrets-management.md` (new) — full
+      inventory, Vault KV v2 layout, token redaction policy,
+      rotation + leak-scan procedure, production restrictions.
+    - `docs/operations/staging-runtime-hardening.md` — Stage 26
+      secrets integration section + cross-link.
+    - `docs/operations/manual-verification.md` — section 17e with
+      the Stage 26 commands.
+  - **gitignore:**
+    - `.gitignore` adds explicit
+      `infra/runtime/.mock-vault-secrets.local.json` +
+      `*.local.json` patterns.
+
+- **Deployment target:** local lint / format / type / test then
+  `10.0.1.31` (`/home/itadmin/AI-Agents-SWD`).
+
+- **Test results / verification (10.0.1.31, branch `main` at
+  `88991ed`):**
+
+  | Command | Result | Key marker |
+  | --- | --- | --- |
+  | `./scripts/run_tests.sh` | PASS | 696 passed, ruff / black / mypy green |
+  | `./scripts/check_runtime_state.sh` | PASS | all 6 Stage 26 smokes PASS |
+  | `./scripts/verify_staging_secrets.sh` | PASS | 10 / 10 checks; STAGING_SECRETS_VERIFY: PASS |
+  | `./scripts/verify_staging_runtime.sh` | PASS | 15 / 15 (incl. STAGING_SECRET_LEAK_SCAN) |
+  | `./scripts/verify_staging_backup_restore.sh` | PASS | leak scan + backup TOC + restore refusal |
+  | `./scripts/verify_staging_hardening.sh` | PASS | STAGING_HARDENING_VERIFY: PASS |
+  | `./scripts/verify_real_github_validation.sh` | PASS | 12 / 12; REAL_GITHUB_TEST_SKIPPED: PASS |
+  | `./scripts/verify_notification_delivery.sh` | PASS | 9 / 9 |
+  | `./scripts/verify_discord_gateway.sh` | PASS | 12 / 12; sandbox mode confirmed |
+  | `./scripts/verify_operations_view.sh` | PASS | 10 / 10 |
+  | `./scripts/verify_unified_audit.sh` | PASS | 9 / 9 |
+  | `./scripts/verify_github_pipeline_flow.sh` | PASS | 7 / 7 |
+  | `./scripts/verify_platform_observability.sh` | PASS | PLATFORM_OBSERVABILITY_VERIFY: PASS |
+  | `./scripts/list_required_secrets.py` | PASS | REQUIRED_SECRETS_INVENTORY: PASS (7 entries) |
+  | `./scripts/bootstrap_mock_vault_secrets.sh` | PASS | chmod 600, gitignored |
+  | `./scripts/validate_runtime_config.sh staging` | PASS | RUNTIME_CONFIG_VALIDATION: PASS |
+  | `./scripts/verify_secret_rotation_smoke.sh` | PASS | ROTATION_VERSION_A / B / DELTA + STATUS_LEAK |
+  | `./scripts/scan_for_secret_leaks.sh` | PASS | leak hits: 0 |
+
+  - **Production safety counters** (BOTH stacks):
+    - aiagents-test `deployment_records.production_executed=true`: 0
+    - aiagents-test `workflow_states.production_executed=true`: 0
+    - aiagents-staging `deployment_records.production_executed=true`: 0
+    - aiagents-staging `workflow_states.production_executed=true`: 0
+
+  - **Runtime health snapshots** (gitignored):
+    - `source/runtime-health.log` (6,972 bytes; carries the new
+      Stage 26 boolean fields; no token substring).
+    - `source/runtime-health-staging.log` (6,609 bytes; written
+      during Stage 25; unchanged by Stage 26 work).
+
+- **Issues & blockers (resolved during the run):**
+  - **Fix #1 (`3ee8da8`).** `verify_staging_secrets.sh` originally
+    called `start_staging_runtime.sh` without `--rebuild`, so the
+    staging orchestrator container started from a cached image that
+    lacked the Stage 26 `_secret_provider_status` helper. The
+    `STAGING_SAFETY_SECRET_FIELDS` check therefore failed even
+    though the SDK + compose wiring + source change were all in
+    place. Fix: pass `--rebuild` in the verify script.
+  - **Fix #2 (`c6e46a0`).** `git update-index --chmod=+x` for the 5
+    new Stage 26 scripts so the executable bit travels across
+    platforms.
+  - **Fix #3 (`88991ed`).** Same `+x` persistence applied to the
+    15 existing scripts a fresh clone needs to invoke
+    (`start_staging_runtime.sh`, `validate_runtime_config.sh`,
+    etc.) — earlier stages relied on a stateful chmod on the test
+    server that didn't survive `git pull`.
+
+- **Risks / observations only (Claude Code does NOT decide the Step
+  26 roadmap):**
+  - **Mock-vault is not production.** The `MockVaultSecretProvider`
+    is a staging-only escape hatch. `validate_runtime_config.py
+    --mode production-check` refuses it; the lifestyle of the
+    mock-vault file (chmod 600, gitignored, regenerated by the
+    bootstrap script with a fake DB password) is unsuitable for
+    real-token storage.
+  - **External Vault not actually deployed.** The Stage 26
+    `VaultKvSecretProvider` was tested against a stub HTTP getter
+    only (`tests/test_vault_secret_provider.py`). No real Vault
+    server contacted. The validator's `vault` mode now refuses to
+    start without a real `VAULT_ADDR` + `VAULT_TOKEN`, so future
+    staging hand-offs that flip `SECRET_PROVIDER=vault` will be
+    forced to wire a real Vault first.
+  - **Secret rotation requires service restart.** `MockVault` /
+    `VaultKv` both pick up the new value on `provider.reload()`,
+    but service consumers cache the `SecretRef` at process boot
+    today. Hot reload would need a `/operations/secrets/reload`
+    endpoint or a periodic refresh loop; both are deferred. The
+    rotation smoke verifies the provider layer only and the
+    `secrets-management.md` runbook documents the "restart the
+    affected service" procedure.
+  - **Real GitHub / Discord still skipped.** Stage 22 / Stage 23
+    opt-in gates are unchanged; `RUN_REAL_GITHUB_TEST` and
+    `RUN_REAL_DISCORD_TEST` default to false in every env file +
+    compose. The `STAGING_REAL_INTEGRATIONS_DISABLED` check inside
+    `verify_staging_secrets.sh` reasserts this on every run.
+  - **Production readiness gap.** This stage adds the secret READ
+    path. It does NOT add: real Vault integration tests,
+    end-to-end secret hand-off documentation, KMS / IAM / TLS
+    setup, secret access auditing, automated rotation. Those
+    remain outstanding items for any future production push.
+  - **No production deploy.** The platform's
+    `production_executed=true` counter remains `0` on BOTH stacks.
+    Local / test regression cleanly green: 22 / 22 containers
+    healthy after the staging bring-up + tear-down cycle; 696
+    pytests pass.
+  - **Local / test data plane unaffected.** Same two-layer check
+    as Stage 25 — `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED`
+    plus the `verify_staging_backup_restore.sh` before / after
+    table-count guard. Both green.
+  - **3 surgical fixes during the run.** Each was an
+    infrastructure / packaging fix (image rebuild, executable
+    bit). No application logic, test contract, or safety guard
+    was modified post-deliverable.
+  - **`.mock-vault-secrets.local.json` posture.** Generated fresh
+    by the bootstrap script when needed; chmod 600; gitignored
+    explicitly. The committed `mock-vault-secrets.example.json`
+    template carries placeholder values only and is scanned by the
+    leak scanner like every other committed file.
+  - Following Stage 22 / 23 / 24 / 25, Claude Code does not decide
+    the Step 26 roadmap.
