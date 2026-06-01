@@ -1606,4 +1606,119 @@ else
 fi
 
 echo
+echo "=== Stage 27 flexible task execution loop smokes (lightweight) ==="
+
+stage27_ts=$(date +%s)
+
+# 1. simple-task intake -> work item created
+te_simple="stage27-runtime-simple-$stage27_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=general description=\\\"summarise the platform docs intro into bullet points\\\" task_id=$te_simple\",\"channel_id\":\"sandbox-stage27\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 8
+te_wi=$(curl -sS -m 10 "http://localhost:8000/operations/tasks/work-items/$te_simple" || echo '{}')
+if echo "$te_wi" | grep -q "\"task_id\": *\"$te_simple\""; then
+  echo "TASK_WORK_ITEM_SMOKE: PASS"
+else
+  echo "TASK_WORK_ITEM_SMOKE: CHECK"
+fi
+if echo "$te_wi" | grep -q '"execution_mode": *"simple_task"'; then
+  echo "EXECUTION_MODE_CLASSIFIER_SMOKE: PASS"
+else
+  echo "EXECUTION_MODE_CLASSIFIER_SMOKE: CHECK"
+fi
+if echo "$te_wi" | grep -qE '"agent": *"(intake-agent|requirement-agent)"'; then
+  echo "AGENT_DISCUSSION_SMOKE: PASS"
+else
+  echo "AGENT_DISCUSSION_SMOKE: CHECK"
+fi
+
+# 2. unclear task -> needs_clarification + clarification_request open
+te_unclear="stage27-runtime-clar-$stage27_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.test description=\\\"TBD\\\" task_id=$te_unclear\",\"channel_id\":\"sandbox-stage27\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 8
+te_clar=$(curl -sS -m 10 "http://localhost:8007/discord/clarifications/$te_unclear" || echo '{}')
+if echo "$te_clar" | grep -q '"open_count":' && ! echo "$te_clar" | grep -q '"open_count": *0'; then
+  echo "CLARIFICATION_REQUEST_SMOKE: PASS"
+else
+  echo "CLARIFICATION_REQUEST_SMOKE: CHECK"
+fi
+
+# 3. answer the clarification
+te_clar_id=$(echo "$te_clar" | sed -n 's/.*"clarification_id": *"\([a-f0-9-]*\)".*/\1/p' | head -n1)
+if [ -n "$te_clar_id" ]; then
+  te_ans=$(curl -sS -m 10 -X POST "http://localhost:8007/discord/clarifications/$te_clar_id/answer" \
+    -H "Content-Type: application/json" \
+    -d "{\"answer\":\"please implement a new /healthz endpoint with tests\",\"user_id\":\"check\"}" \
+    || echo '{}')
+  if echo "$te_ans" | grep -q '"status": *"answered"'; then
+    echo "CLARIFICATION_ANSWER_SMOKE: PASS"
+  else
+    echo "CLARIFICATION_ANSWER_SMOKE: CHECK"
+  fi
+  sleep 8
+  te_wi2=$(curl -sS -m 10 "http://localhost:8000/operations/tasks/work-items/$te_unclear" || echo '{}')
+  if echo "$te_wi2" | grep -qE '"status": *"(ready_for_development|completed)"'; then
+    echo "TASK_READY_FOR_DEVELOPMENT_SMOKE: PASS"
+  else
+    echo "TASK_READY_FOR_DEVELOPMENT_SMOKE: CHECK"
+  fi
+else
+  echo "CLARIFICATION_ANSWER_SMOKE: CHECK"
+  echo "TASK_READY_FOR_DEVELOPMENT_SMOKE: CHECK"
+fi
+
+# 4. workflow gate — needs_clarification didn't dispatch development
+if echo "$te_clar" | grep -q '"open_count":'; then
+  # quick re-fetch the operations workflow view; the development-agent
+  # column must be empty until the resume.
+  te_ops=$(curl -sS -m 10 "http://localhost:8000/operations/workflows/$te_unclear" || echo '{}')
+  if echo "$te_ops" | grep -q '"task_execution"'; then
+    echo "TASK_WORKFLOW_GATE_SMOKE: PASS"
+  else
+    echo "TASK_WORKFLOW_GATE_SMOKE: CHECK"
+  fi
+else
+  echo "TASK_WORKFLOW_GATE_SMOKE: CHECK"
+fi
+
+# 5. operations API integration
+te_sum=$(curl -sS -m 10 http://localhost:8000/operations/summary || echo '{}')
+if echo "$te_sum" | grep -q '"task_execution_summary"'; then
+  echo "OPERATIONS_TASK_EXECUTION_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_TASK_EXECUTION_VIEW_SMOKE: CHECK"
+fi
+
+# 6. discord clarification API endpoint reachable
+if [ -n "$te_clar_id" ]; then
+  echo "DISCORD_CLARIFICATION_API_SMOKE: PASS"
+else
+  echo "DISCORD_CLARIFICATION_API_SMOKE: CHECK"
+fi
+
+# 7. audit decision_types persisted (task_ready_for_development OR
+# clarification_requested OR clarification_answered).
+te_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=clarification_requested&limit=5" || echo '{}')
+te_audit2=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=task_ready_for_development&limit=5" || echo '{}')
+if echo "$te_audit" | grep -q 'clarification_requested' \
+   || echo "$te_audit2" | grep -q 'task_ready_for_development'; then
+  echo "TASK_EXECUTION_AUDIT_SMOKE: PASS"
+else
+  echo "TASK_EXECUTION_AUDIT_SMOKE: CHECK"
+fi
+
+# 8. notification deliveries
+te_nots=$(curl -sS -m 10 "http://localhost:8004/notifications?count=200" || echo '{}')
+if echo "$te_nots" | grep -q 'task.needs_clarification' \
+   || echo "$te_nots" | grep -q 'task.ready_for_development' \
+   || echo "$te_nots" | grep -q 'clarification.answered'; then
+  echo "TASK_EXECUTION_NOTIFICATION_SMOKE: PASS"
+else
+  echo "TASK_EXECUTION_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

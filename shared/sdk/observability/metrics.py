@@ -228,6 +228,39 @@ NOTIFICATION_WORKER_PROCESSING_SECONDS = Histogram(
 )
 
 
+# Stage 27 — flexible task execution loop metrics.
+TASK_WORK_ITEMS_TOTAL = Counter(
+    "task_work_items_total",
+    "Task work items written (one row per upsert)",
+    ["execution_mode", "status"],
+)
+TASK_EXECUTION_MODE_TOTAL = Counter(
+    "task_execution_mode_total",
+    "Classifier decisions, labelled by chosen execution mode + request_type",
+    ["execution_mode", "request_type"],
+)
+CLARIFICATION_REQUESTS_TOTAL = Counter(
+    "clarification_requests_total",
+    "Clarification requests by lifecycle (requested | answered)",
+    ["status"],
+)
+TASK_READY_FOR_DEVELOPMENT_TOTAL = Counter(
+    "task_ready_for_development_total",
+    "Work items that reached status=ready_for_development",
+    ["execution_mode"],
+)
+TASK_BLOCKED_TOTAL = Counter(
+    "task_blocked_total",
+    "Work items that were marked blocked",
+    ["reason"],
+)
+AGENT_DISCUSSIONS_TOTAL = Counter(
+    "agent_discussions_total",
+    "Agent discussion rows appended",
+    ["agent", "message_type"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

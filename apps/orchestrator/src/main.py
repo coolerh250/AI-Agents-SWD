@@ -28,6 +28,7 @@ from shared.sdk.observability.tracing import (
     setup_tracing,
     start_span,
 )
+from shared.sdk.task_execution import TaskExecutionStore, classify_execution_mode
 from shared.sdk.workflow_store.store import WorkflowStore
 from workflow import run_mock_workflow, workflow_state_schema
 from workflow_events import WorkflowEventConsumer
@@ -214,6 +215,101 @@ async def resume_workflow(task_id: str):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+
+
+@app.post("/workflow/resume-after-clarification/{task_id}")
+async def resume_after_clarification(task_id: str) -> dict:
+    """Stage 27 — drive the workflow forward after a clarification answer.
+
+    If every clarification request for the task is now ``answered``, the
+    work item is re-classified and (when sufficient) marked
+    ``ready_for_development``. The orchestrator then re-publishes the
+    intake event so the existing agent pipeline can run. The endpoint
+    is safe to call repeatedly: if there is still an open clarification,
+    the work item stays at ``needs_clarification`` and the response
+    reports the open count.
+    """
+    store = TaskExecutionStore()
+    work_item = await store.get_work_item(task_id)
+    if work_item is None:
+        raise HTTPException(status_code=404, detail="task_work_item not found")
+    open_clarifications = await store.list_clarification_requests(task_id, status="open")
+    if open_clarifications:
+        return {
+            "task_id": task_id,
+            "status": work_item.status,
+            "resumed": False,
+            "open_clarifications": len(open_clarifications),
+            "reason": "open_clarifications_pending",
+            "generated_at": _utcnow_iso(),
+        }
+    answered = await store.list_clarification_requests(task_id, status="answered")
+    # Reclassify using ONLY the user-provided answers. The original
+    # description likely still contains the trigger token ("TBD",
+    # "?", "請再確認" …) that put the work item into
+    # needs_clarification in the first place; if we re-fed it to the
+    # classifier the work item would never escape the loop. Falling
+    # back to the original description only when no answer is recorded
+    # keeps the behaviour deterministic when an operator force-calls
+    # the endpoint without an answer.
+    answer_text = " ".join((c.user_response or "").strip() for c in answered).strip()
+    combined_description = answer_text or work_item.description
+    classification = classify_execution_mode(
+        request_type=work_item.request_type,
+        description=combined_description,
+        explicit_mode=work_item.execution_mode,
+    )
+    new_status = (
+        "needs_clarification" if classification.clarification_required else "ready_for_development"
+    )
+    await store.update_work_item_status(task_id, new_status)
+    if new_status == "needs_clarification":
+        # Still not enough info — keep the work item in clarification.
+        return {
+            "task_id": task_id,
+            "status": new_status,
+            "resumed": False,
+            "reason": classification.reason,
+            "generated_at": _utcnow_iso(),
+        }
+    # Re-publish the task on stream.tasks so the agent pipeline restarts.
+    workflow = await WorkflowStore().get_workflow_state(task_id)
+    request_payload: dict = {}
+    workflow_id = work_item.workflow_id or ""
+    if workflow is not None:
+        state = workflow.get("state") if isinstance(workflow.get("state"), dict) else {}
+        if isinstance(state, dict):
+            request_payload = (
+                dict(state.get("request") or {}) if isinstance(state.get("request"), dict) else {}
+            )
+            workflow_id = workflow_id or str(state.get("workflow_id") or "")
+    if not request_payload:
+        request_payload = {"type": work_item.request_type, "description": combined_description}
+    # Override the description so the agents see the clarified version on
+    # restart (mock — the request object kept its original description on
+    # disk, so we patch it here).
+    request_payload["description"] = combined_description
+    from dispatch import dispatch_task as _dispatch
+
+    dispatched = await _dispatch(
+        task_id,
+        workflow_id,
+        request_payload,
+        "discord-clarification",
+        trace_id="",
+    )
+    await send_notification(
+        task_id,
+        "task.ready_for_development",
+        f"task {task_id} ready for development after clarification",
+    )
+    return {
+        "task_id": task_id,
+        "status": new_status,
+        "resumed": dispatched,
+        "execution_mode": classification.execution_mode,
+        "generated_at": _utcnow_iso(),
+    }
 
 
 @app.post("/workflow/cancel/{task_id}")

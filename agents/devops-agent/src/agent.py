@@ -8,10 +8,12 @@ from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.http_clients.github_http_client import GitHubAutomationHttpClient
 from shared.sdk.observability.metrics import (
+    AGENT_DISCUSSIONS_TOTAL,
     GITHUB_PIPELINE_INTEGRATION_FAILURES_TOTAL,
     GITHUB_PIPELINE_INTEGRATION_TOTAL,
 )
 from shared.sdk.observability.tracing import start_span
+from shared.sdk.task_execution import TaskExecutionStore
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
 GITHUB_DEFAULT_REPO = os.environ.get("GITHUB_DEFAULT_REPO", "coolerh250/AI-Agents-SWD")
@@ -116,6 +118,7 @@ class DevOpsAgent(StreamAgent):
     def __init__(self, github_client: GitHubAutomationHttpClient | None = None, **kwargs):
         super().__init__(**kwargs)
         self._github_client = github_client
+        self._task_store = TaskExecutionStore()
 
     def _client(self) -> GitHubAutomationHttpClient:
         if self._github_client is None:
@@ -276,6 +279,36 @@ class DevOpsAgent(StreamAgent):
             "produced_by": self.name,
         }
         await self.publish_next(message)
+        workflow_id = str(payload.get("workflow_id", "")) or None
+        try:
+            await self._task_store.add_agent_discussion(
+                task_id=task_id,
+                workflow_id=workflow_id,
+                agent=self.name,
+                role="devops",
+                message_type="risk",
+                content=(
+                    f"devops-agent simulated a dev/test deployment for {task_id} "
+                    f"(github status={github_result.get('status', 'unknown')}, "
+                    "production_executed=false)."
+                ),
+                confidence=0.7,
+                references={
+                    "environment": "test",
+                    "production_executed": False,
+                    "github_status": github_result.get("status", "unknown"),
+                },
+            )
+            AGENT_DISCUSSIONS_TOTAL.labels(agent=self.name, message_type="risk").inc()
+        except Exception:
+            pass
+
+        # Stage 27 — mark the work item completed when development pipeline
+        # finishes (mock). Failures are swallowed so the workflow keeps moving.
+        try:
+            await self._task_store.update_work_item_status(task_id, "completed")
+        except Exception:
+            pass
 
         decision_type = (
             "github_pr_integration"

@@ -1778,6 +1778,86 @@ configurations.
 See [`docs/operations/secrets-management.md`](docs/operations/secrets-management.md)
 for the full inventory, rotation, and leak-scan procedure.
 
+## Discord-Driven Flexible Task Execution Loop (Stage 27)
+
+Stage 27 turns Discord intake into an end-to-end task work item, with
+agent discussions, an optional clarification round-trip, and a
+deterministic execution-mode classifier — all without calling any LLM.
+
+### Execution modes
+
+| Mode | Trigger | Behaviour |
+| --- | --- | --- |
+| `simple_task` | Default — no dev/Scrum keyword | Lightweight bookkeeping; no Scrum fields |
+| `delivery_task` | Dev keywords (`build`, `implement`, …) or `dev.*` request_type | Full agent pipeline + GitHub dry-run PR |
+| `scrum_project` | Explicit Scrum vocabulary (`sprint`, `backlog`, `acceptance criteria`, `DoD`, `project kickoff`, …) | All of `delivery_task` + acceptance_criteria, DoD, scrum_metadata |
+
+Scrum is **opt-in only**. `simple_task` / `delivery_task` never get
+`acceptance_criteria`, `definition_of_done`, or `scrum_metadata`.
+
+### Clarification flow
+
+If the description is too short or contains a clarification signal
+(`TBD`, `?`, `請再確認`, `需要釐清`, …), the requirement-agent:
+
+1. Marks the work item `needs_clarification`.
+2. Creates a `clarification_requests` row + `task.needs_clarification`
+   notification + `clarification_requested` audit row.
+3. **Does NOT publish to `stream.development`** — the agent pipeline
+   stops at the gate.
+
+The operator answers via:
+
+```
+curl -X POST http://localhost:8007/discord/clarifications/<id>/answer \
+  -H "Content-Type: application/json" \
+  -d '{"answer":"please implement a /healthz endpoint with tests","user_id":"alice"}'
+```
+
+The discord-gateway records the answer and calls
+`POST /workflow/resume-after-clarification/<task_id>` which
+re-classifies using ONLY the user's answers, flips to
+`ready_for_development`, and republishes the intake event so the
+agent pipeline runs.
+
+### Agent discussions
+
+Every agent appends to `agent_discussions`:
+
+* `intake-agent` → analysis (normalized summary)
+* `requirement-agent` → analysis (mode + classification reason)
+* `development-agent` → execution_plan (mock code_change)
+* `qa-agent` → validation_note (mock test_report)
+* `devops-agent` → risk (mock deployment + github dry-run posture)
+
+Visible via `GET /operations/tasks/work-items/<task_id>` or
+`GET /operations/workflows/<task_id>.task_execution.agent_discussions`.
+
+### Operations API
+
+* `GET /operations/tasks/work-items` — list work items (filter by
+  status / execution_mode)
+* `GET /operations/tasks/work-items/<task_id>` — full work item +
+  discussions + clarifications
+* `GET /operations/workflows/<task_id>.task_execution` — embedded
+  section on every workflow view
+* `GET /operations/summary.task_execution_summary` — per-mode +
+  per-status counts
+
+See [`docs/operations/flexible-task-execution-loop.md`](docs/operations/flexible-task-execution-loop.md)
+for the full operator runbook (curl examples, span names, metric
+labels, Scrum opt-in rule).
+
+### Not in this stage
+
+* No real LLM. Classification + agent discussions are rule-based.
+* No real code generation. development-agent still produces a mock
+  `code_change` artifact.
+* No production deploy. `production_executed=true` count stays at
+  `0` for both stacks.
+* No backlog UI. Scrum metadata is captured but no Kanban / sprint
+  board ships with this stage.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

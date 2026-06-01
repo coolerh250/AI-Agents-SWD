@@ -1,4 +1,6 @@
 from shared.sdk.base_agent.stream_agent import StreamAgent
+from shared.sdk.observability.metrics import AGENT_DISCUSSIONS_TOTAL
+from shared.sdk.task_execution import TaskExecutionStore
 
 
 class SimulatedFailure(RuntimeError):
@@ -21,6 +23,10 @@ class DevelopmentAgent(StreamAgent):
     output_stream = "stream.qa"
     group = "development-agent-group"
     consumer = "development-agent-1"
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self._task_store = TaskExecutionStore()
 
     def build_artifact(self, payload: dict) -> dict:
         """Produce a mock code_change artifact (no real code is written)."""
@@ -57,6 +63,24 @@ class DevelopmentAgent(StreamAgent):
             "produced_by": self.name,
         }
         await self.publish_next(message)
+        workflow_id = str(payload.get("workflow_id", "")) or None
+        try:
+            await self._task_store.add_agent_discussion(
+                task_id=task_id,
+                workflow_id=workflow_id,
+                agent=self.name,
+                role="developer",
+                message_type="execution_plan",
+                content=(
+                    f"development-agent produced a mock code_change for {task_id}; "
+                    "no real files written, dry-run only."
+                ),
+                confidence=0.7,
+                references={"artifact": "code_change", "mock": True},
+            )
+            AGENT_DISCUSSIONS_TOTAL.labels(agent=self.name, message_type="execution_plan").inc()
+        except Exception:
+            pass
         return {
             "task_id": task_id,
             "decision_type": "development",

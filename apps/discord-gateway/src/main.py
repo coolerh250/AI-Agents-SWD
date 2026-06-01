@@ -52,6 +52,7 @@ from shared.sdk.observability.tracing import (
     setup_tracing,
     start_span,
 )
+from shared.sdk.task_execution import TaskExecutionStore
 
 COMMUNICATION_GATEWAY_URL = os.environ.get(
     "COMMUNICATION_GATEWAY_URL", "http://communication-gateway:8004"
@@ -650,6 +651,136 @@ async def notify_test(payload: DiscordNotifyTestIn) -> dict:
         "event_type": "discord.notification.test",
         "sandbox": True,
         "delivered_to": "stream.notifications",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stage 27 — clarification round-trip endpoints.
+# ---------------------------------------------------------------------------
+
+
+class ClarificationAnswerIn(BaseModel):
+    answer: str = Field(min_length=1, max_length=4000)
+    user_id: str | None = None
+    channel_id: str | None = None
+    message_id: str | None = None
+
+
+@app.get("/discord/clarifications/{task_id}")
+async def list_clarifications_for_task(task_id: str) -> dict:
+    """Return every clarification request for ``task_id`` (sandbox-only)."""
+    store = TaskExecutionStore()
+    try:
+        rows = await store.list_clarification_requests(task_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"task execution store unavailable: {exc}"
+        ) from exc
+    work_item = None
+    try:
+        wi = await store.get_work_item(task_id)
+        if wi is not None:
+            work_item = wi.to_dict()
+    except Exception:
+        work_item = None
+    open_count = sum(1 for r in rows if r.status == "open")
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "open_count": open_count,
+        "clarifications": [r.to_dict() for r in rows],
+        "work_item": work_item,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@app.post("/discord/clarifications/{clarification_id}/answer")
+async def answer_clarification(clarification_id: str, payload: ClarificationAnswerIn) -> dict:
+    """Record the operator's answer + trigger the workflow resume.
+
+    Writes the answer into ``clarification_requests`` (status=answered),
+    publishes a ``clarification.answered`` notification, an audit row,
+    and calls the orchestrator's
+    ``/workflow/resume-after-clarification/{task_id}`` so the work item
+    can flip to ready_for_development without operator intervention.
+    The route does NOT contact the real Discord API.
+    """
+    store = TaskExecutionStore()
+    try:
+        existing = await store.get_clarification_request(clarification_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"task execution store unavailable: {exc}"
+        ) from exc
+    if existing is None:
+        raise HTTPException(status_code=404, detail="clarification not found")
+    if existing.status != "open":
+        return {
+            "clarification_id": clarification_id,
+            "status": existing.status,
+            "sandbox": True,
+            "operations_url": f"/operations/workflows/{existing.task_id}",
+            "already_answered": True,
+            "generated_at": _utcnow_iso(),
+        }
+    try:
+        updated = await store.answer_clarification_request(
+            clarification_id,
+            user_response=payload.answer,
+            channel_id=payload.channel_id,
+            message_id=payload.message_id,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"failed to record answer: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=409, detail="clarification could not be answered")
+
+    task_id = updated.task_id
+    await _publish_notification(
+        task_id=task_id,
+        event_type="clarification.answered",
+        message=(
+            f"clarification {clarification_id} answered (length="
+            f"{len(payload.answer)}); resuming workflow"
+        ),
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+    )
+    await _publish_audit(
+        task_id=task_id,
+        summary=f"clarification {clarification_id} answered by {payload.user_id or 'operator'}",
+        result="ok",
+        decision_type="clarification_answered",
+        channel_id=payload.channel_id,
+        user_id=payload.user_id,
+        message_id=payload.message_id or "",
+        operations_url=f"/operations/workflows/{task_id}",
+    )
+
+    # Best-effort: ask the orchestrator to resume the workflow. A
+    # missing orchestrator must not break the answer write — the
+    # operator can still call the resume endpoint manually.
+    resume_status = "skipped"
+    resume_url = f"{ORCHESTRATOR_URL}/workflow/resume-after-clarification/{task_id}"
+    try:
+        async with httpx.AsyncClient(timeout=8.0) as client:
+            response = await client.post(resume_url)
+            if response.status_code < 400:
+                resume_status = "ok"
+            else:
+                resume_status = f"http_{response.status_code}"
+    except Exception:
+        resume_status = "error"
+
+    return {
+        "clarification_id": clarification_id,
+        "task_id": task_id,
+        "status": updated.status,
+        "sandbox": True,
+        "answer_length": len(payload.answer),
+        "resume_status": resume_status,
+        "operations_url": f"/operations/workflows/{task_id}",
+        "generated_at": _utcnow_iso(),
     }
 
 

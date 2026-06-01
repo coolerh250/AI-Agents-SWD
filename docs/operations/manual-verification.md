@@ -807,6 +807,46 @@ Expect every script to end `PASS`. Confirm:
 * `source/runtime-health.log` and `source/runtime-health-staging.log`
   carry no real-token prefix substring (the scanner sweeps them).
 
+## 17f. Discord-driven flexible task execution loop (Stage 27)
+
+```
+./scripts/verify_flexible_task_execution_loop.sh
+```
+
+Expect `FLEXIBLE_TASK_EXECUTION_VERIFY: PASS` (20/20). The script
+covers four scenarios:
+
+* **simple_task** — short non-dev request stays `simple_task`, no
+  Scrum fields.
+* **delivery_task** — dev-shaped request reaches
+  `ready_for_development`, agent pipeline completes, GitHub dry-run
+  PR is created.
+* **needs_clarification** — `"TBD"` description blocks the pipeline;
+  answer + resume promotes the work item to
+  `ready_for_development`.
+* **scrum_project** — explicit Scrum vocabulary turns on
+  `acceptance_criteria` / `definition_of_done` / `scrum_metadata`.
+  `simple_task` work items must still carry `null` for those
+  fields.
+
+Confirm:
+
+* `GET /operations/workflows/<task_id>` carries a
+  `task_execution` section with `work_item`,
+  `agent_discussions`, `clarification_requests`,
+  `execution_plan`, `assumptions`, `open_questions`, `risks`,
+  `ready_for_development` booleans — and `production_executed=false`
+  throughout.
+* `GET /operations/summary.task_execution_summary` carries
+  `total_work_items`, `simple_task_count`, `delivery_task_count`,
+  `scrum_project_count`, `needs_clarification_count`,
+  `ready_for_development_count`, `blocked_count`.
+* No `acceptance_criteria` / `definition_of_done` /
+  `scrum_metadata` on `simple_task` / `delivery_task` work items.
+* Discord-gateway `/discord/clarifications/<task_id>` and
+  `/discord/clarifications/<id>/answer` work end-to-end without
+  contacting the real Discord API.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

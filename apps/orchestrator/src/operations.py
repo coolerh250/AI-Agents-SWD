@@ -51,6 +51,7 @@ from shared.sdk.observability.metrics import (
     OPERATIONS_REQUESTS_TOTAL,
 )
 from shared.sdk.observability.tracing import start_span
+from shared.sdk.task_execution import TaskExecutionStore
 from shared.sdk.workflow_store.store import WorkflowStore
 
 router = APIRouter(prefix="/operations", tags=["operations"])
@@ -501,6 +502,23 @@ async def _production_safety() -> dict[str, Any]:
     }
 
 
+async def _task_execution_summary() -> dict[str, Any]:
+    """Stage 27 — aggregated counters for the work-item lifecycle."""
+    try:
+        counts = await TaskExecutionStore().counts()
+    except Exception:
+        counts = {
+            "total_work_items": 0,
+            "simple_task_count": 0,
+            "delivery_task_count": 0,
+            "scrum_project_count": 0,
+            "needs_clarification_count": 0,
+            "ready_for_development_count": 0,
+            "blocked_count": 0,
+        }
+    return counts
+
+
 async def _notification_delivery_summary() -> dict[str, Any]:
     """Aggregated Stage 22 notification delivery counters."""
     try:
@@ -538,6 +556,7 @@ async def operations_summary() -> dict:
         audit = await _audit_summary()
         safety = await _production_safety()
         notification_delivery = await _notification_delivery_summary()
+        task_execution = await _task_execution_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -551,6 +570,7 @@ async def operations_summary() -> dict:
         "github_summary": github,
         "audit_summary": audit,
         "notification_delivery_summary": notification_delivery,
+        "task_execution_summary": task_execution,
         "production_safety": safety,
     }
 
@@ -751,6 +771,56 @@ async def operations_workflow_view(task_id: str) -> dict:
         "latest_failed": real_test_summary.get("latest_failed", {}),
     }
 
+    # Stage 27 — task_execution section (work item + agent discussions +
+    # clarifications). Safe-degrades the same way as the other sections
+    # — a missing store just produces an empty section + warning.
+    task_execution_section: dict[str, Any] = {
+        "found": False,
+        "work_item": None,
+        "execution_mode": "",
+        "status": "",
+        "development_required": False,
+        "github_required": False,
+        "scrum_enabled": False,
+        "acceptance_criteria": None,
+        "definition_of_done": None,
+        "execution_plan": {},
+        "assumptions": [],
+        "open_questions": [],
+        "risks": [],
+        "clarification_requests": [],
+        "open_clarification_count": 0,
+        "agent_discussions": [],
+        "ready_for_development": False,
+    }
+    try:
+        te_store = TaskExecutionStore()
+        wi = await te_store.get_work_item(task_id)
+        if wi is not None:
+            discussions = await te_store.list_agent_discussions(task_id)
+            clarifications = await te_store.list_clarification_requests(task_id)
+            task_execution_section = {
+                "found": True,
+                "work_item": wi.to_dict(),
+                "execution_mode": wi.execution_mode,
+                "status": wi.status,
+                "development_required": wi.development_required,
+                "github_required": wi.github_required,
+                "scrum_enabled": wi.scrum_enabled,
+                "acceptance_criteria": wi.acceptance_criteria,
+                "definition_of_done": wi.definition_of_done,
+                "execution_plan": wi.execution_plan,
+                "assumptions": wi.assumptions,
+                "open_questions": wi.open_questions,
+                "risks": wi.risks,
+                "clarification_requests": [c.to_dict() for c in clarifications],
+                "open_clarification_count": sum(1 for c in clarifications if c.status == "open"),
+                "agent_discussions": [d.to_dict() for d in discussions],
+                "ready_for_development": wi.status == "ready_for_development",
+            }
+    except Exception:
+        warnings.append("task_execution_unavailable")
+
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
     try:
@@ -786,6 +856,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "dlq": dlq_events,
         "notifications": notifications,
         "notification_deliveries": notification_deliveries_section,
+        "task_execution": task_execution_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -1300,5 +1371,58 @@ async def operations_github(task_id: str) -> dict:
         "related_audit_events": audit_events,
         "real_test": real_test_section,
         "source": sources,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/tasks/work-items (Stage 27)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/tasks/work-items")
+@_instrument("/operations/tasks/work-items", "operations.work_item_list")
+async def operations_list_work_items(
+    status: str | None = None,
+    execution_mode: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    try:
+        rows = await TaskExecutionStore().list_work_items(
+            status=status, execution_mode=execution_mode, limit=capped
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"task execution store unavailable: {exc}"
+        ) from exc
+    work_items = [r.to_dict() for r in rows]
+    return {
+        "count": len(work_items),
+        "work_items": work_items,
+        "filter": {"status": status, "execution_mode": execution_mode, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/tasks/work-items/{task_id}")
+@_instrument("/operations/tasks/work-items/{task_id}", "operations.work_item_view")
+async def operations_work_item_view(task_id: str) -> dict:
+    store = TaskExecutionStore()
+    try:
+        wi = await store.get_work_item(task_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"task execution store unavailable: {exc}"
+        ) from exc
+    if wi is None:
+        raise HTTPException(status_code=404, detail="work item not found")
+    discussions = await store.list_agent_discussions(task_id)
+    clarifications = await store.list_clarification_requests(task_id)
+    return {
+        "work_item": wi.to_dict(),
+        "agent_discussions": [d.to_dict() for d in discussions],
+        "clarification_requests": [c.to_dict() for c in clarifications],
+        "open_clarification_count": sum(1 for c in clarifications if c.status == "open"),
         "generated_at": _utcnow_iso(),
     }
