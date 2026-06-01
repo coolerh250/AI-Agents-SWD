@@ -100,7 +100,9 @@ def test_ready_for_development_branch(req_agent):
     }
     result = _run(req_agent.handle(payload))
     assert result["decision_type"] == "task_ready_for_development"
-    assert result["result"] == "ready_for_development"
+    # Historical result string preserved for backwards compatibility;
+    # downstream stream_agent + tests grep for ``requirement.completed``.
+    assert result["result"] == "requirement.completed"
     assert req_agent._store.work_items[0]["execution_mode"] == "delivery_task"
     assert req_agent._store.work_items[0]["status"] == "ready_for_development"
     assert len(req_agent._store.clarifications) == 0  # no clarification needed

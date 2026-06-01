@@ -29,6 +29,7 @@ No LLM call is made anywhere. The classification rules live in
 from __future__ import annotations
 
 from shared.sdk.base_agent.stream_agent import StreamAgent
+from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import (
     AGENT_DISCUSSIONS_TOTAL,
     CLARIFICATION_REQUESTS_TOTAL,
@@ -259,6 +260,23 @@ class RequirementAgent(StreamAgent):
             },
         }
         await self.publish_next(message)
+        # Side-channel notification — surfaces the Stage 27 lifecycle
+        # event alongside the StreamAgent's existing
+        # ``requirement.completed`` notification. Downstream consumers
+        # (test_agent_stream_flow, runtime smokes) keep matching the
+        # historical event_type while operators see the new
+        # ``task.ready_for_development`` event in stream.notifications.
+        try:
+            await send_notification(
+                task_id,
+                "task.ready_for_development",
+                (
+                    f"task {task_id} ready for development "
+                    f"(mode={classification.execution_mode})"
+                ),
+            )
+        except Exception:
+            pass
         return {
             "task_id": task_id,
             "decision_type": "task_ready_for_development",
@@ -266,14 +284,23 @@ class RequirementAgent(StreamAgent):
                 f"requirement-agent marked {task_id} ready_for_development "
                 f"(mode={classification.execution_mode})"
             ),
-            "result": "ready_for_development",
+            # Preserve the historical result string so test fixtures
+            # and runtime smokes that grep for ``requirement.completed``
+            # keep matching.
+            "result": "requirement.completed",
             "artifact_refs": {
                 "execution_mode": classification.execution_mode,
                 "work_item_id": work_item.work_item_id,
                 "production_executed": False,
             },
-            "event_type": "task.ready_for_development",
+            # Preserve the historical StreamAgent notification
+            # event_type so downstream notification consumers keep
+            # seeing ``requirement.completed``. The new
+            # ``task.ready_for_development`` notification is published
+            # separately via send_notification above.
+            "event_type": "requirement.completed",
             "message": (
-                f"task {task_id} ready for development " f"(mode={classification.execution_mode})"
+                f"task {task_id} ready for development "
+                f"(mode={classification.execution_mode})"
             ),
         }

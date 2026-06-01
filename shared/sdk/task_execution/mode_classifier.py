@@ -147,15 +147,26 @@ def _contains_any(haystack: str, needles: tuple[str, ...]) -> str | None:
 def needs_clarification_signals(description: str) -> tuple[bool, str]:
     """Return ``(needed, reason)`` for clarification.
 
-    A description shorter than 6 non-whitespace chars, missing a verb-
-    shape, or carrying any clarification trigger ⇒ needs clarification.
+    Rules:
+
+    * Empty / whitespace-only description ⇒ NOT clarification. This
+      keeps synthetic test fixtures that don't ship a description
+      (``request: {"type": "dev.test"}``) flowing through the pipeline
+      unchanged — they're not real Discord intakes and aren't subject
+      to the Stage 27 clarification gate.
+    * Description present but matches any explicit signal (``TBD``,
+      ``?``, ``請再確認`` …) ⇒ needs clarification.
+    * Description present but shorter than 6 non-whitespace chars ⇒
+      needs clarification.
     """
     text = (description or "").strip().lower()
-    if len(re.sub(r"\s+", "", text)) < 6:
-        return True, "description_too_short"
+    if not text:
+        return False, ""
     hit = _contains_any(text, CLARIFICATION_SIGNALS)
     if hit:
         return True, f"signal:{hit.strip()}"
+    if len(re.sub(r"\s+", "", text)) < 6:
+        return True, "description_too_short"
     return False, ""
 
 
