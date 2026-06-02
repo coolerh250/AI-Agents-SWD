@@ -1858,6 +1858,128 @@ labels, Scrum opt-in rule).
 * No backlog UI. Scrum metadata is captured but no Kanban / sprint
   board ships with this stage.
 
+## Controlled Code Generation Workspace (Stage 28)
+
+Stage 28 promotes the development-agent from a pure mock to a
+**deterministic, template-based** code generator that writes into a
+controlled workspace, validates the output locally, and delivers a PR
+draft package + a GitHub dry-run PR. No LLM, no real GitHub write,
+no production deploy.
+
+### Workspace lifecycle
+
+```
+created → generating → generated → ready_for_pr_draft
+                    └─ validation_failed
+                    └─ blocked
+```
+
+* **created** — row exists in `code_workspaces`, no files written yet.
+* **generating** — the deterministic generator is writing files.
+* **generated** / **ready_for_pr_draft** — files written + validated +
+  PR draft created.
+* **validation_failed** — `py_compile` or diff check failed; no PR
+  draft is published.
+* **blocked** — classification refused (unmatched template, denied path,
+  destructive payload, secret-like content, work item not ready).
+
+### Allowlist / denylist
+
+Generated artifacts MUST land under one of:
+
+* `docs/generated/`
+* `apps/demo-generated/`
+* `tests/generated/`
+* `source/generated/`
+
+The denylist is intentionally paranoid (`.github/`, `infra/`,
+`migrations/`, `shared/sdk/secrets/`, `docker-compose*.yml`,
+`*secret*`, `*.pem`, `*.key`, `*.env`, `*.env.*`,
+`docs/operations/secrets-management.md`, `source/progress.md`).
+A denylist hit always wins over an allowlist match, and `delete`
+changes are refused outright.
+
+### Templates
+
+| Trigger keyword | Template | Files produced |
+| --- | --- | --- |
+| docs / document / readme / 文件 / 說明 | `documentation` | `docs/generated/<task_id>.md` |
+| api / endpoint / service / /healthz | `demo_api` | `apps/demo-generated/<slug>_api.py` + `tests/generated/test_<slug>_api.py` |
+| utility / helper / function / 工具 / 函式 | `simple_utility` | `apps/demo-generated/<slug>_utility.py` + `tests/generated/test_<slug>_utility.py` |
+| (nothing matches) | `blocked` | — |
+
+Every generated file carries `task_id`, `generated_by=development-agent`,
+`generator_mode=deterministic_template`, and `production_executed=false`
+in the file body.
+
+### Local validation
+
+The development-agent runs three checks before publishing the PR draft:
+
+1. `py_compile` on every generated `*.py` file (no execution).
+2. Diff non-empty + at least one hunk.
+3. Allowlist + secret-content check on each file.
+
+Failures flip the workspace to `validation_failed`, emit
+`code.validation_failed`, and skip the PR draft.
+
+### PR draft delivery
+
+`pr_draft_artifacts.body` always carries the 7 sections:
+
+```
+## Summary
+## Changed Files
+## Generated Diff Summary
+## Validation Result
+## Risk Assessment
+## Rollback Plan
+## Safety Notes
+```
+
+The devops-agent picks up the PR draft (if present) and feeds its
+`title` / `body` / `risk_assessment` / `rollback_plan` into the existing
+`github-automation /github/workflow/demo-pr` dry-run endpoint. The
+`github_dry_run_result` (pr_url, branch, checks_status) is written back
+into `pr_draft_artifacts.github_dry_run_result`.
+
+### Operations API
+
+* `GET /operations/code/workspaces` — list workspaces (filter by
+  `status` / `generator_mode`).
+* `GET /operations/code/workspaces/<task_id>` — workspace + artifacts +
+  PR draft.
+* `GET /operations/code/artifacts/<task_id>` — code_change_artifacts only.
+* `GET /operations/code/pr-drafts/<task_id>` — PR draft body + risk +
+  rollback + github_dry_run_result.
+* `GET /operations/workflows/<task_id>.code_generation` — embedded
+  section on every workflow view.
+* `GET /operations/summary.code_generation_summary` — per-status counts.
+
+`GET /discord/tasks/<task_id>` also exposes `code_generation_status`,
+`changed_files_count`, `pr_draft_status`, `validation_status`,
+`github_dry_run_pr_url`, and `code_generation_blocked_reason`.
+
+See [`docs/operations/controlled-code-generation.md`](docs/operations/controlled-code-generation.md)
+for the full operator runbook (curl examples, scenario verifier, audit
+decision types, notification event types, metric labels).
+
+### Not in this stage
+
+* **No LLM.** Templates are deterministic and intentionally trivial.
+  A human reviewer must replace the body before merging.
+* **No real GitHub write.** Every PR is dry-run; `dry_run=true` is
+  enforced.
+* **No auto-commit.** Generated artifacts live in
+  `$DEVELOPMENT_AGENT_WORKSPACE_ROOT` (default
+  `/tmp/aiagents-workspaces/<task_id>`) and are gitignored. Operators
+  port the diff manually.
+* **No production deploy.** `production_executed=true` count stays at
+  `0` for both stacks.
+* **No QA auto-fix loop.** The qa-agent still runs its mock validation
+  against `development.completed`; Step 28 will tackle the QA-driven
+  re-generation cycle.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

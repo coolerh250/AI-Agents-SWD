@@ -51,6 +51,7 @@ from shared.sdk.observability.metrics import (
     OPERATIONS_REQUESTS_TOTAL,
 )
 from shared.sdk.observability.tracing import start_span
+from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.task_execution import TaskExecutionStore
 from shared.sdk.workflow_store.store import WorkflowStore
 
@@ -519,6 +520,23 @@ async def _task_execution_summary() -> dict[str, Any]:
     return counts
 
 
+async def _code_generation_summary() -> dict[str, Any]:
+    """Stage 28 — aggregated counters for the code workspace lifecycle."""
+    try:
+        counts = await CodeWorkspaceStore().counts()
+    except Exception:
+        counts = {
+            "total_workspaces": 0,
+            "ready_for_pr_draft": 0,
+            "blocked_count": 0,
+            "deterministic_count": 0,
+            "total_artifacts": 0,
+            "validated_artifacts": 0,
+            "total_pr_drafts": 0,
+        }
+    return counts
+
+
 async def _notification_delivery_summary() -> dict[str, Any]:
     """Aggregated Stage 22 notification delivery counters."""
     try:
@@ -557,6 +575,7 @@ async def operations_summary() -> dict:
         safety = await _production_safety()
         notification_delivery = await _notification_delivery_summary()
         task_execution = await _task_execution_summary()
+        code_generation = await _code_generation_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -571,6 +590,7 @@ async def operations_summary() -> dict:
         "audit_summary": audit,
         "notification_delivery_summary": notification_delivery,
         "task_execution_summary": task_execution,
+        "code_generation_summary": code_generation,
         "production_safety": safety,
     }
 
@@ -821,6 +841,42 @@ async def operations_workflow_view(task_id: str) -> dict:
     except Exception:
         warnings.append("task_execution_unavailable")
 
+    # Stage 28 — code generation section (workspace + artifacts + PR
+    # draft). Same safe-degradation rules: a missing store yields an
+    # empty section + warning.
+    code_generation_section: dict[str, Any] = {
+        "found": False,
+        "workspace": None,
+        "status": "",
+        "generator_mode": "",
+        "changed_files": [],
+        "code_change_artifacts": [],
+        "pr_draft": None,
+        "validation_result": {},
+        "risk_assessment": {},
+        "blocked_reason": "",
+    }
+    try:
+        cw_store = CodeWorkspaceStore()
+        ws = await cw_store.get_workspace(task_id)
+        if ws is not None:
+            artifacts = await cw_store.list_code_change_artifacts(task_id)
+            pr_draft = await cw_store.get_pr_draft_artifact(task_id)
+            code_generation_section = {
+                "found": True,
+                "workspace": ws.to_dict(),
+                "status": ws.status,
+                "generator_mode": ws.generator_mode,
+                "changed_files": [a.file_path for a in artifacts],
+                "code_change_artifacts": [a.to_dict() for a in artifacts],
+                "pr_draft": pr_draft.to_dict() if pr_draft is not None else None,
+                "validation_result": (pr_draft.test_results if pr_draft else {}),
+                "risk_assessment": (pr_draft.risk_assessment if pr_draft else {}),
+                "blocked_reason": ws.blocked_reason or "",
+            }
+    except Exception:
+        warnings.append("code_generation_unavailable")
+
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
     try:
@@ -857,6 +913,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "notifications": notifications,
         "notification_deliveries": notification_deliveries_section,
         "task_execution": task_execution_section,
+        "code_generation": code_generation_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -1424,5 +1481,90 @@ async def operations_work_item_view(task_id: str) -> dict:
         "agent_discussions": [d.to_dict() for d in discussions],
         "clarification_requests": [c.to_dict() for c in clarifications],
         "open_clarification_count": sum(1 for c in clarifications if c.status == "open"),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/code/* (Stage 28 — controlled code generation workspace)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/code/workspaces")
+@_instrument("/operations/code/workspaces", "operations.code_workspaces_list")
+async def operations_list_code_workspaces(
+    status: str | None = None,
+    generator_mode: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    try:
+        rows = await CodeWorkspaceStore().list_workspaces(
+            status=status, generator_mode=generator_mode, limit=capped
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"code workspace store unavailable: {exc}"
+        ) from exc
+    return {
+        "count": len(rows),
+        "workspaces": [r.to_dict() for r in rows],
+        "filter": {"status": status, "generator_mode": generator_mode, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/code/workspaces/{task_id}")
+@_instrument("/operations/code/workspaces/{task_id}", "operations.code_workspace_view")
+async def operations_code_workspace_view(task_id: str) -> dict:
+    store = CodeWorkspaceStore()
+    try:
+        ws = await store.get_workspace(task_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"code workspace store unavailable: {exc}"
+        ) from exc
+    if ws is None:
+        raise HTTPException(status_code=404, detail="code workspace not found")
+    artifacts = await store.list_code_change_artifacts(task_id)
+    pr_draft = await store.get_pr_draft_artifact(task_id)
+    return {
+        "workspace": ws.to_dict(),
+        "code_change_artifacts": [a.to_dict() for a in artifacts],
+        "pr_draft": pr_draft.to_dict() if pr_draft is not None else None,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/code/artifacts/{task_id}")
+@_instrument("/operations/code/artifacts/{task_id}", "operations.code_artifacts_view")
+async def operations_code_artifacts_view(task_id: str) -> dict:
+    try:
+        rows = await CodeWorkspaceStore().list_code_change_artifacts(task_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"code workspace store unavailable: {exc}"
+        ) from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "code_change_artifacts": [r.to_dict() for r in rows],
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/code/pr-drafts/{task_id}")
+@_instrument("/operations/code/pr-drafts/{task_id}", "operations.pr_draft_view")
+async def operations_pr_draft_view(task_id: str) -> dict:
+    try:
+        pr_draft = await CodeWorkspaceStore().get_pr_draft_artifact(task_id)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"code workspace store unavailable: {exc}"
+        ) from exc
+    if pr_draft is None:
+        raise HTTPException(status_code=404, detail="pr draft not found")
+    return {
+        "pr_draft": pr_draft.to_dict(),
         "generated_at": _utcnow_iso(),
     }

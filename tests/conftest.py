@@ -44,6 +44,10 @@ _preload_module("scheduler", _REPO_ROOT / "apps" / "retry-scheduler" / "src" / "
 _preload_module("real_guard", _REPO_ROOT / "apps" / "github-automation" / "src" / "real_guard.py")
 _preload_module("validate_runtime_config", _REPO_ROOT / "scripts" / "validate_runtime_config.py")
 _preload_module("list_required_secrets", _REPO_ROOT / "scripts" / "list_required_secrets.py")
+_preload_module(
+    "code_generator",
+    _REPO_ROOT / "agents" / "development-agent" / "src" / "code_generator.py",
+)
 
 
 @pytest.fixture

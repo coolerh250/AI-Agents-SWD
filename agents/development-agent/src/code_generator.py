@@ -1,0 +1,544 @@
+"""Stage 28 — deterministic, template-based code generator.
+
+No LLM, no real I/O outside the workspace path. Three template
+families are supported:
+
+* ``documentation`` — emits ``docs/generated/<task_id>.md``
+* ``demo_api``      — emits ``apps/demo-generated/<task_id>_api.py`` +
+                       ``tests/generated/test_<task_id>_api.py``
+* ``simple_utility``— emits ``apps/demo-generated/<task_id>_utility.py`` +
+                       ``tests/generated/test_<task_id>_utility.py``
+
+If the description cannot be classified into one of these families
+(or the work item is not ``ready_for_development``), the generator
+returns a ``blocked`` plan and writes nothing.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+from dataclasses import dataclass, field
+from typing import Any
+
+from shared.sdk.code_workspace.diff import (
+    compute_unified_diff,
+    hash_content,
+    summarize_diff,
+)
+from shared.sdk.code_workspace.policy import (
+    DEFAULT_ALLOWED_PATHS,
+    classify_change_risk,
+    validate_allowed_path,
+    validate_change_type,
+    validate_no_secret_content,
+)
+
+DOC_KEYWORDS = ("docs", "doc", "document", "readme", "文件", "說明", "說明文件")
+API_KEYWORDS = (
+    "api",
+    "endpoint",
+    "endpoints",
+    "/healthz",
+    "/health",
+    "rest",
+    "service",
+    "service endpoint",
+)
+UTILITY_KEYWORDS = (
+    "utility",
+    "helper",
+    "function",
+    "工具",
+    "函式",
+    "fn",
+    "util",
+    "format",
+    "parse",
+)
+
+#: When the description hits multiple categories, this ordering wins.
+_PRIORITY = ("documentation", "demo_api", "simple_utility")
+
+
+@dataclass
+class GeneratedFile:
+    """One file the generator wants to write into the workspace."""
+
+    relative_path: str
+    content: str
+    change_type: str = "create"
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "file_path": self.relative_path,
+            "change_type": self.change_type,
+            "size_bytes": len(self.content.encode("utf-8")),
+            "after_sha": hash_content(self.content),
+        }
+
+
+@dataclass
+class GenerationPlan:
+    """Result of :func:`plan_generation` — pure data, no I/O."""
+
+    template: str  # documentation | demo_api | simple_utility | blocked
+    status: str  # ready | blocked
+    reason: str
+    files: list[GeneratedFile] = field(default_factory=list)
+    summary: str = ""
+    risk_assessment: dict[str, Any] = field(default_factory=dict)
+    rollback_plan: str = ""
+    title: str = ""
+
+    def file_paths(self) -> list[str]:
+        return [f.relative_path for f in self.files]
+
+
+# ---------------------------------------------------------------------------
+# Classifier
+# ---------------------------------------------------------------------------
+
+
+def _norm(s: str) -> str:
+    return (s or "").strip().lower()
+
+
+def _hits(text: str, words: tuple[str, ...]) -> bool:
+    if not text:
+        return False
+    low = text.lower()
+    return any(w.lower() in low for w in words)
+
+
+def _classify(description: str, request_type: str) -> str:
+    """Return one of the four template names."""
+    text = _norm(description)
+    if not text:
+        return "blocked"
+
+    matched: list[str] = []
+    if _hits(text, DOC_KEYWORDS):
+        matched.append("documentation")
+    if _hits(text, API_KEYWORDS):
+        matched.append("demo_api")
+    if _hits(text, UTILITY_KEYWORDS):
+        matched.append("simple_utility")
+
+    # Strong signals embedded in request_type tail (e.g. dev.api).
+    rt = _norm(request_type)
+    if "api" in rt and "demo_api" not in matched:
+        matched.append("demo_api")
+    if "doc" in rt and "documentation" not in matched:
+        matched.append("documentation")
+    if ("util" in rt or "helper" in rt) and "simple_utility" not in matched:
+        matched.append("simple_utility")
+
+    for candidate in _PRIORITY:
+        if candidate in matched:
+            return candidate
+    return "blocked"
+
+
+# ---------------------------------------------------------------------------
+# Slug helpers
+# ---------------------------------------------------------------------------
+
+_SAFE_SLUG = re.compile(r"[^a-z0-9_]+")
+
+
+def _slugify(value: str, fallback: str = "task") -> str:
+    """Lowercase + replace anything non-[a-z0-9_] with ``_``."""
+    if not value:
+        return fallback
+    slug = _SAFE_SLUG.sub("_", value.lower()).strip("_")
+    if not slug:
+        slug = fallback
+    if slug[0].isdigit():
+        slug = f"t_{slug}"
+    return slug
+
+
+# ---------------------------------------------------------------------------
+# Templates
+# ---------------------------------------------------------------------------
+
+
+def _docs_template(task_id: str, description: str, *, request_type: str) -> str:
+    desc = description.strip() or "(no description provided)"
+    return (
+        f"# Task `{task_id}` — generated documentation\n"
+        "\n"
+        "Generated by the deterministic Stage 28 code generator.\n"
+        f"This file lives under `docs/generated/` and is owned by the\n"
+        f"controlled code generation workspace.\n"
+        "\n"
+        "## Metadata\n"
+        "\n"
+        f"- task_id: `{task_id}`\n"
+        f"- request_type: `{request_type or 'unknown'}`\n"
+        "- generated_by: development-agent\n"
+        "- generator_mode: deterministic_template\n"
+        "- production_executed: false\n"
+        "\n"
+        "## Original request\n"
+        "\n"
+        "```\n"
+        f"{desc}\n"
+        "```\n"
+        "\n"
+        "## Assumptions\n"
+        "\n"
+        "- The generator has no domain knowledge — this document is\n"
+        "  a controlled stub. A human reviewer must replace the\n"
+        "  placeholder sections before the PR draft is merged.\n"
+        "\n"
+        "## TODO (operator)\n"
+        "\n"
+        "- [ ] Replace this stub with the real documentation body.\n"
+        "- [ ] Confirm the file path is correct under `docs/generated/`.\n"
+        "- [ ] Validate that no real secret has been pasted into the doc.\n"
+    )
+
+
+def _api_template(task_id: str, description: str, slug: str, *, request_type: str) -> str:
+    desc = description.strip().replace('"""', "'''")
+    return (
+        '"""Stage 28 — deterministic demo API for task ``' + task_id + "``.\n"
+        "\n"
+        "Generated by the development-agent. No LLM, no real network IO.\n"
+        f"Lives under ``apps/demo-generated/`` and is **only** intended\n"
+        "as a controlled workspace artifact — it is NOT mounted in the\n"
+        "production stack.\n"
+        '"""\n'
+        "\n"
+        "from __future__ import annotations\n"
+        "\n"
+        "from dataclasses import dataclass\n"
+        "\n"
+        f"TASK_ID = {task_id!r}\n"
+        f"REQUEST_TYPE = {request_type!r}\n"
+        "PRODUCTION_EXECUTED = False\n"
+        'GENERATED_BY = "development-agent"\n'
+        'GENERATOR_MODE = "deterministic_template"\n'
+        f'ORIGINAL_DESCRIPTION = """{desc or "(no description provided)"}"""\n'
+        "\n"
+        "\n"
+        "@dataclass(frozen=True)\n"
+        "class HealthResponse:\n"
+        '    """Minimal payload returned by :func:`handle_health`."""\n'
+        "\n"
+        "    status: str\n"
+        "    task_id: str\n"
+        "    mock: bool = True\n"
+        "\n"
+        "\n"
+        "def handle_health() -> HealthResponse:\n"
+        '    """Return a deterministic healthz payload for the demo API."""\n'
+        f'    return HealthResponse(status="ok", task_id={task_id!r})\n'
+        "\n"
+        "\n"
+        f'def handle_{slug}(input_value: str = "") -> dict[str, str]:\n'
+        '    """Echo ``input_value`` back as a deterministic payload.\n'
+        "\n"
+        "    The platform has no LLM in the loop at this stage — the\n"
+        "    generated API is intentionally trivial and exists only so\n"
+        "    the controlled workspace + PR draft pipeline has\n"
+        "    something to validate end to end.\n"
+        '    """\n'
+        "    return {\n"
+        f'        "task_id": {task_id!r},\n'
+        '        "echo": input_value,\n'
+        '        "mock": "true",\n'
+        "    }\n"
+    )
+
+
+def _api_test_template(task_id: str, slug: str) -> str:
+    module = f"{slug}_api"
+    return (
+        '"""Stage 28 — generated test for the demo API of task ``' + task_id + "``.\n"
+        '"""\n'
+        "\n"
+        "import importlib.util\n"
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def _load_demo_module():\n"
+        f'    path = Path(__file__).resolve().parents[2] / "apps" / "demo-generated" / "{module}.py"\n'
+        f'    spec = importlib.util.spec_from_file_location("{module}", path)\n'
+        "    assert spec is not None and spec.loader is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "\n"
+        f"def test_demo_api_task_id_matches_{slug}():\n"
+        "    module = _load_demo_module()\n"
+        f"    assert module.TASK_ID == {task_id!r}\n"
+        "    assert module.PRODUCTION_EXECUTED is False\n"
+        '    assert module.GENERATOR_MODE == "deterministic_template"\n'
+        "\n"
+        "\n"
+        f"def test_demo_api_handle_health_is_deterministic_{slug}():\n"
+        "    module = _load_demo_module()\n"
+        "    response = module.handle_health()\n"
+        '    assert response.status == "ok"\n'
+        f"    assert response.task_id == {task_id!r}\n"
+        "    assert response.mock is True\n"
+        "\n"
+        "\n"
+        f"def test_demo_api_echo_payload_for_{slug}():\n"
+        "    module = _load_demo_module()\n"
+        f'    payload = module.handle_{slug}(input_value="ping")\n'
+        f'    assert payload["task_id"] == {task_id!r}\n'
+        '    assert payload["echo"] == "ping"\n'
+        '    assert payload["mock"] == "true"\n'
+    )
+
+
+def _utility_template(task_id: str, description: str, slug: str, *, request_type: str) -> str:
+    desc = description.strip().replace('"""', "'''")
+    return (
+        '"""Stage 28 — deterministic helper utility for task ``' + task_id + "``.\n"
+        "\n"
+        "Generated by the development-agent. No LLM, no real IO.\n"
+        f"Lives under ``apps/demo-generated/`` and exists only so the\n"
+        "controlled workspace + PR draft pipeline has something to\n"
+        "validate end to end.\n"
+        '"""\n'
+        "\n"
+        "from __future__ import annotations\n"
+        "\n"
+        f"TASK_ID = {task_id!r}\n"
+        f"REQUEST_TYPE = {request_type!r}\n"
+        "PRODUCTION_EXECUTED = False\n"
+        'GENERATED_BY = "development-agent"\n'
+        'GENERATOR_MODE = "deterministic_template"\n'
+        f'ORIGINAL_DESCRIPTION = """{desc or "(no description provided)"}"""\n'
+        "\n"
+        "\n"
+        f"def helper_{slug}(value: str) -> str:\n"
+        '    """Return ``value`` stripped and lowercased.\n'
+        "\n"
+        "    Trivial by design — the deterministic template is only meant\n"
+        "    to give the workspace + PR draft pipeline a non-empty diff\n"
+        "    to validate. A human reviewer must replace the body with\n"
+        "    the real helper before this becomes a real PR.\n"
+        '    """\n'
+        '    return (value or "").strip().lower()\n'
+        "\n"
+        "\n"
+        f"def helper_{slug}_count(values: list[str]) -> int:\n"
+        '    """Count non-empty entries in ``values``."""\n'
+        '    return sum(1 for v in values if (v or "").strip())\n'
+    )
+
+
+def _utility_test_template(task_id: str, slug: str) -> str:
+    module = f"{slug}_utility"
+    return (
+        '"""Stage 28 — generated test for the helper utility of task ``' + task_id + "``.\n"
+        '"""\n'
+        "\n"
+        "import importlib.util\n"
+        "from pathlib import Path\n"
+        "\n"
+        "\n"
+        "def _load_helper_module():\n"
+        f'    path = Path(__file__).resolve().parents[2] / "apps" / "demo-generated" / "{module}.py"\n'
+        f'    spec = importlib.util.spec_from_file_location("{module}", path)\n'
+        "    assert spec is not None and spec.loader is not None\n"
+        "    module = importlib.util.module_from_spec(spec)\n"
+        "    spec.loader.exec_module(module)\n"
+        "    return module\n"
+        "\n"
+        "\n"
+        f"def test_helper_utility_metadata_{slug}():\n"
+        "    module = _load_helper_module()\n"
+        f"    assert module.TASK_ID == {task_id!r}\n"
+        "    assert module.PRODUCTION_EXECUTED is False\n"
+        '    assert module.GENERATOR_MODE == "deterministic_template"\n'
+        "\n"
+        "\n"
+        f"def test_helper_strips_and_lowercases_{slug}():\n"
+        "    module = _load_helper_module()\n"
+        f'    assert module.helper_{slug}("  Hello  ") == "hello"\n'
+        f'    assert module.helper_{slug}("") == ""\n'
+        "\n"
+        "\n"
+        f"def test_helper_counts_non_empty_{slug}():\n"
+        "    module = _load_helper_module()\n"
+        f'    assert module.helper_{slug}_count(["a", "", " ", "b"]) == 2\n'
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public plan_generation
+# ---------------------------------------------------------------------------
+
+
+def plan_generation(
+    *,
+    task_id: str,
+    description: str,
+    request_type: str = "unknown",
+    work_item_status: str | None = None,
+) -> GenerationPlan:
+    """Decide what to generate; do NOT touch the filesystem."""
+    if work_item_status and work_item_status != "ready_for_development":
+        return GenerationPlan(
+            template="blocked",
+            status="blocked",
+            reason=f"work_item_status:{work_item_status}",
+            summary="work item is not ready_for_development",
+            title=f"[ai-agents-swd][BLOCKED] {task_id}",
+            rollback_plan="No artifacts written — workspace marked blocked.",
+        )
+
+    template = _classify(description, request_type)
+    if template == "blocked":
+        return GenerationPlan(
+            template="blocked",
+            status="blocked",
+            reason="unclassifiable_description",
+            summary=(
+                "deterministic generator could not match the description "
+                "to docs / api / utility templates"
+            ),
+            title=f"[ai-agents-swd][BLOCKED] {task_id}",
+            rollback_plan=(
+                "No artifacts written — operator should attach more context "
+                "via /discord/clarifications and rerun the workflow."
+            ),
+        )
+
+    slug = _slugify(task_id)
+    files: list[GeneratedFile] = []
+    if template == "documentation":
+        files.append(
+            GeneratedFile(
+                relative_path=f"docs/generated/{task_id}.md",
+                content=_docs_template(task_id, description, request_type=request_type),
+            )
+        )
+    elif template == "demo_api":
+        files.append(
+            GeneratedFile(
+                relative_path=f"apps/demo-generated/{slug}_api.py",
+                content=_api_template(task_id, description, slug, request_type=request_type),
+            )
+        )
+        files.append(
+            GeneratedFile(
+                relative_path=f"tests/generated/test_{slug}_api.py",
+                content=_api_test_template(task_id, slug),
+            )
+        )
+    elif template == "simple_utility":
+        files.append(
+            GeneratedFile(
+                relative_path=f"apps/demo-generated/{slug}_utility.py",
+                content=_utility_template(task_id, description, slug, request_type=request_type),
+            )
+        )
+        files.append(
+            GeneratedFile(
+                relative_path=f"tests/generated/test_{slug}_utility.py",
+                content=_utility_test_template(task_id, slug),
+            )
+        )
+
+    risk = classify_change_risk([f.to_dict() for f in files])
+    summary = (
+        f"deterministic generator produced {len(files)} file(s) for task "
+        f"{task_id} (template={template})"
+    )
+    return GenerationPlan(
+        template=template,
+        status="ready",
+        reason=f"template:{template}",
+        files=files,
+        summary=summary,
+        risk_assessment=risk,
+        title=f"[ai-agents-swd] {template} — {task_id}",
+        rollback_plan=(
+            "Dry-run / draft only: revert by deleting the generated paths "
+            "in the operator's clone — nothing was committed."
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Workspace write helpers
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class WrittenFile:
+    """The on-disk result of writing one :class:`GeneratedFile`."""
+
+    relative_path: str
+    full_path: str
+    change_type: str
+    before_sha: str
+    after_sha: str
+    diff_text: str
+    diff_summary: str
+
+
+def write_plan(
+    plan: GenerationPlan,
+    *,
+    workspace_root: str,
+    allowed_paths: list[str] | None = None,
+) -> tuple[list[WrittenFile], list[tuple[str, str]]]:
+    """Materialise ``plan.files`` under ``workspace_root``.
+
+    Returns ``(written, refused)`` so the caller can decide whether
+    to mark the workspace ``blocked`` or ``ready_for_pr_draft``.
+    """
+    written: list[WrittenFile] = []
+    refused: list[tuple[str, str]] = []
+    allowed = tuple(allowed_paths or DEFAULT_ALLOWED_PATHS)
+
+    os.makedirs(workspace_root, exist_ok=True)
+    for entry in plan.files:
+        ok, why = validate_allowed_path(entry.relative_path, allowed=allowed)
+        if not ok:
+            refused.append((entry.relative_path, why))
+            continue
+        ok, why = validate_change_type(entry.change_type)
+        if not ok:
+            refused.append((entry.relative_path, why))
+            continue
+        ok, why = validate_no_secret_content(entry.content)
+        if not ok:
+            refused.append((entry.relative_path, why))
+            continue
+
+        full_path = os.path.join(workspace_root, entry.relative_path)
+        os.makedirs(os.path.dirname(full_path), exist_ok=True)
+        before = ""
+        if os.path.isfile(full_path):
+            try:
+                with open(full_path, "r", encoding="utf-8") as fh:
+                    before = fh.read()
+            except OSError:
+                before = ""
+        with open(full_path, "w", encoding="utf-8") as fh:
+            fh.write(entry.content)
+        diff_text = compute_unified_diff(before, entry.content, file_path=entry.relative_path)
+        summary = summarize_diff(diff_text)
+        written.append(
+            WrittenFile(
+                relative_path=entry.relative_path,
+                full_path=full_path,
+                change_type=entry.change_type,
+                before_sha=hash_content(before),
+                after_sha=hash_content(entry.content),
+                diff_text=diff_text,
+                diff_summary=str(summary["summary"]),
+            )
+        )
+    return written, refused

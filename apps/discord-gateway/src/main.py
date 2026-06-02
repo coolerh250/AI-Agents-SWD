@@ -562,6 +562,27 @@ async def lookup_task(task_id: str) -> dict:
     simulated = sum(1 for d in deliveries if d.get("status") == "simulated")
     failed = sum(1 for d in deliveries if d.get("status") == "failed")
     latest = deliveries[0] if deliveries else None
+    code_generation = (
+        body.get("code_generation") if isinstance(body.get("code_generation"), dict) else {}
+    )
+    cg_workspace = (
+        code_generation.get("workspace")
+        if isinstance(code_generation.get("workspace"), dict)
+        else {}
+    )
+    cg_pr_draft = (
+        code_generation.get("pr_draft") if isinstance(code_generation.get("pr_draft"), dict) else {}
+    )
+    cg_validation = (
+        code_generation.get("validation_result")
+        if isinstance(code_generation.get("validation_result"), dict)
+        else {}
+    )
+    cg_changed_files = (
+        code_generation.get("changed_files")
+        if isinstance(code_generation.get("changed_files"), list)
+        else []
+    )
     return {
         "task_id": task_id,
         "stage": body.get("stage", ""),
@@ -586,6 +607,15 @@ async def lookup_task(task_id: str) -> dict:
             "external_sent": external_sent,
             "failed": failed,
         },
+        # Stage 28 — controlled code generation status surfaces for the
+        # Discord operator. Empty section if no workspace exists yet.
+        "code_generation_status": code_generation.get("status", ""),
+        "code_generation_template": cg_workspace.get("generator_mode", "") if cg_workspace else "",
+        "changed_files_count": len(cg_changed_files),
+        "pr_draft_status": cg_pr_draft.get("status", "") if cg_pr_draft else "",
+        "github_dry_run_pr_url": github.get("pr_url", ""),
+        "validation_status": cg_validation.get("status", "") if cg_validation else "",
+        "code_generation_blocked_reason": code_generation.get("blocked_reason", ""),
         "sandbox": True,
     }
 

@@ -847,6 +847,53 @@ Confirm:
   `/discord/clarifications/<id>/answer` work end-to-end without
   contacting the real Discord API.
 
+## 17g. Controlled code generation workspace (Stage 28)
+
+```
+./scripts/verify_controlled_code_generation.sh
+```
+
+Expect `CONTROLLED_CODE_GENERATION_VERIFY: PASS` (18/18). The script
+covers three scenarios:
+
+* **docs generation** — description triggers the `documentation`
+  template; `docs/generated/<task_id>.md` is recorded as a
+  `code_change_artifact` with a non-empty diff and a `pr_draft`
+  marked `status=ready`. devops-agent forwards the PR draft to
+  `github-automation /github/workflow/demo-pr` (`dry_run=true`).
+* **API generation** — description triggers the `demo_api` template;
+  both `apps/demo-generated/<slug>_api.py` and
+  `tests/generated/test_<slug>_api.py` are written, `py_compile`
+  passes locally, `pr_draft.test_results.status=passed`.
+* **policy block** — unclassifiable description flips the workspace
+  to `blocked`, `generator_mode=blocked`, no PR draft is created,
+  `code_generation_blocked` audit + `code.generation_blocked`
+  notification are emitted.
+
+Confirm:
+
+* `GET /operations/workflows/<task_id>.code_generation` exposes
+  `workspace`, `status`, `generator_mode`, `changed_files`,
+  `code_change_artifacts`, `pr_draft`, `validation_result`,
+  `risk_assessment`, `blocked_reason`, and `production_executed=false`
+  throughout.
+* `GET /operations/code/workspaces`, `…/workspaces/<task_id>`,
+  `…/artifacts/<task_id>`, `…/pr-drafts/<task_id>` all respond
+  read-only with no secret leakage.
+* `GET /operations/summary.code_generation_summary` carries
+  `total_workspaces`, `ready_for_pr_draft`, `blocked_count`,
+  `deterministic_count`, `total_artifacts`, `validated_artifacts`,
+  `total_pr_drafts`.
+* `GET /discord/tasks/<task_id>` carries `code_generation_status`,
+  `changed_files_count`, `pr_draft_status`, `validation_status`,
+  `github_dry_run_pr_url`, `code_generation_blocked_reason`.
+* `git status --short` after the run is empty — generated workspace
+  files NEVER end up committed (the `.workspaces/` rule blocks them).
+* `code_workspaces.generator_mode='deterministic_template'` for every
+  successful row; `'blocked'` only for refused rows.
+* No row in `pr_draft_artifacts.github_dry_run_result` has
+  `dry_run=false` or `production_executed=true`.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

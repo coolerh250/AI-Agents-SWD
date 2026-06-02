@@ -1721,4 +1721,103 @@ else
 fi
 
 echo
+echo "=== Stage 28 controlled code generation smokes (lightweight) ==="
+
+stage28_ts=$(date +%s)
+
+# 1. delivery_task with API description -> workspace + artifact + pr_draft
+cg_api="stage28-runtime-api-$stage28_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.api description=\\\"please implement a /healthz endpoint API with tests\\\" task_id=$cg_api\",\"channel_id\":\"sandbox-stage28\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 10
+cg_ws=$(curl -sS -m 10 "http://localhost:8000/operations/code/workspaces/$cg_api" || echo '{}')
+if echo "$cg_ws" | grep -q "\"task_id\": *\"$cg_api\""; then
+  echo "CODE_WORKSPACE_SMOKE: PASS"
+else
+  echo "CODE_WORKSPACE_SMOKE: CHECK"
+fi
+if echo "$cg_ws" | grep -q "apps/demo-generated/" && echo "$cg_ws" | grep -q "tests/generated/"; then
+  echo "CODE_GENERATION_API_SMOKE: PASS"
+else
+  echo "CODE_GENERATION_API_SMOKE: CHECK"
+fi
+cg_pr=$(curl -sS -m 10 "http://localhost:8000/operations/code/pr-drafts/$cg_api" || echo '{}')
+if echo "$cg_pr" | grep -q '"status": *"ready"'; then
+  echo "CODE_PR_DRAFT_SMOKE: PASS"
+else
+  echo "CODE_PR_DRAFT_SMOKE: CHECK"
+fi
+if echo "$cg_pr" | grep -q '"status": *"passed"'; then
+  echo "CODE_VALIDATION_SMOKE: PASS"
+else
+  echo "CODE_VALIDATION_SMOKE: CHECK"
+fi
+
+# 2. docs description -> documentation template
+cg_doc="stage28-runtime-doc-$stage28_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.doc description=\\\"please write the documentation for the new module\\\" task_id=$cg_doc\",\"channel_id\":\"sandbox-stage28\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 10
+cg_doc_ws=$(curl -sS -m 10 "http://localhost:8000/operations/code/workspaces/$cg_doc" || echo '{}')
+if echo "$cg_doc_ws" | grep -q "docs/generated/$cg_doc.md"; then
+  echo "CODE_GENERATION_DOCS_SMOKE: PASS"
+else
+  echo "CODE_GENERATION_DOCS_SMOKE: CHECK"
+fi
+
+# 3. policy block
+cg_block="stage28-runtime-block-$stage28_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.test description=\\\"qwertyuiop unclassifiable random nonsense for blocked path\\\" task_id=$cg_block\",\"channel_id\":\"sandbox-stage28\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 10
+cg_block_ws=$(curl -sS -m 10 "http://localhost:8000/operations/code/workspaces/$cg_block" || echo '{}')
+if echo "$cg_block_ws" | grep -q '"status": *"blocked"'; then
+  echo "CODE_GENERATION_POLICY_BLOCK_SMOKE: PASS"
+else
+  echo "CODE_GENERATION_POLICY_BLOCK_SMOKE: CHECK"
+fi
+
+# 4. operations summary contains code_generation_summary
+cg_sum=$(curl -sS -m 10 http://localhost:8000/operations/summary || echo '{}')
+if echo "$cg_sum" | grep -q '"code_generation_summary"'; then
+  echo "OPERATIONS_CODE_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_CODE_VIEW_SMOKE: CHECK"
+fi
+
+# 5. discord task lookup exposes code_generation_status
+cg_dtask=$(curl -sS -m 10 "http://localhost:8007/discord/tasks/$cg_api" || echo '{}')
+if echo "$cg_dtask" | grep -q '"code_generation_status"'; then
+  echo "DISCORD_CODE_STATUS_SMOKE: PASS"
+else
+  echo "DISCORD_CODE_STATUS_SMOKE: CHECK"
+fi
+
+# 6. audit code_generated decision_type persisted
+cg_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=code_generated&limit=5" || echo '{}')
+cg_audit2=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=code_pr_draft_created&limit=5" || echo '{}')
+cg_audit3=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=code_generation_blocked&limit=5" || echo '{}')
+if echo "$cg_audit" | grep -q 'code_generated' \
+   || echo "$cg_audit2" | grep -q 'code_pr_draft_created' \
+   || echo "$cg_audit3" | grep -q 'code_generation_blocked'; then
+  echo "CODE_AUDIT_SMOKE: PASS"
+else
+  echo "CODE_AUDIT_SMOKE: CHECK"
+fi
+
+# 7. notification deliveries for code.* events
+cg_nots=$(curl -sS -m 10 "http://localhost:8004/notifications?count=200" || echo '{}')
+if echo "$cg_nots" | grep -q 'code.generated' \
+   || echo "$cg_nots" | grep -q 'code.pr_draft_ready' \
+   || echo "$cg_nots" | grep -q 'code.generation_blocked' \
+   || echo "$cg_nots" | grep -q 'code.workspace_created'; then
+  echo "CODE_NOTIFICATION_SMOKE: PASS"
+else
+  echo "CODE_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

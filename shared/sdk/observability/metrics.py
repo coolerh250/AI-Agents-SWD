@@ -261,6 +261,39 @@ AGENT_DISCUSSIONS_TOTAL = Counter(
 )
 
 
+# Stage 28 — controlled code generation workspace metrics.
+CODE_WORKSPACES_TOTAL = Counter(
+    "code_workspaces_total",
+    "Code workspaces created (one row per upsert)",
+    ["execution_mode", "generator_mode", "status"],
+)
+CODE_GENERATION_ATTEMPTS_TOTAL = Counter(
+    "code_generation_attempts_total",
+    "Deterministic code generation attempts",
+    ["execution_mode", "generator_mode"],
+)
+CODE_GENERATION_SUCCESS_TOTAL = Counter(
+    "code_generation_success_total",
+    "Code generation runs that produced at least one valid artifact",
+    ["execution_mode", "generator_mode", "risk_level"],
+)
+CODE_GENERATION_BLOCKED_TOTAL = Counter(
+    "code_generation_blocked_total",
+    "Code generation runs blocked by policy / allowlist / classifier",
+    ["reason"],
+)
+CODE_VALIDATION_FAILURES_TOTAL = Counter(
+    "code_validation_failures_total",
+    "Per-file validation failures (labelled by failure kind)",
+    ["check"],  # check = allowlist | secret_content | py_compile | diff_empty | file_missing
+)
+PR_DRAFT_ARTIFACTS_TOTAL = Counter(
+    "pr_draft_artifacts_total",
+    "PR draft artifacts created",
+    ["execution_mode", "status", "risk_level"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

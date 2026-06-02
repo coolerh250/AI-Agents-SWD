@@ -39,6 +39,9 @@ class _FakeStore:
 
         return _WI()
 
+    async def get_work_item(self, task_id):
+        return None
+
     async def create_clarification_request(self, **kwargs):
         class _C:
             clarification_id = "c-fake"
@@ -48,6 +51,73 @@ class _FakeStore:
     async def update_work_item_status(self, task_id, status):
         self.work_item_status_updates.append((task_id, status))
         return None
+
+
+class _FakeCodeStore:
+    """Stand-in for CodeWorkspaceStore — records calls; no Postgres."""
+
+    def __init__(self) -> None:
+        self.workspaces: list[dict] = []
+        self.artifacts: list[dict] = []
+        self.pr_drafts: list[dict] = []
+        self.workspace_status_updates: list[tuple[str, str]] = []
+
+    async def get_workspace(self, task_id):
+        if not self.workspaces:
+            return None
+        last = self.workspaces[-1]
+
+        class _WS:
+            workspace_id = "ws-fake"
+            status = last.get("status", "created")
+            execution_mode = last.get("execution_mode", "delivery_task")
+            generator_mode = last.get("generator_mode", "deterministic_template")
+            blocked_reason = last.get("blocked_reason", "")
+
+            def to_dict(self):
+                return {"workspace_id": "ws-fake", "status": _WS.status}
+
+        return _WS()
+
+    async def create_workspace(self, **kwargs):
+        self.workspaces.append(kwargs)
+
+        class _WS:
+            workspace_id = "ws-fake"
+            status = kwargs.get("status", "created")
+            execution_mode = kwargs.get("execution_mode", "delivery_task")
+            generator_mode = kwargs.get("generator_mode", "deterministic_template")
+            blocked_reason = kwargs.get("blocked_reason", "")
+
+        return _WS()
+
+    async def update_workspace_status(self, task_id, status, **kwargs):
+        self.workspace_status_updates.append((task_id, status))
+        return None
+
+    async def add_code_change_artifact(self, **kwargs):
+        self.artifacts.append(kwargs)
+
+        class _A:
+            artifact_id = "art-fake"
+
+        return _A()
+
+    async def create_pr_draft_artifact(self, **kwargs):
+        self.pr_drafts.append(kwargs)
+
+        class _D:
+            pr_draft_id = "pr-fake"
+            title = kwargs.get("title", "")
+            status = kwargs.get("status", "draft")
+
+        return _D()
+
+    async def get_pr_draft_artifact(self, task_id):
+        return None
+
+    async def list_code_change_artifacts(self, task_id):
+        return []
 
 
 @pytest.fixture
@@ -84,17 +154,23 @@ def test_intake_agent_records_discussion(intake_agent, agent_payload, monkeypatc
 
 
 def test_development_agent_records_execution_plan_discussion(
-    development_agent, agent_payload, monkeypatch
+    development_agent, agent_payload, monkeypatch, tmp_path
 ):
     agent = development_agent.DevelopmentAgent.__new__(development_agent.DevelopmentAgent)
     agent.name = "development-agent"
     agent.output_stream = "stream.qa"
     fake_store = _FakeStore()
     agent._task_store = fake_store
+    agent._code_store = _FakeCodeStore()
     _patch_publish(monkeypatch, agent)
+    monkeypatch.setenv("DEVELOPMENT_AGENT_WORKSPACE_ROOT", str(tmp_path))
 
     result = _run(agent.handle(agent_payload))
-    assert result["decision_type"] == "development"
+    # Stage 28: development-agent now classifies + generates code; the
+    # decision_type reflects the controlled-generation outcome rather
+    # than the legacy "development" string. "implement a new endpoint"
+    # hits the demo_api template so files are written.
+    assert result["decision_type"] in ("code_generated", "code_generation_blocked")
     assert any(
         d["agent"] == "development-agent" and d["message_type"] == "execution_plan"
         for d in fake_store.discussions

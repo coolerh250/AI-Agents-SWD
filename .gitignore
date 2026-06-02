@@ -66,3 +66,12 @@ Thumbs.db
 
 # ===== Local tooling config =====
 .claude/
+
+# ===== Stage 28 controlled code generation workspaces =====
+# The development-agent writes generated artifacts under
+# ``.workspaces/<task_id>/`` (or ``$DEVELOPMENT_AGENT_WORKSPACE_ROOT``
+# which defaults to ``/tmp/aiagents-workspaces``). These are operator
+# review artifacts only — they MUST NOT be committed. Real generated
+# code lands in the repo only after a human reviewer ports it manually.
+.workspaces/
+.workspaces/**
