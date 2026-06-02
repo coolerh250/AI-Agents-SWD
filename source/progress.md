@@ -5275,3 +5275,165 @@ issues & blockers, and next-step suggestions.
       guard. Both green.
     - Following Stage 22 / 23 / 24 / 25 / 26, Claude Code does
       not decide the Step 27 roadmap.
+
+## Stage 28 — Step 27: Controlled Code Generation Workspace & PR Draft Delivery
+
+- **Execution window:** 2026-06-02 (CST). Branch: `main`. Local +
+  remote both at `2e75b9b` (Stage 28 deliverable + the off-by-one
+  verifier fix). Server `/home/itadmin/AI-Agents-SWD` pulled to the
+  same commit before recreate.
+- **Commits delivered:**
+  - `5d5d5cf` — Stage 28 deliverable: migration 008, new
+    `shared/sdk/code_workspace/` SDK (models / store / policy / diff
+    / validator), development-agent `code_generator.py` + rewritten
+    `agent.py`, devops-agent PR-draft → demo-pr glue, new
+    `/operations/code/*` routes + `code_generation` workflow section,
+    discord-gateway `code_generation_status` fields, 6 new Prometheus
+    counters, 8 new tracing spans, 9 new pytest files,
+    `verify_controlled_code_generation.sh`, 10 new Stage 28 runtime
+    smokes in `check_runtime_state.sh`, README + new operator runbook
+    + manual-verification 17g, `.gitignore` `.workspaces/` rule.
+  - `2e75b9b` — Stage 28 fix: corrected the verify script's
+    expected-total from `18` to `17`. The script enumerates 17
+    checks; the off-by-one caused a 17-of-17 PASS to print as
+    `CONTROLLED_CODE_GENERATION_VERIFY: FAIL`.
+  - This Stage 28 progress entry: pending commit at the end of the
+    Stage 28 workflow.
+- **Modified / new files (high level):**
+  - `migrations/008_code_generation_workspace.sql` — 3 idempotent
+    tables (`code_workspaces`, `code_change_artifacts`,
+    `pr_draft_artifacts`).
+  - `shared/sdk/code_workspace/` — 6 files (`__init__.py`,
+    `models.py`, `store.py`, `policy.py`, `diff.py`, `validator.py`).
+  - `agents/development-agent/src/code_generator.py` —
+    deterministic templates for documentation / demo_api /
+    simple_utility, plus a `blocked` short-circuit.
+  - `agents/development-agent/src/agent.py` — rewritten `handle`:
+    classify → workspace upsert → write → diff + SHA → validate →
+    PR draft → audit + notification → publish next.
+  - `agents/devops-agent/src/agent.py` — forwards PR draft title /
+    body / risk / rollback into github-automation `/demo-pr`
+    (dry-run only); writes the dry-run result back into
+    `pr_draft_artifacts.github_dry_run_result`.
+  - `apps/orchestrator/src/operations.py` — new `code_generation`
+    section on `/operations/workflows/{task_id}`; new routes
+    `/operations/code/workspaces`, `…/workspaces/{task_id}`,
+    `…/artifacts/{task_id}`, `…/pr-drafts/{task_id}`;
+    `code_generation_summary` on `/operations/summary`.
+  - `apps/discord-gateway/src/main.py` —
+    `code_generation_status`, `changed_files_count`,
+    `pr_draft_status`, `validation_status`,
+    `github_dry_run_pr_url`, `code_generation_blocked_reason` on
+    `/discord/tasks/{task_id}`.
+  - `shared/sdk/observability/metrics.py` —
+    `code_workspaces_total`, `code_generation_attempts_total`,
+    `code_generation_success_total`,
+    `code_generation_blocked_total`,
+    `code_validation_failures_total`, `pr_draft_artifacts_total`.
+  - `scripts/verify_controlled_code_generation.sh` — 17-check
+    verifier covering docs / API / policy-block scenarios.
+  - `scripts/check_runtime_state.sh` — +10 Stage 28 smokes.
+  - `tests/` — 9 new files (`test_code_workspace_store.py`,
+    `test_code_workspace_policy.py`, `test_code_generator.py`,
+    `test_code_workspace_validator.py`,
+    `test_development_agent_code_generation.py`,
+    `test_operations_code_generation_view.py`,
+    `test_pr_draft_artifact.py`,
+    `test_code_generation_audit_notification.py`,
+    `test_code_generation_metrics.py`).
+  - `tests/conftest.py`, `tests/test_agent_discussions.py` —
+    preload `code_generator`, refit the dev-agent test for the new
+    `decision_type` contract.
+  - `README.md`, `docs/operations/controlled-code-generation.md`
+    (new), `docs/operations/manual-verification.md` (17g),
+    `.gitignore` (`.workspaces/` + `.workspaces/**`).
+- **Deployment target:** `aiagent-swd` (`10.0.1.31`,
+  `/home/itadmin/AI-Agents-SWD`). `aiagents-test` stack only. No
+  production resources touched.
+- **Test results — 10.0.1.31:**
+  - `./scripts/run_tests.sh` — 821 server pytests pass + ruff /
+    black / mypy clean.
+  - `./scripts/check_runtime_state.sh` — every Stage 18-28 smoke
+    PASS (10 new Stage 28 smokes: `CODE_WORKSPACE_SMOKE`,
+    `CODE_GENERATION_DOCS_SMOKE`, `CODE_GENERATION_API_SMOKE`,
+    `CODE_GENERATION_POLICY_BLOCK_SMOKE`, `CODE_VALIDATION_SMOKE`,
+    `CODE_PR_DRAFT_SMOKE`, `OPERATIONS_CODE_VIEW_SMOKE`,
+    `DISCORD_CODE_STATUS_SMOKE`, `CODE_AUDIT_SMOKE`,
+    `CODE_NOTIFICATION_SMOKE`).
+  - `./scripts/verify_controlled_code_generation.sh` — 17/17 PASS
+    (`CONTROLLED_CODE_GENERATION_VERIFY: PASS`).
+  - `./scripts/verify_flexible_task_execution_loop.sh` — 20/20
+    PASS (Stage 27 regression intact).
+  - `./scripts/verify_staging_secrets.sh --no-bring-up` — PASS.
+  - `./scripts/verify_staging_runtime.sh` — PASS.
+  - `./scripts/verify_staging_backup_restore.sh` — PASS (against a
+    briefly-bring-up'd staging stack; torn down immediately after).
+  - `./scripts/verify_real_github_validation.sh` — PASS
+    (`REAL_GITHUB_TEST_SKIPPED` — no real write).
+  - `./scripts/verify_notification_delivery.sh` — PASS.
+  - `./scripts/verify_discord_gateway.sh` — PASS.
+  - `./scripts/verify_operations_view.sh` — PASS.
+  - `./scripts/verify_unified_audit.sh` — PASS.
+  - `./scripts/verify_github_pipeline_flow.sh` — PASS.
+  - `./scripts/verify_platform_observability.sh` — PASS
+    (`PASS=81 FAIL=0`).
+- **Stage 28 result summary:**
+  | Check | Result | Evidence |
+  | --- | --- | --- |
+  | Migration 008 idempotent | PASS | `psql … < migrations/008_…` returned `COMMIT` cleanly |
+  | Allowlist enforced | PASS | scenario-A/B writes landed under `docs/generated/` + `apps/demo-generated/` + `tests/generated/`; the verifier checks file path prefixes |
+  | Denylist + `delete` refused | PASS | `validate_allowed_path` unit tests + scenario-C `.env` / `infra` paths refused with `denied:` reason |
+  | docs generation E2E | PASS | `CODE_GENERATION_DOCS_FILE`, `PR_DRAFT_READY_A`, `GITHUB_DRY_RUN_PR_A` all PASS |
+  | API generation + py_compile | PASS | `CODE_GENERATION_API_APP_FILE`, `CODE_GENERATION_API_TEST_FILE`, `CODE_VALIDATION_PASSED_B`, `PY_COMPILE_B` all PASS |
+  | policy block | PASS | `CODE_GENERATION_BLOCKED_C`, `NO_PR_DRAFT_C`, `BLOCKED_AUDIT_C`, `BLOCKED_NOTIFICATION_C` all PASS |
+  | PR draft body sections | PASS | `tests/test_pr_draft_artifact.py` asserts the 7 markers (Summary / Changed Files / Generated Diff Summary / Validation Result / Risk Assessment / Rollback Plan / Safety Notes) |
+  | `/operations/code/*` | PASS | 4 new endpoints reachable; 404 surfaces for missing rows |
+  | `/discord/tasks` code_generation fields | PASS | `DISCORD_CODE_STATUS_SMOKE: PASS` |
+  | audit decision_types | PASS | `code_workspace_created`, `code_generated`, `code_validation_passed`, `code_pr_draft_created`, `code_generation_blocked` all observable via `/audit/events` |
+  | notification deliveries | PASS | `code.workspace_created`, `code.generated`, `code.validation_passed`, `code.pr_draft_ready`, `code.generation_blocked` recorded in `notification_deliveries` |
+  | metrics | PASS | 6 counters incremented in `/metrics` (`code_workspaces_total`, `code_generation_attempts_total`, `code_generation_success_total`, `code_generation_blocked_total`, `code_validation_failures_total`, `pr_draft_artifacts_total`) |
+  | tracing spans | PASS | `code_workspace.create`, `code_generation.plan`, `code_generation.generate`, `code_generation.local_validation`, `code_generation.create_pr_draft` observable in tempo |
+  | `production_executed=false` | PASS | both stacks' `deployment_records` + `workflow_states` counters at `0`; `/operations/safety` reports the same |
+  | `.workspaces/` never committed | PASS | `git status --short` after the runtime smoke is empty; generated files live in `/tmp/aiagents-workspaces/<task_id>` inside the dev-agent container |
+- **Issues / blockers encountered:**
+  - First runtime verify produced 17 / 18 because the script's
+    `total` placeholder was hard-coded to 18 while only 17 checks
+    actually print. Fixed in `2e75b9b`; the second run reported
+    `CONTROLLED_CODE_GENERATION_VERIFY: PASS`.
+  - No application logic, audit contract, or safety guard outside
+    that off-by-one was touched.
+- **Risks / observations only (Claude Code does not decide Step 28
+  roadmap):**
+  - **Deterministic, no LLM:** templates are intentionally trivial.
+    A human reviewer must replace the body before any real PR.
+    Stage 28 is a controlled review aid.
+  - **Generated artifacts NOT auto-committed:** they live in
+    `$DEVELOPMENT_AGENT_WORKSPACE_ROOT` (default
+    `/tmp/aiagents-workspaces/<task_id>`) inside the dev-agent
+    container. `.gitignore` blocks `.workspaces/` +
+    `.workspaces/**` if an operator points the root at the
+    working tree.
+  - **Real GitHub still skipped:** every demo-pr call carries
+    `dry_run=true`; the Stage 23 controlled-real path stays gated
+    by `RUN_REAL_GITHUB_TEST=true` + `GITHUB_TOKEN` and
+    `verify_real_github_validation.sh` still reports
+    `REAL_GITHUB_TEST_SKIPPED`.
+  - **Production deploy disabled:** test stack only;
+    `production_executed=true` count is `0` on both stacks.
+  - **Policy limitations:** `validate_no_destructive_change` is
+    heuristic (rm -rf, drop database / schema / table, truncate,
+    force push, `kubectl delete ns`, shutdown / halt / reboot).
+    A novel destructive payload could slip past; operators must
+    still read the diff before porting.
+  - **Next capability gap:** the qa-agent does not yet drive
+    re-generation when validation fails. The dev-agent flips the
+    workspace to `validation_failed` but the platform does not
+    currently loop back. A QA-driven auto-fix cycle is the
+    obvious Step 28 question.
+  - **Other:**
+    - Local / test data plane unaffected — verified by
+      `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED` plus the
+      staging-backup verifier's before/after table-count guard.
+      Both green.
+    - Following Stage 22 / 23 / 24 / 25 / 26 / 27, Claude Code does
+      not decide the Step 28 roadmap.
