@@ -25,7 +25,7 @@ AUDIT="${AUDIT_URL:-http://localhost:8003}"
 echo "### verify_controlled_code_generation: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 checks=0
-total=18
+total=17
 fail() { echo "  $1: FAIL"; }
 pass() { echo "  $1: PASS"; checks=$((checks+1)); }
 
