@@ -5437,3 +5437,206 @@ issues & blockers, and next-step suggestions.
       Both green.
     - Following Stage 22 / 23 / 24 / 25 / 26 / 27, Claude Code does
       not decide the Step 28 roadmap.
+
+## Stage 29 — Step 28: QA-Guided Validation & Auto-Fix Loop
+
+- **Execution window:** 2026-06-02 → 2026-06-03 (CST). Branch:
+  `main`. Local + remote both at `982a845` (Stage 29 deliverable +
+  3 fix commits). Server `/home/itadmin/AI-Agents-SWD` pulled to
+  the same commit before recreate.
+- **Commits delivered:**
+  - `7533e7a` — Stage 29 deliverable: migration 009, new
+    `shared/sdk/qa/` SDK (models / store / rules), rewritten
+    qa-agent driving the QA validation + auto-fix loop, new
+    `CodeAutoFixAgent` consumer in the development-agent service
+    (consumes `stream.development.autofix`), workflow gate
+    additions (`qa_auto_fix` / `blocked_for_human_review` stages),
+    new `/operations/qa/*` routes + `qa_validation` workflow
+    section, discord-gateway `qa_status` fields, 7 new Prometheus
+    counters, 9 new tracing spans, 10 new pytest files,
+    `verify_qa_auto_fix_loop.sh`, 10 new Stage 29 runtime smokes
+    in `check_runtime_state.sh`, README + new operator runbook +
+    manual-verification 17h.
+  - `0563f84` — Stage 29 fix: qa-agent passthrough when workspace
+    status is already `blocked` / `validation_failed` / `canceled`.
+    The original deliverable falsely emitted a "missing PR draft"
+    finding on every legacy regression task, breaking
+    `tests/test_github_pipeline_flow.py` + `tests/test_trace_flow.py`.
+  - `2e26ba7` — Stage 29 fix: qa-agent materialises every artifact's
+    `generated_content_preview` into a private
+    `tempfile.TemporaryDirectory` before running the deterministic
+    rules. Cross-container fix — the qa-agent runs in a different
+    container than the development-agent and can't read the
+    dev-agent's `/tmp/aiagents-workspaces/<task_id>` volume.
+    Bumped the preview column to 20 KB so py_compile + secret-scan
+    + diff checks see the full body. Updated 2 unit tests to set
+    `generated_content_preview` directly.
+  - `982a845` — Stage 29 fix: corrected the verify script's
+    expected-total from `15` to `14`. The script enumerates 14
+    checks; the off-by-one caused a 14-of-14 PASS to print as
+    `QA_AUTO_FIX_LOOP_VERIFY: FAIL`.
+  - This Stage 29 progress entry: pending commit at the end of
+    the Stage 29 workflow.
+- **Modified / new files (high level):**
+  - `migrations/009_qa_validation_autofix.sql` — 3 idempotent
+    tables (`qa_validation_runs`, `qa_findings`, `auto_fix_requests`).
+  - `shared/sdk/qa/` — 4 files (`__init__.py`, `models.py`,
+    `store.py`, `rules.py`). 9 deterministic rules; categories
+    `security` / `policy` / `regression` are never auto-fixable.
+  - `agents/qa-agent/src/agent.py` — rewritten `handle`: load
+    workspace + artifacts + PR draft + work item, materialise
+    artifact previews into a temp dir, apply rules, persist run +
+    findings, decide pass / auto_fix / blocked_for_human_review,
+    emit qa.completed / qa.auto_fix_requested /
+    qa.blocked_for_human_review. `QA_MAX_AUTO_FIX_ATTEMPTS`
+    env (default 2, clamp `[1, 10]`) guards the loop.
+  - `agents/development-agent/src/agent.py` + `main.py` — new
+    `CodeAutoFixAgent` consuming `stream.development.autofix`;
+    three deterministic fix strategies (append PR draft sections,
+    regenerate test file, regenerate file on syntax error).
+    Refuses everything outside those buckets; publishes
+    `development.auto_fix_completed` / `development.auto_fix_failed`
+    back to `stream.qa` for re-validation. `main.py` runs both
+    consumers; `generated_content_preview` bumped to 20 KB so the
+    qa-agent can materialise the full content.
+  - `apps/orchestrator/src/workflow_events.py` —
+    `qa.auto_fix_requested` → stage = `qa_auto_fix`,
+    `qa.blocked_for_human_review` → stage = `blocked_for_human_review`,
+    `development.auto_fix_completed` / `…_failed` handled,
+    per-event `agent_progress` label corrected (`completed` /
+    `auto_fix_requested` / `blocked` / `failed`).
+  - `apps/orchestrator/src/operations.py` — `qa_validation`
+    section on `/operations/workflows/{task_id}`; new routes
+    `/operations/qa/runs`, `/qa/runs/{task_id}`,
+    `/qa/findings/{task_id}`, `/qa/auto-fix/{task_id}`;
+    `qa_summary` on `/operations/summary`.
+  - `apps/discord-gateway/src/main.py` — `qa_status`,
+    `qa_final_result`, `qa_findings_count`,
+    `blocking_findings_count`, `auto_fix_attempts`,
+    `blocked_for_human_review` on `/discord/tasks/{task_id}`.
+  - `shared/sdk/observability/metrics.py` —
+    `qa_validation_runs_total`, `qa_validation_passed_total`,
+    `qa_validation_failed_total`, `qa_findings_total`,
+    `qa_auto_fix_requests_total`,
+    `qa_blocked_for_human_review_total`,
+    `qa_auto_fix_attempts_total`.
+  - `scripts/verify_qa_auto_fix_loop.sh` — 14-check verifier
+    covering pass / auto-fix / blocked scenarios.
+  - `scripts/check_runtime_state.sh` — +10 Stage 29 smokes.
+  - `tests/` — 10 new files (`test_qa_store.py`,
+    `test_qa_rules.py`, `test_qa_agent_validation.py`,
+    `test_auto_fix_request.py`,
+    `test_development_agent_auto_fix.py`,
+    `test_qa_workflow_gate.py`, `test_operations_qa_view.py`,
+    `test_discord_qa_status.py`,
+    `test_qa_audit_notification.py`, `test_qa_metrics.py`).
+  - `README.md`, `docs/operations/qa-auto-fix-loop.md` (new),
+    `docs/operations/manual-verification.md` (17h).
+- **Deployment target:** `aiagent-swd` (`10.0.1.31`,
+  `/home/itadmin/AI-Agents-SWD`). `aiagents-test` stack only. No
+  production resources touched.
+- **Test results — 10.0.1.31:**
+  - `./scripts/run_tests.sh` — 881 server pytests pass.
+  - `./scripts/check_runtime_state.sh` — every Stage 18-29 smoke
+    PASS (10 new Stage 29 smokes: `QA_VALIDATION_PASS_SMOKE`,
+    `QA_FINDING_SMOKE`, `QA_AUTO_FIX_REQUEST_SMOKE`,
+    `QA_AUTO_FIX_LOOP_SMOKE`, `QA_BLOCKED_FOR_HUMAN_REVIEW_SMOKE`,
+    `OPERATIONS_QA_VIEW_SMOKE`, `DISCORD_QA_STATUS_SMOKE`,
+    `QA_AUDIT_SMOKE`, `QA_NOTIFICATION_SMOKE`, `QA_METRICS_SMOKE`).
+  - `./scripts/verify_qa_auto_fix_loop.sh` — 14/14 PASS
+    (`QA_AUTO_FIX_LOOP_VERIFY: PASS`).
+  - `./scripts/verify_controlled_code_generation.sh` — 17/17 PASS
+    (Stage 28 regression intact).
+  - `./scripts/verify_flexible_task_execution_loop.sh` — 20/20 PASS
+    (Stage 27 regression intact).
+  - `./scripts/verify_staging_secrets.sh --no-bring-up` — PASS.
+  - `./scripts/verify_staging_runtime.sh` — PASS.
+  - `./scripts/verify_staging_backup_restore.sh` — PASS (staging
+    stack briefly brought up + torn down).
+  - `./scripts/verify_real_github_validation.sh` — PASS
+    (`REAL_GITHUB_TEST_SKIPPED`).
+  - `./scripts/verify_notification_delivery.sh` — PASS.
+  - `./scripts/verify_discord_gateway.sh` — PASS.
+  - `./scripts/verify_operations_view.sh` — PASS.
+  - `./scripts/verify_unified_audit.sh` — PASS.
+  - `./scripts/verify_github_pipeline_flow.sh` — PASS.
+  - `./scripts/verify_platform_observability.sh` — PASS
+    (`VERIFY_INCIDENT_FLOW: PASS`).
+- **Stage 29 result summary:**
+  | Check | Result | Evidence |
+  | --- | --- | --- |
+  | Migration 009 idempotent | PASS | `psql … < migrations/009_…` returned `COMMIT` cleanly |
+  | qa_validation_run created per pass | PASS | `QA_VALIDATION_PASS_SMOKE`, `QA_VALIDATION_RUN_RECORDED_B` PASS; `/operations/qa/runs/<task_id>.latest_run.final_result=pass` for a clean delivery_task |
+  | qa_findings persisted | PASS | `QA_FINDING_SMOKE: PASS`; rules sweep visible via `/operations/qa/findings/<task_id>` |
+  | QA pass path (Scenario A) | PASS | `final_result=pass`, `qa_passed=true`, workflow reaches `completed`, devops dry-run PR delivers |
+  | QA auto_fix machinery (Scenario B) | PASS | `auto_fix_requests` table reachable, dev-agent autofix consumer visible via `/status.autofix` |
+  | QA blocked (Scenario C) | PASS | blocked workspace → qa-agent passes through; no false PR draft; `code_generation_blocked` audit present |
+  | max attempts guard | PASS | `QA_MAX_AUTO_FIX_ATTEMPTS` env honored in unit tests; `current_attempts >= max_attempts` blocks at the qa-agent decision |
+  | workflow stage qa_auto_fix | PASS | `WorkflowEventConsumer` test + smoke confirm |
+  | workflow stage blocked_for_human_review | PASS | same |
+  | /operations/qa/* | PASS | 4 new endpoints reachable, 404 on missing rows |
+  | /discord/tasks QA fields | PASS | `DISCORD_QA_STATUS_SMOKE: PASS` |
+  | audit decision_types | PASS | `qa_validation_started`, `qa_validation_passed`, `qa_auto_fix_requested`, `qa_blocked_for_human_review` all observable via `/audit/events` (deliverable + fix verified end-to-end on the test stack) |
+  | notification deliveries | PASS | `qa.validation_started`, `qa.validation_passed` recorded in `notification_deliveries` |
+  | metrics | PASS | 7 counters incremented in `/metrics` |
+  | tracing spans | PASS | `qa.validation_start`, `qa.load_code_artifacts`, `qa.apply_rule`, `qa.create_finding`, `qa.request_auto_fix`, `code.auto_fix_start`, `code.auto_fix_apply`, `code.auto_fix_complete` observable in tempo |
+  | production_executed=false | PASS | both stacks' `deployment_records` + `workflow_states` counters at `0`; `/operations/safety` reports the same |
+  | `.workspaces/` never committed | PASS | `git status --short` is empty on the test server after the run; workspaces materialised in temp dirs only |
+- **Issues / blockers encountered:**
+  - **Cross-container workspace visibility** — the original
+    deliverable forgot that the qa-agent runs in its own
+    container and cannot read the dev-agent's workspace volume.
+    First server-side run produced 11 findings per task,
+    blocking every delivery_task at QA. Fixed in `2e26ba7` by
+    materialising `generated_content_preview` into a private
+    temp dir; preview column bumped to 20 KB to fit the full
+    deterministic template output.
+  - **Legacy regression tests** — Stage 29 initially escalated
+    the `dev.test` synthetic tasks used by
+    `tests/test_github_pipeline_flow.py` +
+    `tests/test_trace_flow.py` to
+    `blocked_for_human_review` because the upstream workspace
+    was already `blocked` and the qa-agent's PR-draft-missing
+    rule fired. Fixed in `0563f84` by routing any
+    `workspace.status in {blocked, validation_failed,
+    canceled}` through the legacy passthrough.
+  - **Verify off-by-one** — the verify script enumerated 14
+    checks while its `total` placeholder said 15. Fixed in
+    `982a845`.
+  - No application logic, audit contract, or safety guard
+    outside those three surgical fixes was modified.
+- **Risks / observations only (Claude Code does not decide Step 29
+  roadmap):**
+  - **Deterministic QA only:** rules are pure-Python checks
+    (`py_compile`, regex, fnmatch). A real LLM-driven semantic
+    review is out of scope.
+  - **Auto-fix limited to three deterministic strategies:** PR
+    draft section append, regenerate test file, regenerate file
+    on syntax error. Anything outside those buckets blocks for
+    human review.
+  - **No LLM** anywhere. The qa-agent never executes generated
+    code; `py_compile` parses but does not run.
+  - **Real GitHub still skipped:** every demo-pr call carries
+    `dry_run=true`; the Stage 23 controlled-real path stays
+    gated.
+  - **Production deploy disabled:** test stack only;
+    `production_executed=true` count is `0` on both stacks.
+  - **Cross-container artifact contract:** the qa-agent depends
+    on `code_change_artifacts.generated_content_preview` being
+    a complete copy of the generated file. The dev-agent now
+    stores up to 20 KB per artifact; files larger than that
+    would still trip py_compile errors. A future deliverable
+    should either share a workspace volume between dev-agent /
+    qa-agent or move large content into object storage.
+  - **Next capability gap:** the auto-fix dispatcher is keyed
+    on `category` + `metadata.missing_sections` only. A more
+    targeted dispatch keyed on `(category, recommendation)`
+    would let new fix strategies land without touching the
+    dev-agent's hot path.
+  - **Other:**
+    - Local / test data plane unaffected — verified by
+      `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED` plus
+      the staging-backup verifier's before/after table-count
+      guard. Both green.
+    - Following Stage 22 / 23 / 24 / 25 / 26 / 27 / 28,
+      Claude Code does not decide the Step 29 roadmap.
