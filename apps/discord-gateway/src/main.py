@@ -616,6 +616,37 @@ async def lookup_task(task_id: str) -> dict:
         "github_dry_run_pr_url": github.get("pr_url", ""),
         "validation_status": cg_validation.get("status", "") if cg_validation else "",
         "code_generation_blocked_reason": code_generation.get("blocked_reason", ""),
+        # Stage 29 — QA-guided validation + auto-fix surfaces.
+        "qa_status": (
+            (body.get("qa_validation") or {}).get("status", "")
+            if isinstance(body.get("qa_validation"), dict)
+            else ""
+        ),
+        "qa_final_result": (
+            (body.get("qa_validation") or {}).get("final_result", "")
+            if isinstance(body.get("qa_validation"), dict)
+            else ""
+        ),
+        "qa_findings_count": (
+            len((body.get("qa_validation") or {}).get("findings") or [])
+            if isinstance(body.get("qa_validation"), dict)
+            else 0
+        ),
+        "blocking_findings_count": (
+            int((body.get("qa_validation") or {}).get("blocking_findings_count", 0) or 0)
+            if isinstance(body.get("qa_validation"), dict)
+            else 0
+        ),
+        "auto_fix_attempts": (
+            int((body.get("qa_validation") or {}).get("auto_fix_attempts", 0) or 0)
+            if isinstance(body.get("qa_validation"), dict)
+            else 0
+        ),
+        "blocked_for_human_review": (
+            bool((body.get("qa_validation") or {}).get("blocked_for_human_review", False))
+            if isinstance(body.get("qa_validation"), dict)
+            else False
+        ),
         "sandbox": True,
     }
 

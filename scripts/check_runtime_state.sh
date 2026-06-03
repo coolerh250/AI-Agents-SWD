@@ -1820,4 +1820,104 @@ else
 fi
 
 echo
+echo "=== Stage 29 QA-guided validation + auto-fix loop smokes (lightweight) ==="
+
+stage29_ts=$(date +%s)
+
+# 1. delivery_task API description -> QA validation run + pass
+qa_api="stage29-runtime-qapass-$stage29_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.api description=\\\"please implement a /healthz endpoint API with tests\\\" task_id=$qa_api\",\"channel_id\":\"sandbox-stage29\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 12
+qa_run=$(curl -sS -m 10 "http://localhost:8000/operations/qa/runs/$qa_api" || echo '{}')
+if echo "$qa_run" | grep -q '"qa_run_id"'; then
+  echo "QA_VALIDATION_PASS_SMOKE: PASS"
+else
+  echo "QA_VALIDATION_PASS_SMOKE: CHECK"
+fi
+if echo "$qa_run" | grep -qE '"final_result": *"(pass|not_applicable)"'; then
+  echo "QA_FINDING_SMOKE: PASS"
+else
+  echo "QA_FINDING_SMOKE: CHECK"
+fi
+
+# 2. auto-fix request endpoint reachable
+qa_fix=$(curl -sS -m 10 "http://localhost:8000/operations/qa/auto-fix/$qa_api" || echo '{}')
+if echo "$qa_fix" | grep -q '"auto_fix_requests"'; then
+  echo "QA_AUTO_FIX_REQUEST_SMOKE: PASS"
+else
+  echo "QA_AUTO_FIX_REQUEST_SMOKE: CHECK"
+fi
+
+# 3. auto-fix loop machinery wired: development-agent-autofix consumer
+# reachable (its /status appears under the dev-agent status payload).
+da_status=$(curl -sS -m 10 "http://localhost:8012/status" || echo '{}')
+if echo "$da_status" | grep -q '"autofix"'; then
+  echo "QA_AUTO_FIX_LOOP_SMOKE: PASS"
+else
+  echo "QA_AUTO_FIX_LOOP_SMOKE: CHECK"
+fi
+
+# 4. blocked path — unclassifiable task → code_generation blocked,
+# QA validation should not falsely pass.
+qa_blk="stage29-runtime-block-$stage29_ts"
+curl -sS -m 30 -X POST http://localhost:8007/discord/messages -H "Content-Type: application/json" \
+  -d "{\"content\":\"/ai task type=dev.test description=\\\"qwertyuiop unclassifiable random nonsense for blocked path\\\" task_id=$qa_blk\",\"channel_id\":\"sandbox-stage29\",\"user_id\":\"check\"}" \
+  >/dev/null 2>&1 || true
+sleep 10
+qa_blk_ops=$(curl -sS -m 10 "http://localhost:8000/operations/workflows/$qa_blk" || echo '{}')
+if echo "$qa_blk_ops" | grep -q '"qa_passed": *false'; then
+  echo "QA_BLOCKED_FOR_HUMAN_REVIEW_SMOKE: PASS"
+else
+  echo "QA_BLOCKED_FOR_HUMAN_REVIEW_SMOKE: CHECK"
+fi
+
+# 5. operations summary contains qa_summary
+qa_sum=$(curl -sS -m 10 http://localhost:8000/operations/summary || echo '{}')
+if echo "$qa_sum" | grep -q '"qa_summary"'; then
+  echo "OPERATIONS_QA_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_QA_VIEW_SMOKE: CHECK"
+fi
+
+# 6. discord task lookup exposes qa_status
+qa_dtask=$(curl -sS -m 10 "http://localhost:8007/discord/tasks/$qa_api" || echo '{}')
+if echo "$qa_dtask" | grep -q '"qa_status"'; then
+  echo "DISCORD_QA_STATUS_SMOKE: PASS"
+else
+  echo "DISCORD_QA_STATUS_SMOKE: CHECK"
+fi
+
+# 7. audit QA decision_types persisted
+qa_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=qa_validation_started&limit=5" || echo '{}')
+qa_audit2=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=qa_validation_passed&limit=5" || echo '{}')
+qa_audit3=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=qa_blocked_for_human_review&limit=5" || echo '{}')
+if echo "$qa_audit" | grep -q 'qa_validation_started' \
+   || echo "$qa_audit2" | grep -q 'qa_validation_passed' \
+   || echo "$qa_audit3" | grep -q 'qa_blocked_for_human_review'; then
+  echo "QA_AUDIT_SMOKE: PASS"
+else
+  echo "QA_AUDIT_SMOKE: CHECK"
+fi
+
+# 8. notification deliveries for qa.* events
+qa_nots=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries/$qa_api" || echo '{}')
+if echo "$qa_nots" | grep -q 'qa.validation_started' \
+   || echo "$qa_nots" | grep -q 'qa.validation_passed' \
+   || echo "$qa_nots" | grep -q 'qa.blocked_for_human_review'; then
+  echo "QA_NOTIFICATION_SMOKE: PASS"
+else
+  echo "QA_NOTIFICATION_SMOKE: CHECK"
+fi
+
+# 9. qa_validation_runs_total metric exposed
+qa_metric=$(curl -sS -m 10 "http://localhost:8000/metrics" 2>/dev/null | grep -E "^qa_validation_runs_total" | head -1)
+if [ -n "$qa_metric" ]; then
+  echo "QA_METRICS_SMOKE: PASS"
+else
+  echo "QA_METRICS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

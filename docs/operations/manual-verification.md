@@ -894,6 +894,54 @@ Confirm:
 * No row in `pr_draft_artifacts.github_dry_run_result` has
   `dry_run=false` or `production_executed=true`.
 
+## 17h. QA-guided validation + auto-fix loop (Stage 29)
+
+```
+./scripts/verify_qa_auto_fix_loop.sh
+```
+
+Expect `QA_AUTO_FIX_LOOP_VERIFY: PASS` (15/15). The script covers
+three scenarios:
+
+* **QA pass** — a clean delivery_task generates a workspace, the
+  qa-agent passes (`final_result=pass`), the devops-agent's
+  dry-run PR delivers, and the workflow reaches `completed`.
+* **auto-fix loop** — the same API task exercises the
+  loop machinery: `qa_validation_runs` rows recorded, the
+  `/operations/qa/auto-fix/<task_id>` endpoint reachable, the
+  development-agent's auto-fix consumer visible via the dev-agent
+  `/status.autofix` block.
+* **blocked** — an unclassifiable description flips the workspace
+  to `blocked`; `qa_validation.qa_passed=false`; no
+  `pr_draft_artifact` is created. The qa-agent never falsely
+  passes a blocked workspace.
+
+Confirm:
+
+* `GET /operations/workflows/<task_id>.qa_validation` exposes
+  `latest_run`, `status`, `final_result`, `findings`,
+  `blocking_findings_count`, `auto_fix_requests`,
+  `auto_fix_attempts`, `max_auto_fix_attempts`,
+  `blocked_for_human_review`, `qa_passed`, and
+  `production_executed=false`.
+* `GET /operations/qa/runs`, `…/runs/<task_id>`,
+  `…/findings/<task_id>`, `…/auto-fix/<task_id>` all respond
+  read-only with no secret leakage.
+* `GET /operations/summary.qa_summary` carries
+  `total_validation_runs`, `passed_runs`, `failed_runs`,
+  `blocked_for_human_review_count`, `auto_fix_requested_count`,
+  `total_findings`.
+* `GET /discord/tasks/<task_id>` carries `qa_status`,
+  `qa_final_result`, `qa_findings_count`,
+  `blocking_findings_count`, `auto_fix_attempts`,
+  `blocked_for_human_review`.
+* `git status --short` is empty after the run (workspaces are
+  gitignored, the auto-fix doesn't change the working tree).
+* `QA_MAX_AUTO_FIX_ATTEMPTS` honored — an env value of `1`
+  forces a blocked outcome on the second pass.
+* No `qa_findings` row with `severity in ('error','critical')`
+  AND `status='open'` survives a `final_result=pass`.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

@@ -1980,6 +1980,104 @@ decision types, notification event types, metric labels).
   against `development.completed`; Step 28 will tackle the QA-driven
   re-generation cycle.
 
+## QA-Guided Validation & Auto-Fix Loop (Stage 29)
+
+Stage 29 turns the qa-agent into a deterministic gatekeeper for the
+controlled workspace. After Stage 28's development-agent produces a
+workspace + artifacts + PR draft, the qa-agent loads them, runs a
+fixed set of rules, and decides:
+
+* **pass** — publish `qa.completed` to `stream.deployments`; the
+  devops-agent finishes the pipeline.
+* **auto-fix requested** — at least one auto-fixable blocking
+  finding AND `auto_fix_attempts < max_auto_fix_attempts` →
+  publish `code.auto_fix_request` to `stream.development.autofix`
+  (a second consumer in the development-agent service) and a
+  `qa.auto_fix_requested` event back onto `stream.qa` so the
+  workflow stage flips to `qa_auto_fix`.
+* **blocked for human review** — any non-auto-fixable critical
+  finding (security / policy / regression), OR attempts exhausted
+  → publish `qa.blocked_for_human_review`; the workflow stage
+  flips to `blocked_for_human_review`. `production_executed=false`
+  is preserved.
+
+No LLM. The rules live in `shared.sdk.qa.rules`:
+
+| Rule | What it checks |
+| --- | --- |
+| `validate_generated_files_exist` | every artifact path is on disk |
+| `validate_python_syntax` | `py_compile` every `*.py` (no execution) |
+| `validate_test_files_exist_for_api_task` | a `demo_api` app file ships its matching test |
+| `validate_diff_present` | each artifact carries at least one hunk |
+| `validate_no_denied_paths` | nothing under `.github/` / `infra/` / `*secret*` / `*.env*` / `source/progress.md` etc. |
+| `validate_no_secret_patterns` | no GitHub / AWS / PEM literal in any generated file |
+| `validate_pr_draft_sections` | PR body carries all 7 Stage 28 sections |
+| `validate_destructive_diff` | no `rm -rf` / `drop database` / force-push payload |
+| `validate_acceptance_alignment` | acceptance criteria mention something the workspace delivered |
+
+### Deterministic auto-fixes (development-agent)
+
+Only three categories are deterministic:
+
+* **Missing PR draft sections** → append placeholder sections so
+  the body carries all 7 required markers again.
+* **Missing demo-API test file** → re-run the deterministic
+  generator and persist the rewritten test file.
+* **Python syntax error in generated file** → regenerate via the
+  template (no LLM, no targeted patching).
+
+Anything else (security / policy / acceptance / regression) is
+refused and bubbles into the `blocked_for_human_review` path on
+the next pass.
+
+### Loop guard
+
+`QA_MAX_AUTO_FIX_ATTEMPTS` (default `2`, clamped to `[1, 10]`)
+caps the loop. When the qa-agent sees `auto_fix_attempts >=
+max_auto_fix_attempts`, even an auto-fixable finding is treated
+as blocked.
+
+### Operations API
+
+* `GET /operations/qa/runs` — list validation runs (filter by
+  `task_id` / `status` / `final_result`).
+* `GET /operations/qa/runs/<task_id>` — every run for a task with
+  `latest_run` on top.
+* `GET /operations/qa/findings/<task_id>` — findings, optional
+  `severity` / `status` filters.
+* `GET /operations/qa/auto-fix/<task_id>` — auto-fix requests.
+* `GET /operations/workflows/<task_id>.qa_validation` — embedded
+  section on every workflow view (`latest_run`, `findings`,
+  `auto_fix_requests`, `blocked_for_human_review`, `qa_passed`).
+* `GET /operations/summary.qa_summary` — aggregate counters
+  (`total_validation_runs`, `passed_runs`, `failed_runs`,
+  `blocked_for_human_review_count`, `auto_fix_requested_count`,
+  `total_findings`).
+
+`GET /discord/tasks/<task_id>` also exposes `qa_status`,
+`qa_final_result`, `qa_findings_count`, `blocking_findings_count`,
+`auto_fix_attempts`, `blocked_for_human_review`.
+
+See [`docs/operations/qa-auto-fix-loop.md`](docs/operations/qa-auto-fix-loop.md)
+for the full operator runbook (audit decision types, notification
+event types, metric labels, span names, scenario verifier).
+
+### Not in this stage
+
+* **No LLM-driven auto-fix.** Only the three deterministic fix
+  strategies above are supported.
+* **No production deploy.** `production_executed=true` count
+  stays at `0` on both stacks.
+* **No real GitHub write.** PR drafts still flow through the
+  Stage 28 dry-run path; the Stage 23 controlled-real gate
+  remains untouched.
+* **No `qa_findings` autoresolution UI.** Findings are
+  persisted; the operator inspects via `/operations/qa/*` and
+  manually marks `waived` if needed.
+* **No QA-driven workflow re-classification.** The qa-agent never
+  changes the work item's `execution_mode`; that stays a Stage 27
+  decision.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

@@ -44,8 +44,22 @@ _AGENT_BY_EVENT = {
     "development.completed": "development-agent",
     "qa.completed": "qa-agent",
     "devops.deployment_simulated": "devops-agent",
+    # Stage 29: QA decision events also advance / gate the workflow.
+    "qa.auto_fix_requested": "qa-agent",
+    "qa.blocked_for_human_review": "qa-agent",
+    "development.auto_fix_completed": "development-agent-autofix",
+    "development.auto_fix_failed": "development-agent-autofix",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
+
+#: Stage 29 — QA decision events that flip the workflow stage to a
+#: distinct gate state instead of advancing the pipeline.
+_QA_AUTO_FIX_EVENT = "qa.auto_fix_requested"
+_QA_BLOCKED_EVENT = "qa.blocked_for_human_review"
+_AUTO_FIX_DONE_EVENTS = (
+    "development.auto_fix_completed",
+    "development.auto_fix_failed",
+)
 
 
 class WorkflowEventConsumer:
@@ -99,7 +113,17 @@ class WorkflowEventConsumer:
             else {}
         )
         progress = dict(execution_result.get("agent_progress", {}))
-        progress[_AGENT_BY_EVENT[event]] = "completed"
+        # Stage 29: only the "<agent>.completed" events mark an agent as
+        # completed. QA auto-fix / blocked events represent a gating
+        # decision, not a successful agent run.
+        if event == _QA_AUTO_FIX_EVENT:
+            progress[_AGENT_BY_EVENT[event]] = "auto_fix_requested"
+        elif event == _QA_BLOCKED_EVENT:
+            progress[_AGENT_BY_EVENT[event]] = "blocked"
+        elif event == "development.auto_fix_failed":
+            progress[_AGENT_BY_EVENT[event]] = "failed"
+        else:
+            progress[_AGENT_BY_EVENT[event]] = "completed"
         execution_result["agent_progress"] = progress
 
         if event == _FINAL_EVENT:
@@ -133,6 +157,35 @@ class WorkflowEventConsumer:
                     execution_result["github"]["error"] = github_result["error"]
         elif workflow["stage"] == "completed":
             stage = "completed"  # never move a finished workflow backwards
+        elif event == _QA_AUTO_FIX_EVENT:
+            # Stage 29: workflow is mid-auto-fix; don't advance past QA.
+            stage = "qa_auto_fix"
+            execution_result["status"] = "qa_auto_fix"
+            execution_result["production_executed"] = False
+            execution_result["qa_auto_fix"] = {
+                "qa_run_id": str(payload.get("qa_run_id") or ""),
+                "fix_request_id": str(payload.get("fix_request_id") or ""),
+                "attempt_number": int(payload.get("attempt_number") or 1),
+                "max_auto_fix_attempts": int(payload.get("max_auto_fix_attempts") or 2),
+            }
+        elif event == _QA_BLOCKED_EVENT:
+            # Stage 29: workflow halted — must NOT progress to devops-agent.
+            stage = "blocked_for_human_review"
+            execution_result["status"] = "blocked_for_human_review"
+            execution_result["production_executed"] = False
+            execution_result["qa_blocked"] = {
+                "qa_run_id": str(payload.get("qa_run_id") or ""),
+                "reason": str(payload.get("reason") or "unknown"),
+                "blocking_finding_ids": payload.get("blocking_finding_ids") or [],
+            }
+        elif event in _AUTO_FIX_DONE_EVENTS:
+            # Auto-fix finished — workflow remains in_progress while the
+            # qa-agent re-runs. Don't backslide stage if already completed.
+            stage = "in_progress"
+            execution_result["status"] = "in_progress"
+            execution_result.setdefault("qa_auto_fix", {})
+            if isinstance(execution_result.get("qa_auto_fix"), dict):
+                execution_result["qa_auto_fix"]["last_event"] = event
         else:
             stage = "in_progress"
             execution_result["status"] = "in_progress"

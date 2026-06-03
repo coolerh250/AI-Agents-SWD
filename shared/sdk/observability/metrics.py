@@ -294,6 +294,43 @@ PR_DRAFT_ARTIFACTS_TOTAL = Counter(
 )
 
 
+# Stage 29 — QA-guided validation + deterministic auto-fix loop.
+QA_VALIDATION_RUNS_TOTAL = Counter(
+    "qa_validation_runs_total",
+    "QA validation runs started",
+    ["status"],
+)
+QA_VALIDATION_PASSED_TOTAL = Counter(
+    "qa_validation_passed_total",
+    "QA validation runs that ended with final_result=pass",
+)
+QA_VALIDATION_FAILED_TOTAL = Counter(
+    "qa_validation_failed_total",
+    "QA validation runs that ended with final_result=fail",
+    ["reason"],  # auto_fix_max_attempts | blocked | validation_error
+)
+QA_FINDINGS_TOTAL = Counter(
+    "qa_findings_total",
+    "QA findings recorded",
+    ["severity", "category", "auto_fixable"],
+)
+QA_AUTO_FIX_REQUESTS_TOTAL = Counter(
+    "qa_auto_fix_requests_total",
+    "Auto-fix requests filed by the qa-agent",
+    ["status"],  # requested | completed | failed | max_attempts_exceeded
+)
+QA_BLOCKED_FOR_HUMAN_REVIEW_TOTAL = Counter(
+    "qa_blocked_for_human_review_total",
+    "QA runs that escalated to human review",
+    ["reason"],
+)
+QA_AUTO_FIX_ATTEMPTS_TOTAL = Counter(
+    "qa_auto_fix_attempts_total",
+    "Auto-fix attempts executed by the development-agent",
+    ["result"],  # completed | failed | max_attempts_exceeded
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

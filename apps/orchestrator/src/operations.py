@@ -52,6 +52,7 @@ from shared.sdk.observability.metrics import (
 )
 from shared.sdk.observability.tracing import start_span
 from shared.sdk.code_workspace import CodeWorkspaceStore
+from shared.sdk.qa import QAStore
 from shared.sdk.task_execution import TaskExecutionStore
 from shared.sdk.workflow_store.store import WorkflowStore
 
@@ -520,6 +521,22 @@ async def _task_execution_summary() -> dict[str, Any]:
     return counts
 
 
+async def _qa_summary() -> dict[str, Any]:
+    """Stage 29 — aggregated counters for QA validation runs + auto-fix requests."""
+    try:
+        counts = await QAStore().counts()
+    except Exception:
+        counts = {
+            "total_validation_runs": 0,
+            "passed_runs": 0,
+            "failed_runs": 0,
+            "blocked_for_human_review_count": 0,
+            "auto_fix_requested_count": 0,
+            "total_findings": 0,
+        }
+    return counts
+
+
 async def _code_generation_summary() -> dict[str, Any]:
     """Stage 28 — aggregated counters for the code workspace lifecycle."""
     try:
@@ -576,6 +593,7 @@ async def operations_summary() -> dict:
         notification_delivery = await _notification_delivery_summary()
         task_execution = await _task_execution_summary()
         code_generation = await _code_generation_summary()
+        qa_summary = await _qa_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -591,6 +609,7 @@ async def operations_summary() -> dict:
         "notification_delivery_summary": notification_delivery,
         "task_execution_summary": task_execution,
         "code_generation_summary": code_generation,
+        "qa_summary": qa_summary,
         "production_safety": safety,
     }
 
@@ -877,6 +896,46 @@ async def operations_workflow_view(task_id: str) -> dict:
     except Exception:
         warnings.append("code_generation_unavailable")
 
+    # Stage 29 — qa_validation section (latest run + findings + auto-fix
+    # requests). Safe-degrades the same way as the other sections.
+    qa_validation_section: dict[str, Any] = {
+        "found": False,
+        "latest_run": None,
+        "status": "",
+        "final_result": "",
+        "findings": [],
+        "blocking_findings_count": 0,
+        "auto_fix_requests": [],
+        "auto_fix_attempts": 0,
+        "max_auto_fix_attempts": 0,
+        "blocked_for_human_review": False,
+        "qa_passed": False,
+    }
+    try:
+        qa_store = QAStore()
+        latest_run = await qa_store.get_latest_validation_run(task_id)
+        if latest_run is not None:
+            findings = await qa_store.list_findings(task_id, qa_run_id=latest_run.qa_run_id)
+            fix_requests = await qa_store.list_auto_fix_requests(task_id)
+            qa_validation_section = {
+                "found": True,
+                "latest_run": latest_run.to_dict(),
+                "status": latest_run.status,
+                "final_result": latest_run.final_result,
+                "findings": [f.to_dict() for f in findings],
+                "blocking_findings_count": latest_run.blocking_findings,
+                "auto_fix_requests": [r.to_dict() for r in fix_requests],
+                "auto_fix_attempts": latest_run.auto_fix_attempts,
+                "max_auto_fix_attempts": latest_run.max_auto_fix_attempts,
+                "blocked_for_human_review": (
+                    latest_run.status == "blocked_for_human_review"
+                    or latest_run.final_result == "blocked"
+                ),
+                "qa_passed": latest_run.final_result == "pass",
+            }
+    except Exception:
+        warnings.append("qa_validation_unavailable")
+
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
     try:
@@ -914,6 +973,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "notification_deliveries": notification_deliveries_section,
         "task_execution": task_execution_section,
         "code_generation": code_generation_section,
+        "qa_validation": qa_validation_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -1566,5 +1626,91 @@ async def operations_pr_draft_view(task_id: str) -> dict:
         raise HTTPException(status_code=404, detail="pr draft not found")
     return {
         "pr_draft": pr_draft.to_dict(),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/qa/* (Stage 29 — QA validation + auto-fix loop)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/qa/runs")
+@_instrument("/operations/qa/runs", "operations.qa_runs_list")
+async def operations_list_qa_runs(
+    task_id: str | None = None,
+    status: str | None = None,
+    final_result: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    try:
+        rows = await QAStore().list_validation_runs(
+            task_id=task_id, status=status, final_result=final_result, limit=capped
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"qa store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "validation_runs": [r.to_dict() for r in rows],
+        "filter": {
+            "task_id": task_id,
+            "status": status,
+            "final_result": final_result,
+            "limit": capped,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/qa/runs/{task_id}")
+@_instrument("/operations/qa/runs/{task_id}", "operations.qa_run_view")
+async def operations_qa_runs_for_task(task_id: str) -> dict:
+    store = QAStore()
+    try:
+        rows = await store.list_validation_runs(task_id=task_id, limit=100)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"qa store unavailable: {exc}") from exc
+    latest = rows[0] if rows else None
+    return {
+        "task_id": task_id,
+        "latest_run": latest.to_dict() if latest else None,
+        "validation_runs": [r.to_dict() for r in rows],
+        "count": len(rows),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/qa/findings/{task_id}")
+@_instrument("/operations/qa/findings/{task_id}", "operations.qa_findings_view")
+async def operations_qa_findings_for_task(
+    task_id: str,
+    severity: str | None = None,
+    status: str | None = None,
+) -> dict:
+    try:
+        rows = await QAStore().list_findings(task_id, severity=severity, status=status)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"qa store unavailable: {exc}") from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "findings": [r.to_dict() for r in rows],
+        "filter": {"severity": severity, "status": status},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/qa/auto-fix/{task_id}")
+@_instrument("/operations/qa/auto-fix/{task_id}", "operations.qa_auto_fix_view")
+async def operations_qa_auto_fix_for_task(task_id: str) -> dict:
+    try:
+        rows = await QAStore().list_auto_fix_requests(task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"qa store unavailable: {exc}") from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "auto_fix_requests": [r.to_dict() for r in rows],
         "generated_at": _utcnow_iso(),
     }
