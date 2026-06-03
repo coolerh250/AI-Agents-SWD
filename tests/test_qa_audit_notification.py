@@ -172,9 +172,10 @@ class _PRDraft:
 
 
 class _Workspace:
-    def __init__(self, path):
+    def __init__(self, path, status="ready_for_pr_draft"):
         self.workspace_id = "ws-1"
         self.workspace_path = path
+        self.status = status
 
 
 class _WI:
