@@ -32,12 +32,14 @@ class _FakeArtifact:
     file_path: str
     diff_text: str = "--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n+hello\n"
     change_type: str = "create"
+    generated_content_preview: str = "x = 1\n"
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "file_path": self.file_path,
             "diff_text": self.diff_text,
             "change_type": self.change_type,
+            "generated_content_preview": self.generated_content_preview,
         }
 
 
@@ -295,14 +297,14 @@ def test_qa_auto_fix_when_blocking_auto_fixable(qa_agent, monkeypatch, tmp_path)
 
 
 def test_qa_blocked_when_unfixable_critical(qa_agent, monkeypatch, tmp_path):
-    # Put a secret pattern in the file -> security critical, not auto-fixable.
+    # Put a secret pattern in the artifact's preview -> security
+    # critical, not auto-fixable. The qa-agent materialises previews
+    # into its own temp dir before running rules, so the preview is
+    # the source of truth (not the on-disk tmp_path).
     rel = "docs/generated/oops.md"
-    full = os.path.join(str(tmp_path), rel)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "w", encoding="utf-8") as fh:
-        fh.write("token = ghp_" + "A" * 40 + "\n")
+    secret_content = "token = ghp_" + "A" * 40 + "\n"
     workspace = _FakeWorkspace(workspace_path=str(tmp_path))
-    artifacts = [_FakeArtifact(file_path=rel)]
+    artifacts = [_FakeArtifact(file_path=rel, generated_content_preview=secret_content)]
     pr_draft = _FakePRDraft(body=_full_pr_body())
     agent = _wire(
         qa_agent,

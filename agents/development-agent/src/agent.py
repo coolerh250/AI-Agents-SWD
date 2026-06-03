@@ -320,7 +320,13 @@ class DevelopmentAgent(StreamAgent):
                 after_sha=w.after_sha,
                 diff_summary=w.diff_summary,
                 diff_text=_short_preview(w.diff_text, limit=4000),
-                generated_content_preview=_short_preview(_read_file(w.full_path), limit=1200),
+                # Stage 29: the qa-agent runs in a different container and
+                # can't read the dev-agent's workspace directly. Store the
+                # full generated content (up to 20 KB) so the qa-agent can
+                # materialize it into its own temp dir for py_compile +
+                # secret-scan + diff checks. The preview is still
+                # safe-trimmed for /operations/code/* responses elsewhere.
+                generated_content_preview=_short_preview(_read_file(w.full_path), limit=20000),
                 validation_status="pending",
             )
             changed_files.append(
@@ -1138,7 +1144,7 @@ class CodeAutoFixAgent(StreamAgent):
                     after_sha=w.after_sha,
                     diff_summary=w.diff_summary,
                     diff_text=w.diff_text[:4000],
-                    generated_content_preview=_read_file(w.full_path)[:1200],
+                    generated_content_preview=_read_file(w.full_path)[:20000],
                     validation_status="passed",
                 )
         return {

@@ -140,16 +140,18 @@ def _wire(qa_agent, monkeypatch, *, workspace, artifacts, pr_draft, work_item):
 
 
 class _Artifact:
-    def __init__(self, file_path):
+    def __init__(self, file_path, generated_content_preview="x = 1\n"):
         self.file_path = file_path
         self.diff_text = "--- a/x\n+++ b/x\n@@ -0,0 +1 @@\n+x\n"
         self.change_type = "create"
+        self.generated_content_preview = generated_content_preview
 
     def to_dict(self):
         return {
             "file_path": self.file_path,
             "diff_text": self.diff_text,
             "change_type": self.change_type,
+            "generated_content_preview": self.generated_content_preview,
         }
 
 
@@ -238,16 +240,16 @@ def test_qa_pass_emits_audit_validation_started_and_passed(qa_agent, monkeypatch
 
 
 def test_qa_blocked_emits_audit_blocked(qa_agent, monkeypatch, tmp_path):
+    # The qa-agent materialises artifact previews into its own temp dir
+    # before running rules; put the secret in the artifact preview so
+    # the security rule fires.
     rel = "docs/generated/oops.md"
-    full = os.path.join(str(tmp_path), rel)
-    os.makedirs(os.path.dirname(full), exist_ok=True)
-    with open(full, "w", encoding="utf-8") as fh:
-        fh.write("token = ghp_" + "A" * 40 + "\n")
+    secret_content = "token = ghp_" + "A" * 40 + "\n"
     agent = _wire(
         qa_agent,
         monkeypatch,
         workspace=_Workspace(str(tmp_path)),
-        artifacts=[_Artifact(rel)],
+        artifacts=[_Artifact(rel, generated_content_preview=secret_content)],
         pr_draft=_PRDraft(_full_pr_body()),
         work_item=_WI(),
     )

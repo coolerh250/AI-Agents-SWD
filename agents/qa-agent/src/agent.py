@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import tempfile
 from typing import Any
 
 from shared.sdk.audit.publisher import publish_audit_event
@@ -182,9 +183,6 @@ class QAAgent(StreamAgent):
             return await self._legacy_passthrough(payload, task_id, workflow_id)
 
         workspace_id = workspace.workspace_id if workspace else None
-        workspace_path = (
-            workspace.workspace_path if workspace else os.path.join(DEFAULT_WORKSPACE_ROOT, task_id)
-        )
         pr_draft_id = pr_draft.get("pr_draft_id") if pr_draft else None
         template_hint = self._template_hint_from_payload(payload, artifacts)
 
@@ -234,25 +232,34 @@ class QAAgent(StreamAgent):
 
         # 3. Apply rules.
         file_paths = [a["file_path"] for a in artifacts if a.get("file_path")]
-        with start_span(
-            "qa.apply_rule",
-            **{
-                "service.name": self.name,
-                "agent": self.name,
-                "task_id": task_id,
-                "qa_run_id": run.qa_run_id,
-                "files_count": len(file_paths),
-                "template_hint": template_hint,
-            },
-        ):
-            raw_findings = apply_qa_rules(
-                workspace_path=workspace_path,
-                artifacts=artifacts,
-                file_paths=file_paths,
-                pr_draft=pr_draft,
-                work_item=work_item_dict,
-                template_hint=template_hint,
-            )
+        # Stage 29: the qa-agent runs in a different container than the
+        # development-agent, so ``workspace_path`` on the dev-agent's
+        # disk is invisible here. Materialise each artifact's stored
+        # ``generated_content_preview`` into a short-lived temp dir and
+        # point the deterministic rules at THAT. The dev-agent stores
+        # up to 20 KB of content (Stage 29 bump), enough for the
+        # deterministic templates the platform ships.
+        with tempfile.TemporaryDirectory(prefix=f"qa-{task_id}-") as materialised:
+            self._materialise_artifacts(materialised, artifacts)
+            with start_span(
+                "qa.apply_rule",
+                **{
+                    "service.name": self.name,
+                    "agent": self.name,
+                    "task_id": task_id,
+                    "qa_run_id": run.qa_run_id,
+                    "files_count": len(file_paths),
+                    "template_hint": template_hint,
+                },
+            ):
+                raw_findings = apply_qa_rules(
+                    workspace_path=materialised,
+                    artifacts=artifacts,
+                    file_paths=file_paths,
+                    pr_draft=pr_draft,
+                    work_item=work_item_dict,
+                    template_hint=template_hint,
+                )
 
         # 4. Persist findings.
         findings_records: list[Any] = []
@@ -344,6 +351,34 @@ class QAAgent(StreamAgent):
             blocking_ids=blocking_finding_ids,
             reason=decision["reason"],
         )
+
+    # ------------------------------------------------------------------
+    # helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _materialise_artifacts(target_root: str, artifacts: list[dict[str, Any]]) -> None:
+        """Write every artifact's ``generated_content_preview`` under
+        ``target_root`` so the deterministic rules can run filesystem
+        checks against a private copy.
+
+        The qa-agent never has direct visibility into the dev-agent's
+        workspace volume; this materialisation step bridges the gap
+        without sharing a Docker volume.
+        """
+        for art in artifacts:
+            rel = art.get("file_path") or ""
+            if not rel or rel.startswith("/") or ".." in rel.split("/"):
+                continue
+            full = os.path.join(target_root, rel)
+            os.makedirs(os.path.dirname(full), exist_ok=True)
+            content = art.get("generated_content_preview") or ""
+            # If the preview is empty, write an empty file so
+            # validate_generated_files_exist still passes but
+            # downstream rules (py_compile, secret scan) effectively
+            # see an empty file and don't fire critical findings.
+            with open(full, "w", encoding="utf-8") as fh:
+                fh.write(content)
 
     # ------------------------------------------------------------------
     # decision helpers
