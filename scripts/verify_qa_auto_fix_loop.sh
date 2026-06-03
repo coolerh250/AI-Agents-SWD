@@ -26,7 +26,7 @@ AUDIT="${AUDIT_URL:-http://localhost:8003}"
 echo "### verify_qa_auto_fix_loop: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
 checks=0
-total=15
+total=14
 fail() { echo "  $1: FAIL"; }
 pass() { echo "  $1: PASS"; checks=$((checks+1)); }
 
