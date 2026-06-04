@@ -5888,3 +5888,319 @@ issues & blockers, and next-step suggestions.
       `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED`. Green.
     - Following Stage 22 / 23 / 24 / 25 / 26 / 27 / 28 / 29,
       Claude Code does not decide the Step 30 roadmap.
+
+
+## Stage 31 -- Step 30: Flexible Human Approval Policy & LLM Proposal Promotion
+
+- **Execution window:** 2026-06-04 (CST). Branch: `main`.
+  Local + remote both at `c29b68d` (Stage 31 deliverable).
+  Server `/home/itadmin/AI-Agents-SWD` pulled to the same commit
+  before recreate. Migration 011 applied on the test stack.
+- **Commits delivered:**
+  - `c29b68d` -- Stage 31 deliverable: migration 011, new
+    `shared/sdk/approval_policy/` SDK (models, deterministic
+    evaluator with hard-safety rails, asyncpg store), new
+    `apps/orchestrator/src/approval_policy_api.py` mounting
+    `/approval-policies/*` + `/llm/proposals/{id}/approval/*` +
+    `/llm/proposals/{id}/promote`, `/operations/approval-policies` +
+    `/operations/approval-decisions` + `approval_policy` section on
+    workflow view + `approval_policy_summary` on /operations/summary
+    + Stage 31 LLM/safety fields on /operations/safety, six new
+    discord-gateway proxies + approval fields on
+    `/discord/tasks/{task_id}`, 8 new Prometheus counters, 3 new
+    spans, 7 new pytest files (60 tests),
+    `verify_flexible_human_approval_policy.sh` (14 checks),
+    `verify_llm_proposal_promotion.sh` (4 checks), 13 new Stage 31
+    runtime smokes in `check_runtime_state.sh`, README +
+    `docs/operations/human-approval-policy.md` (operator runbook)
+    + `docs/operations/llm-proposal-promotion.md` (3-layer guard)
+    + manual-verification 17j.
+  - This Stage 31 progress entry: pending commit at the end of
+    the Stage 31 workflow.
+- **Modified / new files (high level):**
+  - `migrations/011_human_approval_policy_and_llm_promotion.sql`
+    -- 4 idempotent tables (`human_approval_policies`,
+    `human_approval_decisions`, `llm_proposal_approvals`,
+    `llm_proposal_promotions`).
+  - `shared/sdk/approval_policy/` -- 4 files (`__init__.py`,
+    `models.py`, `evaluator.py`, `store.py`). Approval modes:
+    `per_action`, `per_feature`, `per_stage`, `delegated`.
+    Hard-safety actions: `production_deploy`, `real_github_write`,
+    `real_github_pr_merge`, `branch_protection_modification`,
+    `force_push`, `delete_file`, `secret_write`,
+    `destructive_command`, `real_llm_network_call`,
+    `denylist_path_mutation` -- always refused regardless of
+    policy. Delegated minimum constraints:
+    `allowed_actions`, `allowed_paths`, `denied_paths`,
+    `max_actions`, `max_files_changed`, `max_auto_fix_attempts`,
+    `expires_at`.
+  - `apps/orchestrator/src/approval_policy_api.py` -- new module
+    mounted on the orchestrator. Endpoints:
+    `POST /approval-policies` (validates required constraints per
+    mode, returns 400 with `delegated_missing:<field>` /
+    `per_feature_missing:<field>` / `per_stage_missing:<field>` on
+    incomplete payloads), `GET /approval-policies`,
+    `GET /approval-policies/{policy_id}`,
+    `POST /approval-policies/{policy_id}/activate`,
+    `POST /approval-policies/{policy_id}/revoke`,
+    `GET /approval-policies/{policy_id}/decisions`,
+    `POST /llm/proposals/{proposal_id}/approval/request`,
+    `POST /llm/proposals/{proposal_id}/approval/approve`,
+    `POST /llm/proposals/{proposal_id}/approval/reject`,
+    `POST /llm/proposals/{proposal_id}/promote`. The promote
+    endpoint re-runs `LLMSafetyPolicy`, then the approval
+    evaluator (hard rails always win), then the explicit-approval
+    fallback. Records `llm_proposal_promotions` with
+    `promotion_mode` (`manual`, `policy_allowed`,
+    `delegated_agent`), accepted / refused files,
+    `validation_result`, bumps the policy's `actions_used`, and
+    links the proposal's `linked_workspace_id`.
+  - `apps/orchestrator/src/main.py` -- mounts
+    `approval_policy_router`.
+  - `apps/orchestrator/src/operations.py` -- new
+    `/operations/approval-policies`, `/operations/approval-policies/{task_id}`,
+    `/operations/approval-decisions/{task_id}` endpoints. New
+    `approval_policy` section on `/operations/workflows/{task_id}`
+    carrying `active_policies`, `approval_mode`, `decisions`,
+    `delegated_actions_used`, `delegated_actions_remaining`,
+    `revoked_policies`, `expired_policies`, `hard_policy_blocks`,
+    `promotions`. New `approval_policy_summary` on
+    `/operations/summary`. New `delegated_agent_enabled`,
+    `active_delegated_policies`, `hard_policy_enforced=true`,
+    `production_delegation_allowed=false`,
+    `real_github_delegation_allowed=false` on
+    `/operations/safety`.
+  - `apps/discord-gateway/src/main.py` -- six new proxies
+    (`/discord/approval-policies`,
+    `/discord/approval-policies/{task_id}`,
+    `/discord/approval-policies/{policy_id}/revoke`,
+    `/discord/llm/proposals/{proposal_id}/approve`,
+    `/discord/llm/proposals/{proposal_id}/reject`,
+    `/discord/llm/proposals/{proposal_id}/promote`).
+    `/discord/tasks/{task_id}` adds `approval_mode`,
+    `active_approval_policy`, `delegated_actions_used`,
+    `delegated_actions_remaining`, `latest_approval_decision`,
+    `llm_promotion_status`.
+  - `shared/sdk/observability/metrics.py` -- 8 new counters
+    (`approval_policies_total`, `approval_policy_active_total`,
+    `approval_policy_revoked_total`,
+    `approval_policy_decisions_total`,
+    `approval_policy_action_allowed_total`,
+    `approval_policy_action_blocked_total`,
+    `delegated_actions_used_total`, `llm_promotions_total`).
+  - 7 new pytest files (`test_approval_policy_evaluator.py`,
+    `test_approval_policy_store.py`,
+    `test_approval_policy_api.py`,
+    `test_approval_policy_audit_notification.py`,
+    `test_approval_policy_metrics.py`,
+    `test_llm_promotion_with_policy.py`,
+    `test_operations_approval_policy_view.py`,
+    `test_discord_approval_policy.py`). 60 tests covering:
+    hard-safety blocks every `HARD_SAFETY_ACTIONS`, denylist
+    paths, secret content, destructive commands; per_action
+    requires explicit approval; per_feature task scoping;
+    per_stage stage scoping; delegated full-constraint
+    enforcement; expired / revoked / max_actions /
+    max_files_changed / action_not_allowed / agent_not_allowed
+    blocks; proposal promotion blocked when proposal blocked /
+    no policy / safety violation / hard safety; allowed under
+    delegated (`promotion_mode=delegated_agent`,
+    `decision_source=policy_allows`) or explicit
+    (`decision_source=explicit_approval`); discord proxies
+    forward correctly; `/discord/tasks` surfaces Stage 31
+    fields; audit + notification side effects emit
+    `approval_policy_*` and `approval.*` events with
+    `production_executed=false`.
+  - `scripts/verify_flexible_human_approval_policy.sh` -- 14
+    checks across 5 scenarios (per_action, per_feature,
+    per_stage, delegated, hard-safety block).
+  - `scripts/verify_llm_proposal_promotion.sh` -- 4-check
+    promotion verifier.
+  - `scripts/check_runtime_state.sh` -- 13 new Stage 31 smokes
+    (`APPROVAL_POLICY_CREATE_SMOKE`,
+    `APPROVAL_POLICY_ACTIVATE_SMOKE`,
+    `APPROVAL_POLICY_REVOKE_SMOKE`,
+    `PER_ACTION_APPROVAL_SMOKE`,
+    `PER_FEATURE_APPROVAL_SMOKE`,
+    `PER_STAGE_APPROVAL_SMOKE`,
+    `DELEGATED_APPROVAL_SMOKE`,
+    `DELEGATED_HARD_POLICY_BLOCK_SMOKE`,
+    `LLM_PROMOTION_WITH_POLICY_SMOKE`,
+    `OPERATIONS_APPROVAL_POLICY_VIEW_SMOKE`,
+    `DISCORD_APPROVAL_POLICY_SMOKE`,
+    `APPROVAL_POLICY_AUDIT_SMOKE`,
+    `APPROVAL_POLICY_NOTIFICATION_SMOKE`).
+  - `docs/operations/human-approval-policy.md` -- new operator
+    runbook (modes, constraints, hard safety, approval vs
+    promotion, delegated limitations, revoke / expire,
+    operations queries, Discord commands, audit /
+    notification, limitations).
+  - `docs/operations/llm-proposal-promotion.md` -- new 3-layer
+    guard reference (LLM safety policy + approval evaluator +
+    explicit approval), promotion modes, status lifecycle, QA
+    gate interaction.
+  - `docs/operations/manual-verification.md` -- section 17j added.
+  - `README.md` -- Stage 31 section added.
+- **Deployment target:** test/local Docker Compose only
+  (10.0.1.31). Test stack `aiagents-test` recreated against the
+  Stage 31 deliverable. Migration 011 applied. Staging stack not
+  brought up (matches Stage 29 / 30 pattern). No production
+  resources created. No real LLM API contacted. No real GitHub
+  PR created or merged. No branch protection modification.
+- **Test results (local):**
+  - Stage 31 pytest subset
+    (`tests/test_approval_policy_*.py`,
+    `tests/test_llm_promotion_with_policy.py`,
+    `tests/test_operations_approval_policy_view.py`,
+    `tests/test_discord_approval_policy.py`) -- 60 passed in
+    ~25 s.
+  - Full local `pytest tests/` -- 903 passed, 115 skipped in
+    ~19.5 min.
+  - `python -m ruff check .` -- clean (262 files).
+  - `python -m black --check .` -- clean (272 files).
+  - `python -m mypy shared/` -- clean (69 source files).
+- **Test results (10.0.1.31, after `git pull` + recreate +
+  migration 011):**
+  - `./scripts/run_tests.sh` -- 1018 passed, 1 warning in
+    ~52 s. ruff / black / mypy: all green.
+  - `./scripts/check_runtime_state.sh` -- DONE. All 13
+    Stage 31 smokes PASS.
+  - `./scripts/verify_flexible_human_approval_policy.sh` --
+    `FLEXIBLE_HUMAN_APPROVAL_POLICY_VERIFY: PASS` (14/14).
+  - `./scripts/verify_llm_proposal_promotion.sh` --
+    `LLM_PROPOSAL_PROMOTION_VERIFY: PASS` (4/4).
+  - `./scripts/verify_llm_guardrails.sh` --
+    `LLM_GUARDRAILS_VERIFY: PASS` (5/5).
+    `REAL_LLM_TEST_SKIPPED: PASS` printed.
+  - `./scripts/verify_llm_assisted_development.sh` --
+    `LLM_ASSISTED_DEVELOPMENT_VERIFY: PASS` (12/12).
+  - `./scripts/verify_qa_auto_fix_loop.sh` --
+    `QA_AUTO_FIX_LOOP_VERIFY: PASS` (14/14).
+  - `./scripts/verify_controlled_code_generation.sh` --
+    `CONTROLLED_CODE_GENERATION_VERIFY: PASS` (17/17).
+  - `./scripts/verify_flexible_task_execution_loop.sh` --
+    `FLEXIBLE_TASK_EXECUTION_VERIFY: PASS`.
+  - `./scripts/verify_staging_secrets.sh` --
+    `STAGING_SECRETS_VERIFY: PASS`.
+  - `./scripts/verify_staging_runtime.sh` --
+    `STAGING_RUNTIME_VERIFY: PASS`.
+  - `./scripts/verify_staging_backup_restore.sh` --
+    `STAGING_BACKUP_RESTORE_VERIFY: FAIL (staging postgres
+    not reachable)` -- staging stack intentionally NOT
+    brought up for Stage 31; matches Stage 29 / 30 behaviour.
+  - `./scripts/verify_real_github_validation.sh` --
+    `REAL_GITHUB_VALIDATION_VERIFY: PASS`,
+    `REAL_GITHUB_TEST_SKIPPED: PASS`.
+  - `./scripts/verify_notification_delivery.sh` --
+    `NOTIFICATION_DELIVERY_VERIFY: PASS`.
+  - `./scripts/verify_discord_gateway.sh` --
+    `DISCORD_GATEWAY_VERIFY: PASS`.
+  - `./scripts/verify_operations_view.sh` --
+    `OPERATIONS_VIEW_VERIFY: PASS`.
+  - `./scripts/verify_unified_audit.sh` --
+    `UNIFIED_AUDIT_VERIFY: PASS`.
+  - `./scripts/verify_github_pipeline_flow.sh` --
+    `GITHUB_PIPELINE_FLOW_VERIFY: PASS`.
+  - `./scripts/verify_platform_observability.sh` --
+    `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
+- **Quality gates (10.0.1.31):**
+  - `docker compose ps`: 22/22 containers healthy
+    (21 healthy + vault dev mode up).
+  - `git status --short` clean on remote after the verify
+    suite (promotions do not touch the working tree).
+  - Production safety SQL probes:
+    - `deployment_records.production_executed=true OR
+       environment=production`: **0 rows**.
+    - `workflow_states.execution_result.production_executed=true`:
+       **0 rows**.
+- **Stage 31 result summary:**
+  - Approval policy data model: 4 tables created via
+    migration 011; idempotent + additive; existing Stage 28
+    / 29 / 30 tables untouched.
+  - Approval policy SDK: dataclasses + deterministic
+    evaluator + asyncpg store; evaluator returns
+    `EvaluationResult` with `allowed` / `reason` /
+    `policy_id` / `hard_policy_block` /
+    `requires_explicit_approval` / `safety_snapshot`.
+  - Approval modes: per_action (default), per_feature,
+    per_stage, delegated. per_action returns
+    `requires_explicit_approval=True`; per_feature is
+    bound to a task; per_stage is bound to a stage;
+    delegated needs the full constraint set.
+  - Hard safety policy: 10 action types refused
+    unconditionally + content-level rails for secret /
+    destructive / denylisted paths. Even a delegated
+    policy that "allows" `production_deploy` is refused
+    with `hard_policy_block=True`.
+  - LLM promotion: 3-layer guard (LLM safety policy ->
+    approval evaluator -> explicit approval). Workspace
+    allowlist re-checked per file. Promotion records
+    `promotion_mode` (manual / policy_allowed /
+    delegated_agent) + `validation_result` +
+    `accepted_files` + `refused_files`. Policy's
+    `actions_used` bumps on each authorised promotion.
+  - Operations / Discord: every Stage 31 surface
+    reachable; API key + secret values never echoed; all
+    decisions auditable; every Discord proxy works.
+  - Audit / notification: 11 audit `decision_type`s + 9
+    notification `event_type`s emitted. Every
+    `artifact_refs` carries `production_executed=false`.
+  - Production safety: 0 production deploy on both test +
+    staging stacks (staging not brought up).
+- **Issues / blockers / mitigations encountered during
+  Stage 31:**
+  - **Pydantic 2 + `from __future__ import annotations`
+    forward-reference issue.** Initial commit used
+    `from __future__ import annotations` in
+    `apps/orchestrator/src/approval_policy_api.py`. Pydantic
+    2's `CreatePolicyIn` could not resolve `Any` lazily and
+    raised `PydanticUserError: not fully defined`. Removed
+    the future import before commit; all 7 pytest files
+    pass.
+  - **`get_promotion` fake-return shape.** The promote
+    endpoint originally trusted the store's
+    `get_promotion` return for `promotion_mode`, which
+    the in-memory test fake returned as the default
+    `manual`. Fixed by re-overlaying the constructed
+    `effective_mode` + `promotion_status` onto the
+    fetched record before serialising, AND surfacing
+    `promotion_mode` at the top level of the response.
+    All promotion-pass tests now assert the correct mode
+    label.
+- **Risks / observations (Claude Code reports only):**
+  - **Delegated mode constraints.** A delegated policy
+    that omits any required field is refused at create
+    time with HTTP 400. The evaluator additionally
+    refuses at evaluate time, so a policy persisted out-
+    of-band by some future writer cannot leak through.
+  - **Hard safety policy limitations.** The 10
+    `HARD_SAFETY_ACTIONS` are matched exactly; the
+    evaluator does NOT attempt to "infer" hard-safety
+    actions from arbitrary action names. New hard
+    actions need to be added to the constant.
+  - **Human approval flexibility.** Per-action remains
+    the default + safest mode. Per-feature / per-stage /
+    delegated are opt-in only via the create endpoint,
+    audited every step.
+  - **Real LLM still skipped:** Stage 30's
+    `REAL_LLM_TEST_SKIPPED` rail is untouched. The
+    approval policy CANNOT authorise
+    `real_llm_network_call` -- it's a hard-safety action.
+  - **Real GitHub still skipped:** Stage 23
+    controlled-real gate untouched.
+  - **Production deploy disabled:**
+    `production_executed=true` count is `0` on both
+    stacks. Hard rail refuses any policy claiming to
+    permit it.
+  - **Next capability gap:** the promotion path doesn't
+    yet auto-trigger the QA gate; it returns
+    `status=promoted` and an operator (or a future
+    consumer) must drive the QA re-validation. The
+    Stage 29 QA loop still owns final pass/fail.
+  - **Other:**
+    - Local / test data plane unaffected -- verified by
+      `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED`.
+      Green.
+    - Following Stages 22 / 23 / 24 / 25 / 26 / 27 / 28
+      / 29 / 30, Claude Code does not decide the
+      Step 31 roadmap.
