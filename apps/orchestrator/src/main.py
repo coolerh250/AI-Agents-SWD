@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+from approval_policy_api import router as approval_policy_router
 from incidents_api import (
     ack_incident_with_side_effects,
     create_incident_with_side_effects,
@@ -176,6 +177,7 @@ instrument_fastapi(app, "orchestrator")
 install_metrics_endpoint(app)
 # Stage 20: unified read-only operator view. Mounted on /operations/*.
 app.include_router(operations_router)
+app.include_router(approval_policy_router)
 
 
 @app.get("/health")

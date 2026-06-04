@@ -369,6 +369,49 @@ LLM_ESTIMATED_COST_TOTAL = Counter(
 )
 
 
+# Stage 31 -- flexible human approval policy + LLM proposal promotion.
+APPROVAL_POLICIES_TOTAL = Counter(
+    "approval_policies_total",
+    "Human approval policies created (one row per upsert)",
+    ["approval_mode", "scope_type"],
+)
+APPROVAL_POLICY_ACTIVE_TOTAL = Counter(
+    "approval_policy_active_total",
+    "Approval policies activated",
+    ["approval_mode", "scope_type"],
+)
+APPROVAL_POLICY_REVOKED_TOTAL = Counter(
+    "approval_policy_revoked_total",
+    "Approval policies revoked",
+    ["approval_mode", "scope_type"],
+)
+APPROVAL_POLICY_DECISIONS_TOTAL = Counter(
+    "approval_policy_decisions_total",
+    "Human approval decisions recorded",
+    ["approval_mode", "action_type", "decision"],
+)
+APPROVAL_POLICY_ACTION_ALLOWED_TOTAL = Counter(
+    "approval_policy_action_allowed_total",
+    "Actions authorised by an active approval policy",
+    ["approval_mode", "action_type"],
+)
+APPROVAL_POLICY_ACTION_BLOCKED_TOTAL = Counter(
+    "approval_policy_action_blocked_total",
+    "Actions blocked by policy or hard safety rails",
+    ["reason", "action_type"],
+)
+DELEGATED_ACTIONS_USED_TOTAL = Counter(
+    "delegated_actions_used_total",
+    "Per-policy delegated-action consumption (max_actions guard)",
+    ["scope_type"],
+)
+LLM_PROMOTIONS_TOTAL = Counter(
+    "llm_promotions_total",
+    "LLM proposal promotion attempts (status label)",
+    ["promotion_mode", "status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

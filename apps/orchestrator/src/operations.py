@@ -51,6 +51,7 @@ from shared.sdk.observability.metrics import (
     OPERATIONS_REQUESTS_TOTAL,
 )
 from shared.sdk.observability.tracing import start_span
+from shared.sdk.approval_policy import ApprovalPolicyStore
 from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.llm import LLMInteractionStore
 from shared.sdk.qa import QAStore
@@ -538,6 +539,28 @@ async def _qa_summary() -> dict[str, Any]:
     return counts
 
 
+async def _approval_policy_summary() -> dict[str, Any]:
+    """Stage 31 -- aggregated counters for the approval policy lifecycle."""
+    try:
+        counts = await ApprovalPolicyStore().counts()
+    except Exception:
+        counts = {
+            "total_policies": 0,
+            "active_policies": 0,
+            "revoked_policies": 0,
+            "delegated_policies": 0,
+            "per_feature_policies": 0,
+            "per_stage_policies": 0,
+            "total_decisions": 0,
+            "approved_decisions": 0,
+            "rejected_decisions": 0,
+            "total_promotions": 0,
+            "promoted_count": 0,
+            "blocked_by_policy_count": 0,
+        }
+    return counts
+
+
 async def _llm_summary() -> dict[str, Any]:
     """Stage 30 — aggregated counters for the LLM proposal lifecycle."""
     try:
@@ -613,6 +636,7 @@ async def operations_summary() -> dict:
         code_generation = await _code_generation_summary()
         qa_summary = await _qa_summary()
         llm_summary = await _llm_summary()
+        approval_policy_summary = await _approval_policy_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -630,6 +654,7 @@ async def operations_summary() -> dict:
         "code_generation_summary": code_generation,
         "qa_summary": qa_summary,
         "llm_summary": llm_summary,
+        "approval_policy_summary": approval_policy_summary,
         "production_safety": safety,
     }
 
@@ -1011,6 +1036,55 @@ async def operations_workflow_view(task_id: str) -> dict:
     except Exception:
         warnings.append("llm_assistance_unavailable")
 
+    # Stage 31 -- approval policy section (active policies + recent
+    # decisions + delegated usage). Safe-degrades to an empty shape when
+    # the store is unreachable.
+    approval_policy_section: dict[str, Any] = {
+        "found": False,
+        "active_policies": [],
+        "approval_mode": "per_action",
+        "decisions": [],
+        "delegated_actions_used": 0,
+        "delegated_actions_remaining": 0,
+        "revoked_policies": [],
+        "expired_policies": [],
+        "hard_policy_blocks": [],
+        "promotions": [],
+    }
+    try:
+        ap_store = ApprovalPolicyStore()
+        policies = await ap_store.list_policies(task_id=task_id, limit=100)
+        decisions = await ap_store.list_decisions(task_id=task_id, limit=100)
+        promotions = await ap_store.list_promotions(task_id=task_id, limit=100)
+        active = [p for p in policies if p.status == "active"]
+        revoked = [p for p in policies if p.status == "revoked"]
+        expired = [p for p in policies if p.status == "expired"]
+        hard_blocks = [d for d in decisions if "hard_safety" in str(d.safety_snapshot or "")]
+        if active:
+            latest = active[0]
+            primary_mode = latest.approval_mode
+            used = sum(p.actions_used for p in active)
+            max_actions = sum((p.max_actions or 0) for p in active)
+            remaining = max(0, max_actions - used)
+        else:
+            primary_mode = "per_action"
+            used = 0
+            remaining = 0
+        approval_policy_section = {
+            "found": bool(policies or decisions or promotions),
+            "active_policies": [p.to_dict() for p in active],
+            "approval_mode": primary_mode,
+            "decisions": [d.to_dict() for d in decisions],
+            "delegated_actions_used": used,
+            "delegated_actions_remaining": remaining,
+            "revoked_policies": [p.to_dict() for p in revoked],
+            "expired_policies": [p.to_dict() for p in expired],
+            "hard_policy_blocks": [d.to_dict() for d in hard_blocks],
+            "promotions": [p.to_dict() for p in promotions],
+        }
+    except Exception:
+        warnings.append("approval_policy_unavailable")
+
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
     try:
@@ -1050,6 +1124,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "code_generation": code_generation_section,
         "qa_validation": qa_validation_section,
         "llm_assistance": llm_assistance_section,
+        "approval_policy": approval_policy_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -1315,6 +1390,18 @@ async def operations_safety() -> dict:
     if llm_external_call_enabled:
         warnings.append("llm_external_call_enabled")
 
+    # Stage 31 -- approval-policy safety surface. Booleans + counts
+    # only; the policy values themselves never leave the API key
+    # boundary set by the env reader.
+    delegated_active_count = 0
+    try:
+        ap_store_safety = ApprovalPolicyStore()
+        ap_counts = await ap_store_safety.counts()
+        delegated_active_count = int(ap_counts.get("delegated_policies", 0) or 0)
+    except Exception:
+        delegated_active_count = 0
+    delegated_agent_enabled = delegated_active_count > 0
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1351,6 +1438,11 @@ async def operations_safety() -> dict:
         "llm_external_call_enabled": llm_external_call_enabled,
         "llm_policy_enforced": True,
         "llm_requires_human_review": True,
+        "delegated_agent_enabled": delegated_agent_enabled,
+        "active_delegated_policies": delegated_active_count,
+        "hard_policy_enforced": True,
+        "production_delegation_allowed": False,
+        "real_github_delegation_allowed": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
             "postgres trust auth is local/test only — production must use real auth + KMS"
@@ -1898,5 +1990,86 @@ async def operations_llm_usage(
         "records": [r.to_dict() for r in rows],
         "summary": totals,
         "filter": {"task_id": task_id, "provider": provider, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/approval-policies (Stage 31 -- approval policy view)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/approval-policies")
+@_instrument("/operations/approval-policies", "operations.approval_policies_list")
+async def operations_list_approval_policies(
+    task_id: str | None = None,
+    workflow_id: str | None = None,
+    status: str | None = None,
+    approval_mode: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    try:
+        rows = await ApprovalPolicyStore().list_policies(
+            task_id=task_id,
+            workflow_id=workflow_id,
+            status=status,
+            approval_mode=approval_mode,
+            limit=capped,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"approval policy store unavailable: {exc}"
+        ) from exc
+    return {
+        "count": len(rows),
+        "policies": [r.to_dict() for r in rows],
+        "filter": {
+            "task_id": task_id,
+            "workflow_id": workflow_id,
+            "status": status,
+            "approval_mode": approval_mode,
+            "limit": capped,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/approval-policies/{task_id}")
+@_instrument("/operations/approval-policies/{task_id}", "operations.approval_policies_for_task")
+async def operations_approval_policies_for_task(task_id: str) -> dict:
+    store = ApprovalPolicyStore()
+    try:
+        rows = await store.list_policies(task_id=task_id, limit=200)
+        promotions = await store.list_promotions(task_id=task_id, limit=200)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"approval policy store unavailable: {exc}"
+        ) from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "policies": [r.to_dict() for r in rows],
+        "active_count": sum(1 for r in rows if r.status == "active"),
+        "revoked_count": sum(1 for r in rows if r.status == "revoked"),
+        "promotions": [p.to_dict() for p in promotions],
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/approval-decisions/{task_id}")
+@_instrument("/operations/approval-decisions/{task_id}", "operations.approval_decisions_for_task")
+async def operations_approval_decisions_for_task(task_id: str, limit: int = 200) -> dict:
+    capped = max(1, min(int(limit or 200), 500))
+    try:
+        rows = await ApprovalPolicyStore().list_decisions(task_id=task_id, limit=capped)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"approval policy store unavailable: {exc}"
+        ) from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "decisions": [r.to_dict() for r in rows],
         "generated_at": _utcnow_iso(),
     }

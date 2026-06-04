@@ -985,6 +985,59 @@ Confirm:
 * No `llm_interactions` row carries a literal API key value; previews
   are redacted before persistence.
 
+## 17j. Flexible human approval policy + LLM promotion (Stage 31)
+
+```
+./scripts/verify_flexible_human_approval_policy.sh
+./scripts/verify_llm_proposal_promotion.sh
+```
+
+Expect `FLEXIBLE_HUMAN_APPROVAL_POLICY_VERIFY: PASS` (14/14) and
+`LLM_PROPOSAL_PROMOTION_VERIFY: PASS` (4/4). Five scenarios are
+covered:
+
+* **per_action** — explicit approval required; orchestrator refuses
+  to auto-promote.
+* **per_feature** — a task-bound policy authorises promotions inside
+  its allowlist; cross-task use refused.
+* **per_stage** — a stage-bound policy authorises actions while the
+  workflow is in that stage; other stages refused.
+* **delegated** — fully-constrained delegated policy authorises
+  actions while `actions_used < max_actions`, `files_changed ≤
+  max_files_changed`, and `expires_at` has not passed.
+* **hard safety block** — `production_deploy`, `real_github_write`,
+  denylist-path mutation, secret content, destructive command are
+  ALWAYS refused regardless of any policy authorising them.
+
+Confirm:
+
+* `GET /operations/workflows/{task_id}.approval_policy` carries
+  `active_policies`, `approval_mode`, `decisions`,
+  `delegated_actions_used`, `delegated_actions_remaining`,
+  `revoked_policies`, `expired_policies`, `hard_policy_blocks`,
+  `promotions`.
+* `GET /operations/approval-policies`,
+  `…/approval-policies/{task_id}`, `…/approval-decisions/{task_id}`
+  respond read-only.
+* `GET /operations/summary.approval_policy_summary` carries
+  `total_policies`, `active_policies`, `delegated_policies`,
+  `per_feature_policies`, `per_stage_policies`, `revoked_policies`,
+  `total_decisions`, `approved_decisions`, `rejected_decisions`,
+  `total_promotions`, `promoted_count`, `blocked_by_policy_count`.
+* `GET /operations/safety` carries `delegated_agent_enabled`,
+  `active_delegated_policies`, `hard_policy_enforced=true`,
+  `production_delegation_allowed=false`,
+  `real_github_delegation_allowed=false`.
+* `GET /discord/tasks/{task_id}` carries `approval_mode`,
+  `active_approval_policy`, `delegated_actions_used`,
+  `delegated_actions_remaining`, `latest_approval_decision`,
+  `llm_promotion_status`.
+* `POST /llm/proposals/<unknown>/promote` returns `404`.
+* `POST /approval-policies` with `approval_mode=delegated` but
+  missing constraints returns `400 delegated_missing:<field>`.
+* `git status --short` is empty after the run; promotions do not
+  touch the working tree.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

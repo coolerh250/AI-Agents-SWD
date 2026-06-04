@@ -2176,6 +2176,107 @@ The API key value is **never** echoed to any response.
 See [`docs/operations/llm-assisted-development.md`](docs/operations/llm-assisted-development.md)
 for the full operator runbook.
 
+## Flexible Human Approval Policy & LLM Proposal Promotion (Stage 31)
+
+Stage 31 introduces a policy layer that lets a human operator pick
+the **granularity** of approval for an LLM proposal promotion, a
+QA auto-fix, or any other audit-bearing action — without ever
+overriding the hard safety rails the platform ships with.
+
+### Approval modes
+
+| Mode          | Authorises automatically? |
+| ------------- | ------------------------- |
+| `per_action`  | No. Explicit approve / reject only. (default) |
+| `per_feature` | Yes, inside a per-task allowlist of actions + paths. |
+| `per_stage`   | Yes, inside a per-stage allowlist of actions + paths. |
+| `delegated`   | Yes, while `max_actions` / `max_files_changed` / `expires_at` hold. |
+
+A `delegated` policy MUST set `allowed_actions`, `allowed_paths`,
+`denied_paths`, `max_actions`, `max_files_changed`,
+`max_auto_fix_attempts`, and `expires_at`. The orchestrator returns
+`400 delegated_missing:<field>` otherwise.
+
+### Hard safety policy (always wins)
+
+Even an `active` delegated policy that lists one of these actions
+is refused:
+
+* `production_deploy`, `real_github_write`, `real_github_pr_merge`,
+  `branch_protection_modification`, `force_push`, `delete_file`,
+  `secret_write`, `destructive_command`, `real_llm_network_call`,
+  `denylist_path_mutation`.
+
+The same applies content-wise: a proposal carrying a token / key /
+private-key literal, a destructive command, or a denylisted path
+gets a `hard_policy_block` regardless of any policy authorising it.
+
+### Approval vs promotion
+
+* **Approval** records the operator's decision on a proposal
+  (`llm_proposal_approvals`).
+* **Promotion** materialises the proposal into
+  `code_change_artifacts` (`llm_proposal_promotions`).
+
+A `per_action` proposal must have an `approved` approval row before
+`/llm/proposals/{id}/promote` accepts it. `per_feature`, `per_stage`,
+`delegated` modes can authorise via an active policy instead — the
+promotion records `decision_source=policy_allows` and the policy's
+`actions_used` counter bumps.
+
+### Tables
+
+Four additive tables (migration `011_human_approval_policy_and_llm_promotion.sql`):
+
+* `human_approval_policies` — per-action / per-feature / per-stage /
+  delegated policies. Status: `pending | active | expired | revoked | rejected`.
+* `human_approval_decisions` — every approve / reject / revoke /
+  delegated decision row.
+* `llm_proposal_approvals` — per-proposal approval lifecycle.
+* `llm_proposal_promotions` — promotion attempts with status:
+  `requested | promoted | validation_failed | qa_passed | qa_blocked |
+  blocked_by_policy | failed | canceled`.
+
+### Operations + Discord surfaces
+
+* `GET /operations/approval-policies` / `…/approval-policies/{task_id}` /
+  `…/approval-decisions/{task_id}`.
+* `GET /operations/workflows/{task_id}.approval_policy` (active
+  policies, decisions, delegated usage, hard policy blocks).
+* `GET /operations/summary.approval_policy_summary` (aggregated
+  counters).
+* `GET /operations/safety` adds `delegated_agent_enabled`,
+  `active_delegated_policies`, `hard_policy_enforced=true`,
+  `production_delegation_allowed=false`,
+  `real_github_delegation_allowed=false`.
+* `GET /discord/tasks/{task_id}` adds `approval_mode`,
+  `active_approval_policy`, `delegated_actions_used`,
+  `delegated_actions_remaining`, `latest_approval_decision`,
+  `llm_promotion_status`.
+* Discord proxies: `/discord/approval-policies`,
+  `/discord/approval-policies/{task_id}`,
+  `/discord/approval-policies/{policy_id}/revoke`,
+  `/discord/llm/proposals/{proposal_id}/approve`,
+  `/discord/llm/proposals/{proposal_id}/reject`,
+  `/discord/llm/proposals/{proposal_id}/promote`.
+
+### Limitations
+
+* **No production delegation.** `production_executed=false` asserted
+  on every audit row.
+* **No real GitHub delegation.** Stage 23 controlled-real gate
+  untouched.
+* **No PR merge.** Promotion writes `code_change_artifacts`; the
+  dry-run demo-PR path inherited from Stage 28 is the only emitter.
+* **No file deletion.** Stage 28 forbade `delete` at the workspace
+  policy level; Stage 31 reaffirms it at the approval level.
+* **No silent override.** Every promotion writes audit +
+  notification + decision rows; revoke is one POST away.
+
+See [`docs/operations/human-approval-policy.md`](docs/operations/human-approval-policy.md)
+and [`docs/operations/llm-proposal-promotion.md`](docs/operations/llm-proposal-promotion.md)
+for the full operator runbooks.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

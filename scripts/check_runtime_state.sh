@@ -2036,4 +2036,175 @@ else
 fi
 
 echo
+echo "=== Stage 31: flexible human approval policy + LLM promotion ==="
+
+ap_ts=$(date +%s)
+ap_task="stage31-smoke-${ap_ts}"
+
+# 20. POST /approval-policies works (per_action)
+ap_create=$(curl -sS -m 10 -X POST "http://localhost:8000/approval-policies" \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"$ap_task\",\"approval_mode\":\"per_action\",\"granted_by\":\"smoke\"}" || echo '{}')
+if echo "$ap_create" | grep -q '"policy_id"'; then
+  echo "APPROVAL_POLICY_CREATE_SMOKE: PASS"
+else
+  echo "APPROVAL_POLICY_CREATE_SMOKE: CHECK"
+fi
+
+# 21. POST /approval-policies for per_feature creates an active policy
+ap_pf=$(curl -sS -m 10 -X POST "http://localhost:8000/approval-policies" \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"${ap_task}-pf\",\"approval_mode\":\"per_feature\",\"granted_by\":\"smoke\",\"allowed_actions\":[\"llm_proposal_promote\"],\"allowed_paths\":[\"docs/generated/\"]}" || echo '{}')
+if echo "$ap_pf" | grep -q '"status":"active"'; then
+  echo "APPROVAL_POLICY_ACTIVATE_SMOKE: PASS"
+else
+  echo "APPROVAL_POLICY_ACTIVATE_SMOKE: CHECK"
+fi
+
+# 22. Activate explicit + revoke
+ap_id=$(echo "$ap_create" | python3 -c "
+import json, sys
+try: print(json.load(sys.stdin).get('policy',{}).get('policy_id',''))
+except Exception: print('')
+" 2>/dev/null || true)
+if [ -n "$ap_id" ]; then
+  ap_revoke=$(curl -sS -m 10 -X POST "http://localhost:8000/approval-policies/${ap_id}/revoke" \
+    -H "Content-Type: application/json" \
+    -d "{\"revoked_by\":\"smoke\"}" || echo '{}')
+  if echo "$ap_revoke" | grep -q '"status":"revoked"'; then
+    echo "APPROVAL_POLICY_REVOKE_SMOKE: PASS"
+  else
+    echo "APPROVAL_POLICY_REVOKE_SMOKE: CHECK"
+  fi
+else
+  echo "APPROVAL_POLICY_REVOKE_SMOKE: CHECK"
+fi
+
+# 23. per_action requires explicit approval (in-process evaluator)
+per_action_check=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
+p = HumanApprovalPolicy(policy_id='p', task_id='t', approval_mode='per_action', status='active', granted_by='op')
+res = evaluate_action(task_id='t', workflow_id='w', action_type='llm_proposal_promote', stage='code_generation', agent='development-agent', paths=['docs/generated/x.md'], candidate_policies=[p])
+print('OK' if res.requires_explicit_approval else 'FAIL')
+" 2>/dev/null || echo "CHECK")
+if [ "$per_action_check" = "OK" ]; then
+  echo "PER_ACTION_APPROVAL_SMOKE: PASS"
+else
+  echo "PER_ACTION_APPROVAL_SMOKE: CHECK"
+fi
+
+# 24. per_feature allows same task
+per_feature_check=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
+p = HumanApprovalPolicy(policy_id='p', task_id='t', approval_mode='per_feature', status='active', granted_by='op', allowed_actions=['llm_proposal_promote'], allowed_paths=['docs/generated/'])
+res = evaluate_action(task_id='t', workflow_id='w', action_type='llm_proposal_promote', stage='code_generation', agent='development-agent', paths=['docs/generated/x.md'], files_changed=1, candidate_policies=[p])
+print('OK' if res.allowed else 'FAIL')
+" 2>/dev/null || echo "CHECK")
+if [ "$per_feature_check" = "OK" ]; then
+  echo "PER_FEATURE_APPROVAL_SMOKE: PASS"
+else
+  echo "PER_FEATURE_APPROVAL_SMOKE: CHECK"
+fi
+
+# 25. per_stage allows stage match
+per_stage_check=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
+p = HumanApprovalPolicy(policy_id='p', task_id='t', approval_mode='per_stage', status='active', granted_by='op', allowed_actions=['llm_proposal_promote'], allowed_paths=['docs/generated/'], allowed_stages=['code_generation'])
+res = evaluate_action(task_id='t', workflow_id='w', action_type='llm_proposal_promote', stage='code_generation', agent='development-agent', paths=['docs/generated/x.md'], files_changed=1, candidate_policies=[p])
+print('OK' if res.allowed else 'FAIL')
+" 2>/dev/null || echo "CHECK")
+if [ "$per_stage_check" = "OK" ]; then
+  echo "PER_STAGE_APPROVAL_SMOKE: PASS"
+else
+  echo "PER_STAGE_APPROVAL_SMOKE: CHECK"
+fi
+
+# 26. Delegated authorises constrained action
+delegated_check=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
+from datetime import datetime, timezone, timedelta
+p = HumanApprovalPolicy(policy_id='p', task_id='t', approval_mode='delegated', status='active', granted_by='op',
+  expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat(),
+  max_actions=5, max_files_changed=3, max_auto_fix_attempts=2,
+  allowed_actions=['llm_proposal_promote'], allowed_paths=['docs/generated/'], denied_paths=['.env'])
+res = evaluate_action(task_id='t', workflow_id='w', action_type='llm_proposal_promote', stage='code_generation', agent='development-agent', paths=['docs/generated/x.md'], files_changed=1, candidate_policies=[p])
+print('OK' if res.allowed else 'FAIL')
+" 2>/dev/null || echo "CHECK")
+if [ "$delegated_check" = "OK" ]; then
+  echo "DELEGATED_APPROVAL_SMOKE: PASS"
+else
+  echo "DELEGATED_APPROVAL_SMOKE: CHECK"
+fi
+
+# 27. Hard safety blocks even delegated
+hard_check=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
+from datetime import datetime, timezone, timedelta
+p = HumanApprovalPolicy(policy_id='p', task_id='t', approval_mode='delegated', status='active', granted_by='op',
+  expires_at=(datetime.now(timezone.utc)+timedelta(hours=1)).isoformat(),
+  max_actions=1, max_files_changed=1, max_auto_fix_attempts=0,
+  allowed_actions=['production_deploy'], allowed_paths=['docs/generated/'], denied_paths=['.env'])
+res = evaluate_action(task_id='t', workflow_id='w', action_type='production_deploy', stage='deploy', agent='devops-agent', paths=['docs/generated/x.md'], candidate_policies=[p])
+print('OK' if (not res.allowed and res.hard_policy_block) else 'FAIL')
+" 2>/dev/null || echo "CHECK")
+if [ "$hard_check" = "OK" ]; then
+  echo "DELEGATED_HARD_POLICY_BLOCK_SMOKE: PASS"
+else
+  echo "DELEGATED_HARD_POLICY_BLOCK_SMOKE: CHECK"
+fi
+
+# 28. LLM promotion endpoint reachable
+prom_status=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" -X POST \
+  "http://localhost:8000/llm/proposals/00000000-0000-0000-0000-000000000000/promote" \
+  -H "Content-Type: application/json" \
+  -d "{\"task_id\":\"smoke\",\"promoted_by\":\"smoke\"}" || echo "000")
+if [ "$prom_status" = "404" ]; then
+  echo "LLM_PROMOTION_WITH_POLICY_SMOKE: PASS"
+else
+  echo "LLM_PROMOTION_WITH_POLICY_SMOKE: CHECK"
+fi
+
+# 29. /operations/approval-policies returns 200
+ops_ap_code=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" "http://localhost:8000/operations/approval-policies?limit=1" || echo "000")
+if [ "$ops_ap_code" = "200" ]; then
+  echo "OPERATIONS_APPROVAL_POLICY_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_APPROVAL_POLICY_VIEW_SMOKE: CHECK"
+fi
+
+# 30. Discord proxy reachable
+discord_ap=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" "http://localhost:8007/discord/approval-policies/${ap_task}" || echo "000")
+if [ "$discord_ap" = "200" ]; then
+  echo "DISCORD_APPROVAL_POLICY_SMOKE: PASS"
+else
+  echo "DISCORD_APPROVAL_POLICY_SMOKE: CHECK"
+fi
+
+# 31. Audit decision_type reachable
+ap_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=approval_policy_activated&limit=5" || echo '{}')
+if echo "$ap_audit" | grep -q '"events"'; then
+  echo "APPROVAL_POLICY_AUDIT_SMOKE: PASS"
+else
+  echo "APPROVAL_POLICY_AUDIT_SMOKE: CHECK"
+fi
+
+# 32. Notification deliveries reachable for approval.* events
+ap_nots=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries/${ap_task}" || echo '{}')
+if echo "$ap_nots" | grep -q '"deliveries"'; then
+  echo "APPROVAL_POLICY_NOTIFICATION_SMOKE: PASS"
+else
+  echo "APPROVAL_POLICY_NOTIFICATION_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

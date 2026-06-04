@@ -683,6 +683,39 @@ async def lookup_task(task_id: str) -> dict:
             if isinstance(body.get("llm_assistance"), dict)
             else 0
         ),
+        # Stage 31 -- approval policy + LLM promotion surfaces.
+        "approval_mode": (
+            str((body.get("approval_policy") or {}).get("approval_mode", "per_action"))
+            if isinstance(body.get("approval_policy"), dict)
+            else "per_action"
+        ),
+        "active_approval_policy": (
+            ((body.get("approval_policy") or {}).get("active_policies") or [None])[0]
+            if isinstance(body.get("approval_policy"), dict)
+            else None
+        ),
+        "delegated_actions_used": (
+            int((body.get("approval_policy") or {}).get("delegated_actions_used", 0) or 0)
+            if isinstance(body.get("approval_policy"), dict)
+            else 0
+        ),
+        "delegated_actions_remaining": (
+            int((body.get("approval_policy") or {}).get("delegated_actions_remaining", 0) or 0)
+            if isinstance(body.get("approval_policy"), dict)
+            else 0
+        ),
+        "latest_approval_decision": (
+            ((body.get("approval_policy") or {}).get("decisions") or [None])[0]
+            if isinstance(body.get("approval_policy"), dict)
+            else None
+        ),
+        "llm_promotion_status": (
+            (((body.get("approval_policy") or {}).get("promotions") or [None])[0] or {}).get(
+                "status", ""
+            )
+            if isinstance(body.get("approval_policy"), dict)
+            else ""
+        ),
         "sandbox": True,
     }
 
@@ -903,3 +936,144 @@ async def real_test_message(payload: DiscordNotifyTestIn) -> dict:
     except DiscordSafetyError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return {"sandbox": False, **result, "delivered_to": "discord.com"}
+
+
+# ---------------------------------------------------------------------------
+# Stage 31 -- Discord approval-policy + LLM proposal promotion proxies
+# ---------------------------------------------------------------------------
+
+
+class DiscordApprovalPolicyIn(BaseModel):
+    task_id: str
+    workflow_id: str | None = None
+    scope_type: str = "task"
+    scope_id: str = ""
+    approval_mode: str = "per_action"
+    granted_by: str = "discord-operator"
+    allowed_stages: list[str] = Field(default_factory=list)
+    allowed_agents: list[str] = Field(default_factory=list)
+    allowed_actions: list[str] = Field(default_factory=list)
+    allowed_paths: list[str] = Field(default_factory=list)
+    denied_paths: list[str] = Field(default_factory=list)
+    max_actions: int | None = None
+    max_files_changed: int | None = None
+    max_auto_fix_attempts: int | None = None
+    expires_at: str | None = None
+    constraints: dict[str, Any] = Field(default_factory=dict)
+    reason: str | None = None
+    activate: bool = True
+
+
+class DiscordRevokeIn(BaseModel):
+    revoked_by: str = "discord-operator"
+    reason: str | None = None
+
+
+class DiscordApproveIn(BaseModel):
+    approved_by: str = "discord-operator"
+    reason: str | None = None
+
+
+class DiscordRejectIn(BaseModel):
+    rejected_by: str = "discord-operator"
+    reason: str | None = None
+
+
+class DiscordPromoteIn(BaseModel):
+    task_id: str
+    workflow_id: str | None = None
+    promoted_by: str = "discord-operator"
+    approval_id: str | None = None
+    policy_id: str | None = None
+    promotion_mode: str = "manual"
+
+
+async def _proxy_post(url: str, body: dict[str, Any]) -> dict[str, Any]:
+    """POST ``body`` at ``url`` and return the JSON envelope.
+
+    The discord-gateway never owns Stage 31 state; it just forwards to
+    the orchestrator. This keeps the gateway sandbox-shaped: no DB
+    write, no Redis write, no LLM call.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            response = await client.post(url, json=body)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"orchestrator unavailable: {exc}") from exc
+    if response.status_code == 400:
+        raise HTTPException(status_code=400, detail=response.text)
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail=response.text)
+    if response.status_code >= 500:
+        raise HTTPException(status_code=502, detail="orchestrator error")
+    body_out = (
+        response.json()
+        if response.headers.get("content-type", "").startswith("application/json")
+        else {}
+    )
+    return body_out
+
+
+async def _proxy_get(url: str) -> dict[str, Any]:
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+    except httpx.HTTPError as exc:
+        raise HTTPException(status_code=502, detail=f"orchestrator unavailable: {exc}") from exc
+    if response.status_code == 404:
+        raise HTTPException(status_code=404, detail=response.text)
+    if response.status_code >= 500:
+        raise HTTPException(status_code=502, detail="orchestrator error")
+    body_out = (
+        response.json()
+        if response.headers.get("content-type", "").startswith("application/json")
+        else {}
+    )
+    return body_out
+
+
+@app.post("/discord/approval-policies")
+async def discord_create_approval_policy(payload: DiscordApprovalPolicyIn) -> dict:
+    body = payload.model_dump()
+    body["granted_by"] = body.get("granted_by") or "discord-operator"
+    result = await _proxy_post(f"{ORCHESTRATOR_URL}/approval-policies", body)
+    return {"sandbox": True, **result}
+
+
+@app.get("/discord/approval-policies/{task_id}")
+async def discord_list_approval_policies(task_id: str) -> dict:
+    result = await _proxy_get(f"{ORCHESTRATOR_URL}/operations/approval-policies/{task_id}")
+    return {"sandbox": True, **result}
+
+
+@app.post("/discord/approval-policies/{policy_id}/revoke")
+async def discord_revoke_approval_policy(policy_id: str, payload: DiscordRevokeIn) -> dict:
+    body = payload.model_dump()
+    result = await _proxy_post(f"{ORCHESTRATOR_URL}/approval-policies/{policy_id}/revoke", body)
+    return {"sandbox": True, **result}
+
+
+@app.post("/discord/llm/proposals/{proposal_id}/approve")
+async def discord_approve_llm_proposal(proposal_id: str, payload: DiscordApproveIn) -> dict:
+    body = payload.model_dump()
+    result = await _proxy_post(
+        f"{ORCHESTRATOR_URL}/llm/proposals/{proposal_id}/approval/approve", body
+    )
+    return {"sandbox": True, **result}
+
+
+@app.post("/discord/llm/proposals/{proposal_id}/reject")
+async def discord_reject_llm_proposal(proposal_id: str, payload: DiscordRejectIn) -> dict:
+    body = payload.model_dump()
+    result = await _proxy_post(
+        f"{ORCHESTRATOR_URL}/llm/proposals/{proposal_id}/approval/reject", body
+    )
+    return {"sandbox": True, **result}
+
+
+@app.post("/discord/llm/proposals/{proposal_id}/promote")
+async def discord_promote_llm_proposal(proposal_id: str, payload: DiscordPromoteIn) -> dict:
+    body = payload.model_dump()
+    body["promoted_by"] = body.get("promoted_by") or "discord-operator"
+    result = await _proxy_post(f"{ORCHESTRATOR_URL}/llm/proposals/{proposal_id}/promote", body)
+    return {"sandbox": True, **result}
