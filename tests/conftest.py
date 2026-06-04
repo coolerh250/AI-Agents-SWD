@@ -48,6 +48,10 @@ _preload_module(
     "code_generator",
     _REPO_ROOT / "agents" / "development-agent" / "src" / "code_generator.py",
 )
+_preload_module(
+    "llm_planner",
+    _REPO_ROOT / "agents" / "development-agent" / "src" / "llm_planner.py",
+)
 
 
 @pytest.fixture

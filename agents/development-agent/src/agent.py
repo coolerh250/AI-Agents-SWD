@@ -40,6 +40,7 @@ from code_generator import (
     plan_generation,
     write_plan,
 )
+from llm_planner import LLMPlannerPipeline, llm_planning_enabled
 
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
@@ -631,6 +632,175 @@ class DevelopmentAgent(StreamAgent):
         }
 
     # ------------------------------------------------------------------
+    # Stage 30 — LLM-assisted planning hook (opt-in via env)
+    # ------------------------------------------------------------------
+
+    async def _run_llm_planner(
+        self,
+        *,
+        task_id: str,
+        workflow_id: str | None,
+        payload: dict,
+        workspace_id: str,
+    ) -> dict[str, Any]:
+        """Run the LLM planner pipeline alongside the deterministic flow.
+
+        The pipeline never writes workspace files. It records:
+
+        * llm_interactions rows (prompt hash + redacted preview + response
+          hash + redacted preview),
+        * one llm_proposal_artifact row carrying the safety policy result,
+        * one zero-cost llm_usage_record row.
+
+        The deterministic generator remains the source of truth for the
+        actual workspace contents; the LLM proposal is a parallel,
+        human-reviewable artifact.
+        """
+        request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+        description = str(request.get("description") or "")
+        request_type = str(request.get("type") or payload.get("request_type") or "")
+        execution_mode = "delivery_task"
+        acceptance_criteria: list[str] | None = None
+        with contextlib.suppress(Exception):
+            wi = await self._task_store.get_work_item(task_id)
+            if wi is not None:
+                execution_mode = wi.execution_mode or execution_mode
+                ac = wi.acceptance_criteria
+                if isinstance(ac, list):
+                    acceptance_criteria = [str(c) for c in ac]
+        pipeline = LLMPlannerPipeline()
+        with start_span(
+            "llm.prepare_prompt",
+            **{
+                "service.name": self.name,
+                "agent": self.name,
+                "task_id": task_id,
+                "workflow_id": workflow_id or "",
+                "provider": pipeline.provider_name,
+                "interaction_type": "development_plan",
+            },
+        ):
+            summary = await pipeline.run(
+                task_id=task_id,
+                workflow_id=workflow_id,
+                description=description,
+                request_type=request_type,
+                execution_mode=execution_mode,
+                acceptance_criteria=acceptance_criteria,
+            )
+        return summary
+
+    async def _link_proposal_to_workspace(self, *, proposal_id: str, workspace_id: str) -> None:
+        """Update the LLM proposal's linked_workspace_id once the workspace
+        exists. Kept on the agent so the planner pipeline stays
+        side-effect-free across multiple tasks."""
+        from shared.sdk.llm import LLMInteractionStore
+
+        store = LLMInteractionStore()
+        with contextlib.suppress(Exception):
+            await store.update_proposal_status(
+                proposal_id,
+                status="policy_passed",
+                linked_workspace_id=workspace_id,
+            )
+
+    async def _emit_llm_blocked_response(
+        self,
+        *,
+        task_id: str,
+        workflow_id: str | None,
+        payload: dict,
+        llm_summary: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Short-circuit: when LLM safety policy blocks, emit a controlled
+        development.completed with no files + an audit/notification trail.
+
+        The workspace row is created (status=blocked) so the operations
+        view still has something to display.
+        """
+        request = payload.get("request") if isinstance(payload.get("request"), dict) else {}
+        request_type = str(request.get("type") or payload.get("request_type") or "unknown")
+        ws_path = _workspace_root_for(task_id)
+        ws = None
+        with contextlib.suppress(Exception):
+            ws = await self._code_store.create_workspace(
+                task_id=task_id,
+                workflow_id=workflow_id,
+                work_item_id=None,
+                execution_mode="delivery_task",
+                status="blocked",
+                base_commit=os.environ.get("GIT_COMMIT_SHA", ""),
+                branch_name=f"ai-agents/{task_id}",
+                workspace_path=ws_path,
+                allowed_paths=list(DEFAULT_ALLOWED_PATHS),
+                denied_paths=list(DEFAULT_DENIED_PATHS),
+                generator_mode="llm_assisted_proposal",
+                blocked_reason="llm_policy_block",
+                created_by_agent=self.name,
+            )
+        workspace_id = ws.workspace_id if ws else ""
+        CODE_GENERATION_BLOCKED_TOTAL.labels(reason="llm_policy_block").inc()
+        with contextlib.suppress(Exception):
+            await send_notification(
+                task_id,
+                "code.generation_blocked",
+                (
+                    f"code generation blocked for {task_id} "
+                    f"(reason=llm_policy_block, request_type={request_type})"
+                ),
+            )
+
+        message = {
+            "event": "development.completed",
+            **self.correlation_ids(payload),
+            "request": request,
+            "artifact": {
+                "artifact_type": "code_change",
+                "task_id": task_id,
+                "files_changed": [],
+                "files": [],
+                "summary": "llm policy blocked the proposal — no files generated",
+                "template": "llm_assisted_proposal",
+                "workspace_id": workspace_id,
+                "pr_draft_id": "",
+                "risk_assessment": {},
+                "validation": {"status": "blocked", "reason": "llm_policy_block"},
+                "produced_by": self.name,
+                "mock": True,
+                "production_executed": False,
+                "llm_assistance": _llm_summary_safe(llm_summary),
+            },
+            "code_generation": {
+                "workspace_id": workspace_id,
+                "status": "blocked",
+                "template": "llm_assisted_proposal",
+                "changed_files": [],
+                "validation_status": "blocked",
+                "pr_draft_id": "",
+            },
+            "llm_assistance": _llm_summary_safe(llm_summary),
+            "produced_by": self.name,
+        }
+        await self.publish_next(message)
+        return {
+            "task_id": task_id,
+            "decision_type": "llm_proposal_blocked",
+            "summary": (
+                f"llm policy blocked proposal for {task_id} — no deterministic code generated"
+            ),
+            "result": "development.completed",
+            "artifact_refs": {
+                "workspace_id": workspace_id,
+                "proposal_id": llm_summary.get("proposal_id", ""),
+                "provider": llm_summary.get("provider", ""),
+                "blocked_reason": "llm_policy_block",
+                "production_executed": False,
+            },
+            "event_type": "development.completed",
+            "message": f"llm policy blocked {task_id}",
+        }
+
+    # ------------------------------------------------------------------
     # main StreamAgent handle()
     # ------------------------------------------------------------------
 
@@ -643,6 +813,32 @@ class DevelopmentAgent(StreamAgent):
 
         task_id = str(payload.get("task_id", "unknown"))
         workflow_id = str(payload.get("workflow_id", "")) or None
+
+        # Stage 30 — opt-in LLM-assisted planning ALWAYS runs before
+        # any deterministic write so a policy block can suppress the
+        # workspace entirely (per spec §5.7 — "若 policy blocked … 不
+        # 產生 code file").
+        llm_summary: dict[str, Any] = {"enabled": False}
+        if llm_planning_enabled():
+            with contextlib.suppress(Exception):
+                llm_summary = await self._run_llm_planner(
+                    task_id=task_id,
+                    workflow_id=workflow_id,
+                    payload=payload,
+                    workspace_id="",
+                )
+            if llm_summary.get("blocked"):
+                # Skip deterministic generation entirely + mark workspace
+                # blocked (the audit + notification have already been
+                # emitted by the planner). Match the existing blocked
+                # path's response envelope so downstream consumers stay
+                # happy.
+                return await self._emit_llm_blocked_response(
+                    task_id=task_id,
+                    workflow_id=workflow_id,
+                    payload=payload,
+                    llm_summary=llm_summary,
+                )
 
         plan: GenerationPlan
         validation: dict[str, Any]
@@ -671,6 +867,20 @@ class DevelopmentAgent(StreamAgent):
         with contextlib.suppress(Exception):
             workspace = await self._code_store.get_workspace(task_id)
         workspace_id = workspace.workspace_id if workspace else ""
+
+        # Stage 30 — link an allowed proposal to the freshly-created
+        # workspace so /operations/workflows can join them.
+        if (
+            llm_summary.get("enabled")
+            and llm_summary.get("allowed")
+            and llm_summary.get("proposal_id")
+            and workspace_id
+        ):
+            with contextlib.suppress(Exception):
+                await self._link_proposal_to_workspace(
+                    proposal_id=str(llm_summary["proposal_id"]),
+                    workspace_id=workspace_id,
+                )
 
         pr_draft_info: dict[str, Any] = {}
         if changed_files and plan.status == "ready":
@@ -706,6 +916,7 @@ class DevelopmentAgent(StreamAgent):
             "produced_by": self.name,
             "mock": plan.status != "ready",
             "production_executed": False,
+            "llm_assistance": _llm_summary_safe(llm_summary),
         }
 
         message = {
@@ -721,6 +932,7 @@ class DevelopmentAgent(StreamAgent):
                 "validation_status": validation.get("status"),
                 "pr_draft_id": pr_draft_info.get("pr_draft_id", ""),
             },
+            "llm_assistance": _llm_summary_safe(llm_summary),
             "produced_by": self.name,
         }
         await self.publish_next(message)
@@ -768,6 +980,9 @@ class DevelopmentAgent(StreamAgent):
                 "changed_files": [f["file_path"] for f in changed_files],
                 "validation_status": validation.get("status"),
                 "pr_draft_id": pr_draft_info.get("pr_draft_id", ""),
+                "llm_provider": llm_summary.get("provider", ""),
+                "llm_proposal_id": llm_summary.get("proposal_id", ""),
+                "llm_policy_allowed": bool(llm_summary.get("allowed", False)),
                 "production_executed": False,
             },
             "event_type": "development.completed",
@@ -785,6 +1000,21 @@ def _read_file(path: str) -> str:
             return fh.read()
     except OSError:
         return ""
+
+
+def _llm_summary_safe(summary: dict[str, Any]) -> dict[str, Any]:
+    """Return a minimal, redaction-safe LLM summary for downstream messages.
+
+    Strips the temporary ``_plan_obj`` / ``_proposal_obj`` keys the
+    pipeline carries internally — those reference dataclass instances
+    and must not land on the wire.
+    """
+    if not summary:
+        return {"enabled": False}
+    safe = {k: v for k, v in summary.items() if not k.startswith("_")}
+    # Defensive: ensure no API-key-shaped field sneaks through.
+    safe.pop("api_key", None)
+    return safe
 
 
 # ---------------------------------------------------------------------------

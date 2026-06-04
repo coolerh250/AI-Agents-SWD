@@ -331,6 +331,44 @@ QA_AUTO_FIX_ATTEMPTS_TOTAL = Counter(
 )
 
 
+# Stage 30 — LLM-assisted development planning guardrails.
+LLM_INTERACTIONS_TOTAL = Counter(
+    "llm_interactions_total",
+    "LLM interactions recorded (one row per call)",
+    ["provider", "model", "interaction_type", "status"],
+)
+LLM_PROPOSALS_TOTAL = Counter(
+    "llm_proposals_total",
+    "LLM proposal artifacts created",
+    ["provider", "proposal_type", "status"],
+)
+LLM_POLICY_BLOCKS_TOTAL = Counter(
+    "llm_policy_blocks_total",
+    "LLM proposals blocked by the safety policy",
+    ["rule"],  # path_blocked | change_type_blocked | secret_like_content | …
+)
+LLM_REAL_CALLS_TOTAL = Counter(
+    "llm_real_calls_total",
+    "Real (network) LLM calls attempted",
+    ["provider", "result"],  # result = attempted | skipped
+)
+LLM_REAL_CALLS_BLOCKED_TOTAL = Counter(
+    "llm_real_calls_blocked_total",
+    "Real LLM calls blocked by the safety guard",
+    ["provider", "reason"],
+)
+LLM_TOKEN_USAGE_TOTAL = Counter(
+    "llm_token_usage_total",
+    "LLM token usage (mock provider always increments by 0)",
+    ["provider", "model"],
+)
+LLM_ESTIMATED_COST_TOTAL = Counter(
+    "llm_estimated_cost_total",
+    "LLM estimated cost (mock provider always increments by 0)",
+    ["provider", "model"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

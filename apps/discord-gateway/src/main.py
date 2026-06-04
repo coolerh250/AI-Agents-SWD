@@ -647,6 +647,42 @@ async def lookup_task(task_id: str) -> dict:
             if isinstance(body.get("qa_validation"), dict)
             else False
         ),
+        # Stage 30 — LLM-assisted development guardrails surfaces.
+        "llm_provider": (
+            str((body.get("llm_assistance") or {}).get("provider", ""))
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "llm_proposal_status": (
+            str(((body.get("llm_assistance") or {}).get("latest_proposal") or {}).get("status", ""))
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "llm_requires_human_review": (
+            bool((body.get("llm_assistance") or {}).get("requires_human_review", True))
+            if isinstance(body.get("llm_assistance"), dict)
+            else True
+        ),
+        "llm_policy_blocked": (
+            bool((body.get("llm_assistance") or {}).get("blocked", False))
+            if isinstance(body.get("llm_assistance"), dict)
+            else False
+        ),
+        "llm_policy_violations_count": (
+            len((body.get("llm_assistance") or {}).get("policy_violations") or [])
+            if isinstance(body.get("llm_assistance"), dict)
+            else 0
+        ),
+        "llm_usage_total_tokens": (
+            int(
+                ((body.get("llm_assistance") or {}).get("usage_summary") or {}).get(
+                    "total_tokens", 0
+                )
+                or 0
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else 0
+        ),
         "sandbox": True,
     }
 

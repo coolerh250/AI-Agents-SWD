@@ -52,6 +52,7 @@ from shared.sdk.observability.metrics import (
 )
 from shared.sdk.observability.tracing import start_span
 from shared.sdk.code_workspace import CodeWorkspaceStore
+from shared.sdk.llm import LLMInteractionStore
 from shared.sdk.qa import QAStore
 from shared.sdk.task_execution import TaskExecutionStore
 from shared.sdk.workflow_store.store import WorkflowStore
@@ -537,6 +538,23 @@ async def _qa_summary() -> dict[str, Any]:
     return counts
 
 
+async def _llm_summary() -> dict[str, Any]:
+    """Stage 30 — aggregated counters for the LLM proposal lifecycle."""
+    try:
+        counts = await LLMInteractionStore().counts()
+    except Exception:
+        counts = {
+            "total_interactions": 0,
+            "total_proposals": 0,
+            "blocked_proposals": 0,
+            "policy_passed_proposals": 0,
+            "accepted_proposals": 0,
+            "total_tokens": 0,
+            "estimated_cost": 0.0,
+        }
+    return counts
+
+
 async def _code_generation_summary() -> dict[str, Any]:
     """Stage 28 — aggregated counters for the code workspace lifecycle."""
     try:
@@ -594,6 +612,7 @@ async def operations_summary() -> dict:
         task_execution = await _task_execution_summary()
         code_generation = await _code_generation_summary()
         qa_summary = await _qa_summary()
+        llm_summary = await _llm_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -610,6 +629,7 @@ async def operations_summary() -> dict:
         "task_execution_summary": task_execution,
         "code_generation_summary": code_generation,
         "qa_summary": qa_summary,
+        "llm_summary": llm_summary,
         "production_safety": safety,
     }
 
@@ -936,6 +956,61 @@ async def operations_workflow_view(task_id: str) -> dict:
     except Exception:
         warnings.append("qa_validation_unavailable")
 
+    # Stage 30 — llm_assistance section (latest proposal + interactions
+    # + usage summary). Safe-degrades to an empty/empty shape when the
+    # LLM store is unreachable or no LLM call has been made yet.
+    llm_assistance_section: dict[str, Any] = {
+        "found": False,
+        "enabled": (
+            os.environ.get("ENABLE_LLM_ASSISTED_PLANNING", "false").strip().lower() == "true"
+        ),
+        "provider": (os.environ.get("LLM_PROVIDER", "mock") or "mock").strip().lower(),
+        "interactions": [],
+        "proposals": [],
+        "latest_proposal": None,
+        "latest_safety_result": {},
+        "requires_human_review": True,
+        "blocked": False,
+        "usage_summary": {
+            "total_tokens": 0,
+            "estimated_cost": 0.0,
+            "records": 0,
+        },
+        "policy_violations": [],
+    }
+    try:
+        llm_store = LLMInteractionStore()
+        interactions = await llm_store.list_interactions(task_id=task_id, limit=20)
+        proposals = await llm_store.list_proposals(task_id=task_id, limit=20)
+        usage = await llm_store.usage_summary(task_id=task_id)
+        latest_proposal = proposals[0] if proposals else None
+        latest_safety = latest_proposal.safety_result if latest_proposal is not None else {}
+        llm_assistance_section.update(
+            {
+                "found": bool(interactions or proposals),
+                "interactions": [i.to_dict() for i in interactions],
+                "proposals": [p.to_dict() for p in proposals],
+                "latest_proposal": latest_proposal.to_dict() if latest_proposal else None,
+                "latest_safety_result": dict(latest_safety),
+                "requires_human_review": (
+                    bool(latest_proposal.requires_human_review)
+                    if latest_proposal is not None
+                    else True
+                ),
+                "blocked": bool(
+                    latest_proposal is not None and latest_proposal.status == "blocked"
+                ),
+                "usage_summary": {
+                    "total_tokens": int(usage.get("total_tokens", 0) or 0),
+                    "estimated_cost": float(usage.get("estimated_cost", 0.0) or 0.0),
+                    "records": int(usage.get("records", 0) or 0),
+                },
+                "policy_violations": list((latest_safety or {}).get("violations") or []),
+            }
+        )
+    except Exception:
+        warnings.append("llm_assistance_unavailable")
+
     # Stage 22: notification delivery section.
     delivery_rows: list[dict[str, Any]] = []
     try:
@@ -974,6 +1049,7 @@ async def operations_workflow_view(task_id: str) -> dict:
         "task_execution": task_execution_section,
         "code_generation": code_generation_section,
         "qa_validation": qa_validation_section,
+        "llm_assistance": llm_assistance_section,
         "trace": {
             "trace_id": progress.get("traces", {}).get("trace_id", ""),
             "workflow_id": progress.get("workflow_id", ""),
@@ -1220,6 +1296,25 @@ async def operations_safety() -> dict:
     if secret_status.get("secret_provider") == "mock-vault":
         warnings.append("mock_vault_provider_in_use")
 
+    # Stage 30 — LLM-assisted development guardrails. Booleans + the
+    # provider name only — never the API key value.
+    llm_provider = (os.environ.get("LLM_PROVIDER", "mock") or "mock").strip().lower()
+    llm_real_enabled = os.environ.get("RUN_REAL_LLM_TEST", "false").strip().lower() == "true"
+    llm_network_call_enabled = (
+        os.environ.get("ENABLE_REAL_LLM_NETWORK_CALL", "false").strip().lower() == "true"
+    )
+    # External call only happens if RUN_REAL_LLM_TEST=true, network gate
+    # is on, and the provider-specific key is present. Stage 30 ships
+    # with the network gate OFF.
+    has_llm_api_key = (
+        bool(os.environ.get("LLM_API_KEY", "").strip())
+        or bool(os.environ.get("OPENAI_API_KEY", "").strip())
+        or bool(os.environ.get("ANTHROPIC_API_KEY", "").strip())
+    )
+    llm_external_call_enabled = llm_real_enabled and llm_network_call_enabled and has_llm_api_key
+    if llm_external_call_enabled:
+        warnings.append("llm_external_call_enabled")
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1251,6 +1346,11 @@ async def operations_safety() -> dict:
         "mock_vault_enabled": secret_status["mock_vault_enabled"],
         "mock_vault_file_present": secret_status["mock_vault_file_present"],
         "missing_required_secrets": secret_status["missing_required_secrets"],
+        "llm_provider": llm_provider,
+        "llm_real_enabled": llm_real_enabled,
+        "llm_external_call_enabled": llm_external_call_enabled,
+        "llm_policy_enforced": True,
+        "llm_requires_human_review": True,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
             "postgres trust auth is local/test only — production must use real auth + KMS"
@@ -1712,5 +1812,91 @@ async def operations_qa_auto_fix_for_task(task_id: str) -> dict:
         "task_id": task_id,
         "count": len(rows),
         "auto_fix_requests": [r.to_dict() for r in rows],
+        "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# /operations/llm/* (Stage 30 -- LLM-assisted development guardrails)
+# ---------------------------------------------------------------------------
+
+
+@router.get("/llm/interactions")
+@_instrument("/operations/llm/interactions", "operations.llm_interactions_list")
+async def operations_list_llm_interactions(
+    task_id: str | None = None,
+    interaction_type: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    try:
+        rows = await LLMInteractionStore().list_interactions(
+            task_id=task_id, interaction_type=interaction_type, limit=capped
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"llm store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "interactions": [r.to_dict() for r in rows],
+        "filter": {
+            "task_id": task_id,
+            "interaction_type": interaction_type,
+            "limit": capped,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/interactions/{task_id}")
+@_instrument("/operations/llm/interactions/{task_id}", "operations.llm_interactions_view")
+async def operations_llm_interactions_for_task(task_id: str) -> dict:
+    try:
+        rows = await LLMInteractionStore().list_interactions(task_id=task_id, limit=200)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"llm store unavailable: {exc}") from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "interactions": [r.to_dict() for r in rows],
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/proposals/{task_id}")
+@_instrument("/operations/llm/proposals/{task_id}", "operations.llm_proposals_view")
+async def operations_llm_proposals_for_task(task_id: str) -> dict:
+    try:
+        rows = await LLMInteractionStore().list_proposals(task_id=task_id, limit=200)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"llm store unavailable: {exc}") from exc
+    latest = rows[0] if rows else None
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "proposals": [r.to_dict() for r in rows],
+        "latest_proposal": latest.to_dict() if latest else None,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/usage")
+@_instrument("/operations/llm/usage", "operations.llm_usage_view")
+async def operations_llm_usage(
+    task_id: str | None = None,
+    provider: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = LLMInteractionStore()
+    try:
+        rows = await store.list_usage(task_id=task_id, provider=provider, limit=capped)
+        totals = await store.usage_summary(task_id=task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"llm store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "records": [r.to_dict() for r in rows],
+        "summary": totals,
+        "filter": {"task_id": task_id, "provider": provider, "limit": capped},
         "generated_at": _utcnow_iso(),
     }

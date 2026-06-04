@@ -942,6 +942,49 @@ Confirm:
 * No `qa_findings` row with `severity in ('error','critical')`
   AND `status='open'` survives a `final_result=pass`.
 
+## 17i. LLM-assisted development planning guardrails (Stage 30)
+
+```
+./scripts/verify_llm_guardrails.sh
+./scripts/verify_llm_assisted_development.sh
+```
+
+Expect `LLM_GUARDRAILS_VERIFY: PASS` (5/5) and
+`LLM_ASSISTED_DEVELOPMENT_VERIFY: PASS` (12/12). The default mode is
+`LLM_PROVIDER=mock` with `ENABLE_LLM_ASSISTED_PLANNING=false` (the
+deterministic Stage 28 generator handles the workflow untouched).
+When LLM-assisted planning is opted in (`ENABLE_LLM_ASSISTED_PLANNING=true`),
+the development-agent gates the deterministic generator on the
+`LLMSafetyPolicy` result.
+
+Confirm:
+
+* `GET /operations/safety` exposes `llm_provider`, `llm_real_enabled`,
+  `llm_external_call_enabled`, `llm_policy_enforced`,
+  `llm_requires_human_review` — never the API key value.
+* `GET /operations/workflows/<task_id>.llm_assistance` carries
+  `enabled`, `provider`, `interactions`, `proposals`, `latest_proposal`,
+  `latest_safety_result`, `requires_human_review`, `blocked`,
+  `usage_summary`, `policy_violations`.
+* `GET /operations/llm/interactions`, `…/interactions/<task_id>`,
+  `…/proposals/<task_id>`, `…/usage` all respond read-only.
+* `GET /operations/summary.llm_summary` carries
+  `total_interactions`, `total_proposals`, `blocked_proposals`,
+  `policy_passed_proposals`, `accepted_proposals`, `total_tokens`,
+  `estimated_cost`.
+* `GET /discord/tasks/<task_id>` carries `llm_provider`,
+  `llm_proposal_status`, `llm_requires_human_review`,
+  `llm_policy_blocked`, `llm_policy_violations_count`,
+  `llm_usage_total_tokens`.
+* Real LLM call: `REAL_LLM_TEST_SKIPPED: PASS` unless every gate
+  (`RUN_REAL_LLM_TEST=true`, `ENABLE_REAL_LLM_NETWORK_CALL=true`, a
+  provider key) is aligned — and even then, Stage 30 still refuses
+  to dial the network.
+* `git status --short` is empty after the run; no LLM-proposed file
+  enters the working tree.
+* No `llm_interactions` row carries a literal API key value; previews
+  are redacted before persistence.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

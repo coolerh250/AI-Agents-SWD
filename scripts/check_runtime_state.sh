@@ -1920,4 +1920,120 @@ else
 fi
 
 echo
+echo "=== Stage 30: LLM-assisted development guardrails ==="
+
+# 10. LLM provider default in /operations/safety
+llm_safety=$(curl -sS -m 10 http://localhost:8000/operations/safety || echo '{}')
+if echo "$llm_safety" | grep -q '"llm_provider"'; then
+  echo "LLM_PROVIDER_SMOKE: PASS"
+else
+  echo "LLM_PROVIDER_SMOKE: CHECK"
+fi
+
+# 11. mock LLM proposal policy-clean
+llm_clean=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import MockLLMProvider, apply_llm_safety_policy
+p = MockLLMProvider()
+prop = p.generate_patch_proposal(task_id='smoke', description='please add /healthz API')
+print('OK' if apply_llm_safety_policy(prop)['allowed'] else 'FAIL')
+" 2>/dev/null)
+if [ "$llm_clean" = "OK" ]; then
+  echo "LLM_POLICY_PASS_SMOKE: PASS"
+else
+  echo "LLM_POLICY_PASS_SMOKE: CHECK"
+fi
+
+# 12. mock LLM proposal policy-block (denied path trigger)
+llm_block=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import MockLLMProvider, apply_llm_safety_policy
+p = MockLLMProvider()
+prop = p.generate_patch_proposal(task_id='smoke', description='please denied path test')
+res = apply_llm_safety_policy(prop)
+print('OK' if not res['allowed'] else 'FAIL')
+" 2>/dev/null)
+if [ "$llm_block" = "OK" ]; then
+  echo "LLM_POLICY_BLOCK_SMOKE: PASS"
+else
+  echo "LLM_POLICY_BLOCK_SMOKE: CHECK"
+fi
+
+# 13. prompt contract envelope reachable
+llm_contract=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import build_prompt_contract
+c = build_prompt_contract(
+    task_id='smoke', execution_mode='delivery_task',
+    interaction_type='patch_proposal', description='ok',
+    allowed_paths=['docs/generated/'], denied_paths=['infra/*'],
+    output_schema_name='LLMPatchProposal',
+)
+print('OK' if c['safety_rails']['no_secrets'] else 'FAIL')
+" 2>/dev/null)
+if [ "$llm_contract" = "OK" ]; then
+  echo "LLM_PROMPT_CONTRACT_SMOKE: PASS"
+else
+  echo "LLM_PROMPT_CONTRACT_SMOKE: CHECK"
+fi
+
+# 14. /operations/llm/* endpoints reachable
+llm_ints=$(curl -sS -m 10 "http://localhost:8000/operations/llm/interactions?limit=1" || echo '{}')
+if echo "$llm_ints" | grep -q '"interactions"'; then
+  echo "LLM_OPERATIONS_VIEW_SMOKE: PASS"
+else
+  echo "LLM_OPERATIONS_VIEW_SMOKE: CHECK"
+fi
+
+# 15. llm_assistance section on workflow view
+llm_wf=$(curl -sS -m 10 "http://localhost:8000/operations/workflows/$qa_api" || echo '{}')
+if echo "$llm_wf" | grep -q '"llm_assistance"'; then
+  echo "LLM_PROPOSAL_ARTIFACT_SMOKE: PASS"
+else
+  echo "LLM_PROPOSAL_ARTIFACT_SMOKE: CHECK"
+fi
+
+# 16. Discord status surfaces LLM fields
+llm_dtask=$(curl -sS -m 10 "http://localhost:8007/discord/tasks/$qa_api" || echo '{}')
+if echo "$llm_dtask" | grep -q '"llm_provider"'; then
+  echo "LLM_DISCORD_STATUS_SMOKE: PASS"
+else
+  echo "LLM_DISCORD_STATUS_SMOKE: CHECK"
+fi
+
+# 17. Audit LLM decision_types reachable
+llm_aud=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=llm_proposal_created&limit=5" || echo '{}')
+llm_aud2=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=llm_real_test_skipped&limit=5" || echo '{}')
+if echo "$llm_aud" | grep -q '"events"' || echo "$llm_aud2" | grep -q '"events"'; then
+  echo "LLM_AUDIT_SMOKE: PASS"
+else
+  echo "LLM_AUDIT_SMOKE: CHECK"
+fi
+
+# 18. notification deliveries for llm.* events
+llm_nots=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries/$qa_api" || echo '{}')
+if echo "$llm_nots" | grep -q 'llm.proposal' || echo "$llm_nots" | grep -q '"deliveries"'; then
+  echo "LLM_NOTIFICATION_SMOKE: PASS"
+else
+  echo "LLM_NOTIFICATION_SMOKE: CHECK"
+fi
+
+# 19. real LLM guard default disabled
+real_llm=$(echo "$llm_safety" | python3 -c "
+import json, sys
+try:
+    d = json.load(sys.stdin)
+    print('OK' if d.get('llm_real_enabled') is False else 'FAIL')
+except Exception:
+    print('CHECK')")
+if [ "$real_llm" = "OK" ]; then
+  echo "REAL_LLM_GUARD_SMOKE: PASS"
+else
+  echo "REAL_LLM_GUARD_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

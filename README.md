@@ -2078,6 +2078,104 @@ event types, metric labels, span names, scenario verifier).
   changes the work item's `execution_mode`; that stays a Stage 27
   decision.
 
+## LLM-Assisted Development Planning Guardrails (Stage 30)
+
+Stage 30 introduces an opt-in LLM planning layer with hard
+guardrails around the existing controlled Stage 28 generator. The
+LLM does **not** become a writer to the repository — it produces
+proposals + safety analysis that an operator reviews. The
+deterministic generator + QA gate still run.
+
+### Provider modes
+
+* `mock` — deterministic in-process generator (default).
+* `disabled` — every call raises.
+* `external_openai_placeholder` / `external_anthropic_placeholder` —
+  interface guards. **No real network call** is made in Stage 30.
+
+Toggle via `LLM_PROVIDER`. Enable the planning loop via
+`ENABLE_LLM_ASSISTED_PLANNING=true` (default `false`).
+
+### Output schemas
+
+* `LLMDevelopmentPlan` — summary, files_to_consider, proposed_steps,
+  assumptions, questions, risks, test_strategy, confidence,
+  `requires_human_review=True`.
+* `LLMPatchProposal` — patch_id, proposed_files, changes
+  (LLMFileChange list), rationale, risk_level, safety_notes,
+  test_commands, rollback_plan, confidence, `requires_human_review=True`.
+* `LLMTestPlan` — unit_tests, integration_tests, manual_tests,
+  acceptance_checks, risks.
+
+`change_type=delete` is rejected outright; `confidence` is clamped to
+`[0.0, 1.0]`; `requires_human_review` is forced to `True` regardless
+of the upstream value.
+
+### Safety policy
+
+Every output runs through `apply_llm_safety_policy()`:
+
+| Rule                    | Trigger                                                |
+| ----------------------- | ------------------------------------------------------ |
+| `path_blocked`          | denylist match or outside allowlist                    |
+| `change_type_blocked`   | anything other than `create` / `update`                |
+| `secret_like_content`   | known token / key / private-key pattern in content     |
+| `destructive_content`   | `rm -rf`, `DROP TABLE`, `git push --force`, …          |
+| `too_many_files`        | more than 5 changes per proposal                       |
+| `content_too_large`     | more than 20 000 chars per file                        |
+| `schema_invalid`        | unrecognised output type                               |
+
+`low_confidence:*` is a **warning** (not a violation) below
+`min_confidence_for_auto_proposal=0.7`.
+
+### Prompt contract
+
+The deterministic envelope every LLM provider receives carries
+`task_summary`, `allowed_paths`, `denied_paths`, `safety_rails`,
+`output_schema`. See
+[`docs/operations/llm-prompt-contract.md`](docs/operations/llm-prompt-contract.md).
+
+Prompts and responses are **hashed (SHA-256)** and a short, redacted
+preview is persisted to `llm_interactions`. Full prompt / response
+text never leaves the producer.
+
+### Tables
+
+Three additive tables (migration `010_llm_assisted_development.sql`):
+
+* `llm_interactions` — one row per LLM call.
+* `llm_proposal_artifacts` — one row per proposal (status:
+  `proposed | policy_passed | blocked | accepted_for_workspace |
+  rejected | superseded`).
+* `llm_usage_records` — token / cost ledger (mock provider = 0).
+
+### Operations LLM view
+
+* `GET /operations/llm/interactions` / `…/interactions/{task_id}`
+* `GET /operations/llm/proposals/{task_id}`
+* `GET /operations/llm/usage`
+* `GET /operations/workflows/{task_id}.llm_assistance` (provider,
+  interactions, proposals, latest_safety_result, usage_summary, …)
+* `GET /operations/summary.llm_summary` (aggregated counters)
+* `GET /operations/safety` (`llm_provider`, `llm_real_enabled`,
+  `llm_external_call_enabled`, `llm_policy_enforced`,
+  `llm_requires_human_review`)
+
+The API key value is **never** echoed to any response.
+
+### Limitations
+
+* **Mock LLM only by default.** Real wire-level calls are off.
+* **No direct commit.** Proposals are advisory; the deterministic
+  generator + QA gate still own the workspace.
+* **Human review required** on every proposal.
+* **No real GitHub write.** Dry-run path inherited from Stage 22-28.
+* **Production deploy disabled.** `production_executed=false`
+  asserted on every audit row.
+
+See [`docs/operations/llm-assisted-development.md`](docs/operations/llm-assisted-development.md)
+for the full operator runbook.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is
