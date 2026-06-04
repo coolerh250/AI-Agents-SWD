@@ -5640,3 +5640,251 @@ issues & blockers, and next-step suggestions.
       guard. Both green.
     - Following Stage 22 / 23 / 24 / 25 / 26 / 27 / 28,
       Claude Code does not decide the Step 29 roadmap.
+
+
+## Stage 30 -- Step 29: LLM-Assisted Development Planning & Code Generation Guardrails
+
+- **Execution window:** 2026-06-03 -> 2026-06-04 (CST). Branch:
+  `main`. Local + remote both at `7cad35c` (Stage 30 deliverable +
+  2 fix commits). Server `/home/itadmin/AI-Agents-SWD` pulled to
+  the same commit before recreate.
+- **Commits delivered:**
+  - `e995f73` -- Stage 30 deliverable: migration 010, new
+    `shared/sdk/llm/` SDK (provider abstraction, models,
+    deterministic mock provider, safety policy, prompt contract,
+    interaction/proposal/usage store), LLM-assisted planning
+    pipeline `agents/development-agent/src/llm_planner.py`,
+    development-agent `handle()` refactored to gate deterministic
+    generation on LLM safety policy when
+    `ENABLE_LLM_ASSISTED_PLANNING=true`, `/operations/llm/*` routes
+    + `llm_assistance` workflow section + `llm_summary` operations
+    summary + LLM safety fields on `/operations/safety`,
+    discord-gateway `llm_*` fields on `/discord/tasks/{task_id}`,
+    7 new Prometheus counters, 3 new tracing spans, 10 new pytest
+    files (77 tests), `verify_llm_guardrails.sh` (5 checks),
+    `verify_llm_assisted_development.sh` (12 checks), 10 new
+    Stage 30 runtime smokes in `check_runtime_state.sh`, README +
+    new operator runbook (`docs/operations/llm-assisted-development.md`)
+    + prompt-contract doc (`docs/operations/llm-prompt-contract.md`)
+    + manual-verification 17i.
+  - `df025af` -- Stage 30 fix: `check_runtime_state.sh` QA metric
+    smoke piped /metrics through `grep -E qa_validation_runs_total`.
+    On a stack with no QA runs yet, grep returns 1 which under
+    `set -euo pipefail` aborted the script BEFORE the Stage 30
+    smokes ran. Added `|| true` so the assignment is tolerant of
+    the empty match.
+  - `7cad35c` -- Stage 30 fix: marked
+    `scripts/verify_llm_guardrails.sh` and
+    `scripts/verify_llm_assisted_development.sh` executable
+    (`+x` bit) so the verify suite runs end-to-end without
+    needing `chmod` first.
+  - This Stage 30 progress entry: pending commit at the end of
+    the Stage 30 workflow.
+- **Modified / new files (high level):**
+  - `migrations/010_llm_assisted_development.sql` -- 3 idempotent
+    tables (`llm_interactions`, `llm_proposal_artifacts`,
+    `llm_usage_records`).
+  - `shared/sdk/llm/` -- 7 files (`__init__.py`, `models.py`,
+    `provider.py`, `mock_provider.py`, `policy.py`,
+    `prompt_contract.py`, `store.py`). Provider modes: `mock`,
+    `disabled`, `external_openai_placeholder`,
+    `external_anthropic_placeholder`. `LLMSafetyPolicy` enforces
+    path allowlist/denylist, no-delete, no-secret, no-destructive,
+    max-files (5), max-content-chars (20 000), confidence
+    threshold (0.7). `redact_text` masks token/key patterns
+    BEFORE truncation.
+  - `agents/development-agent/src/llm_planner.py` --
+    `LLMPlannerPipeline` drives per-task LLM flow: build prompt
+    contract, call provider, persist interaction (hash + redacted
+    preview only), apply policy, persist proposal, record
+    zero-cost usage, emit audit + notification.
+  - `agents/development-agent/src/agent.py` -- `handle()` now runs
+    the LLM planner FIRST when `ENABLE_LLM_ASSISTED_PLANNING=true`.
+    A policy block short-circuits the deterministic generator
+    entirely; the workspace is created with `status=blocked` and
+    `generator_mode=llm_assisted_proposal`; no files written.
+    On policy pass the deterministic Stage 28 generator runs as
+    before and the proposal is linked via `linked_workspace_id`.
+  - `apps/orchestrator/src/operations.py` -- 4 new
+    `/operations/llm/*` routes (`/interactions`,
+    `/interactions/{task_id}`, `/proposals/{task_id}`, `/usage`).
+    New `llm_assistance` section on `/operations/workflows/{task_id}`
+    carrying provider, interactions, proposals, latest_safety_result,
+    usage_summary, policy_violations, requires_human_review, blocked.
+    New `llm_summary` on `/operations/summary`. New
+    `llm_provider`, `llm_real_enabled`, `llm_external_call_enabled`,
+    `llm_policy_enforced`, `llm_requires_human_review` on
+    `/operations/safety`. API key VALUES never echoed.
+  - `apps/discord-gateway/src/main.py` -- `/discord/tasks/{task_id}`
+    carries `llm_provider`, `llm_proposal_status`,
+    `llm_requires_human_review`, `llm_policy_blocked`,
+    `llm_policy_violations_count`, `llm_usage_total_tokens`.
+  - `shared/sdk/observability/metrics.py` -- 7 new counters
+    (`llm_interactions_total`, `llm_proposals_total`,
+    `llm_policy_blocks_total`, `llm_real_calls_total`,
+    `llm_real_calls_blocked_total`, `llm_token_usage_total`,
+    `llm_estimated_cost_total`).
+  - 10 new pytest files (`test_llm_provider.py`,
+    `test_llm_models.py`, `test_llm_policy.py`,
+    `test_llm_prompt_contract.py`, `test_llm_interaction_store.py`,
+    `test_development_agent_llm_assisted.py`,
+    `test_operations_llm_view.py`, `test_discord_llm_status.py`,
+    `test_llm_audit_notification.py`, `test_llm_metrics.py`).
+    77 tests; cover deterministic mock, disabled provider,
+    external guard skip, schema validation, denied-path / delete /
+    secret / destructive blocks, confidence threshold warning,
+    prompt+response redaction, hash storage, audit + notification
+    side effects, no API key leakage, `production_executed=false`.
+  - `scripts/verify_llm_guardrails.sh` -- 5-check verifier.
+  - `scripts/verify_llm_assisted_development.sh` -- 12-check
+    end-to-end verifier (scenarios A pass / B policy block /
+    C real-LLM guard + audit/notification + summary).
+  - `scripts/check_runtime_state.sh` -- 10 new Stage 30 smokes
+    (`LLM_PROVIDER_SMOKE`, `LLM_POLICY_PASS_SMOKE`,
+    `LLM_POLICY_BLOCK_SMOKE`, `LLM_PROMPT_CONTRACT_SMOKE`,
+    `LLM_OPERATIONS_VIEW_SMOKE`, `LLM_PROPOSAL_ARTIFACT_SMOKE`,
+    `LLM_DISCORD_STATUS_SMOKE`, `LLM_AUDIT_SMOKE`,
+    `LLM_NOTIFICATION_SMOKE`, `REAL_LLM_GUARD_SMOKE`).
+  - `docs/operations/llm-assisted-development.md` -- new operator
+    runbook (provider modes, mock flow, real LLM guard,
+    redaction, schema, policy blocks, QA gate interaction,
+    limitations).
+  - `docs/operations/llm-prompt-contract.md` -- new prompt contract
+    envelope + redaction reference.
+  - `docs/operations/manual-verification.md` -- section 17i added.
+  - `README.md` -- Stage 30 section added.
+  - `tests/conftest.py` -- preloads `llm_planner` sibling module.
+- **Deployment target:** test/local Docker Compose only
+  (10.0.1.31). Test stack `aiagents-test` recreated against the
+  Stage 30 deliverable + 2 fix commits. Staging stack not
+  brought up (matches Stage 29 pattern). No production resources
+  created. No real LLM API contacted.
+- **Test results (local):**
+  - `python -m pytest tests/test_llm_*.py
+     tests/test_development_agent_llm_assisted.py
+     tests/test_discord_llm_status.py
+     tests/test_operations_llm_view.py` -- 77 passed in ~120 s.
+  - Full local `pytest` -- 838 passed, 115 skipped in ~18 min.
+  - `python -m ruff check .` -- clean (259 files).
+  - `python -m black --check .` -- clean (259 files).
+  - `python -m mypy shared/` -- clean (65 source files).
+- **Test results (10.0.1.31, after `git pull`):**
+  - `./scripts/run_tests.sh` -- 958 passed, 1 warning in ~50 s.
+    ruff / black / mypy: all green.
+  - `./scripts/check_runtime_state.sh` -- DONE. All 10 Stage 30
+    smokes PASS (`LLM_PROVIDER_SMOKE`, `LLM_POLICY_PASS_SMOKE`,
+    `LLM_POLICY_BLOCK_SMOKE`, `LLM_PROMPT_CONTRACT_SMOKE`,
+    `LLM_OPERATIONS_VIEW_SMOKE`, `LLM_PROPOSAL_ARTIFACT_SMOKE`,
+    `LLM_DISCORD_STATUS_SMOKE`, `LLM_AUDIT_SMOKE`,
+    `LLM_NOTIFICATION_SMOKE`, `REAL_LLM_GUARD_SMOKE`).
+  - `./scripts/verify_llm_guardrails.sh` --
+    `LLM_GUARDRAILS_VERIFY: PASS` (5/5).
+    `REAL_LLM_TEST_SKIPPED: PASS` printed.
+  - `./scripts/verify_llm_assisted_development.sh` --
+    `LLM_ASSISTED_DEVELOPMENT_VERIFY: PASS` (12/12).
+  - `./scripts/verify_qa_auto_fix_loop.sh` --
+    `QA_AUTO_FIX_LOOP_VERIFY: PASS` (14/14).
+  - `./scripts/verify_controlled_code_generation.sh` --
+    `CONTROLLED_CODE_GENERATION_VERIFY: PASS` (17/17).
+  - `./scripts/verify_flexible_task_execution_loop.sh` --
+    `FLEXIBLE_TASK_EXECUTION_VERIFY: PASS`.
+  - `./scripts/verify_staging_secrets.sh` --
+    `STAGING_SECRETS_VERIFY: PASS`.
+  - `./scripts/verify_staging_runtime.sh` --
+    `STAGING_RUNTIME_VERIFY: PASS`.
+  - `./scripts/verify_staging_backup_restore.sh` --
+    `STAGING_BACKUP_RESTORE_VERIFY: FAIL (staging postgres not
+    reachable)` -- staging stack intentionally NOT brought up
+    for Stage 30; matches Stage 29 behaviour.
+  - `./scripts/verify_real_github_validation.sh` --
+    `REAL_GITHUB_VALIDATION_VERIFY: PASS`. `REAL_GITHUB_TEST_SKIPPED: PASS`.
+  - `./scripts/verify_notification_delivery.sh` --
+    `NOTIFICATION_DELIVERY_VERIFY: PASS`.
+  - `./scripts/verify_discord_gateway.sh` --
+    `DISCORD_GATEWAY_VERIFY: PASS`.
+  - `./scripts/verify_operations_view.sh` --
+    `OPERATIONS_VIEW_VERIFY: PASS`.
+  - `./scripts/verify_unified_audit.sh` --
+    `UNIFIED_AUDIT_VERIFY: PASS`.
+  - `./scripts/verify_github_pipeline_flow.sh` --
+    `GITHUB_PIPELINE_FLOW_VERIFY: PASS`.
+  - `./scripts/verify_platform_observability.sh` --
+    `PLATFORM_OBSERVABILITY_VERIFY: PASS`.
+- **Quality gates (10.0.1.31):**
+  - `docker compose ps`: 22/22 containers healthy
+    (21 healthy + vault dev mode up). No restart loops.
+  - `git status --short` clean on remote after the verify suite
+    (the auto-fix doesn't change the working tree; LLM proposals
+    never write to disk).
+  - Production safety SQL probes (deployment / workflow tables):
+    - `deployment_records.production_executed=true OR
+       environment=production`: **0 rows**.
+    - `workflow_states.execution_result.production_executed=true`:
+       **0 rows**.
+- **Stage 30 result summary:**
+  - LLM provider abstraction: `LLM_PROVIDER=mock` default,
+    `disabled` refuses every call, two external placeholders
+    refuse network with `REAL_LLM_TEST_SKIPPED`. `get_provider`
+    falls back to `disabled` on unknown name.
+  - Prompt contract: v1.0 envelope with `safety_rails`. Producer
+    hashes prompt + response (SHA-256) and stores ONLY the
+    `redact_text`-masked preview.
+  - Output schema: `LLMDevelopmentPlan`, `LLMPatchProposal`
+    (+ `LLMFileChange`), `LLMTestPlan`. `change_type=delete`
+    rejected; `confidence` clamped to `[0, 1]`;
+    `requires_human_review` always forced to `True`.
+  - Safety policy: deterministic. Per-rule violations
+    (`path_blocked`, `change_type_blocked`,
+    `secret_like_content`, `destructive_content`,
+    `too_many_files`, `content_too_large`, `schema_invalid`)
+    block proposals. Low-confidence is a warning only.
+  - Proposal artifact: `llm_proposal_artifacts` lifecycle --
+    `proposed -> policy_passed | blocked`. On policy_passed the
+    proposal links to the new workspace via
+    `linked_workspace_id`. On block, the workspace is created
+    with `status=blocked` + `generator_mode=llm_assisted_proposal`
+    and no files are written.
+  - Operations / Discord / audit / notification: all surfaces
+    expose the LLM state read-only; no API key value, no
+    plaintext prompt/response, no token leak.
+  - Production safety: 0 production deploy on both test +
+    staging stacks (staging not brought up).
+- **Issues / blockers / mitigations encountered during Stage 30:**
+  - **`check_runtime_state.sh` early abort.** Pre-existing
+    `set -euo pipefail` interacted poorly with
+    `qa_metric=$(... | grep -E ... | head)` when grep matched
+    nothing. Added `|| true` so the assignment doesn't take
+    down the script. Fix committed as `df025af`.
+  - **Verify scripts not executable.** Initially shipped without
+    the `+x` bit; remote needed `chmod` to run them. Fixed via
+    `git update-index --chmod=+x` and committed as `7cad35c`.
+- **Risks / observations (Claude Code reports only):**
+  - **Mock LLM only by default.** `LLM_PROVIDER=mock` ships
+    the only deterministic path. Real wire-level provider
+    integrations are placeholders that ALWAYS return
+    `REAL_LLM_TEST_SKIPPED`; this is intentional for Stage 30.
+  - **Real LLM skipped.** `RUN_REAL_LLM_TEST=false` is the
+    default; even when an operator opts in, the
+    `ENABLE_REAL_LLM_NETWORK_CALL=false` rail still bolts the
+    network shut.
+  - **Human review required.** Every proposal carries
+    `requires_human_review=true` regardless of upstream value.
+  - **No direct commit.** Even an allowed proposal cannot be
+    merged from the platform; the deterministic generator +
+    QA gate still own the workspace.
+  - **Real GitHub still skipped:** Stage 23 controlled-real
+    gate untouched.
+  - **Production deploy disabled:** `production_executed=true`
+    count is `0` on both stacks.
+  - **Next capability gap:** the LLM planner currently records
+    proposals alongside the deterministic generator -- it does
+    not yet drive workspace contents. A future deliverable
+    could let an operator promote a `policy_passed` proposal
+    to a controlled workspace via the existing
+    `LLMPlannerPipeline.convert_to_workspace_artifacts()`
+    helper (which re-checks every path against the allowlist).
+  - **Other:**
+    - Local / test data plane unaffected -- verified by
+      `verify_staging_runtime.sh::LOCAL_TEST_UNAFFECTED`. Green.
+    - Following Stage 22 / 23 / 24 / 25 / 26 / 27 / 28 / 29,
+      Claude Code does not decide the Step 30 roadmap.
