@@ -1912,7 +1912,7 @@ else
 fi
 
 # 9. qa_validation_runs_total metric exposed
-qa_metric=$(curl -sS -m 10 "http://localhost:8000/metrics" 2>/dev/null | grep -E "^qa_validation_runs_total" | head -1)
+qa_metric=$(curl -sS -m 10 "http://localhost:8000/metrics" 2>/dev/null | grep -E "^qa_validation_runs_total" 2>/dev/null | head -1 || true)
 if [ -n "$qa_metric" ]; then
   echo "QA_METRICS_SMOKE: PASS"
 else
