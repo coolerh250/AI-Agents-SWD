@@ -109,7 +109,9 @@ services:
     environment:
       NOTIFICATION_WORKER_MODE: sandbox
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_TEST_GUILD_ID: ${DISCORD_TEST_GUILD_ID:-}
       DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
+      DISCORD_ALLOWED_ROLE_ID: ${DISCORD_ALLOWED_ROLE_ID:-}
       RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
@@ -138,6 +140,9 @@ services:
     environment:
       DISCORD_GATEWAY_MODE: sandbox
       DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_TEST_GUILD_ID: ${DISCORD_TEST_GUILD_ID:-}
+      DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
+      DISCORD_ALLOWED_ROLE_ID: ${DISCORD_ALLOWED_ROLE_ID:-}
       RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
       COMMUNICATION_GATEWAY_URL: http://communication-gateway:8004
       ORCHESTRATOR_URL: http://orchestrator:8000
@@ -201,6 +206,14 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
       GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      # Stage 32 real Discord pilot env -- the orchestrator's
+      # /operations/safety + /operations/real-integrations only
+      # inspect presence; the bot token value is never read here.
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN:-}
+      DISCORD_TEST_GUILD_ID: ${DISCORD_TEST_GUILD_ID:-}
+      DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
+      DISCORD_ALLOWED_ROLE_ID: ${DISCORD_ALLOWED_ROLE_ID:-}
+      RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
