@@ -27,6 +27,7 @@ from real_guard import evaluate_real_test_request
 
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.github import GitHubClient, GitHubClientError
+from shared.sdk.github.errors import GitHubAuthError
 from shared.sdk.notifications.client import NotificationClient
 from shared.sdk.secrets import default_provider
 from shared.sdk.observability.metrics import (
@@ -744,13 +745,28 @@ async def real_test_pr(req: RealTestPRRequest) -> dict:
                 "github.real_github_test": "true",
             },
         ):
-            checks = await client.read_checks(
-                req.branch_name,
-                task_id=req.task_id,
-                workflow_id=req.workflow_id,
-            )
-            GITHUB_CHECKS_READ_TOTAL.labels(dry_run="false").inc()
-            result["checks"] = checks.to_dict()
+            # Stage 32: a fine-grained sandbox PAT that lacks
+            # ``Checks: read`` (or a sandbox repo with no Actions) is
+            # legitimate. The PR itself is already created and
+            # auditable, so a 403 on read_checks must NOT abort the
+            # flow + leak an open PR without the
+            # ``github_sandbox_pr_created`` audit. Treat the auth
+            # failure as "no checks readable" and continue.
+            try:
+                checks = await client.read_checks(
+                    req.branch_name,
+                    task_id=req.task_id,
+                    workflow_id=req.workflow_id,
+                )
+                GITHUB_CHECKS_READ_TOTAL.labels(dry_run="false").inc()
+                result["checks"] = checks.to_dict()
+            except GitHubAuthError as exc:
+                result["checks"] = {
+                    "checks": [],
+                    "count": 0,
+                    "skipped": True,
+                    "skipped_reason": f"auth_{exc.status_code or 403}",
+                }
     except GitHubClientError as exc:
         elapsed = time.perf_counter() - started
         GITHUB_AUTOMATION_FAILURES_TOTAL.labels(operation="real_test_pr").inc()
