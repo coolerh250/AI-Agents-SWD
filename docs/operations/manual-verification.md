@@ -1038,6 +1038,42 @@ Confirm:
 * `git status --short` is empty after the run; promotions do not
   touch the working tree.
 
+## 17k. Real integration sandbox pilot (Stage 32)
+
+The pilot is opt-in. The default test cluster never has the env vars
+set, so every real-mode verification runs in SKIPPED mode and the
+master verify script still ends `REAL_INTEGRATION_PILOT_VERIFY: PASS`.
+
+```bash
+./scripts/check_real_integration_inputs.sh
+./scripts/verify_real_discord_pilot.sh
+./scripts/verify_real_github_sandbox_pilot.sh
+./scripts/verify_real_integration_pilot.sh
+```
+
+Expected (skipped mode):
+
+* `REAL_INTEGRATION_INPUTS: SKIPPED` (no env vars set is the
+  intended default; the script also handles BLOCKED for partial env).
+* `REAL_DISCORD_TEST_REFUSED_DEFAULT: PASS` + `REAL_DISCORD_TEST_SKIPPED: PASS`.
+* `REAL_GITHUB_SANDBOX_REFUSED_DEFAULT: PASS` + `REAL_GITHUB_SANDBOX_TEST_SKIPPED: PASS`.
+* `OPERATIONS_REAL_INTEGRATIONS: PASS`.
+* `production_safety` counters both zero.
+* `REAL_INTEGRATION_PILOT_VERIFY: PASS`.
+
+Operations surfaces:
+
+* `GET /operations/real-integrations` returns the inputs snapshot +
+  Discord/GitHub counters + warnings (degrades silently to zeros if
+  the audit / notification store is unreachable).
+* `GET /operations/safety` carries `real_discord_inputs_present`,
+  `real_discord_test_enabled`, `real_discord_guard_active`,
+  `real_github_inputs_present`, `github_sandbox_guard_active`,
+  `real_llm_enabled`, `production_deploy_enabled`.
+
+The operator runbook lives at
+[`docs/operations/real-integration-pilot.md`](./real-integration-pilot.md).
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

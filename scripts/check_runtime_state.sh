@@ -2207,4 +2207,84 @@ else
 fi
 
 echo
+echo "=== Stage 32: real-integration sandbox pilot smokes ==="
+
+# 33. real-integration input snapshot reachable
+ri_inputs=$(./scripts/check_real_integration_inputs.sh 2>/dev/null | tail -1 | awk '{print $NF}')
+case "$ri_inputs" in
+  PASS|SKIPPED) echo "REAL_INTEGRATION_INPUTS_SMOKE: PASS" ;;
+  *) echo "REAL_INTEGRATION_INPUTS_SMOKE: CHECK ($ri_inputs)" ;;
+esac
+
+# 34. real Discord guard refusal in skipped mode (HTTP 409 expected
+# because the test cluster never has real env set)
+if [ -z "${DISCORD_BOT_TOKEN:-}" ] || [ "${RUN_REAL_DISCORD_TEST:-false}" != "true" ]; then
+  rd_code=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:8007/discord/real/test-message" \
+    -H "Content-Type: application/json" \
+    -d '{"channel_id":"x","summary":"x"}' || echo "000")
+  if [ "$rd_code" = "409" ]; then
+    echo "REAL_DISCORD_GUARD_SMOKE: PASS"
+    echo "REAL_DISCORD_SKIPPED_SMOKE: PASS"
+  else
+    echo "REAL_DISCORD_GUARD_SMOKE: CHECK (http=$rd_code)"
+    echo "REAL_DISCORD_SKIPPED_SMOKE: CHECK"
+  fi
+else
+  echo "REAL_DISCORD_GUARD_SMOKE: SKIPPED (real env present; verify via verify_real_discord_pilot.sh)"
+  echo "REAL_DISCORD_SKIPPED_SMOKE: SKIPPED"
+fi
+
+# 35. real GitHub sandbox guard refusal in skipped mode
+if [ -z "${GITHUB_TOKEN:-}" ] || [ "${RUN_REAL_GITHUB_TEST:-false}" != "true" ]; then
+  gh_body='{"task_id":"smoke","workflow_id":"wf","repo":"x/y","base_branch":"main","branch_name":"main","title":"t","body":"b","file_path":".github/x.yml","file_content":"x","dry_run":false}'
+  gh_code=$(curl -sS -m 5 -o /dev/null -w "%{http_code}" -X POST \
+    "http://localhost:8005/github/workflow/real-test-pr" \
+    -H "Content-Type: application/json" \
+    -d "$gh_body" || echo "000")
+  if [ "$gh_code" = "409" ]; then
+    echo "REAL_GITHUB_SANDBOX_GUARD_SMOKE: PASS"
+    echo "REAL_GITHUB_SANDBOX_SKIPPED_SMOKE: PASS"
+  else
+    echo "REAL_GITHUB_SANDBOX_GUARD_SMOKE: CHECK (http=$gh_code)"
+    echo "REAL_GITHUB_SANDBOX_SKIPPED_SMOKE: CHECK"
+  fi
+else
+  echo "REAL_GITHUB_SANDBOX_GUARD_SMOKE: SKIPPED"
+  echo "REAL_GITHUB_SANDBOX_SKIPPED_SMOKE: SKIPPED"
+fi
+
+# 36. /operations/real-integrations returns 200
+ri_code=$(curl -sS -m 10 -o /dev/null -w "%{http_code}" "http://localhost:8000/operations/real-integrations" || echo "000")
+if [ "$ri_code" = "200" ]; then
+  echo "OPERATIONS_REAL_INTEGRATION_VIEW_SMOKE: PASS"
+else
+  echo "OPERATIONS_REAL_INTEGRATION_VIEW_SMOKE: CHECK (http=$ri_code)"
+fi
+
+# 37. audit decision_type filter reachable
+ri_audit=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=discord_real_test_blocked&limit=5" || echo '{}')
+if echo "$ri_audit" | grep -q '"events"'; then
+  echo "REAL_INTEGRATION_AUDIT_SMOKE: PASS"
+else
+  echo "REAL_INTEGRATION_AUDIT_SMOKE: CHECK"
+fi
+
+# 38. notification deliveries reachable
+ri_notif=$(curl -sS -m 10 "http://localhost:8007/discord/deliveries/real-integration-smoke" || echo '{}')
+if echo "$ri_notif" | grep -q '"deliveries"'; then
+  echo "REAL_INTEGRATION_NOTIFICATION_SMOKE: PASS"
+else
+  echo "REAL_INTEGRATION_NOTIFICATION_SMOKE: CHECK"
+fi
+
+# 39. metrics names present in /metrics
+metrics_body=$(curl -sS -m 10 "http://localhost:8007/metrics" || echo '')
+if echo "$metrics_body" | grep -qE 'real_discord_(tests|tasks|guard_blocks)_total'; then
+  echo "REAL_INTEGRATION_METRICS_SMOKE: PASS"
+else
+  echo "REAL_INTEGRATION_METRICS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

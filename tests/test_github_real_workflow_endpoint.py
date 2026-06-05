@@ -16,7 +16,10 @@ from fastapi.testclient import TestClient
 VALID_BODY = {
     "task_id": "real-task-1",
     "workflow_id": "wf-real-task-1",
-    "repo": "coolerh250/AI-Agents-SWD",
+    # Stage 32: pinned sandbox repo (production repo is blocked by the
+    # new Stage 32 sandbox guard). The original tests pinned the
+    # canonical production repo here; that's intentionally refused now.
+    "repo": "coolerh250/AI-Agents-SWD-sandbox",
     "base_branch": "main",
     "branch_name": "ai-agents-test/real-task-1",
     "title": "[AI-Agents-SWD Test] valid real PR",

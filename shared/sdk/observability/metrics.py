@@ -411,6 +411,38 @@ LLM_PROMOTIONS_TOTAL = Counter(
     ["promotion_mode", "status"],
 )
 
+# Stage 32 -- real Discord / GitHub sandbox pilot metrics.
+REAL_DISCORD_TESTS_TOTAL = Counter(
+    "real_discord_tests_total",
+    "Real Discord test messages dispatched (result label)",
+    ["result"],  # sent | blocked | error
+)
+REAL_DISCORD_TASKS_TOTAL = Counter(
+    "real_discord_tasks_total",
+    "Real Discord controlled-test task intakes",
+    ["result"],  # received | blocked | error
+)
+REAL_DISCORD_GUARD_BLOCKS_TOTAL = Counter(
+    "real_discord_guard_blocks_total",
+    "Real Discord guard refusals (reason label)",
+    ["reason"],
+)
+REAL_GITHUB_SANDBOX_PRS_TOTAL = Counter(
+    "real_github_sandbox_prs_total",
+    "Real GitHub sandbox PRs (result label)",
+    ["result"],  # created | blocked | error
+)
+REAL_GITHUB_GUARD_BLOCKS_TOTAL = Counter(
+    "real_github_guard_blocks_total",
+    "Real GitHub sandbox guard refusals (reason label)",
+    ["reason"],
+)
+REAL_INTEGRATION_FAILURES_TOTAL = Counter(
+    "real_integration_failures_total",
+    "Failures while talking to a real Discord / GitHub endpoint",
+    ["provider", "reason"],
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

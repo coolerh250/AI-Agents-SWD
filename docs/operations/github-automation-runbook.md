@@ -434,3 +434,32 @@ branch, revoke the PAT, unset `RUN_REAL_GITHUB_TEST`, restart the
 `github-automation` container. The platform's `production_executed`
 counters stay at `0` regardless of how many controlled-real PRs were
 opened, because the flow targets a sandbox repo and never deploys.
+
+---
+
+## Stage 32 -- sandbox pre-guard (Real Integration Pilot)
+
+A second guard layer
+(`shared.sdk.real_integration.github.evaluate_real_github_sandbox_request`)
+runs **before** the Stage 23 `evaluate_real_test_request` and adds:
+
+* The repo MUST equal `GITHUB_TEST_REPO`, and `GITHUB_TEST_REPO`
+  MUST NOT be the canonical production repo unless suffixed
+  `-sandbox` / `_sandbox`.
+* The intent MUST NOT be `merge` / `branch_protection` / `release`
+  / `deployment` / `delete_branch` / `workflow_secret`.
+* The `file_path` MUST NOT touch any of `.github/`, `infra/`,
+  `migrations/`, `apps/`, `shared/`, `scripts/`, `tests/`,
+  `docs/operations/`.
+* A successful PR additionally emits a `github_sandbox_pr_created`
+  audit decision and a `github.sandbox_pr.created` notification,
+  surfaced under `/operations/real-integrations/github`.
+
+A pre-guard failure returns HTTP 409 +
+`safety_guard_result.reason=forbidden_repo_path` (or similar) and
+emits a `github_sandbox_guard_failed` audit event. The Stage 23
+markers (`github_real_test_blocked`, `github_real_test`) are
+retained for backwards compatibility.
+
+See [`docs/operations/real-integration-pilot.md`](./real-integration-pilot.md)
+for the full Stage 32 operator runbook.

@@ -2277,6 +2277,85 @@ See [`docs/operations/human-approval-policy.md`](docs/operations/human-approval-
 and [`docs/operations/llm-proposal-promotion.md`](docs/operations/llm-proposal-promotion.md)
 for the full operator runbooks.
 
+## Real Integration Sandbox Pilot (Stage 32)
+
+Stage 32 wires the platform's real Discord and real GitHub adapters
+behind an opt-in allowlist. The default posture is SANDBOX-ONLY and
+every real endpoint refuses with HTTP 409 until the operator
+explicitly sets the env vars listed below.
+
+### Scope (in)
+
+| Adapter | What is allowed |
+|---|---|
+| Real Discord test channel | One pinned test guild + test channel + optional role + bot token (Vault-stored). One controlled-test message per call. |
+| Real GitHub sandbox repo | One pinned sandbox repo + fine-grained PAT. Files only under `docs/github-real-test/`. PR opened, never merged. |
+
+### Scope (out)
+
+- Real LLM calls (`real_llm_network_call` remains a hard-safety action).
+- Production GitHub repo writes — the sandbox guard refuses
+  `coolerh250/AI-Agents-SWD` unless suffixed `-sandbox` / `_sandbox`.
+- PR merges, branch-protection changes, releases, deployments,
+  branch deletes, workflow file mutation, writes to `.github/` /
+  `infra/` / `migrations/` / `apps/` / `shared/` / `scripts/` /
+  `tests/`.
+- Production deploys (`production_executed=true` counters must stay
+  at 0).
+
+### Required operator inputs
+
+Discord: `DISCORD_BOT_TOKEN`, `DISCORD_TEST_GUILD_ID`,
+`DISCORD_TEST_CHANNEL_ID`, `RUN_REAL_DISCORD_TEST=true`,
+optionally `DISCORD_ALLOWED_ROLE_ID`.
+
+GitHub: `GITHUB_TOKEN`, `GITHUB_TEST_REPO`,
+`RUN_REAL_GITHUB_TEST=true`.
+
+### Skipped mode (default test cluster)
+
+```bash
+./scripts/check_real_integration_inputs.sh         # PRESENT/ABSENT + length only
+./scripts/verify_real_integration_pilot.sh         # SKIPPED: PASS without env
+```
+
+### Real mode (opt-in shell)
+
+```bash
+export DISCORD_BOT_TOKEN=... DISCORD_TEST_GUILD_ID=... DISCORD_TEST_CHANNEL_ID=... RUN_REAL_DISCORD_TEST=true
+./scripts/verify_real_discord_pilot.sh
+unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_DISCORD_TEST
+```
+
+### Surfaces
+
+- Operations: `/operations/real-integrations`,
+  `/operations/real-integrations/discord`,
+  `/operations/real-integrations/github`, plus the existing
+  `/operations/safety` extended with `real_discord_*` / `real_github_*`
+  booleans.
+- Audit decision_types: `discord_real_test_sent`,
+  `discord_real_test_blocked`, `discord_real_task_received`,
+  `discord_real_task_blocked`, `github_sandbox_pr_created`,
+  `github_sandbox_guard_failed`.
+- Notification events: `discord.real_test_sent`,
+  `discord.real_task_received`, `github.sandbox_pr.created`.
+- Metrics: `real_discord_tests_total`, `real_discord_tasks_total`,
+  `real_discord_guard_blocks_total`, `real_github_sandbox_prs_total`,
+  `real_github_guard_blocks_total`, `real_integration_failures_total`.
+
+### No-Go items
+
+- Pointing `GITHUB_TEST_REPO` at the canonical production repo.
+- Setting `ENABLE_REAL_LLM_NETWORK_CALL=true`.
+- Manually merging a sandbox PR.
+- Re-using the test bot token in any production-bound bot.
+- Storing any of these env vars in repo / logs / progress.md /
+  README / API response.
+
+See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
+for the full operator runbook.
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

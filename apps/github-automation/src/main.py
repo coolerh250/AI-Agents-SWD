@@ -40,6 +40,8 @@ from shared.sdk.observability.metrics import (
     GITHUB_REAL_TEST_DURATION_SECONDS,
     GITHUB_REAL_TEST_FAILURES_TOTAL,
     GITHUB_REAL_TEST_SUCCESS_TOTAL,
+    REAL_GITHUB_GUARD_BLOCKS_TOTAL,
+    REAL_GITHUB_SANDBOX_PRS_TOTAL,
     install_metrics_endpoint,
 )
 from shared.sdk.observability.tracing import (
@@ -49,6 +51,7 @@ from shared.sdk.observability.tracing import (
     setup_tracing,
     start_span,
 )
+from shared.sdk.real_integration import evaluate_real_github_sandbox_request
 
 DEFAULT_REPO = os.environ.get("GITHUB_DEFAULT_REPO", "coolerh250/AI-Agents-SWD")
 DEFAULT_DRY_RUN = os.environ.get("GITHUB_DRY_RUN", "true").strip().lower() != "false"
@@ -547,6 +550,62 @@ async def real_test_pr(req: RealTestPRRequest) -> dict:
             dry_run=req.dry_run,
         )
 
+    # Stage 32 defence-in-depth: AFTER Stage 23 has passed, refuse
+    # production-shaped repos + forbidden intents + forbidden file
+    # paths (.github/, infra/, ...). The Stage 23 guard already
+    # validates branch/title/file_path prefixes + dry_run + token +
+    # opt-in + test-repo equality; the Stage 32 layer adds NEW rails
+    # on top so existing Stage 23 tests still see Stage 23 reasons.
+    if guard.allowed:
+        with start_span(
+            "real_github.guard",
+            **{
+                "github.repo": repo_value,
+                "github.operation": "sandbox_pre_guard",
+                "task_id": req.task_id,
+                "workflow_id": req.workflow_id,
+                "github.dry_run": "false",
+                "github.real_github_test": "true",
+            },
+        ):
+            sandbox_guard = evaluate_real_github_sandbox_request(
+                repo=req.repo,
+                branch_name=req.branch_name,
+                title=req.title,
+                file_path=req.file_path,
+                intent="create_pr",
+                dry_run=req.dry_run,
+            )
+        if not sandbox_guard.allowed:
+            REAL_GITHUB_GUARD_BLOCKS_TOTAL.labels(reason=sandbox_guard.reason).inc()
+            REAL_GITHUB_SANDBOX_PRS_TOTAL.labels(result="blocked").inc()
+            GITHUB_REAL_TEST_BLOCKED_TOTAL.labels(
+                repo=repo_value or "unknown", reason=sandbox_guard.reason
+            ).inc()
+            await _record_real_test_audit(
+                task_id=req.task_id,
+                workflow_id=req.workflow_id,
+                decision_type="github_sandbox_guard_failed",
+                summary=f"sandbox pre-guard refused: {sandbox_guard.reason}",
+                result="blocked",
+                artifact_refs={
+                    "repo": repo_value,
+                    "reason": sandbox_guard.reason,
+                    "test_mode": True,
+                    "dry_run": False,
+                    "real_github_test": True,
+                    "production_executed": False,
+                    "details": sandbox_guard.details,
+                },
+            )
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "operation": "real_test_pr",
+                    "safety_guard_result": sandbox_guard.to_safe_dict(),
+                },
+            )
+
     if not guard.allowed:
         GITHUB_REAL_TEST_BLOCKED_TOTAL.labels(
             repo=repo_value or "unknown", reason=guard.reason
@@ -720,6 +779,7 @@ async def real_test_pr(req: RealTestPRRequest) -> dict:
     elapsed = time.perf_counter() - started
     GITHUB_REAL_TEST_SUCCESS_TOTAL.labels(repo=repo_value, result="completed").inc()
     GITHUB_REAL_TEST_DURATION_SECONDS.labels(repo=repo_value, result="completed").observe(elapsed)
+    REAL_GITHUB_SANDBOX_PRS_TOTAL.labels(result="created").inc()
 
     pr_url = result["pull_request"].get("url", "")
     issue_url = result["issue"].get("url", "")
@@ -743,6 +803,18 @@ async def real_test_pr(req: RealTestPRRequest) -> dict:
         branch=req.branch_name,
         sandbox=True,
     )
+    # Stage 32 mirror event so the operations view + verify script can
+    # filter on the sandbox-PR-created marker without parsing
+    # github.real_test_pr.created.
+    await _publish_real_test_notification(
+        req.task_id,
+        "github.sandbox_pr.created",
+        message,
+        pr_url=pr_url,
+        repo=repo_value,
+        branch=req.branch_name,
+        sandbox=True,
+    )
     await _record_real_test_audit(
         task_id=req.task_id,
         workflow_id=req.workflow_id,
@@ -755,8 +827,27 @@ async def real_test_pr(req: RealTestPRRequest) -> dict:
             "pr_url": pr_url,
             "checks_status": checks_status,
             "repo": repo_value,
+            "test_mode": True,
             "dry_run": False,
             "real_github_test": True,
+            "production_executed": False,
+        },
+    )
+    await _record_real_test_audit(
+        task_id=req.task_id,
+        workflow_id=req.workflow_id,
+        decision_type="github_sandbox_pr_created",
+        summary=(
+            f"sandbox PR created (repo={repo_value}, branch={req.branch_name}, " f"pr={pr_url})"
+        ),
+        result="ok",
+        artifact_refs={
+            "repo": repo_value,
+            "branch": req.branch_name,
+            "pr_url": pr_url,
+            "issue_url": issue_url,
+            "test_mode": True,
+            "dry_run": False,
             "production_executed": False,
         },
     )

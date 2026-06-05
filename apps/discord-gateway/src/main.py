@@ -42,7 +42,15 @@ from shared.sdk.observability.metrics import (
     DISCORD_NOTIFICATIONS_PUBLISHED_TOTAL,
     DISCORD_REQUEST_DURATION_SECONDS,
     DISCORD_TASKS_DISPATCHED_TOTAL,
+    REAL_DISCORD_GUARD_BLOCKS_TOTAL,
+    REAL_DISCORD_TASKS_TOTAL,
+    REAL_DISCORD_TESTS_TOTAL,
+    REAL_INTEGRATION_FAILURES_TOTAL,
     install_metrics_endpoint,
+)
+from shared.sdk.real_integration import (
+    evaluate_real_discord_request,
+    render_safe_discord_message,
 )
 from shared.sdk.observability.tracing import (
     instrument_asyncpg,
@@ -914,28 +922,370 @@ async def answer_clarification(clarification_id: str, payload: ClarificationAnsw
     }
 
 
-@app.post("/discord/real/test-message")
-async def real_test_message(payload: DiscordNotifyTestIn) -> dict:
-    """Opt-in: send ONE sandbox-test Discord message via the real API.
+class DiscordRealTestMessageIn(BaseModel):
+    """Stage 32 real-test message payload.
 
-    Gated by ``RUN_REAL_DISCORD_TEST=true`` + ``DISCORD_BOT_TOKEN`` (see
-    ``client.DiscordClient`` for the contract). The route returns the
-    Discord message_id; the token value never appears in the response.
+    The defaults are deliberately empty so a casual caller can't
+    accidentally fire a real send -- ``channel_id`` MUST be supplied
+    and MUST match ``DISCORD_TEST_CHANNEL_ID`` to pass the guard.
     """
-    client = _client()
-    if not client.can_make_real_call():
+
+    task_id: str = ""
+    channel_id: str = ""
+    guild_id: str = ""
+    role_id: str = ""
+    user_id: str = "sandbox-operator"
+    mode: str = "controlled_test"
+    summary: str = "discord controlled-test message"
+    operations_url: str = ""
+    approval_required: bool = False
+    production_executed: bool = False
+
+
+def _operations_url_for(task_id: str) -> str:
+    return f"/operations/workflows/{task_id}" if task_id else ""
+
+
+async def _record_real_discord_delivery(
+    *,
+    task_id: str,
+    event_type: str,
+    channel: str,
+    target: str,
+    status: str,
+    external_sent: bool,
+    message_id: str | None,
+    error: str | None,
+    metadata: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Best-effort write into ``notification_deliveries``.
+
+    Returns the persisted row dict or ``None`` if the row could not be
+    written (DB hiccup). Failure here MUST NOT raise -- the audit event
+    is the source of truth.
+    """
+    try:
+        store = NotificationDeliveryStore()
+        return await store.create_delivery(
+            task_id=task_id or None,
+            event_type=event_type,
+            channel=channel,
+            target=target,
+            status=status,
+            sandbox=True,
+            external_sent=external_sent,
+            message_id=message_id,
+            error=error,
+            metadata=metadata or {},
+        )
+    except Exception:
+        return None
+
+
+@app.post("/discord/real/test-message")
+async def real_test_message(payload: DiscordRealTestMessageIn) -> dict:
+    """Stage 32 controlled-real Discord test message.
+
+    Every Stage 32 guard pre-condition must hold (see
+    ``shared.sdk.real_integration.discord.evaluate_real_discord_request``).
+    On allow the gateway sends ONE redacted summary message through the
+    real Discord API, records a ``notification_deliveries`` row with
+    ``external_sent=true``, publishes a ``discord.real_test_sent``
+    notification event, and emits a ``discord_real_test_sent`` audit
+    event. The token value is never returned, never logged, never
+    placed into the response or the audit ``artifact_refs``.
+    """
+    task_id = (payload.task_id or "").strip()
+    channel_id = (payload.channel_id or "").strip()
+    guild_id = (payload.guild_id or "").strip()
+    target_label = channel_id or "real-channel"
+    op_url = payload.operations_url or _operations_url_for(task_id)
+
+    with start_span(
+        "real_discord.guard",
+        **{
+            "service.name": "discord-gateway",
+            "agent": "discord-gateway",
+            "task_id": task_id,
+            "discord.channel_id": channel_id,
+            "discord.guild_id": guild_id,
+            "sandbox": True,
+            "production_executed": False,
+        },
+    ):
+        guard = evaluate_real_discord_request(
+            channel_id=channel_id,
+            guild_id=guild_id,
+            role_id=payload.role_id,
+            mode=payload.mode,
+            production_executed=payload.production_executed,
+        )
+
+    if not guard.allowed:
+        REAL_DISCORD_GUARD_BLOCKS_TOTAL.labels(reason=guard.reason).inc()
+        REAL_DISCORD_TESTS_TOTAL.labels(result="blocked").inc()
+        await _publish_audit(
+            task_id=task_id or "real-discord-blocked",
+            summary=f"real Discord test blocked: {guard.reason}",
+            result="blocked",
+            decision_type="discord_real_test_blocked",
+            channel_id=channel_id,
+            user_id=payload.user_id,
+            message_id="",
+            operations_url=op_url,
+        )
         raise HTTPException(
             status_code=409,
-            detail=(
-                "real Discord test is not enabled — set DISCORD_BOT_TOKEN and "
-                "RUN_REAL_DISCORD_TEST=true to opt in"
-            ),
+            detail={
+                "operation": "real_test_message",
+                "safety_guard_result": guard.to_safe_dict(),
+            },
         )
+
+    body_text = render_safe_discord_message(
+        summary=payload.summary,
+        fields={
+            "task_id": task_id,
+            "status": "controlled_test",
+            "operations_url": op_url,
+            "approval_required": str(payload.approval_required).lower(),
+            "production_executed": "false",
+        },
+    )
+
+    client = _client()
+    with start_span(
+        "real_discord.send_test_message",
+        **{
+            "service.name": "discord-gateway",
+            "agent": "discord-gateway",
+            "task_id": task_id,
+            "discord.channel_id": channel_id,
+            "sandbox": True,
+            "production_executed": False,
+        },
+    ):
+        try:
+            sent = await client.post_sandbox_test_message(channel_id, body_text)
+        except DiscordSafetyError as exc:
+            REAL_DISCORD_TESTS_TOTAL.labels(result="blocked").inc()
+            REAL_INTEGRATION_FAILURES_TOTAL.labels(provider="discord", reason="safety_error").inc()
+            await _publish_audit(
+                task_id=task_id or "real-discord-blocked",
+                summary=f"real Discord client refused: {exc}",
+                result="blocked",
+                decision_type="discord_real_test_blocked",
+                channel_id=channel_id,
+                user_id=payload.user_id,
+                message_id="",
+                operations_url=op_url,
+            )
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            REAL_DISCORD_TESTS_TOTAL.labels(result="error").inc()
+            REAL_INTEGRATION_FAILURES_TOTAL.labels(
+                provider="discord", reason=exc.__class__.__name__
+            ).inc()
+            await _publish_audit(
+                task_id=task_id or "real-discord-failed",
+                summary=f"real Discord send failed: {exc.__class__.__name__}",
+                result="failed",
+                decision_type="discord_real_test_blocked",
+                channel_id=channel_id,
+                user_id=payload.user_id,
+                message_id="",
+                operations_url=op_url,
+            )
+            raise HTTPException(status_code=502, detail="discord send failed") from exc
+
+    message_id = sent.get("message_id", "")
+
+    delivery_row = await _record_real_discord_delivery(
+        task_id=task_id or None,
+        event_type="discord.real_test_sent",
+        channel="discord",
+        target=target_label,
+        status="delivered",
+        external_sent=True,
+        message_id=message_id,
+        error=None,
+        metadata={
+            "guild_id": guild_id,
+            "mode": payload.mode,
+            "production_executed": False,
+            "sandbox": True,
+        },
+    )
+
+    await _publish_notification(
+        task_id=task_id or "real-discord-test",
+        event_type="discord.real_test_sent",
+        message=f"real Discord controlled-test message dispatched (channel={channel_id})",
+        channel_id=channel_id,
+        user_id=payload.user_id,
+    )
+    await _publish_audit(
+        task_id=task_id or "real-discord-test",
+        summary=(
+            f"real Discord test message sent (channel={channel_id}, " f"message_id={message_id})"
+        ),
+        result="ok",
+        decision_type="discord_real_test_sent",
+        channel_id=channel_id,
+        user_id=payload.user_id,
+        message_id=message_id,
+        operations_url=op_url,
+    )
+    REAL_DISCORD_TESTS_TOTAL.labels(result="sent").inc()
+
+    return {
+        "sandbox": True,
+        "test_mode": True,
+        "external_sent": True,
+        "production_executed": False,
+        "message_id": message_id,
+        "channel_id": sent.get("channel_id", channel_id),
+        "guild_id": guild_id,
+        "task_id": task_id,
+        "operations_url": op_url,
+        "delivery_id": (delivery_row or {}).get("delivery_id", ""),
+        "safety_guard_result": guard.to_safe_dict(),
+        "delivered_to": "discord.com",
+        "generated_at": _utcnow_iso(),
+    }
+
+
+class DiscordRealEventIn(BaseModel):
+    """Stage 32 controlled-real Discord event payload.
+
+    Used to simulate an incoming Discord interaction/message from the
+    operator's test channel WITHOUT running a long-lived Gateway Bot
+    loop. The same guard as ``/discord/real/test-message`` is applied,
+    so the same allowlist (token + opt-in + test guild + test channel +
+    role) gates the path.
+    """
+
+    task_id: str = ""
+    channel_id: str = ""
+    guild_id: str = ""
+    role_id: str = ""
+    user_id: str = "sandbox-operator"
+    mode: str = "controlled_test"
+    content: str = ""
+    message_id: str = ""
+    production_executed: bool = False
+
+
+@app.post("/discord/real/events/test")
+async def real_event_test(payload: DiscordRealEventIn) -> dict:
+    """Receive a controlled-real Discord event from the pinned test channel.
+
+    The event is sent through the existing sandbox intake pipeline
+    (``parser.parse_discord_message`` + ``communication-gateway
+    /intake/mock``), tagged ``sandbox=True`` + ``test_mode=True``.
+    Production-shaped requests (``production.deploy`` etc.) are NEVER
+    accepted on this path: the request_type is forced through the
+    parser which itself refuses unknown commands.
+    """
+    task_id = (payload.task_id or "").strip()
+    channel_id = (payload.channel_id or "").strip()
+
+    with start_span(
+        "real_discord.receive_task",
+        **{
+            "service.name": "discord-gateway",
+            "agent": "discord-gateway",
+            "task_id": task_id,
+            "discord.channel_id": channel_id,
+            "sandbox": True,
+            "production_executed": False,
+        },
+    ):
+        guard = evaluate_real_discord_request(
+            channel_id=channel_id,
+            guild_id=payload.guild_id,
+            role_id=payload.role_id,
+            mode=payload.mode,
+            production_executed=payload.production_executed,
+        )
+
+    if not guard.allowed:
+        REAL_DISCORD_GUARD_BLOCKS_TOTAL.labels(reason=guard.reason).inc()
+        REAL_DISCORD_TASKS_TOTAL.labels(result="blocked").inc()
+        await _publish_audit(
+            task_id=task_id or "real-discord-task-blocked",
+            summary=f"real Discord task blocked: {guard.reason}",
+            result="blocked",
+            decision_type="discord_real_task_blocked",
+            channel_id=channel_id,
+            user_id=payload.user_id,
+            message_id=payload.message_id,
+            operations_url=_operations_url_for(task_id),
+        )
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "operation": "real_event_test",
+                "safety_guard_result": guard.to_safe_dict(),
+            },
+        )
+
+    content = (payload.content or "").strip()
+    if not content:
+        REAL_DISCORD_TASKS_TOTAL.labels(result="blocked").inc()
+        REAL_DISCORD_GUARD_BLOCKS_TOTAL.labels(reason="content_required").inc()
+        raise HTTPException(status_code=400, detail="content is required")
+
     try:
-        result = await client.post_sandbox_test_message(payload.channel_id, payload.message)
-    except DiscordSafetyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    return {"sandbox": False, **result, "delivered_to": "discord.com"}
+        result = await _intake(
+            content=content,
+            channel_id=channel_id,
+            user_id=payload.user_id,
+            message_id=payload.message_id or f"real-test-{int(time.time() * 1000)}",
+            task_id=task_id or None,
+            endpoint="/discord/real/events/test",
+        )
+    except HTTPException:
+        REAL_DISCORD_TASKS_TOTAL.labels(result="error").inc()
+        raise
+
+    REAL_DISCORD_TASKS_TOTAL.labels(result="received").inc()
+    accepted_task_id = result.get("task_id") or task_id or ""
+    await _publish_notification(
+        task_id=accepted_task_id,
+        event_type="discord.real_task_received",
+        message=(
+            f"real Discord controlled-test task accepted (channel={channel_id}, "
+            f"task_id={accepted_task_id})"
+        ),
+        channel_id=channel_id,
+        user_id=payload.user_id,
+    )
+    await _publish_audit(
+        task_id=accepted_task_id,
+        summary=(
+            f"real Discord controlled-test task accepted (channel={channel_id}, "
+            f"task_id={accepted_task_id})"
+        ),
+        result="ok",
+        decision_type="discord_real_task_received",
+        channel_id=channel_id,
+        user_id=payload.user_id,
+        message_id=payload.message_id,
+        operations_url=_operations_url_for(accepted_task_id),
+    )
+    return {
+        "sandbox": True,
+        "test_mode": True,
+        "external_sent": False,
+        "production_executed": False,
+        "channel_id": channel_id,
+        "guild_id": payload.guild_id,
+        "task_id": accepted_task_id,
+        "intake_result": result,
+        "safety_guard_result": guard.to_safe_dict(),
+        "generated_at": _utcnow_iso(),
+    }
 
 
 # ---------------------------------------------------------------------------

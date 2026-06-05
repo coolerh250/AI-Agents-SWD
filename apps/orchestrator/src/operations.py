@@ -55,6 +55,7 @@ from shared.sdk.approval_policy import ApprovalPolicyStore
 from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.llm import LLMInteractionStore
 from shared.sdk.qa import QAStore
+from shared.sdk.real_integration import collect_real_integration_inputs
 from shared.sdk.task_execution import TaskExecutionStore
 from shared.sdk.workflow_store.store import WorkflowStore
 
@@ -618,6 +619,51 @@ async def _notification_delivery_summary() -> dict[str, Any]:
     }
 
 
+async def _real_integration_summary() -> dict[str, Any]:
+    """Stage 32 -- aggregated counters for the real-integration pilot.
+
+    Best-effort: every data source degrades silently so a failing audit
+    or notification store cannot break /operations/summary.
+    """
+    inputs = collect_real_integration_inputs()
+    summary: dict[str, Any] = {
+        "real_discord_inputs_present": inputs["discord_required_present"],
+        "real_discord_guard_active": inputs["discord_ready"],
+        "real_github_inputs_present": inputs["github_required_present"],
+        "real_github_guard_active": inputs["github_ready"],
+        "real_discord_tests_sent": 0,
+        "real_discord_tasks_received": 0,
+        "real_github_sandbox_prs_created": 0,
+        "real_github_sandbox_failures": 0,
+        "real_llm_calls": 0,
+        "production_deploy_enabled": False,
+    }
+    try:
+        audit_store = AuditStore()
+        for decision in ("discord_real_test_sent",):
+            rows = await audit_store.list_audit_logs(decision_type=decision, limit=500)
+            summary["real_discord_tests_sent"] = len(rows)
+        rows = await audit_store.list_audit_logs(
+            decision_type="discord_real_task_received", limit=500
+        )
+        summary["real_discord_tasks_received"] = len(rows)
+        rows = await audit_store.list_audit_logs(
+            decision_type="github_sandbox_pr_created", limit=500
+        )
+        summary["real_github_sandbox_prs_created"] = len(rows)
+        rows_blocked = await audit_store.list_audit_logs(
+            decision_type="github_sandbox_pr_blocked", limit=500
+        )
+        rows_failed = await audit_store.list_audit_logs(
+            decision_type="github_sandbox_guard_failed", limit=500
+        )
+        summary["real_github_sandbox_failures"] = len(rows_blocked) + len(rows_failed)
+    except Exception:
+        # Degrade silently -- caller still gets the inputs snapshot.
+        pass
+    return summary
+
+
 @router.get("/summary")
 @_instrument("/operations/summary", "operations.summary")
 async def operations_summary() -> dict:
@@ -637,6 +683,7 @@ async def operations_summary() -> dict:
         qa_summary = await _qa_summary()
         llm_summary = await _llm_summary()
         approval_policy_summary = await _approval_policy_summary()
+        real_integration_summary = await _real_integration_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -655,6 +702,7 @@ async def operations_summary() -> dict:
         "qa_summary": qa_summary,
         "llm_summary": llm_summary,
         "approval_policy_summary": approval_policy_summary,
+        "real_integration_summary": real_integration_summary,
         "production_safety": safety,
     }
 
@@ -1402,6 +1450,18 @@ async def operations_safety() -> dict:
         delegated_active_count = 0
     delegated_agent_enabled = delegated_active_count > 0
 
+    # Stage 32 -- real integration safety surface. Booleans + lengths
+    # only, never a token value. The same inputs snapshot is reused by
+    # /operations/real-integrations.
+    inputs = collect_real_integration_inputs()
+    discord_test_guild_configured = bool(os.environ.get("DISCORD_TEST_GUILD_ID", "").strip())
+    real_discord_test_channel_configured = bool(
+        os.environ.get("DISCORD_TEST_CHANNEL_ID", "").strip()
+    )
+    real_discord_guard_active = bool(inputs["discord_ready"])
+    real_github_guard_active = bool(inputs["github_ready"])
+    github_test_repo = (os.environ.get("GITHUB_TEST_REPO", "") or "").strip()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1443,6 +1503,17 @@ async def operations_safety() -> dict:
         "hard_policy_enforced": True,
         "production_delegation_allowed": False,
         "real_github_delegation_allowed": False,
+        "real_discord_inputs_present": bool(inputs["discord_required_present"]),
+        "real_discord_test_enabled": discord_real_test_enabled,
+        "real_discord_target_channel_configured": real_discord_test_channel_configured,
+        "real_discord_test_guild_configured": discord_test_guild_configured,
+        "real_discord_guard_active": real_discord_guard_active,
+        "real_github_inputs_present": bool(inputs["github_required_present"]),
+        "real_github_test_enabled_pilot": real_test,
+        "github_test_repo": github_test_repo,
+        "github_sandbox_guard_active": real_github_guard_active,
+        "real_llm_enabled": llm_external_call_enabled,
+        "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
             "postgres trust auth is local/test only — production must use real auth + KMS"
@@ -2072,4 +2143,144 @@ async def operations_approval_decisions_for_task(task_id: str, limit: int = 200)
         "count": len(rows),
         "decisions": [r.to_dict() for r in rows],
         "generated_at": _utcnow_iso(),
+    }
+
+
+# ---------------------------------------------------------------------------
+# Stage 32 -- real integration pilot operations view
+# ---------------------------------------------------------------------------
+
+
+REAL_DISCORD_DECISION_TYPES = (
+    "discord_real_test_sent",
+    "discord_real_test_blocked",
+    "discord_real_task_received",
+    "discord_real_task_blocked",
+)
+REAL_GITHUB_DECISION_TYPES = (
+    "github_sandbox_pr_created",
+    "github_sandbox_pr_blocked",
+    "github_sandbox_guard_failed",
+    "github_real_test",
+    "github_real_test_blocked",
+    "github_real_test_failed",
+)
+REAL_DISCORD_EVENT_TYPES = (
+    "discord.real_test_sent",
+    "discord.real_task_received",
+)
+REAL_GITHUB_EVENT_TYPES = (
+    "github.sandbox_pr.created",
+    "github.sandbox_pr.blocked",
+    "github.real_test_pr.created",
+)
+
+
+async def _real_integration_payload() -> dict[str, Any]:
+    inputs = collect_real_integration_inputs()
+    warnings: list[str] = []
+
+    # Discord counters via audit_logs (best-effort, degrade silently).
+    discord_audit = {t: 0 for t in REAL_DISCORD_DECISION_TYPES}
+    github_audit = {t: 0 for t in REAL_GITHUB_DECISION_TYPES}
+    try:
+        audit_store = AuditStore()
+        for decision in REAL_DISCORD_DECISION_TYPES:
+            rows = await audit_store.list_audit_logs(decision_type=decision, limit=500)
+            discord_audit[decision] = len(rows)
+        for decision in REAL_GITHUB_DECISION_TYPES:
+            rows = await audit_store.list_audit_logs(decision_type=decision, limit=500)
+            github_audit[decision] = len(rows)
+    except Exception:
+        warnings.append("audit_store_unavailable")
+
+    # Notification delivery counters (best-effort).
+    notif_counts: dict[str, int] = {}
+    try:
+        notif_store = NotificationDeliveryStore()
+        rows = await notif_store.list_deliveries(limit=500)
+        for row in rows:
+            ev = (row.get("event_type") or "").strip()
+            if ev in REAL_DISCORD_EVENT_TYPES or ev in REAL_GITHUB_EVENT_TYPES:
+                notif_counts[ev] = notif_counts.get(ev, 0) + 1
+    except Exception:
+        warnings.append("notification_store_unavailable")
+
+    discord_summary = {
+        "inputs_present": inputs["discord_required_present"],
+        "opt_in_active": inputs["discord_opt_in_active"],
+        "guard_active": inputs["discord_ready"],
+        "test_channel_configured": bool(os.environ.get("DISCORD_TEST_CHANNEL_ID", "").strip()),
+        "test_guild_configured": bool(os.environ.get("DISCORD_TEST_GUILD_ID", "").strip()),
+        "audit_counts": discord_audit,
+        "notification_counts": {ev: notif_counts.get(ev, 0) for ev in REAL_DISCORD_EVENT_TYPES},
+        "tests_sent_total": discord_audit.get("discord_real_test_sent", 0),
+        "tasks_received_total": discord_audit.get("discord_real_task_received", 0),
+        "blocks_total": (
+            discord_audit.get("discord_real_test_blocked", 0)
+            + discord_audit.get("discord_real_task_blocked", 0)
+        ),
+    }
+    github_summary = {
+        "inputs_present": inputs["github_required_present"],
+        "opt_in_active": inputs["github_opt_in_active"],
+        "guard_active": inputs["github_ready"],
+        "test_repo": (os.environ.get("GITHUB_TEST_REPO", "") or "").strip(),
+        "audit_counts": github_audit,
+        "notification_counts": {ev: notif_counts.get(ev, 0) for ev in REAL_GITHUB_EVENT_TYPES},
+        "sandbox_prs_created_total": (
+            github_audit.get("github_sandbox_pr_created", 0)
+            + github_audit.get("github_real_test", 0)
+        ),
+        "sandbox_failures_total": (
+            github_audit.get("github_sandbox_pr_blocked", 0)
+            + github_audit.get("github_sandbox_guard_failed", 0)
+            + github_audit.get("github_real_test_failed", 0)
+        ),
+    }
+    return {
+        "discord": discord_summary,
+        "github": github_summary,
+        "real_llm_calls": 0,
+        "real_llm_enabled": False,
+        "production_deploy_enabled": False,
+        "warnings": warnings,
+        "inputs_snapshot": {
+            "discord": inputs["discord"],
+            "github": inputs["github"],
+            "no_token_leak": True,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/real-integrations")
+@_instrument("/operations/real-integrations", "operations.real_integrations_view")
+async def operations_real_integrations() -> dict:
+    return await _real_integration_payload()
+
+
+@router.get("/real-integrations/discord")
+@_instrument("/operations/real-integrations/discord", "operations.real_integrations_discord")
+async def operations_real_integrations_discord() -> dict:
+    payload = await _real_integration_payload()
+    return {
+        "discord": payload["discord"],
+        "real_llm_enabled": payload["real_llm_enabled"],
+        "production_deploy_enabled": payload["production_deploy_enabled"],
+        "warnings": payload["warnings"],
+        "generated_at": payload["generated_at"],
+    }
+
+
+@router.get("/real-integrations/github")
+@_instrument("/operations/real-integrations/github", "operations.real_integrations_github")
+async def operations_real_integrations_github() -> dict:
+    payload = await _real_integration_payload()
+    return {
+        "github": payload["github"],
+        "real_llm_enabled": payload["real_llm_enabled"],
+        "production_deploy_enabled": payload["production_deploy_enabled"],
+        "warnings": payload["warnings"],
+        "generated_at": payload["generated_at"],
     }
