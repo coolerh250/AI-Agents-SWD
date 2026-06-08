@@ -172,12 +172,12 @@ except Exception as e:
 
 # Safety endpoint must carry Stage 33 flags.
 saf=$(curl -sS -m 5 "$ORCH/operations/safety" 2>/dev/null || echo '{}')
-if echo "$saf" | grep -q '"real_discord_stream_delivery_default_blocked": true'; then
+if echo "$saf" | grep -qE '"real_discord_stream_delivery_default_blocked":\s*true'; then
   echo "SAFETY_FLAG_DEFAULT_BLOCKED: PASS"
 else
   echo "SAFETY_FLAG_DEFAULT_BLOCKED: FAIL"
 fi
-if echo "$saf" | grep -q '"real_discord_stream_delivery_policy_enforced": true'; then
+if echo "$saf" | grep -qE '"real_discord_stream_delivery_policy_enforced":\s*true'; then
   echo "SAFETY_FLAG_POLICY_ENFORCED: PASS"
 else
   echo "SAFETY_FLAG_POLICY_ENFORCED: FAIL"
