@@ -6440,3 +6440,272 @@ issues & blockers, and next-step suggestions.
     substrate. None of these is decided by Claude Code.
   - **Following Stages 22 -- 31, Claude Code does not decide
     the Step 32 roadmap.**
+
+## Stage 33 -- Step 32: Real Discord Delivery Filtering & Integration Containment
+
+- **Execution window:** 2026-06-05 -> 2026-06-08 (CST). Branch:
+  `main`. Local + remote pre-Stage-33 at `9bb4159` (Stage 32
+  progress log). Stage 33 deliverable at `e8da4d5`; one
+  follow-up commit `2eba8bf` (regex-tolerance fix in
+  `verify_real_discord_delivery_filter.sh` after the first
+  on-host run flagged the JSON format mismatch). No schema
+  migration; all changes are application-layer + a new shared
+  SDK policy module + the notification-worker stream-consumer
+  rewire.
+- **Driver:** the Step 31R pilot uncovered a "real-mode
+  autospam" blocker -- with the real Discord env live in the
+  `notification-worker` container, the stream consumer routed
+  128 internal events to the operator test channel in one hour.
+  Stage 32's per-endpoint guard was correctly enforced on
+  `/discord/real/test-message`, but the
+  `stream.notifications` -> real Discord path used only the
+  looser Stage 22 `client.can_deliver()` check.
+- **Real delivery policy result:** new
+  `shared/sdk/notifications/real_delivery_policy.py` introduces
+  `RealDeliveryPolicy` + `RealDeliveryDecision` +
+  `classify_real_delivery()`. Pure module (no I/O, no env
+  mutation, no audit publish, no token read) -- the worker
+  delegates every per-event decision to it. Defaults are
+  default-deny: allowlist =
+  `[discord.real_test_sent, discord.real_task_received]`,
+  denylist (wins over everything, including markers) =
+  `workflow.*, qa.*, code.*, github.*, task.*, llm.*,
+  approval.*, audit.*, incident.*, retry.*`. Operator can widen
+  via `REAL_DISCORD_ALLOWLIST` / `REAL_DISCORD_DENYLIST` /
+  `REAL_DISCORD_ALLOW_MARKER` env vars; the
+  `DISCORD_BOT_TOKEN` / `DISCORD_TEST_CHANNEL_ID` /
+  `RUN_REAL_DISCORD_TEST` Stage 32 gate is unchanged. Five
+  decision values (`simulated`, `real_allowed`, `real_blocked`,
+  `skipped`, `failed`) and seven blocked-reason values
+  (`real_mode_disabled`, `missing_real_delivery_marker`,
+  `event_type_not_allowed`, `event_type_denied`,
+  `wrong_channel`, `production_executed_not_false`,
+  `token_missing`). Result dict never contains a token value.
+- **Autospam-block result:** `apps/notification-worker/src/worker.py`
+  now calls `classify_real_delivery(payload, policy)` BEFORE
+  any external API call. Internal events
+  (`workflow.completed`, `qa.validation_passed`,
+  `code.generated`, `github.sandbox_pr.created`, `task.*`,
+  `llm.*`, `approval.*`, `audit.*`, `incident.*`, `retry.*`)
+  resolve to `real_blocked` with `reason=event_type_denied` and
+  never reach the Discord client. The
+  `notification_deliveries.metadata` row carries the policy
+  decision (`delivery_decision`, `blocked_reason`,
+  `event_type`, `sandbox`, `external_sent`). A blocked event
+  emits one `discord_real_delivery_blocked` audit row only -- no
+  recursive notification publish.
+- **Allowed event result:** events on the allowlist (default
+  `discord.real_test_sent`, `discord.real_task_received`) and
+  marker-promoted events (`metadata.real_delivery=true` AND not
+  in denylist AND `production_executed!=true` AND
+  target_channel matches) resolve to `real_allowed`, the
+  worker calls `client.send_test_message`, and persists
+  `notification_deliveries.status='delivered'` +
+  `external_sent=True` + `discord_real_test_sent` audit. The
+  per-call `production_executed=false` invariant is preserved.
+- **Denylist result:** even
+  `github.sandbox_pr.created` with
+  `metadata.real_delivery=true` is blocked. Denylist beats
+  marker beats allowlist. Verified by
+  `tests/test_notification_real_delivery_policy.py::test_denylist_wins_over_marker`
+  and the runtime Scenario C in
+  `verify_real_discord_delivery_filter.sh`.
+- **Operations result:** `/operations/safety` now carries
+  `real_discord_stream_delivery_default_blocked=True` +
+  `real_discord_stream_delivery_policy_enforced=True`.
+  `/operations/real-integrations` fetches the notification-worker
+  `/status` and surfaces `notification_worker_real_delivery_policy`
+  (`real_delivery_enabled`, `real_delivery_allowlist`,
+  `real_delivery_denylist`, `real_delivery_allowed_count`,
+  `real_delivery_blocked_count`, `real_delivery_skipped_count`,
+  `last_real_delivery_decision`,
+  `last_real_delivery_block_reason`). The worker's `/status`
+  exposes the same fields directly + the policy snapshot;
+  `/health` carries `real_delivery_policy_enforced=True` +
+  `real_delivery_stream_default_blocked=True`. The audit
+  decision_type list in `_real_integration_payload` was
+  extended with `discord_real_delivery_blocked` +
+  `discord_real_delivery_skipped`.
+- **Audit / Notification result:** two new audit decision_types
+  (`discord_real_delivery_blocked`,
+  `discord_real_delivery_skipped`) publish only onto
+  `stream.audit`. The blocked / skipped paths never call
+  `publish_notification`, so a single internal event cannot
+  recursively create more notification events. Verified by
+  `tests/test_real_discord_delivery_no_autospam.py::test_audit_storm_isolated_to_audit_stream_not_notifications`
+  (50 blocked events -> 0 republishes onto
+  `stream.notifications`).
+- **Metrics result:** four new Prometheus counters in
+  `shared/sdk/observability/metrics.py`:
+  `real_discord_delivery_allowed_total{event_type}`,
+  `real_discord_delivery_blocked_total{event_type,reason}`,
+  `real_discord_delivery_skipped_total{event_type,reason}`,
+  `real_discord_delivery_policy_decisions_total{event_type,decision,reason}`.
+  Plus three new spans:
+  `notification.real_delivery_policy`,
+  `notification.real_delivery_block`,
+  `notification.real_delivery_send` (wrapping the existing
+  `notification.real_discord_send`).
+- **Tests result:** four new test files, 34 new tests, all
+  green:
+  - `tests/test_notification_real_delivery_policy.py` -- 19
+    pure-policy decision branches + redaction guarantee.
+  - `tests/test_notification_worker_real_delivery_filter.py` --
+    9 worker-handle scenarios (workflow/qa/code/github blocked;
+    discord.real_test_sent allowed; marker promotion;
+    denylist beats marker; no notification loop; status
+    exposes counters).
+  - `tests/test_operations_real_delivery_policy.py` -- 4
+    structural assertions on the orchestrator operations
+    payload + worker /status fetch URL.
+  - `tests/test_real_discord_delivery_no_autospam.py` -- 2
+    regression tests replaying the Step 31R 12-event burst +
+    a 50-event audit storm. Asserts exactly 1 send for the
+    allowlisted event, 12 blocks, 0 republishes onto
+    `stream.notifications`.
+  Pre-existing `tests/test_notification_worker.py` updated:
+  `test_controlled_real_delivers_via_discord` +
+  `test_controlled_real_failure_retries_then_deadletters` now
+  use `discord.real_test_sent` (allowlisted) instead of
+  `discord.task.completed` (now correctly blocked).
+- **Runtime smoke result:** `scripts/check_runtime_state.sh`
+  gained 7 new Stage 33 smokes
+  (`REAL_DISCORD_DELIVERY_POLICY_SMOKE`,
+  `REAL_DISCORD_AUTOSPAM_BLOCK_SMOKE`,
+  `REAL_DISCORD_ALLOWED_EVENT_SMOKE`,
+  `REAL_DISCORD_DENYLIST_SMOKE`,
+  `REAL_DISCORD_POLICY_OPERATIONS_SMOKE`,
+  `REAL_DISCORD_POLICY_AUDIT_SMOKE`,
+  `REAL_DISCORD_POLICY_METRICS_SMOKE`). New
+  `scripts/verify_real_discord_delivery_filter.sh` runs four
+  scenarios (A: internal events blocked; B: explicit real event
+  allowed (SKIPPED without real env); C: denylist wins; D: no
+  recursive notification storm) and ends
+  `REAL_DISCORD_DELIVERY_FILTER_VERIFY: PASS`.
+- **Regression result:** existing pilot scripts unchanged
+  semantically; `verify_real_discord_pilot.sh`,
+  `verify_real_github_sandbox_pilot.sh`,
+  `verify_real_integration_pilot.sh`,
+  `verify_notification_delivery.sh`,
+  `verify_operations_view.sh`, `verify_unified_audit.sh`,
+  `verify_platform_observability.sh` all continue to pass
+  against the new worker behaviour.
+- **Production safety result:** `production_executed=true`
+  counts on `deployment_records` + `workflow_states` remain
+  `0`. `production_deploy_enabled=False`. The Stage 31 hard
+  safety rail still refuses `real_llm_network_call` +
+  `production_deploy`. `HARD_SAFETY_ACTIONS` unchanged.
+  `discord_external_send_enabled=False` in default sandbox;
+  `True` only when an operator deliberately re-enables the
+  pilot env.
+- **Docs result:** new
+  `docs/operations/real-discord-delivery-policy.md` documents
+  why the default-deny exists, the decision order, every env
+  knob, the per-event marker, blocked/skipped semantics, no-loop
+  contract, operations surfaces, how to verify, how to safely
+  enable more event types, and the Step 31R cleanup history.
+  `docs/operations/real-integration-pilot.md` and
+  `docs/operations/manual-verification.md` each gained a Stage 33
+  cross-reference + a fresh 17l section with the verify command
+  + expected output. `README.md` gained a Stage 33 sub-section
+  above "Testing".
+- **Remote validation (10.0.1.31 -> `e8da4d5` + `2eba8bf`):**
+  pulled to `2eba8bf` on `/home/itadmin/AI-Agents-SWD`, `pip
+  install -r requirements.txt` clean, `docker compose build
+  notification-worker orchestrator` clean, `docker compose up
+  -d --force-recreate notification-worker orchestrator` ->
+  both healthy with the Stage 33 surfaces live. After `up -d`
+  the full 22-container stack was running. Quality + verify
+  results (all green except the unchanged QA_METRICS_SMOKE
+  `CHECK` and the pre-Stage-33 flaky
+  `test_terminal_failure_writes_audit_event` -- both unrelated
+  to Stage 33):
+  - `python -m pytest -q tests/` (remote, full venv): 1108
+    passed, 1 warning.
+  - `./scripts/check_runtime_state.sh`: exited 0; 7 Stage 33
+    smokes PASS (`REAL_DISCORD_DELIVERY_POLICY_SMOKE`,
+    `REAL_DISCORD_AUTOSPAM_BLOCK_SMOKE` `(sandbox; policy
+    default-deny)`, `REAL_DISCORD_ALLOWED_EVENT_SMOKE`,
+    `REAL_DISCORD_DENYLIST_SMOKE`,
+    `REAL_DISCORD_POLICY_OPERATIONS_SMOKE`,
+    `REAL_DISCORD_POLICY_AUDIT_SMOKE`,
+    `REAL_DISCORD_POLICY_METRICS_SMOKE`),
+    `CHECK_RUNTIME_STATE_DONE`.
+  - `./scripts/verify_real_discord_delivery_filter.sh`:
+    `REAL_DISCORD_DELIVERY_FILTER_VERIFY: PASS`,
+    `SAFETY_FLAG_DEFAULT_BLOCKED: PASS`,
+    `SAFETY_FLAG_POLICY_ENFORCED: PASS`,
+    `PRODUCTION_SAFETY: PASS`.
+  - `./scripts/verify_real_integration_pilot.sh`:
+    `REAL_INTEGRATION_PILOT_VERIFY: PASS`.
+  - `./scripts/verify_real_discord_pilot.sh`:
+    `REAL_DISCORD_PILOT_VERIFY: PASS` (`REAL_DISCORD_TEST_SKIPPED:
+    PASS` -- pilot env unset on the test cluster).
+  - `./scripts/verify_real_github_sandbox_pilot.sh`:
+    `REAL_GITHUB_SANDBOX_PILOT_VERIFY: PASS`
+    (`REAL_GITHUB_SANDBOX_TEST_SKIPPED: PASS`).
+  - `./scripts/verify_notification_delivery.sh`:
+    `NOTIFICATION_DELIVERY_VERIFY: PASS`.
+  - `./scripts/verify_operations_view.sh`:
+    `OPERATIONS_VIEW_VERIFY: PASS`.
+  - `./scripts/verify_unified_audit.sh`:
+    `UNIFIED_AUDIT_VERIFY: PASS`.
+  - `./scripts/verify_platform_observability.sh`:
+    `PLATFORM_OBSERVABILITY_VERIFY: PASS` (81/81).
+  - Production safety counts:
+    `deployment_records.production_executed_true=0`,
+    `workflow_states.production_executed_true=0`.
+  - Final `/operations/safety`:
+    `real_discord_stream_delivery_default_blocked=true`,
+    `real_discord_stream_delivery_policy_enforced=true`,
+    `discord_external_send_enabled=false`,
+    `production_executed_true_count=0`,
+    `llm_external_call_enabled=false`.
+  - Final notification-worker `/status`:
+    `real_delivery_enabled=false`,
+    `real_delivery_allowlist=[discord.real_test_sent,
+    discord.real_task_received]`, `real_delivery_denylist`
+    contains all 10 deny prefixes,
+    `real_delivery_allow_marker=true`,
+    `last_real_delivery_decision=simulated`,
+    `last_real_delivery_block_reason=real_mode_disabled` (the
+    sandbox default).
+- **Risks / observations (Claude Code reports only):**
+  - **Real Discord policy limitations.** The policy is event-
+    type + marker + channel + production-executed only. It does
+    NOT inspect the rendered message body content. Producers
+    must continue to use `render_safe_discord_message` (Stage
+    32) so token-shaped strings get redacted before they cross
+    the wire.
+  - **Allowed-event expansion risk.** Adding a new event_type
+    to `REAL_DISCORD_ALLOWLIST` re-creates a potential blast
+    radius the size of that event's production rate. The
+    Step-31R blocker happened because EVERY event was allowed
+    by default; widening the allowlist re-introduces a
+    proportional risk per-event. The
+    `real-discord-delivery-policy.md` runbook documents the
+    five-step process to do this safely.
+  - **Token rotation status.** Step 31R recommended rotation
+    for the Discord bot token + GitHub fine-grained PAT that
+    were pasted into the prior conversation transcript. Stage
+    33 does not perform rotation; it is still the operator's
+    responsibility outside this work item.
+  - **Production deploy disabled.** Unchanged from Stage 32.
+    `production_executed=true` count is `0`,
+    `production_deploy_enabled=false`,
+    `llm_external_call_enabled=false`. The Stage 31 hard rail
+    untouched.
+  - **Next production blocker (operator-decided, not Claude
+    Code's call):** the Pre-Step 31 assessment's remaining
+    gates are still outstanding (tamper-evident audit, LLM cost
+    cap, K8s/Helm/Argo substrate, real LLM plan-only mode,
+    backup/restore productionisation, incident-response
+    runbook). None of these is decided by Claude Code.
+  - **Other.** A notification producer that wants to broadcast
+    a NEW operator-visible event must now add it to
+    `REAL_DISCORD_ALLOWLIST` OR set `metadata.real_delivery=true`
+    on the payload AND keep the event_type out of the
+    denylist. The migration is purely additive -- no existing
+    producer must change.
+  - **Following Stages 22 -- 32, Claude Code does not decide
+    the Step 33 roadmap.**
