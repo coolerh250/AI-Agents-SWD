@@ -1508,6 +1508,8 @@ async def operations_safety() -> dict:
         "real_discord_target_channel_configured": real_discord_test_channel_configured,
         "real_discord_test_guild_configured": discord_test_guild_configured,
         "real_discord_guard_active": real_discord_guard_active,
+        "real_discord_stream_delivery_default_blocked": True,
+        "real_discord_stream_delivery_policy_enforced": True,
         "real_github_inputs_present": bool(inputs["github_required_present"]),
         "real_github_test_enabled_pilot": real_test,
         "github_test_repo": github_test_repo,
@@ -2156,6 +2158,8 @@ REAL_DISCORD_DECISION_TYPES = (
     "discord_real_test_blocked",
     "discord_real_task_received",
     "discord_real_task_blocked",
+    "discord_real_delivery_blocked",
+    "discord_real_delivery_skipped",
 )
 REAL_GITHUB_DECISION_TYPES = (
     "github_sandbox_pr_created",
@@ -2206,6 +2210,43 @@ async def _real_integration_payload() -> dict[str, Any]:
     except Exception:
         warnings.append("notification_store_unavailable")
 
+    # Stage 33 -- notification-worker real-delivery policy snapshot.
+    # Best-effort fetch from the worker's /status; if the worker is
+    # unreachable we fall back to the env-derived defaults so the API
+    # contract is still satisfied (and a warning is surfaced).
+    notif_worker_policy: dict[str, Any] = {
+        "real_delivery_enabled": False,
+        "real_delivery_allowlist": [],
+        "real_delivery_denylist": [],
+        "real_delivery_allow_marker": True,
+        "real_delivery_allowed_count": 0,
+        "real_delivery_blocked_count": 0,
+        "real_delivery_skipped_count": 0,
+        "last_real_delivery_decision": None,
+        "last_real_delivery_block_reason": None,
+        "stream_delivery_default_blocked": True,
+        "stream_delivery_policy_enforced": True,
+    }
+    nw_status_code, nw_status_body = await _http_get(
+        "http://notification-worker:8008/status", timeout=2.0
+    )
+    if nw_status_code == 200 and isinstance(nw_status_body, dict):
+        for key in (
+            "real_delivery_enabled",
+            "real_delivery_allowlist",
+            "real_delivery_denylist",
+            "real_delivery_allow_marker",
+            "real_delivery_allowed_count",
+            "real_delivery_blocked_count",
+            "real_delivery_skipped_count",
+            "last_real_delivery_decision",
+            "last_real_delivery_block_reason",
+        ):
+            if key in nw_status_body:
+                notif_worker_policy[key] = nw_status_body[key]
+    else:
+        warnings.append("notification_worker_unavailable")
+
     discord_summary = {
         "inputs_present": inputs["discord_required_present"],
         "opt_in_active": inputs["discord_opt_in_active"],
@@ -2241,6 +2282,12 @@ async def _real_integration_payload() -> dict[str, Any]:
     return {
         "discord": discord_summary,
         "github": github_summary,
+        "notification_worker_real_delivery_policy": notif_worker_policy,
+        "real_delivery_allowlist": notif_worker_policy["real_delivery_allowlist"],
+        "real_delivery_denylist": notif_worker_policy["real_delivery_denylist"],
+        "real_delivery_allowed_count": notif_worker_policy["real_delivery_allowed_count"],
+        "real_delivery_blocked_count": notif_worker_policy["real_delivery_blocked_count"],
+        "last_real_delivery_block_reason": notif_worker_policy["last_real_delivery_block_reason"],
         "real_llm_calls": 0,
         "real_llm_enabled": False,
         "production_deploy_enabled": False,

@@ -227,6 +227,28 @@ NOTIFICATION_WORKER_PROCESSING_SECONDS = Histogram(
     buckets=(0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5),
 )
 
+# Stage 33 — real Discord delivery policy decisions.
+REAL_DISCORD_DELIVERY_ALLOWED_TOTAL = Counter(
+    "real_discord_delivery_allowed_total",
+    "Stream events promoted to real Discord delivery (per event_type)",
+    ["event_type"],
+)
+REAL_DISCORD_DELIVERY_BLOCKED_TOTAL = Counter(
+    "real_discord_delivery_blocked_total",
+    "Stream events blocked from real Discord delivery (per event_type + reason)",
+    ["event_type", "reason"],
+)
+REAL_DISCORD_DELIVERY_SKIPPED_TOTAL = Counter(
+    "real_discord_delivery_skipped_total",
+    "Stream events skipped by the real-delivery policy (per event_type + reason)",
+    ["event_type", "reason"],
+)
+REAL_DISCORD_DELIVERY_POLICY_DECISIONS_TOTAL = Counter(
+    "real_discord_delivery_policy_decisions_total",
+    "Every real-delivery policy decision (per event_type + decision + reason)",
+    ["event_type", "decision", "reason"],
+)
+
 
 # Stage 27 — flexible task execution loop metrics.
 TASK_WORK_ITEMS_TOTAL = Counter(

@@ -82,6 +82,8 @@ def health() -> dict:
         "mode": "sandbox" if not client.can_deliver() else "controlled-real",
         "has_discord_token": client.has_token,
         "real_discord_enabled": client.real_enabled,
+        "real_delivery_policy_enforced": True,
+        "real_delivery_stream_default_blocked": True,
     }
 
 

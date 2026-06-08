@@ -191,25 +191,31 @@ def test_handle_skips_non_dict_payload():
 
 
 def test_controlled_real_delivers_via_discord():
+    """Stage 33: only events on the allowlist (or carrying an explicit
+    ``metadata.real_delivery=true`` marker) may reach the real Discord
+    client. ``discord.real_test_sent`` is in the default allowlist.
+    """
     client = _ControlledClient()
     module, worker, bus, store, audit_calls = _make_worker(client=client)
     payload = {
         "task_id": "t-real",
-        "event_type": "discord.task.completed",
+        "event_type": "discord.real_test_sent",
         "message": "completed",
     }
     outcome = _run(worker.handle("R-0", payload))
     assert outcome["action"] == "delivered"
     assert outcome["message_id"] == "discord-msg-1"
     assert worker.delivered_count == 1
-    assert client.sent_messages and "discord.task.completed" in client.sent_messages[0]
+    assert client.sent_messages and "discord.real_test_sent" in client.sent_messages[0]
     assert any(call.get("decision_type") == "discord_real_test_sent" for call in audit_calls)
 
 
 def test_controlled_real_failure_retries_then_deadletters():
     client = _ControlledClient(fail=True)
     module, worker, bus, store, audit_calls = _make_worker(client=client)
-    payload = {"task_id": "t-fail", "event_type": "discord.task.completed"}
+    # Use an allowlisted event so the policy permits the real-API call
+    # that is mocked to fail.
+    payload = {"task_id": "t-fail", "event_type": "discord.real_test_sent"}
     for _ in range(module.MAX_FAILURES_BEFORE_DEADLETTER - 1):
         outcome = _run(worker.handle("F-0", payload))
         assert outcome["action"] == "retry"

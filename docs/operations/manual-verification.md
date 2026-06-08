@@ -1074,6 +1074,40 @@ Operations surfaces:
 The operator runbook lives at
 [`docs/operations/real-integration-pilot.md`](./real-integration-pilot.md).
 
+## 17l. Real Discord delivery filter (Stage 33)
+
+Stage 33 fixed the Step 31R "autospam" blocker: even with real Discord
+env live, the `notification-worker` stream consumer now defaults to
+blocking every internal event (`workflow.*`, `qa.*`, `code.*`,
+`github.*`, …) and only promotes explicit allowlist entries to a real
+Discord call.
+
+```bash
+./scripts/verify_real_discord_delivery_filter.sh
+./scripts/check_runtime_state.sh | grep -E 'REAL_DISCORD_(DELIVERY|AUTOSPAM|ALLOWED|DENYLIST|POLICY)'
+```
+
+Expected (sandbox / default cluster):
+
+* `REAL_DISCORD_DELIVERY_POLICY_SMOKE: PASS`
+* `REAL_DISCORD_AUTOSPAM_BLOCK_SMOKE: PASS (sandbox; policy default-deny)`
+* `REAL_DISCORD_ALLOWED_EVENT_SMOKE: PASS`
+* `REAL_DISCORD_DENYLIST_SMOKE: PASS`
+* `REAL_DISCORD_POLICY_OPERATIONS_SMOKE: PASS`
+* `REAL_DISCORD_POLICY_METRICS_SMOKE: PASS`
+* `REAL_DISCORD_DELIVERY_FILTER_VERIFY: PASS`
+
+Expected (real Discord env present):
+
+* Internal events publish into `stream.notifications` but
+  `notification-worker /status.real_delivery_blocked_count` rises by
+  one per event, `real_delivery_allowed_count` rises by one for the
+  allowlisted `discord.real_test_sent` event, and the real Discord
+  channel sees exactly that one message.
+
+The policy contract + every env knob is documented in
+[`real-discord-delivery-policy.md`](./real-discord-delivery-policy.md).
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

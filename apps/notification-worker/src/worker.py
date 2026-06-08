@@ -35,6 +35,15 @@ from shared.sdk.event_bus.redis_streams import (
     DEAD_LETTER_STREAM,
     RedisStreamEventBus,
 )
+from shared.sdk.notifications.real_delivery_policy import (
+    DELIVERY_DECISION_REAL_ALLOWED,
+    DELIVERY_DECISION_REAL_BLOCKED,
+    DELIVERY_DECISION_SKIPPED,
+    RealDeliveryDecision,
+    RealDeliveryPolicy,
+    classify_real_delivery,
+    load_policy_from_env,
+)
 from shared.sdk.notifications.store import NotificationDeliveryStore
 from shared.sdk.observability.metrics import (
     NOTIFICATION_WORKER_DELIVERED_TOTAL,
@@ -43,6 +52,10 @@ from shared.sdk.observability.metrics import (
     NOTIFICATION_WORKER_PROCESSING_SECONDS,
     NOTIFICATION_WORKER_SIMULATED_TOTAL,
     NOTIFICATION_WORKER_SKIPPED_TOTAL,
+    REAL_DISCORD_DELIVERY_ALLOWED_TOTAL,
+    REAL_DISCORD_DELIVERY_BLOCKED_TOTAL,
+    REAL_DISCORD_DELIVERY_POLICY_DECISIONS_TOTAL,
+    REAL_DISCORD_DELIVERY_SKIPPED_TOTAL,
 )
 from shared.sdk.observability.tracing import start_span
 
@@ -102,15 +115,32 @@ class NotificationWorker:
         event_bus: RedisStreamEventBus | None = None,
         store: NotificationDeliveryStore | None = None,
         client: NotificationDiscordClient | None = None,
+        policy: RealDeliveryPolicy | None = None,
     ) -> None:
         self.bus = event_bus or RedisStreamEventBus()
         self.store = store or NotificationDeliveryStore()
         self._client = client or NotificationDiscordClient()
+        if policy is not None:
+            self.policy = policy
+        else:
+            loaded = load_policy_from_env(real_mode_enabled=self._client.can_deliver())
+            # If env didn't surface a test channel but the client has
+            # one configured (the common test fixture case), prefer the
+            # client's value so the policy can actually approve sends.
+            client_channel = getattr(self._client, "test_channel_id", "") or ""
+            if not loaded.test_channel_id and client_channel:
+                loaded.test_channel_id = client_channel
+            self.policy = loaded
         self.processed_count = 0
         self.delivered_count = 0
         self.simulated_count = 0
         self.failed_count = 0
         self.skipped_count = 0
+        self.real_delivery_allowed_count = 0
+        self.real_delivery_blocked_count = 0
+        self.real_delivery_skipped_count = 0
+        self.last_real_delivery_decision: str | None = None
+        self.last_real_delivery_block_reason: str | None = None
         self.last_message_id: str | None = None
         self.last_task_id: str | None = None
         self.last_error: str | None = None
@@ -134,6 +164,15 @@ class NotificationWorker:
             "simulated_count": self.simulated_count,
             "failed_count": self.failed_count,
             "skipped_count": self.skipped_count,
+            "real_delivery_enabled": self.policy.real_mode_enabled,
+            "real_delivery_allowlist": list(self.policy.allowlist),
+            "real_delivery_denylist": list(self.policy.denylist),
+            "real_delivery_allow_marker": self.policy.allow_marker,
+            "real_delivery_allowed_count": self.real_delivery_allowed_count,
+            "real_delivery_blocked_count": self.real_delivery_blocked_count,
+            "real_delivery_skipped_count": self.real_delivery_skipped_count,
+            "last_real_delivery_decision": self.last_real_delivery_decision,
+            "last_real_delivery_block_reason": self.last_real_delivery_block_reason,
             "last_message_id": self.last_message_id,
             "last_task_id": self.last_task_id,
             "last_error": self.last_error,
@@ -151,7 +190,17 @@ class NotificationWorker:
         event_type: str,
         sandbox: bool,
         external_sent: bool,
+        extra_refs: dict[str, Any] | None = None,
     ) -> None:
+        refs: dict[str, Any] = {
+            "delivery_id": delivery_id or "",
+            "source_message_id": source_message_id,
+            "event_type": event_type,
+            "sandbox": sandbox,
+            "external_sent": external_sent,
+        }
+        if extra_refs:
+            refs.update(extra_refs)
         with contextlib.suppress(Exception):
             await publish_audit_event(
                 task_id=task_id or "unknown",
@@ -159,13 +208,7 @@ class NotificationWorker:
                 decision_type=decision_type,
                 summary=summary,
                 result=result,
-                artifact_refs={
-                    "delivery_id": delivery_id or "",
-                    "source_message_id": source_message_id,
-                    "event_type": event_type,
-                    "sandbox": sandbox,
-                    "external_sent": external_sent,
-                },
+                artifact_refs=refs,
             )
 
     async def _deliver_via_discord(
@@ -248,12 +291,61 @@ class NotificationWorker:
                             "reason": str(exc),
                             "ack": True,
                         }
+                # Stage 33 -- evaluate the real-delivery policy BEFORE we
+                # touch the store, so an internal stream event with real
+                # env live can be downgraded to simulated/skipped without
+                # ever attempting an external API call.
+                with start_span(
+                    "notification.real_delivery_policy",
+                    **{
+                        "service.name": "notification-worker",
+                        "agent": "notification-worker",
+                        "task_id": task_id,
+                        "event_type": event_type,
+                    },
+                ):
+                    decision = classify_real_delivery(payload, self.policy)
+                self.last_real_delivery_decision = decision.decision
+                self.last_real_delivery_block_reason = decision.reason or None
+                REAL_DISCORD_DELIVERY_POLICY_DECISIONS_TOTAL.labels(
+                    event_type=event_type,
+                    decision=decision.decision,
+                    reason=decision.reason or "none",
+                ).inc()
+
                 metadata: dict[str, Any] = {
                     "rendered_message": rendered,
                     "original_event": payload,
+                    "delivery_decision": decision.decision,
+                    "blocked_reason": decision.reason,
+                    "event_type": event_type,
+                    "sandbox": decision.sandbox,
+                    "external_sent": False,
                 }
-                external_send_enabled = self._client.can_deliver()
                 sandbox_input = _safe_bool(payload.get("sandbox", True))
+
+                external_send_enabled = (
+                    decision.decision == DELIVERY_DECISION_REAL_ALLOWED
+                    and self._client.can_deliver()
+                )
+                if (
+                    decision.decision == DELIVERY_DECISION_REAL_ALLOWED
+                    and not self._client.can_deliver()
+                ):
+                    # Policy said yes but client disagrees -- treat as
+                    # skipped so we never attempt the external call.
+                    decision = RealDeliveryDecision(
+                        decision=DELIVERY_DECISION_SKIPPED,
+                        reason="client_cannot_deliver",
+                        event_type=event_type,
+                        sandbox=True,
+                        external_sent=False,
+                        target_channel=decision.target_channel,
+                    )
+                    metadata["delivery_decision"] = decision.decision
+                    metadata["blocked_reason"] = decision.reason
+                    self.last_real_delivery_decision = decision.decision
+                    self.last_real_delivery_block_reason = decision.reason
 
                 with start_span(
                     "notification.persist_delivery",
@@ -265,18 +357,30 @@ class NotificationWorker:
                         "channel": "discord",
                     },
                 ):
-                    initial_status = "delivered" if external_send_enabled else "simulated"
+                    if external_send_enabled:
+                        target = self._client.test_channel_id
+                        initial_status = "pending"
+                        sandbox_flag = False
+                    elif decision.decision == DELIVERY_DECISION_REAL_BLOCKED:
+                        target = self.policy.test_channel_id or "sandbox-channel"
+                        initial_status = "skipped"
+                        sandbox_flag = False
+                    elif decision.decision == DELIVERY_DECISION_SKIPPED:
+                        target = self.policy.test_channel_id or "sandbox-channel"
+                        initial_status = "skipped"
+                        sandbox_flag = True
+                    else:  # simulated
+                        target = "sandbox-channel"
+                        initial_status = "simulated"
+                        sandbox_flag = True
+
                     delivery = await self.store.create_delivery(
                         task_id=task_id or None,
                         event_type=event_type,
                         channel="discord",
-                        target=(
-                            self._client.test_channel_id
-                            if external_send_enabled
-                            else "sandbox-channel"
-                        ),
-                        status="pending" if external_send_enabled else initial_status,
-                        sandbox=not external_send_enabled,
+                        target=target,
+                        status=initial_status,
+                        sandbox=sandbox_flag,
                         external_sent=False,
                         source_message_id=message_id,
                         metadata=metadata,
@@ -292,10 +396,96 @@ class NotificationWorker:
                     }
                 delivery_id = str(delivery["delivery_id"])
 
-                if external_send_enabled:
-                    ok, discord_message_id, error = await self._deliver_via_discord(
-                        delivery_id=delivery_id, rendered=rendered
+                if decision.decision == DELIVERY_DECISION_REAL_BLOCKED:
+                    self.real_delivery_blocked_count += 1
+                    REAL_DISCORD_DELIVERY_BLOCKED_TOTAL.labels(
+                        event_type=event_type, reason=decision.reason or "unknown"
+                    ).inc()
+                    with start_span(
+                        "notification.real_delivery_block",
+                        **{
+                            "service.name": "notification-worker",
+                            "agent": "notification-worker",
+                            "task_id": task_id,
+                            "event_type": event_type,
+                            "reason": decision.reason or "unknown",
+                        },
+                    ):
+                        await self._publish_audit(
+                            task_id=task_id or None,
+                            decision_type="discord_real_delivery_blocked",
+                            summary=(
+                                f"real discord delivery blocked "
+                                f"(event={event_type}, reason={decision.reason})"
+                            ),
+                            result="blocked",
+                            delivery_id=delivery_id,
+                            source_message_id=message_id,
+                            event_type=event_type,
+                            sandbox=False,
+                            external_sent=False,
+                            extra_refs={
+                                "delivery_decision": decision.decision,
+                                "blocked_reason": decision.reason,
+                                "production_executed": False,
+                            },
+                        )
+                    self.processed_count += 1
+                    return {
+                        "action": "real_blocked",
+                        "delivery_id": delivery_id,
+                        "reason": decision.reason,
+                        "ack": True,
+                    }
+
+                if decision.decision == DELIVERY_DECISION_SKIPPED:
+                    self.real_delivery_skipped_count += 1
+                    REAL_DISCORD_DELIVERY_SKIPPED_TOTAL.labels(
+                        event_type=event_type, reason=decision.reason or "unknown"
+                    ).inc()
+                    await self._publish_audit(
+                        task_id=task_id or None,
+                        decision_type="discord_real_delivery_skipped",
+                        summary=(
+                            f"real discord delivery skipped "
+                            f"(event={event_type}, reason={decision.reason})"
+                        ),
+                        result="skipped",
+                        delivery_id=delivery_id,
+                        source_message_id=message_id,
+                        event_type=event_type,
+                        sandbox=True,
+                        external_sent=False,
+                        extra_refs={
+                            "delivery_decision": decision.decision,
+                            "blocked_reason": decision.reason,
+                            "production_executed": False,
+                        },
                     )
+                    self.processed_count += 1
+                    return {
+                        "action": "skipped",
+                        "delivery_id": delivery_id,
+                        "reason": decision.reason,
+                        "ack": True,
+                    }
+
+                if external_send_enabled:
+                    self.real_delivery_allowed_count += 1
+                    REAL_DISCORD_DELIVERY_ALLOWED_TOTAL.labels(event_type=event_type).inc()
+                    with start_span(
+                        "notification.real_delivery_send",
+                        **{
+                            "service.name": "notification-worker",
+                            "agent": "notification-worker",
+                            "task_id": task_id,
+                            "event_type": event_type,
+                            "channel": "discord",
+                        },
+                    ):
+                        ok, discord_message_id, error = await self._deliver_via_discord(
+                            delivery_id=delivery_id, rendered=rendered
+                        )
                     if ok:
                         await self.store.mark_delivered(
                             delivery_id,
@@ -319,6 +509,10 @@ class NotificationWorker:
                             event_type=event_type,
                             sandbox=False,
                             external_sent=True,
+                            extra_refs={
+                                "delivery_decision": DELIVERY_DECISION_REAL_ALLOWED,
+                                "production_executed": False,
+                            },
                         )
                         return {
                             "action": "delivered",

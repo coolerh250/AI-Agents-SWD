@@ -2356,6 +2356,31 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Real Discord Delivery Policy (Stage 33)
+
+Step 31R surfaced an "autospam" blocker: with real Discord env live in
+the `notification-worker` container, the stream consumer routed every
+internal platform event (workflow / qa / code / github / …) to the test
+channel. Stage 33 adds a per-event policy on the stream-consumer path
+that mirrors the Stage 32 endpoint guard:
+
+- Default **deny** for `workflow.*`, `qa.*`, `code.*`, `github.*`,
+  `task.*`, `llm.*`, `approval.*`, `audit.*`, `incident.*`, `retry.*`.
+- Default **allow** for `discord.real_test_sent`,
+  `discord.real_task_received` only.
+- Per-event opt-in via `metadata.real_delivery=true` (denylist still
+  wins).
+- `production_executed=true` and wrong-channel payloads are always
+  blocked.
+- Blocked events produce one `discord_real_delivery_blocked` audit row
+  and **never** republish onto `stream.notifications` (no notification
+  loop).
+
+Knobs: `REAL_DISCORD_ALLOWLIST`, `REAL_DISCORD_DENYLIST`,
+`REAL_DISCORD_ALLOW_MARKER`. None of these widens the Stage 32 endpoint
+guard or the `HARD_SAFETY_ACTIONS` rail. See
+[`docs/operations/real-discord-delivery-policy.md`](docs/operations/real-discord-delivery-policy.md).
+
 ## Testing
 
 Python dependencies are listed in `requirements.txt`; pytest configuration is

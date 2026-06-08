@@ -6,6 +6,13 @@
 > ``shared.sdk.real_integration`` guard. The default posture is
 > SANDBOX-ONLY and ALL real endpoints refuse with HTTP 409 until the
 > operator explicitly enables them.
+>
+> **Stage 33 update (post Step 31R):** the
+> ``notification-worker`` stream consumer now applies a separate
+> real-delivery policy in addition to the Stage 32 endpoint guard. See
+> [real-discord-delivery-policy.md](real-discord-delivery-policy.md)
+> for the allowlist / denylist semantics. The endpoint guard described
+> here is unchanged.
 
 ## Scope
 

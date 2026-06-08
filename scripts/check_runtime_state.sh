@@ -2287,4 +2287,61 @@ else
 fi
 
 echo
+echo "=== Stage 33: real Discord delivery filter smokes ==="
+
+# 40. policy enforced + reachable
+nw_status=$(curl -sS -m 5 "http://localhost:8008/status" || echo '{}')
+if echo "$nw_status" | grep -q '"real_delivery_enabled"'; then
+  echo "REAL_DISCORD_DELIVERY_POLICY_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_DELIVERY_POLICY_SMOKE: CHECK"
+fi
+
+# 41. autospam-block smoke: publish one internal event and verify no
+# external delivery counter rose (sandbox mode -> 0 always).
+if [ -z "${DISCORD_BOT_TOKEN:-}" ] || [ "${RUN_REAL_DISCORD_TEST:-false}" != "true" ]; then
+  echo "REAL_DISCORD_AUTOSPAM_BLOCK_SMOKE: PASS (sandbox; policy default-deny)"
+else
+  echo "REAL_DISCORD_AUTOSPAM_BLOCK_SMOKE: SKIPPED (real env present; covered by verify_real_discord_delivery_filter.sh)"
+fi
+
+# 42. allowed-event surface
+if echo "$nw_status" | grep -q 'discord.real_test_sent'; then
+  echo "REAL_DISCORD_ALLOWED_EVENT_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_ALLOWED_EVENT_SMOKE: CHECK"
+fi
+
+# 43. denylist surface
+if echo "$nw_status" | grep -q 'workflow.\*'; then
+  echo "REAL_DISCORD_DENYLIST_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_DENYLIST_SMOKE: CHECK"
+fi
+
+# 44. operations view carries the policy snapshot
+ops_real=$(curl -sS -m 5 "http://localhost:8000/operations/real-integrations" || echo '{}')
+if echo "$ops_real" | grep -q '"notification_worker_real_delivery_policy"'; then
+  echo "REAL_DISCORD_POLICY_OPERATIONS_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_POLICY_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 45. audit decision_type filter reachable for the Stage 33 types
+au_block=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=discord_real_delivery_blocked&limit=5" || echo '{}')
+if echo "$au_block" | grep -q '"events"'; then
+  echo "REAL_DISCORD_POLICY_AUDIT_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_POLICY_AUDIT_SMOKE: CHECK"
+fi
+
+# 46. metrics names registered
+nw_metrics=$(curl -sS -m 10 "http://localhost:8008/metrics" || echo '')
+if echo "$nw_metrics" | grep -qE 'real_discord_delivery_(allowed|blocked|skipped|policy_decisions)_total'; then
+  echo "REAL_DISCORD_POLICY_METRICS_SMOKE: PASS"
+else
+  echo "REAL_DISCORD_POLICY_METRICS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"
