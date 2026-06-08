@@ -52,6 +52,12 @@ from shared.sdk.observability.metrics import (
 )
 from shared.sdk.observability.tracing import start_span
 from shared.sdk.approval_policy import ApprovalPolicyStore
+from shared.sdk.audit_integrity import (
+    CHAIN_VERSION as AUDIT_CHAIN_VERSION,
+    AuditChainVerifier,
+    AuditIntegrityStore,
+    VERIFICATION_STATUS_ERROR,
+)
 from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.llm import LLMInteractionStore
 from shared.sdk.qa import QAStore
@@ -684,6 +690,7 @@ async def operations_summary() -> dict:
         llm_summary = await _llm_summary()
         approval_policy_summary = await _approval_policy_summary()
         real_integration_summary = await _real_integration_summary()
+        audit_integrity_summary = await _audit_integrity_summary()
     finally:
         with contextlib.suppress(Exception):
             await bus.close()
@@ -703,6 +710,7 @@ async def operations_summary() -> dict:
         "llm_summary": llm_summary,
         "approval_policy_summary": approval_policy_summary,
         "real_integration_summary": real_integration_summary,
+        "audit_integrity_summary": audit_integrity_summary,
         "production_safety": safety,
     }
 
@@ -1462,6 +1470,9 @@ async def operations_safety() -> dict:
     real_github_guard_active = bool(inputs["github_ready"])
     github_test_repo = (os.environ.get("GITHUB_TEST_REPO", "") or "").strip()
 
+    # Stage 34 -- pull the integrity summary (booleans + counts only).
+    audit_integrity = await _audit_integrity_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1510,6 +1521,17 @@ async def operations_safety() -> dict:
         "real_discord_guard_active": real_discord_guard_active,
         "real_discord_stream_delivery_default_blocked": True,
         "real_discord_stream_delivery_policy_enforced": True,
+        # Stage 34 -- tamper-evident audit chain. Booleans + names only.
+        "audit_integrity_enabled": audit_integrity["audit_integrity_enabled"],
+        "audit_chain_latest_status": audit_integrity["latest_verification_status"],
+        "audit_integrity_degraded": audit_integrity["audit_integrity_degraded"],
+        "audit_hmac_enabled": audit_integrity["hmac_enabled"],
+        "audit_last_verification_at": audit_integrity["latest_verification_at"],
+        "audit_missing_integrity_records": audit_integrity["missing_integrity_records"],
+        "audit_tamper_detected": bool(
+            audit_integrity.get("latest_verification_status") == "failed"
+            and audit_integrity.get("latest_verification_failure_reason")
+        ),
         "real_github_inputs_present": bool(inputs["github_required_present"]),
         "real_github_test_enabled_pilot": real_test,
         "github_test_repo": github_test_repo,
@@ -2331,3 +2353,125 @@ async def operations_real_integrations_github() -> dict:
         "warnings": payload["warnings"],
         "generated_at": payload["generated_at"],
     }
+
+
+# ---------------------------------------------------------------------------
+# Stage 34 -- tamper-evident audit chain operations view.
+# ---------------------------------------------------------------------------
+
+
+async def _audit_integrity_summary() -> dict[str, Any]:
+    store = AuditIntegrityStore()
+    summary: dict[str, Any] = {
+        "chain_version": AUDIT_CHAIN_VERSION,
+        "total_audit_logs": 0,
+        "total_integrity_records": 0,
+        "missing_integrity_records": 0,
+        "latest_sequence_number": None,
+        "latest_row_hash": None,
+        "latest_signing_key_id": store.signer.key_id,
+        "hmac_enabled": store.signer.configured,
+        "audit_integrity_enabled": True,
+        "audit_integrity_degraded": False,
+        "latest_verification_status": None,
+        "latest_verification_at": None,
+        "latest_verification_failure_reason": None,
+        "failed_verifications_count": 0,
+    }
+    try:
+        summary["total_audit_logs"] = await store.count_audit_logs()
+        summary["total_integrity_records"] = await store.count_integrity_records()
+        summary["missing_integrity_records"] = max(
+            0,
+            summary["total_audit_logs"] - summary["total_integrity_records"],
+        )
+        latest = await store.get_latest_integrity_record()
+        if latest is not None:
+            summary["latest_sequence_number"] = latest.sequence_number
+            summary["latest_row_hash"] = latest.row_hash
+            summary["latest_signing_key_id"] = latest.signing_key_id
+        last_run = await store.get_latest_verification_run()
+        if last_run is not None:
+            summary["latest_verification_status"] = last_run.status
+            summary["latest_verification_at"] = (
+                last_run.completed_at.isoformat() if last_run.completed_at else None
+            )
+            summary["latest_verification_failure_reason"] = last_run.failure_reason
+        summary["failed_verifications_count"] = await store.count_failed_verifications()
+        summary["audit_integrity_degraded"] = bool(
+            summary["missing_integrity_records"] > 0
+            or summary["latest_verification_status"] in ("failed", "error")
+        )
+    except Exception as exc:
+        summary["audit_integrity_enabled"] = False
+        summary["audit_integrity_degraded"] = True
+        summary["error"] = f"{exc.__class__.__name__}: {exc}"
+    return summary
+
+
+@router.get("/audit/integrity")
+@_instrument("/operations/audit/integrity", "operations.audit_integrity_view")
+async def operations_audit_integrity() -> dict:
+    summary = await _audit_integrity_summary()
+    return {**summary, "generated_at": _utcnow_iso()}
+
+
+@router.post("/audit/verify-chain")
+@_instrument("/operations/audit/verify-chain", "operations.audit_verify_chain")
+async def operations_audit_verify_chain() -> dict:
+    verifier = AuditChainVerifier()
+    store = AuditIntegrityStore()
+    with start_span(
+        "audit_integrity.verify_chain",
+        **{
+            "service.name": "orchestrator",
+            "agent": "orchestrator",
+            "chain_version": str(AUDIT_CHAIN_VERSION),
+        },
+    ):
+        try:
+            result = await verifier.verify_chain()
+        except Exception as exc:
+            return {
+                "status": VERIFICATION_STATUS_ERROR,
+                "chain_version": AUDIT_CHAIN_VERSION,
+                "error": f"{exc.__class__.__name__}: {exc}",
+                "generated_at": _utcnow_iso(),
+            }
+    try:
+        await store.record_verification_run(run=verifier.to_run(result))
+    except Exception:
+        # Recording the run is best-effort -- the verification itself
+        # already returned the authoritative result.
+        pass
+    return {**result.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.get("/audit/verify-chain/latest")
+@_instrument("/operations/audit/verify-chain/latest", "operations.audit_verify_chain_latest")
+async def operations_audit_verify_chain_latest() -> dict:
+    store = AuditIntegrityStore()
+    last_run = await store.get_latest_verification_run()
+    if last_run is None:
+        return {
+            "status": "not_run",
+            "chain_version": AUDIT_CHAIN_VERSION,
+            "generated_at": _utcnow_iso(),
+        }
+    return {**last_run.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.get("/audit/receipt/{audit_log_id}")
+@_instrument("/operations/audit/receipt", "operations.audit_receipt")
+async def operations_audit_receipt(audit_log_id: str) -> dict:
+    store = AuditIntegrityStore()
+    record = await store.get_integrity_record(audit_log_id)
+    if record is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"no integrity record for audit_log_id={audit_log_id}",
+        )
+    body = record.to_safe_dict(include_signature_preview=True)
+    body["verification_status"] = "valid_locally"
+    body["generated_at"] = _utcnow_iso()
+    return body

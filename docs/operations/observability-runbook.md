@@ -601,6 +601,27 @@ github-pipeline workflow shows entries for `intake / requirement /
 development / qa / deployment / github_pr_integration /
 github_automation` ordered by `created_at`.
 
+### 17d. Tamper-evident audit chain (Stage 34)
+
+`audit_logs` is now mirrored by `audit_integrity_records` (per-row
+hash-chain) and `audit_chain_verification_runs` (per-verify summary).
+Run on demand:
+
+```bash
+./scripts/backfill_audit_integrity.sh
+./scripts/verify_audit_integrity.sh
+./scripts/simulate_audit_tamper_detection.sh
+./scripts/verify_tamper_evident_audit.sh
+```
+
+Operator surfaces: `GET /operations/audit/integrity`,
+`POST /operations/audit/verify-chain`,
+`GET /operations/audit/verify-chain/latest`,
+`GET /operations/audit/receipt/{audit_log_id}`. The receipt endpoint
+exposes `hmac_signature_present` + an 8-char preview only -- the full
+signature and the HMAC key value are never returned. See
+[`tamper-evident-audit.md`](./tamper-evident-audit.md).
+
 ---
 
 ## 18. What to do when something is FAIL

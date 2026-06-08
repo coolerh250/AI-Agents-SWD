@@ -176,6 +176,8 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: audit-worker
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-}
+      AUDIT_HMAC_KEY_ID: ${AUDIT_HMAC_KEY_ID:-}
     ports:
       - "127.0.0.1:8006:8006"
     depends_on:
@@ -214,6 +216,11 @@ services:
       DISCORD_TEST_CHANNEL_ID: ${DISCORD_TEST_CHANNEL_ID:-}
       DISCORD_ALLOWED_ROLE_ID: ${DISCORD_ALLOWED_ROLE_ID:-}
       RUN_REAL_DISCORD_TEST: ${RUN_REAL_DISCORD_TEST:-false}
+      # Stage 34 -- audit integrity HMAC env. Presence only is consulted by
+      # /operations/audit/integrity; the key value is never read into a
+      # response or log.
+      AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-}
+      AUDIT_HMAC_KEY_ID: ${AUDIT_HMAC_KEY_ID:-}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator

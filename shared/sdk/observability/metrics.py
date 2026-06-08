@@ -249,6 +249,38 @@ REAL_DISCORD_DELIVERY_POLICY_DECISIONS_TOTAL = Counter(
     ["event_type", "decision", "reason"],
 )
 
+# Stage 34 — tamper-evident audit chain metrics.
+AUDIT_INTEGRITY_RECORDS_TOTAL = Counter(
+    "audit_integrity_records_total",
+    "audit_integrity_records rows written (per chain_version + status)",
+    ["chain_version", "status"],
+)
+AUDIT_INTEGRITY_MISSING_TOTAL = Counter(
+    "audit_integrity_missing_total",
+    "audit_logs rows observed lacking an integrity record",
+    ["reason"],
+)
+AUDIT_INTEGRITY_VERIFICATION_RUNS_TOTAL = Counter(
+    "audit_integrity_verification_runs_total",
+    "Verification-chain runs executed (per chain_version + status)",
+    ["chain_version", "status"],
+)
+AUDIT_INTEGRITY_VERIFICATION_FAILED_TOTAL = Counter(
+    "audit_integrity_verification_failed_total",
+    "Verification-chain runs that ended failed/error (per reason)",
+    ["reason"],
+)
+AUDIT_INTEGRITY_DEGRADED_TOTAL = Counter(
+    "audit_integrity_degraded_total",
+    "Audit-integrity writes that failed -- worker degraded but audit row persisted",
+    ["reason"],
+)
+AUDIT_TAMPER_DETECTED_TOTAL = Counter(
+    "audit_tamper_detected_total",
+    "Tamper events detected by the verifier",
+    ["reason"],
+)
+
 
 # Stage 27 — flexible task execution loop metrics.
 TASK_WORK_ITEMS_TOTAL = Counter(

@@ -13,6 +13,15 @@
 > [real-discord-delivery-policy.md](real-discord-delivery-policy.md)
 > for the allowlist / denylist semantics. The endpoint guard described
 > here is unchanged.
+>
+> **Stage 34 update:** the platform's `audit_logs` table is now backed
+> by a tamper-evident hash chain (`audit_integrity_records`) so an
+> operator can verify after the fact that no audit row was silently
+> mutated. The chain is built automatically as audit rows land; an
+> existing audit_logs table can be backfilled with
+> `scripts/backfill_audit_integrity.sh`. See
+> [tamper-evident-audit.md](tamper-evident-audit.md). The pilot
+> guards and refusals described in this document are unchanged.
 
 ## Scope
 

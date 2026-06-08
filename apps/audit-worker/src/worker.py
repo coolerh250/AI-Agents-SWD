@@ -33,11 +33,17 @@ from typing import Any
 
 from shared.sdk.audit.normalizer import is_audit_recorded_echo, normalize_audit_event
 from shared.sdk.audit.store import AuditStore
+from shared.sdk.audit_integrity import (
+    AuditIntegrityStore,
+    SIGNATURE_STATUS_NOT_CONFIGURED,
+)
 from shared.sdk.event_bus.redis_streams import (
     DEAD_LETTER_STREAM,
     RedisStreamEventBus,
 )
 from shared.sdk.observability.metrics import (
+    AUDIT_INTEGRITY_DEGRADED_TOTAL,
+    AUDIT_INTEGRITY_RECORDS_TOTAL,
     AUDIT_WORKER_DEADLETTERED_TOTAL,
     AUDIT_WORKER_FAILURES_TOTAL,
     AUDIT_WORKER_PROCESSED_TOTAL,
@@ -59,16 +65,22 @@ class AuditWorker:
         self,
         event_bus: RedisStreamEventBus | None = None,
         store: AuditStore | None = None,
+        integrity_store: AuditIntegrityStore | None = None,
     ) -> None:
         self.bus = event_bus or RedisStreamEventBus()
         self.store = store or AuditStore()
+        self.integrity_store = integrity_store or AuditIntegrityStore()
         self.processed_count = 0
         self.failed_count = 0
         self.deadlettered_count = 0
         self.skipped_count = 0
+        self.integrity_records_written = 0
+        self.integrity_degraded_count = 0
+        self.audit_integrity_degraded = False
         self.last_message_id: str | None = None
         self.last_task_id: str | None = None
         self.last_error: str | None = None
+        self.last_integrity_error: str | None = None
         self.running = False
         # Track retries per message_id so a poison message eventually goes to
         # the deadletter stream instead of blocking the whole group.
@@ -85,9 +97,15 @@ class AuditWorker:
             "failed_count": self.failed_count,
             "deadlettered_count": self.deadlettered_count,
             "skipped_count": self.skipped_count,
+            "integrity_records_written": self.integrity_records_written,
+            "integrity_degraded_count": self.integrity_degraded_count,
+            "audit_integrity_degraded": self.audit_integrity_degraded,
+            "audit_integrity_hmac_enabled": self.integrity_store.signer.configured,
+            "audit_integrity_signing_key_id": self.integrity_store.signer.key_id,
             "last_message_id": self.last_message_id,
             "last_task_id": self.last_task_id,
             "last_error": self.last_error,
+            "last_integrity_error": self.last_integrity_error,
         }
 
     async def _publish_deadletter(
@@ -205,6 +223,51 @@ class AuditWorker:
                 self.last_task_id = task_id or None
                 AUDIT_WORKER_PROCESSED_TOTAL.labels(decision_type=decision_type).inc()
                 self._retry_counts.pop(message_id, None)
+
+                # Stage 34 -- append the integrity record for this audit
+                # row. Failures degrade the worker (`audit_integrity_degraded`)
+                # but do NOT abort the audit-write path; the backfill
+                # script can recover later. We deliberately swallow the
+                # exception so a transient integrity-write hiccup cannot
+                # crash-loop the consumer.
+                with start_span(
+                    "audit_integrity.persist",
+                    **{
+                        "service.name": "audit-worker",
+                        "agent": "audit-worker",
+                        "audit_log_id": persisted.get("audit_id", ""),
+                        "task_id": task_id,
+                        "decision_type": decision_type,
+                    },
+                ):
+                    try:
+                        integrity = (
+                            await self.integrity_store.create_integrity_record_for_audit_log(
+                                persisted
+                            )
+                        )
+                        if integrity is not None:
+                            self.integrity_records_written += 1
+                            status_label = (
+                                "signing_key_not_configured"
+                                if integrity.signature_status == SIGNATURE_STATUS_NOT_CONFIGURED
+                                else integrity.signature_status
+                            )
+                            AUDIT_INTEGRITY_RECORDS_TOTAL.labels(
+                                chain_version=str(integrity.chain_version),
+                                status=status_label,
+                            ).inc()
+                            # A successful write clears any prior degradation;
+                            # an operator can re-check the flag and re-run
+                            # the backfill if the count is still off.
+                            self.audit_integrity_degraded = False
+                            self.last_integrity_error = None
+                    except Exception as exc:
+                        self.integrity_degraded_count += 1
+                        self.audit_integrity_degraded = True
+                        self.last_integrity_error = f"{exc.__class__.__name__}: {exc}"
+                        AUDIT_INTEGRITY_DEGRADED_TOTAL.labels(reason="integrity_write_failed").inc()
+
                 return {
                     "action": "persisted",
                     "audit_id": persisted.get("audit_id"),

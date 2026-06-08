@@ -1108,6 +1108,54 @@ Expected (real Discord env present):
 The policy contract + every env knob is documented in
 [`real-discord-delivery-policy.md`](./real-discord-delivery-policy.md).
 
+## 17m. Tamper-evident audit chain (Stage 34)
+
+Stage 34 hardens the audit trail. The audit-worker computes per-row
+canonical payload hashes + row hashes (SHA-256) and (optionally) an
+HMAC-SHA256 signature, written to `audit_integrity_records`. A
+sibling table `audit_chain_verification_runs` records every
+verify-chain pass.
+
+```bash
+./scripts/backfill_audit_integrity.sh
+./scripts/verify_audit_integrity.sh
+./scripts/simulate_audit_tamper_detection.sh
+./scripts/verify_tamper_evident_audit.sh
+./scripts/check_runtime_state.sh | grep -E 'AUDIT_INTEGRITY|AUDIT_RECEIPT|AUDIT_TAMPER'
+```
+
+Expected:
+
+* `AUDIT_INTEGRITY_BACKFILL: PASS` (idempotent; re-runs report
+  `created=0`).
+* `AUDIT_INTEGRITY_VERIFY: PASS` (or `PASS (partial)` if there are
+  audit_logs rows without integrity records -- rerun backfill).
+* `AUDIT_TAMPER_DETECTION_SMOKE: PASS` (mutation is rolled back
+  inside a savepoint; the real chain is untouched).
+* `TAMPER_EVIDENT_AUDIT_VERIFY: PASS` -- master verifier ends green.
+* `AUDIT_INTEGRITY_BACKFILL_SMOKE`, `AUDIT_INTEGRITY_VERIFY_SMOKE`,
+  `AUDIT_RECEIPT_SMOKE`, `AUDIT_TAMPER_DETECTION_SMOKE`,
+  `AUDIT_INTEGRITY_OPERATIONS_SMOKE`,
+  `AUDIT_INTEGRITY_SAFETY_SMOKE`,
+  `AUDIT_INTEGRITY_METRICS_SMOKE`,
+  `AUDIT_INTEGRITY_NO_LOOP_SMOKE` -- all PASS in
+  `check_runtime_state.sh`.
+
+Operator surfaces:
+
+* `GET /operations/audit/integrity` -- chain summary.
+* `POST /operations/audit/verify-chain` -- runs the verifier.
+* `GET /operations/audit/verify-chain/latest` -- the most recent run.
+* `GET /operations/audit/receipt/{audit_log_id}` -- per-row receipt
+  (never returns the full HMAC signature, only an 8-char preview).
+
+The HMAC key (`AUDIT_HMAC_KEY`) is optional. Without it the chain
+still detects every tamper category. Setting the key enables signed
+receipts; the key value is never logged or returned by any
+operations endpoint. See
+[`tamper-evident-audit.md`](./tamper-evident-audit.md) for the threat
+model + key-rotation roadmap.
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

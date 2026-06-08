@@ -2356,6 +2356,40 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Tamper-Evident Audit Chain (Stage 34)
+
+Stage 34 adds a hash-chain integrity record next to every
+`audit_logs` row. The audit-worker computes `canonical_payload_hash`
++ `row_hash` (SHA-256) and (optionally) an HMAC signature for each
+new audit row, and writes it into `audit_integrity_records`. A
+sibling table `audit_chain_verification_runs` records every
+verify-chain pass. Stage 34 does **not** modify the existing
+`audit_logs` table.
+
+- `POST /operations/audit/verify-chain` runs the verifier on demand
+  and records the run.
+- `GET /operations/audit/receipt/{audit_log_id}` returns a
+  per-row receipt with `row_hash`, `canonical_payload_hash`,
+  `hmac_signature_present` (boolean) + an 8-char preview. The full
+  HMAC signature is never returned by this endpoint.
+- HMAC is optional. Without `AUDIT_HMAC_KEY` the chain still
+  detects payload mutation, row-hash mutation, prev-hash mutation,
+  reordering, and missing rows; `signature_status` is recorded as
+  `signing_key_not_configured`. The key value is never logged or
+  returned by any operations endpoint.
+
+Verification:
+
+```bash
+./scripts/backfill_audit_integrity.sh
+./scripts/verify_audit_integrity.sh
+./scripts/simulate_audit_tamper_detection.sh
+./scripts/verify_tamper_evident_audit.sh
+```
+
+See [`docs/operations/tamper-evident-audit.md`](docs/operations/tamper-evident-audit.md)
+for the full threat model + verification runbook.
+
 ## Real Discord Delivery Policy (Stage 33)
 
 Step 31R surfaced an "autospam" blocker: with real Discord env live in

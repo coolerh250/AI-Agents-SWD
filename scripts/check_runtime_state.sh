@@ -2344,4 +2344,89 @@ else
 fi
 
 echo
+echo "=== Stage 34: tamper-evident audit chain smokes ==="
+
+# 47. backfill is idempotent + green
+backfill_out=$(./scripts/backfill_audit_integrity.sh 2>&1 | tail -2 || true)
+echo "$backfill_out" | tail -1
+if echo "$backfill_out" | grep -q 'AUDIT_INTEGRITY_BACKFILL: PASS'; then
+  echo "AUDIT_INTEGRITY_BACKFILL_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_BACKFILL_SMOKE: CHECK"
+fi
+
+# 48. verify chain
+verify_out=$(./scripts/verify_audit_integrity.sh 2>&1 | tail -3 || true)
+if echo "$verify_out" | grep -q 'AUDIT_INTEGRITY_VERIFY: PASS'; then
+  echo "AUDIT_INTEGRITY_VERIFY_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_VERIFY_SMOKE: CHECK"
+fi
+
+# 49. receipt endpoint reachable for latest audit row
+latest_audit_id=$(docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
+  psql -U postgres -d aiagents -tAc \
+  "SELECT id FROM audit_logs ORDER BY created_at DESC LIMIT 1;" 2>/dev/null | tr -d '[:space:]')
+if [ -n "$latest_audit_id" ]; then
+  rcode=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+    "http://localhost:8000/operations/audit/receipt/$latest_audit_id" || echo 000)
+  if [ "$rcode" = "200" ]; then
+    echo "AUDIT_RECEIPT_SMOKE: PASS"
+  else
+    echo "AUDIT_RECEIPT_SMOKE: CHECK (http=$rcode)"
+  fi
+else
+  echo "AUDIT_RECEIPT_SMOKE: SKIPPED (no audit_logs row)"
+fi
+
+# 50. tamper detection (savepoint + rollback)
+tamper_out=$(./scripts/simulate_audit_tamper_detection.sh 2>&1 | tail -10 || true)
+if echo "$tamper_out" | grep -q 'AUDIT_TAMPER_DETECTION_SMOKE: PASS'; then
+  echo "AUDIT_TAMPER_DETECTION_SMOKE: PASS"
+else
+  echo "AUDIT_TAMPER_DETECTION_SMOKE: CHECK"
+fi
+
+# 51. /operations/audit/integrity
+ai=$(curl -sS -m 5 "http://localhost:8000/operations/audit/integrity" || echo '{}')
+if echo "$ai" | grep -q '"audit_integrity_enabled"'; then
+  echo "AUDIT_INTEGRITY_OPERATIONS_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 52. /operations/safety carries Stage 34 fields
+saf=$(curl -sS -m 5 "http://localhost:8000/operations/safety" || echo '{}')
+if echo "$saf" | grep -qE '"audit_integrity_enabled":\s*(true|false)' \
+  && echo "$saf" | grep -qE '"audit_hmac_enabled":\s*(true|false)' \
+  && echo "$saf" | grep -qE '"audit_missing_integrity_records":\s*[0-9]+'; then
+  echo "AUDIT_INTEGRITY_SAFETY_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_SAFETY_SMOKE: CHECK"
+fi
+
+# 53. audit-worker /metrics carries Stage 34 counters
+aw_metrics=$(curl -sS -m 5 "http://localhost:8006/metrics" || echo '')
+if echo "$aw_metrics" | grep -qE 'audit_integrity_records_total|audit_integrity_verification_runs_total'; then
+  echo "AUDIT_INTEGRITY_METRICS_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_METRICS_SMOKE: CHECK"
+fi
+
+# 54. no recursive audit-integrity loop: a single verify-chain call must
+# NOT add a new integrity record per audit row; the count diff must be 0.
+before_int=$(docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
+  psql -U postgres -d aiagents -tAc "SELECT count(*) FROM audit_integrity_records;" \
+  2>/dev/null | tr -d '[:space:]')
+curl -sS -m 10 -X POST "http://localhost:8000/operations/audit/verify-chain" >/dev/null || true
+after_int=$(docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
+  psql -U postgres -d aiagents -tAc "SELECT count(*) FROM audit_integrity_records;" \
+  2>/dev/null | tr -d '[:space:]')
+if [ "$before_int" = "$after_int" ]; then
+  echo "AUDIT_INTEGRITY_NO_LOOP_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_NO_LOOP_SMOKE: CHECK (before=$before_int after=$after_int)"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"
