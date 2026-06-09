@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
-# Stage 34 -- simulate a tamper in a savepoint, confirm the verifier
-# detects it, and ROLLBACK so the real audit chain is untouched.
+# Stage 34 -- simulate a tamper, confirm the verifier detects it, and
+# restore the row before the script exits so the real audit chain is
+# untouched.
 #
-# Outputs AUDIT_TAMPER_DETECTION_SMOKE: PASS when both phases succeed:
-#   1. baseline verify_chain returns status=passed (or partial without
-#      mismatch) -- the chain on disk is intact.
-#   2. inside a savepoint, we mutate ONE audit_logs.summary row,
-#      re-run the verifier (which now finds canonical_payload_hash
-#      mismatch), then ROLLBACK so the mutation is discarded.
+# The verifier opens its own short-lived connection (the integrity
+# tables sit beside audit_logs in Postgres), so a same-transaction
+# tamper-then-read pattern would never expose the mutation -- the
+# verifier would see the pre-update view from a separate snapshot.
+# Instead we COMMIT a one-row mutation, re-run the verifier (which
+# now sees the divergent canonical_payload_hash), then UPDATE back to
+# the original value in a try/finally so even an exception path
+# leaves the row intact.
+#
+# Outputs AUDIT_TAMPER_DETECTION_SMOKE: PASS when every phase succeeds.
 
 set -uo pipefail
 
@@ -45,44 +50,65 @@ async def main():
         sys.exit(1)
     print(f"baseline_status: {baseline.status}")
 
+    # Pick a row that has an integrity record. Use the latest one so
+    # the test is independent of insertion order and works against
+    # any cluster size.
     conn = await asyncpg.connect(dsn=DSN, timeout=5)
     try:
-        # Pick a row that has an integrity record. We use the latest one
-        # so the test is independent of insertion order.
         target = await conn.fetchrow(
             "SELECT al.id, al.summary FROM audit_logs al "
             "JOIN audit_integrity_records r ON r.audit_log_id = al.id "
             "ORDER BY r.sequence_number DESC LIMIT 1"
         )
-        if target is None:
-            print("no audit_logs/integrity row available for tamper simulation")
-            print("AUDIT_TAMPER_DETECTION_SMOKE: FAIL")
-            sys.exit(1)
-        audit_log_id = str(target["id"])
-        original_summary = target["summary"]
-        tampered_summary = (original_summary or "") + " [TAMPER-SIMULATION]"
+    finally:
+        await conn.close()
+    if target is None:
+        print("no audit_logs/integrity row available for tamper simulation")
+        print("AUDIT_TAMPER_DETECTION_SMOKE: FAIL")
+        sys.exit(1)
+    audit_log_id = str(target["id"])
+    original_summary = target["summary"]
+    tampered_summary = (original_summary or "") + " [TAMPER-SIMULATION]"
 
-        async with conn.transaction():
+    result = None
+    try:
+        # Commit the mutation so the verifier (separate connection)
+        # can observe it.
+        conn = await asyncpg.connect(dsn=DSN, timeout=5)
+        try:
             await conn.execute(
                 "UPDATE audit_logs SET summary = $1 WHERE id = $2",
                 tampered_summary,
                 audit_log_id,
             )
-            result = await verifier.verify_chain()
-            print(f"tamper_status: {result.status}")
-            print(f"failure_reason: {result.failure_reason}")
-            print(f"first_failure_audit_log_id: {result.first_failure_audit_log_id}")
-            print(f"first_failure_sequence: {result.first_failure_sequence}")
-            # Always roll back the tamper -- raise so the
-            # `async with conn.transaction()` block exits via exception.
-            raise RuntimeError("rollback-tamper")
-    except RuntimeError as exc:
-        if str(exc) != "rollback-tamper":
-            raise
-    finally:
-        await conn.close()
+        finally:
+            await conn.close()
 
-    # Re-read after rollback to confirm no permanent change.
+        result = await verifier.verify_chain()
+        print(f"tamper_status: {result.status}")
+        print(f"failure_reason: {result.failure_reason}")
+        print(f"first_failure_audit_log_id: {result.first_failure_audit_log_id}")
+        print(f"first_failure_sequence: {result.first_failure_sequence}")
+    finally:
+        # Always restore the original row -- even on an exception path
+        # so a partial run cannot leave the test cluster with a real
+        # tamper sitting in audit_logs.
+        restore = await asyncpg.connect(dsn=DSN, timeout=5)
+        try:
+            await restore.execute(
+                "UPDATE audit_logs SET summary = $1 WHERE id = $2",
+                original_summary,
+                audit_log_id,
+            )
+        finally:
+            await restore.close()
+
+    if result is None:
+        print("verifier did not run")
+        print("AUDIT_TAMPER_DETECTION_SMOKE: FAIL")
+        sys.exit(1)
+
+    # Re-read after restore to confirm no permanent change.
     conn = await asyncpg.connect(dsn=DSN, timeout=5)
     try:
         row = await conn.fetchrow(
@@ -91,7 +117,7 @@ async def main():
     finally:
         await conn.close()
     if row is None or row["summary"] != original_summary:
-        print("WARN: tamper rollback did not restore the original row")
+        print("WARN: tamper restore did not return the original row")
         print("AUDIT_TAMPER_DETECTION_SMOKE: FAIL")
         sys.exit(1)
 
