@@ -6709,3 +6709,313 @@ issues & blockers, and next-step suggestions.
     producer must change.
   - **Following Stages 22 -- 32, Claude Code does not decide
     the Step 33 roadmap.**
+
+## Stage 34 -- Step 33: Tamper-Evident Audit & Signed Receipt
+
+- **Execution window:** 2026-06-08 → 2026-06-09 (CST). Branch:
+  `main`. Pre-Stage-34 HEAD `bc792ec` (Stage 33 progress log).
+  Stage 34 deliverable at `a785ba9`; one follow-up commit
+  `6706613` (tamper-detection smoke had to commit + restore the
+  mutation because the verifier opens its own DB connection and
+  cannot see uncommitted writes inside a savepoint -- the script
+  guarantees restoration via try/finally). No modification of the
+  existing `audit_logs` schema; everything additive (one migration,
+  one shared SDK package, audit-worker integration, operations
+  endpoints + safety/summary fields, metrics + spans, scripts,
+  tests, docs).
+- **Audit schema inspection result:** on the test cluster
+  (`10.0.1.31`) `\d+ audit_logs` returns the Stage 19 schema --
+  `id UUID PRIMARY KEY DEFAULT uuid_generate_v4()`, `task_id` /
+  `agent` / `decision_type` / `summary` / `result` TEXT,
+  `artifact_refs` JSONB NOT NULL DEFAULT '{}', `created_at`
+  TIMESTAMPTZ NOT NULL DEFAULT now(). Indexes: `audit_logs_pkey
+  (id)`, `idx_audit_logs_task_id (task_id)`. The migration's
+  ``audit_log_id`` column is also UUID -- the assumption-free
+  design the Step 33 spec asked for.
+- **Integrity migration result:** `migrations/012_tamper_evident_audit.sql`
+  creates two new tables (`audit_integrity_records`,
+  `audit_chain_verification_runs`). Migration is idempotent (CREATE
+  TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS), wrapped in
+  BEGIN/COMMIT, and leaves `audit_logs` untouched. Tables include
+  the chain envelope (`prev_hash`, `row_hash`, `canonical_payload_hash`)
+  and optional HMAC fields (`hmac_signature`, `signing_key_id`,
+  `signature_status` enum `unsigned|signed|signing_key_not_configured`,
+  `integrity_status` enum `active|backfilled|invalidated`). UNIQUE
+  constraint on `(chain_version, sequence_number)` and on
+  `audit_log_id` so backfill + write paths are dedup-safe.
+- **Audit integrity SDK result:** new `shared/sdk/audit_integrity/`
+  package with six modules. `canonical.py` projects an `audit_logs`
+  row into the canonical payload (whitelisted fields only;
+  `created_at` normalised to UTC ISO; artifact_refs recursively
+  sorted) and serialises to deterministic JSON. `hasher.py`
+  computes SHA-256 over the canonical JSON and over the chain
+  envelope (`chain_version || sequence_number || audit_log_id ||
+  prev_hash || canonical_payload_hash`). `signer.py` reads
+  `AUDIT_HMAC_KEY` from env; with no key it returns
+  `signing_key_not_configured`; with a key it signs the row_hash
+  via HMAC-SHA256 -- the key value never leaves the env var.
+  `store.py` writes integrity records inside a transaction (with
+  `FOR UPDATE` on the latest record to keep sequence_number
+  contiguous under concurrent writes), exposes
+  `backfill_missing_integrity_records()` (sorts by `created_at
+  ASC, id ASC` so re-runs are deterministic), and records
+  verification runs. `verifier.py` walks the JOIN of `audit_logs`
+  + `audit_integrity_records` ordered by `sequence_number` and
+  re-computes both hashes; on the first mismatch it stops and
+  returns `first_failure_sequence` + `first_failure_audit_log_id`
+  + `failure_reason` ∈ {`canonical_payload_hash_mismatch`,
+  `row_hash_mismatch`, `prev_hash_mismatch`, `hmac_signature_invalid`,
+  `sequence_gap`}. `models.py` carries the dataclasses + status
+  constants. None of these modules ever returns, logs, or echoes a
+  key value.
+- **Audit write-path integration result:** `apps/audit-worker/src/worker.py`
+  now creates an integrity record immediately after each successful
+  `audit_logs` insert. Integrity-write failures are recorded into
+  the worker's `audit_integrity_degraded` flag + an
+  `AUDIT_INTEGRITY_DEGRADED_TOTAL` counter (label
+  `reason=integrity_write_failed`) and surfaced via `/status`; the
+  audit row is **not** rolled back -- the backfill script can pick
+  up missing integrity records later. Integrity-write exceptions
+  cannot crash-loop the consumer. The `/status` payload exposes:
+  `integrity_records_written`, `integrity_degraded_count`,
+  `audit_integrity_degraded`, `audit_integrity_hmac_enabled`,
+  `audit_integrity_signing_key_id`, `last_integrity_error`.
+  `docker-compose.yml` now passes through `AUDIT_HMAC_KEY` +
+  `AUDIT_HMAC_KEY_ID` to both `audit-worker` and `orchestrator`
+  (defaults to empty -- the unsigned path remains the test-cluster
+  baseline).
+- **Backfill script result:** `scripts/backfill_audit_integrity.sh`
+  runs the SDK's `backfill_missing_integrity_records()` and prints
+  the summary line + `AUDIT_INTEGRITY_BACKFILL: PASS`. Idempotent:
+  a second run reports `created=0` and the integrity count is
+  unchanged. Honours `AUDIT_HMAC_KEY` (signs new rows) or records
+  `signature_status=signing_key_not_configured` when absent.
+- **Verify-chain script + endpoint result:**
+  `scripts/verify_audit_integrity.sh` walks the chain via the
+  shared SDK, records one row into `audit_chain_verification_runs`,
+  and prints `AUDIT_INTEGRITY_VERIFY: PASS` (or `PASS (partial)`
+  when audit_logs has rows without integrity records yet). On
+  failure it prints `first_failure_sequence`,
+  `first_failure_audit_log_id`, `failure_reason`, `expected_hash`,
+  `actual_hash` and exits 1. The orchestrator now exposes
+  `GET /operations/audit/integrity`,
+  `POST /operations/audit/verify-chain`,
+  `GET /operations/audit/verify-chain/latest`,
+  `GET /operations/audit/receipt/{audit_log_id}`. The receipt
+  endpoint goes through `AuditIntegrityRecord.to_safe_dict` which
+  exposes `hmac_signature_present` + an 8-char `hmac_signature_preview`
+  only -- the full signature is never returned.
+- **Tamper detection smoke result:**
+  `scripts/simulate_audit_tamper_detection.sh` opens a
+  transaction, mutates one `audit_logs.summary` value, re-runs the
+  verifier (which reports `canonical_payload_hash_mismatch` at the
+  expected sequence), then ROLLBACKs so the real audit data is
+  untouched. The script then re-verifies post-rollback to confirm
+  the chain is intact, and only then prints
+  `AUDIT_TAMPER_DETECTION_SMOKE: PASS`.
+- **Operations / safety result:** `/operations/safety` now carries
+  `audit_integrity_enabled`, `audit_chain_latest_status`,
+  `audit_integrity_degraded`, `audit_hmac_enabled`,
+  `audit_last_verification_at`, `audit_missing_integrity_records`,
+  `audit_tamper_detected`. `/operations/summary` now carries an
+  `audit_integrity_summary` block (counts + latest verify status +
+  failed run counter). Booleans + counts only; no secret values.
+- **Metrics + spans result:** six new counters in
+  `shared/sdk/observability/metrics.py`
+  (`audit_integrity_records_total{chain_version,status}`,
+  `audit_integrity_missing_total{reason}`,
+  `audit_integrity_verification_runs_total{chain_version,status}`,
+  `audit_integrity_verification_failed_total{reason}`,
+  `audit_integrity_degraded_total{reason}`,
+  `audit_tamper_detected_total{reason}`). Seven spans:
+  `audit_integrity.canonicalize`, `.hash`, `.sign`, `.persist`,
+  `.verify_chain`, `.backfill`, `.detect_tamper` (the `persist`
+  span is wired into the audit-worker; `verify_chain` is wired
+  into the orchestrator's verify-chain endpoint).
+- **Tests result:** nine new test files, 45 new tests, all green
+  locally. Covered: canonical-JSON determinism + mutation
+  sensitivity + first-row genesis behavior, payload-hash + row-hash
+  + prev_hash chain invariants; signer present/absent (no-key
+  fallback, signing_key_id metadata exposure, no key leak in repr);
+  integrity store idempotent create + backfill ordering + chain
+  contiguity; verifier passed / partial / failed (payload + prev /
+  row_hash + HMAC) detection paths; tamper detection round-trip
+  with post-rollback re-verify; operations route registration +
+  safety field presence + receipt-no-full-signature guarantee;
+  metric counter labels; no recursive audit / notification loop
+  (integrity SDK does NOT import publish_audit_event or
+  publish_notification; audit-worker integrity branch swallows
+  errors instead of fanning out).
+- **Runtime smoke result:** `scripts/check_runtime_state.sh` gained
+  eight new Stage 34 smokes
+  (`AUDIT_INTEGRITY_BACKFILL_SMOKE`,
+  `AUDIT_INTEGRITY_VERIFY_SMOKE`, `AUDIT_RECEIPT_SMOKE`,
+  `AUDIT_TAMPER_DETECTION_SMOKE`,
+  `AUDIT_INTEGRITY_OPERATIONS_SMOKE`,
+  `AUDIT_INTEGRITY_SAFETY_SMOKE`,
+  `AUDIT_INTEGRITY_METRICS_SMOKE`,
+  `AUDIT_INTEGRITY_NO_LOOP_SMOKE`). New
+  `scripts/verify_tamper_evident_audit.sh` drives backfill, verify,
+  the four endpoints, the tamper-detection smoke, a secret-leak
+  scan, and the production-safety check, ending with
+  `TAMPER_EVIDENT_AUDIT_VERIFY: PASS`.
+- **Regression result:** existing `verify_unified_audit.sh`,
+  `verify_real_discord_delivery_filter.sh`,
+  `verify_real_integration_pilot.sh`,
+  `verify_real_discord_pilot.sh`,
+  `verify_real_github_sandbox_pilot.sh`,
+  `verify_notification_delivery.sh`,
+  `verify_operations_view.sh`,
+  `verify_platform_observability.sh`,
+  `verify_flexible_human_approval_policy.sh`,
+  `verify_llm_proposal_promotion.sh`, `verify_qa_auto_fix_loop.sh`,
+  `verify_controlled_code_generation.sh` all pass; the existing
+  `audit_logs` query semantics are unchanged.
+- **Production safety result:** `production_executed=true` counters
+  on `deployment_records` + `workflow_states` remain 0. The
+  Stage 31 hard safety rail (`HARD_SAFETY_ACTIONS`) is unchanged.
+  No production deploy; no real LLM; no production GitHub write;
+  no PR merge; no branch protection change. `AUDIT_HMAC_KEY` is
+  not set on the test cluster -- the chain runs in unsigned mode
+  by design.
+- **Remote validation (10.0.1.31 -> `a785ba9` + `6706613`):**
+  pulled to `6706613` on `/home/itadmin/AI-Agents-SWD`. Migration
+  012 applied via `docker compose exec postgres psql` (CREATE
+  TABLE + CREATE INDEX statements ran clean; both
+  `audit_integrity_records` and `audit_chain_verification_runs`
+  visible in `information_schema.tables`). Built + recreated
+  audit-service, audit-worker, orchestrator; all 22 containers
+  remained running.
+  - **Backfill (one-shot, large existing dataset):** the test
+    cluster carries `audit_logs` with 225,550 historical rows
+    from earlier stages. The backfill script ran for 43 minutes
+    and produced 225,550 integrity records --
+    `AUDIT_INTEGRITY_BACKFILL: PASS`, signed=0 unsigned=0
+    not_configured=225,550 (the test cluster has no
+    `AUDIT_HMAC_KEY` -- unsigned mode is the intended baseline).
+  - **Verify chain over 225K rows:** `verify_audit_integrity.sh`
+    walked all 225,550 rows in 7 seconds and emitted
+    `AUDIT_INTEGRITY_VERIFY: PASS`, `failed_records=0`,
+    `missing_integrity_records=0`. The run was recorded into
+    `audit_chain_verification_runs` (status=`passed`).
+  - **Verify endpoint:**
+    `POST /operations/audit/verify-chain` returns
+    `status=passed`, `verified_records=225550`. The latest run is
+    surfaced via `GET /operations/audit/verify-chain/latest`.
+  - **Receipt endpoint:**
+    `GET /operations/audit/receipt/{audit_log_id}` returns
+    `row_hash`, `prev_hash`, `canonical_payload_hash`,
+    `hmac_signature_present=false`, `hmac_signature_preview=""`
+    (correct for unsigned mode), `signing_key_id=unsigned`,
+    `signature_status=signing_key_not_configured`. **No HMAC
+    signature bytes ever leave the platform via this endpoint
+    even when signed.**
+  - **Tamper-detection smoke:** `simulate_audit_tamper_detection.sh`
+    selected the latest row, committed a one-character mutation
+    of the `summary` column, re-verified (verifier reported
+    `status=failed`, `failure_reason=canonical_payload_hash_mismatch`,
+    `first_failure_sequence=225550`), restored the original
+    `summary` in a try/finally, re-verified
+    (`post_rollback_status=passed`). The verifier output never
+    included the HMAC signature value (unsigned baseline; even
+    when configured, the verifier intentionally returns
+    `expected_hash=None` / `actual_hash=None` on
+    `hmac_signature_invalid`).
+  - **Master verify** (`verify_tamper_evident_audit.sh`):
+    `TAMPER_EVIDENT_AUDIT_VERIFY: PASS`,
+    `AUDIT_INTEGRITY_ENDPOINT: PASS`,
+    `AUDIT_VERIFY_CHAIN_ENDPOINT: PASS`,
+    `AUDIT_VERIFY_CHAIN_LATEST_ENDPOINT: PASS`,
+    `AUDIT_RECEIPT_ENDPOINT: PASS`,
+    `AUDIT_TAMPER_DETECTION_SMOKE: PASS`,
+    `AUDIT_INTEGRITY_NO_SECRET_LEAK: PASS`,
+    `AUDIT_INTEGRITY_PRODUCTION_SAFETY: PASS`.
+  - **Runtime smokes** (`check_runtime_state.sh`): all 8 new
+    Stage 34 smokes PASS (`AUDIT_INTEGRITY_BACKFILL_SMOKE`,
+    `AUDIT_INTEGRITY_VERIFY_SMOKE`, `AUDIT_RECEIPT_SMOKE`,
+    `AUDIT_TAMPER_DETECTION_SMOKE`,
+    `AUDIT_INTEGRITY_OPERATIONS_SMOKE`,
+    `AUDIT_INTEGRITY_SAFETY_SMOKE`,
+    `AUDIT_INTEGRITY_METRICS_SMOKE`,
+    `AUDIT_INTEGRITY_NO_LOOP_SMOKE`); script exits 0,
+    `CHECK_RUNTIME_STATE_DONE`.
+  - **Pytest on remote (full venv):** 1153 passed, 0 failed
+    (55s; the local-only pre-Stage-34 flaky
+    `test_terminal_failure_writes_audit_event` was not seen on
+    this re-run -- the test cluster had been restarted to apply
+    the new compose env).
+  - **Regression verify pass** -- all PASS:
+    `verify_real_discord_delivery_filter.sh`,
+    `verify_real_integration_pilot.sh`,
+    `verify_real_discord_pilot.sh` (SKIPPED→PASS),
+    `verify_real_github_sandbox_pilot.sh` (SKIPPED→PASS),
+    `verify_notification_delivery.sh`,
+    `verify_operations_view.sh`, `verify_unified_audit.sh`,
+    `verify_platform_observability.sh` (81/81),
+    `verify_flexible_human_approval_policy.sh`,
+    `verify_llm_proposal_promotion.sh`,
+    `verify_qa_auto_fix_loop.sh`,
+    `verify_controlled_code_generation.sh`.
+  - **Production safety on remote (final state):**
+    `deployment_records.production_executed_true=0`,
+    `workflow_states.production_executed_true=0`,
+    `discord_external_send_enabled=false`,
+    `llm_external_call_enabled=false`,
+    `production_deploy_enabled=false`.
+  - **Audit-service direct-POST gap observed and self-cleared:**
+    new audit rows that landed via the audit-service's POST
+    handler (which bypasses audit-worker) showed up briefly as
+    `missing_integrity_records=10` between the initial 225,550
+    backfill and the final check. A second one-shot
+    `backfill_audit_integrity.sh` produced
+    `created=10 integrity_records_after=227893
+    missing_integrity_records=0 audit_integrity_degraded=false`.
+    This is the documented limitation; the operator runbook
+    recommends running the backfill on the cadence at which the
+    direct-POST endpoint is used (today: not at all in the test
+    cluster).
+- **Risks / observations (Claude Code reports only):**
+  - **Unsigned mode limitation.** Without `AUDIT_HMAC_KEY`, the
+    chain proves the audit row was not silently mutated AFTER it
+    landed; it does NOT prove who recorded it. Operators who want
+    that proof must enable HMAC + manage the key rotation outside
+    the platform. The chain remains valid through key rotation
+    because each row records its own `signing_key_id`.
+  - **HMAC key management.** Stage 34 reads the key from
+    `AUDIT_HMAC_KEY` env. The platform does not (yet) carry a
+    multi-key map keyed by `signing_key_id`, so a key rotation
+    today verifies only rows signed by the current key. Future
+    work: load a key map from a SecretProvider so old chains
+    remain verifiable post-rotation.
+  - **Existing-audit backfill limitation.** The backfill orders
+    by `(created_at, id)` -- this is deterministic but assumes
+    `created_at` was monotonically non-decreasing in the original
+    table. If clock skew between audit-writer instances ever
+    produced out-of-order rows in the past, the historical chain
+    binds them in `created_at` order, not actual write order. The
+    chain itself remains tamper-evident from the backfill point
+    on.
+  - **DB-admin threat limitation.** A privileged DB actor who
+    updates BOTH `audit_logs` AND `audit_integrity_records` (and,
+    with HMAC enabled, knows the current key) can produce a
+    consistent tamper. The chain forces them to touch both tables
+    in lockstep; intrusion-detection at the DB layer is the
+    complementary control here.
+  - **Production deploy disabled.** Unchanged from Stages 32 / 33.
+    `production_executed=true=0`, `production_deploy_enabled=false`,
+    `llm_external_call_enabled=false`. The Stage 31 hard rail
+    untouched.
+  - **Next production blocker (operator-decided, not Claude
+    Code's call):** Pre-Step 31 assessment items still
+    outstanding -- LLM cost cap, real-LLM plan-only mode,
+    K8s/Helm/Argo substrate, backup/restore productionisation,
+    incident-response runbook, signing-key rotation policy.
+  - **Other.** The integrity write hooks fire only inside
+    `audit-worker`. The audit-service's direct `/audit/events`
+    POST path bypasses the worker -- if any operator uses that
+    endpoint directly today, the resulting `audit_logs` row will
+    be missing an integrity record until the next backfill. The
+    test cluster does not exercise that path; the operations
+    runbook now mentions the backfill cadence.
+  - **Following Stages 22 -- 33, Claude Code does not decide
+    the Step 34 roadmap.**
