@@ -7023,10 +7023,11 @@ issues & blockers, and next-step suggestions.
 ## Stage 35 -- Step 34: LLM Cost Governance & Real LLM Plan-Only Pilot
 
 - **Execution window:** 2026-06-09 (CST). Branch: `main`.
-  Pre-Stage-35 HEAD `963301d` (Stage 34 progress log). No
-  modification of any existing table; everything additive (one
-  migration, one shared SDK package, real plan-only provider,
-  operations endpoints, metrics + spans, scripts, tests, docs).
+  Pre-Stage-35 HEAD `963301d` (Stage 34 progress log). Stage 35
+  deliverable at `f3660d8`. No modification of any existing
+  table; everything additive (one migration, one shared SDK
+  package, real plan-only provider, operations endpoints,
+  metrics + spans, scripts, tests, docs).
 - **Carry-forward from Step 33 (recorded explicitly):**
   the HMAC key-rotation gap and the audit-service direct
   POST integrity gap remain open. Stage 35 did NOT implement
@@ -7170,6 +7171,62 @@ issues & blockers, and next-step suggestions.
   `0`. `HARD_SAFETY_ACTIONS` unchanged. No production deploy;
   no real LLM (test cluster has no API key); no production
   GitHub write; no PR merge; no branch protection change.
+- **Remote validation (10.0.1.31 -> `f3660d8`):** pulled to
+  `f3660d8`. Migration 013 applied via
+  `docker compose exec postgres psql` (8 CREATE INDEX + 1
+  COMMIT). Built + recreated orchestrator; the 22-container
+  test stack remained running. Quality + verify results:
+  - Pytest on remote (full venv): **1218 passed, 0 failed**
+    (56s).
+  - `verify_llm_cost_governance.sh`:
+    `LLM_COST_GOVERNANCE_VERIFY: PASS` -- create policy +
+    preflight allowed + cap blocked + token cap + unknown-
+    model fallback + safety fields + events log + no key leak
+    + production safety, all green. `count=3` budget events
+    persisted from the verification run alone.
+  - `verify_real_llm_plan_only_pilot.sh`:
+    `REAL_LLM_PLAN_ONLY_PILOT_VERIFY: PASS` in skipped mode
+    (no `OPENAI_API_KEY` / `ANTHROPIC_API_KEY` on test
+    cluster); the guard returned
+    `reason=run_real_llm_test_false`, the plan-only provider
+    returned the deterministic
+    `real_llm_test_skipped:run_real_llm_test_false` plan with
+    `requires_human_review=True`.
+  - `check_runtime_state.sh`: exit 0; 11 new Stage 35 smokes
+    all PASS (`LLM_BUDGET_POLICY_SMOKE`,
+    `LLM_BUDGET_PREFLIGHT_ALLOW_SMOKE`,
+    `LLM_BUDGET_PREFLIGHT_BLOCK_SMOKE`,
+    `REAL_LLM_PLAN_ONLY_GUARD_SMOKE`,
+    `REAL_LLM_PLAN_ONLY_SKIPPED_SMOKE`,
+    `LLM_NO_PATCH_REAL_PROVIDER_SMOKE`,
+    `LLM_NO_WORKSPACE_WRITE_SMOKE`,
+    `LLM_BUDGET_OPERATIONS_SMOKE`,
+    `LLM_COST_AUDIT_SMOKE`,
+    `LLM_COST_NOTIFICATION_SMOKE`,
+    `LLM_COST_METRICS_SMOKE`); `CHECK_RUNTIME_STATE_DONE`.
+  - Regression verify -- all PASS:
+    `verify_tamper_evident_audit.sh`,
+    `verify_real_discord_delivery_filter.sh`,
+    `verify_real_integration_pilot.sh`,
+    `verify_real_discord_pilot.sh` (SKIPPED→PASS),
+    `verify_real_github_sandbox_pilot.sh` (SKIPPED→PASS),
+    `verify_notification_delivery.sh`,
+    `verify_operations_view.sh`, `verify_unified_audit.sh`,
+    `verify_platform_observability.sh` (81/81),
+    `verify_flexible_human_approval_policy.sh`,
+    `verify_llm_proposal_promotion.sh`,
+    `verify_qa_auto_fix_loop.sh`,
+    `verify_controlled_code_generation.sh`.
+  - Production safety counters (final state):
+    `deployment_records.production_executed_true=0`,
+    `workflow_states.production_executed_true=0`.
+    `/operations/safety` verdict `safe`;
+    `real_llm_enabled_pilot=false`,
+    `llm_cost_governance_enabled=true`,
+    `llm_patch_generation_enabled=false`,
+    `llm_workspace_write_enabled=false`,
+    `llm_budget_policy_active=false` (no active policy on the
+    test cluster after the verify-run cleanup).
 - **Risks / observations (Claude Code reports only):**
   - **Real LLM skipped or executed.** Default test cluster has
     no provider API key -- the pilot path returns the
