@@ -535,6 +535,64 @@ REAL_INTEGRATION_FAILURES_TOTAL = Counter(
 )
 
 
+# Stage 36 -- backup / restore / DR drill metrics.
+BACKUP_CREATED_TOTAL = Counter(
+    "backup_created_total",
+    "Backup artifacts produced (per environment + storage_mode + encrypted)",
+    ["environment", "storage_mode", "encrypted"],
+)
+BACKUP_ENCRYPTED_TOTAL = Counter(
+    "backup_encrypted_total",
+    "Backup artifacts that completed the encryption step",
+    ["mode"],
+)
+BACKUP_UPLOAD_SKIPPED_TOTAL = Counter(
+    "backup_upload_skipped_total",
+    "Off-host backup uploads that were SKIPPED (per reason)",
+    ["mode", "reason"],
+)
+BACKUP_UPLOAD_SUCCESS_TOTAL = Counter(
+    "backup_upload_success_total",
+    "Off-host backup uploads that succeeded",
+    ["mode"],
+)
+RESTORE_DRILL_RUNS_TOTAL = Counter(
+    "restore_drill_runs_total",
+    "Restore drills attempted",
+    ["status"],  # passed | failed
+)
+RESTORE_DRILL_FAILED_TOTAL = Counter(
+    "restore_drill_failed_total",
+    "Restore drills that ended status=failed (per reason)",
+    ["reason"],
+)
+BACKUP_DURATION_SECONDS = Histogram(
+    "backup_duration_seconds",
+    "End-to-end backup_postgres duration",
+    buckets=(0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
+RESTORE_DURATION_SECONDS = Histogram(
+    "restore_duration_seconds",
+    "End-to-end pg_restore duration (isolated DB)",
+    buckets=(0.5, 1, 2.5, 5, 10, 30, 60, 120, 300, 600),
+)
+BACKUP_ARTIFACT_SIZE_BYTES = Histogram(
+    "backup_artifact_size_bytes",
+    "Encrypted backup artifact size in bytes",
+    buckets=(1024, 10_240, 102_400, 1_048_576, 10_485_760, 104_857_600, 1_073_741_824),
+)
+BACKUP_RTO_SECONDS = Histogram(
+    "backup_rto_seconds",
+    "Measured RTO (total drill duration) per restore drill",
+    buckets=(1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600),
+)
+BACKUP_RPO_SECONDS = Histogram(
+    "backup_rpo_seconds",
+    "Estimated RPO (latest backup age) per measurement",
+    buckets=(60, 300, 900, 1800, 3600, 7200, 21_600, 86_400, 604_800),
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

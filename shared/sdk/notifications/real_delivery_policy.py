@@ -51,6 +51,12 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     "audit.*",
     "incident.*",
     "retry.*",
+    # Stage 36 -- backup / restore / DR drill events are operator
+    # internals and must NEVER land on a real Discord channel by
+    # default. An operator who wants them externalised must add a
+    # specific event_type to the allowlist.
+    "backup.*",
+    "restore_drill.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

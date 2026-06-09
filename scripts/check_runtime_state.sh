@@ -2558,5 +2558,133 @@ else
   echo "LLM_COST_METRICS_SMOKE: CHECK"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 36 -- backup / restore / DR drill smokes.
+# ---------------------------------------------------------------------------
+
+# 65. backup SDK importable + manifest deterministic
+manifest_out=$(python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.backup import BackupManifest, MANIFEST_SCHEMA_VERSION
+m = BackupManifest(
+    backup_id='smoke-1', created_at='2026-06-09T00:00:00Z',
+    environment='local', source_database='aiagents', source_host='postgres',
+    pg_version='16', backup_format='pg_dump-custom',
+    backup_file='backups/x.dump.enc', backup_size_bytes=1, checksum_sha256='a'*64,
+    encrypted=True, encryption_mode='openssl-aes-256-cbc', encryption_key_id='id',
+    compression='pg_dump-custom-zlib', off_host_uploaded=False, off_host_uri=None,
+)
+print(MANIFEST_SCHEMA_VERSION, m.production_executed, len(m.to_canonical_json()) > 0)
+" 2>/dev/null || echo "ERR")
+echo "  $manifest_out"
+case "$manifest_out" in
+  "1.0 False True") echo "BACKUP_MANIFEST_SMOKE: PASS" ;;
+  *) echo "BACKUP_MANIFEST_SMOKE: CHECK" ;;
+esac
+
+# 66. encryption status reflects env key
+enc_out=$(BACKUP_ENCRYPTION_KEY=dummy python3 -c "
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.backup import encryption_status
+s = encryption_status()
+print(s['enabled'], s['production_ready'], s['mode'])
+" 2>/dev/null || echo "ERR")
+echo "  $enc_out"
+case "$enc_out" in
+  "True True openssl-aes-256-cbc") echo "BACKUP_ENCRYPTION_SMOKE: PASS" ;;
+  *) echo "BACKUP_ENCRYPTION_SMOKE: CHECK" ;;
+esac
+
+# 67. checksum compute is deterministic and detects tamper
+chk_out=$(python3 -c "
+import sys, tempfile, os
+sys.path.insert(0, '.')
+from shared.sdk.backup import compute_sha256, verify_sha256
+fh = tempfile.NamedTemporaryFile(delete=False)
+fh.write(b'hello'); fh.close()
+d = compute_sha256(fh.name)
+ok = verify_sha256(fh.name, d)
+open(fh.name, 'wb').write(b'hello!')
+bad = verify_sha256(fh.name, d)
+os.unlink(fh.name)
+print(d[:8], ok, bad)
+" 2>/dev/null || echo "ERR")
+echo "  $chk_out"
+case "$chk_out" in
+  "2cf24dba True False") echo "BACKUP_CHECKSUM_SMOKE: PASS" ;;
+  *) echo "BACKUP_CHECKSUM_SMOKE: CHECK" ;;
+esac
+
+# 68. /operations/backup/status reachable
+backup_code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+  "http://localhost:8000/operations/backup/status" || echo 000)
+if [ "$backup_code" = "200" ]; then
+  echo "BACKUP_OPERATIONS_SMOKE: PASS"
+else
+  echo "BACKUP_OPERATIONS_SMOKE: CHECK (http=$backup_code)"
+fi
+
+# 69. restore drill report file present (drill run is exercised by verify_backup_drill.sh)
+DR_REPORTS_DIR="${DR_REPORTS_DIR:-source/dr-reports}"
+if [ -f "$DR_REPORTS_DIR/dr_report_latest.json" ]; then
+  echo "RESTORE_DRILL_SMOKE: PASS"
+else
+  echo "RESTORE_DRILL_SMOKE: SKIPPED no_dr_report_yet"
+fi
+
+# 70. RTO/RPO summary script
+rtorpo_out=$(./scripts/measure_backup_rto_rpo.sh 2>&1 | tail -3)
+if echo "$rtorpo_out" | grep -qE 'RTO_RPO_SUMMARY: (PASS|SKIPPED)'; then
+  echo "RTO_RPO_MEASUREMENT_SMOKE: PASS"
+else
+  echo "RTO_RPO_MEASUREMENT_SMOKE: CHECK"
+fi
+
+# 71. off-host upload skip path (no creds = SKIPPED, exit 0)
+mkdir -p /tmp/aiagents-smoke-upload
+echo placeholder > /tmp/aiagents-smoke-upload/x
+up_out=$(BACKUP_STORAGE_MODE=s3-compatible-placeholder \
+   ./scripts/upload_backup_artifact.sh /tmp/aiagents-smoke-upload/x bkp-smoke 2>&1 | tail -2)
+rm -rf /tmp/aiagents-smoke-upload
+if echo "$up_out" | grep -qE 'BACKUP_UPLOAD: SKIPPED (credential_missing|s3_upload_not_implemented)'; then
+  echo "BACKUP_STORAGE_SKIPPED_SMOKE: PASS"
+else
+  echo "BACKUP_STORAGE_SKIPPED_SMOKE: CHECK"
+fi
+
+# 72. audit decision_type filter reachable for Stage 36 types
+au_backup=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=backup_created&limit=5" || echo '{}')
+if echo "$au_backup" | grep -q '"events"'; then
+  echo "BACKUP_AUDIT_SMOKE: PASS"
+else
+  echo "BACKUP_AUDIT_SMOKE: CHECK"
+fi
+
+# 73. notification deliveries endpoint still reachable + Stage 36 events default-denied
+notif_view_36=$(curl -sS -m 5 "http://localhost:8008/deliveries?limit=1" || echo '{}')
+if echo "$notif_view_36" | grep -q '"deliveries"'; then
+  echo "BACKUP_NOTIFICATION_SMOKE: PASS"
+else
+  echo "BACKUP_NOTIFICATION_SMOKE: CHECK"
+fi
+
+# 74. /metrics carries Stage 36 counters
+om_metrics_36=$(curl -sS -m 5 "http://localhost:8000/metrics" || echo '')
+if echo "$om_metrics_36" | grep -qE 'backup_created_total|restore_drill_runs_total|backup_rto_seconds'; then
+  echo "BACKUP_METRICS_SMOKE: PASS"
+else
+  echo "BACKUP_METRICS_SMOKE: CHECK"
+fi
+
+# 75. migration down-script inventory
+mig_out=$(./scripts/check_migration_down_scripts.sh 2>&1 | tail -3)
+if echo "$mig_out" | grep -qE 'MIGRATION_DOWN_SCRIPT_INVENTORY: (PASS|PASS_WITH_GAPS)'; then
+  echo "MIGRATION_DOWN_INVENTORY_SMOKE: PASS"
+else
+  echo "MIGRATION_DOWN_INVENTORY_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

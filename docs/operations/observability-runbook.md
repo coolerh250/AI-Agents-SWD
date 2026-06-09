@@ -624,6 +624,44 @@ signature and the HMAC key value are never returned. See
 
 ---
 
+### 17p. Backup / restore / DR drill (Stage 36)
+
+Stage 36 surfaces backup + restore production-readiness state through
+`/operations/backup/*`. Quick checks:
+
+```bash
+# 1. End-to-end drill (creates encrypted backup + isolated restore +
+# row counts + audit-chain walk + cleanup + DR report).
+./scripts/verify_backup_drill.sh
+# marker: BACKUP_DRILL_VERIFY: PASS
+
+# 2. Production-readiness aggregator (returns PASS or PASS_WITH_GAPS).
+./scripts/verify_backup_production_readiness.sh
+# marker: BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS gaps=<csv>
+
+# 3. RTO / RPO summary.
+./scripts/measure_backup_rto_rpo.sh
+
+# 4. Migration down inventory.
+./scripts/check_migration_down_scripts.sh
+
+# 5. Operations API:
+curl -s http://localhost:8000/operations/backup/status | jq .
+curl -s http://localhost:8000/operations/backup/reports/latest | jq .
+```
+
+The DR report lives at `source/dr-reports/dr_report_latest.json`. The
+restore drill ALWAYS targets an isolated
+`aiagents_restore_drill_<ts>` database; the SDK +
+[`run_restore_drill.sh`](../../scripts/run_restore_drill.sh) refuse to
+restore into the primary `aiagents` catalog.
+
+See [`backup-restore-dr.md`](./backup-restore-dr.md) for the full
+runbook and [`restore-drill-runbook.md`](./restore-drill-runbook.md)
+for the operator playbook.
+
+---
+
 ## 18. What to do when something is FAIL
 
 1. Find the failing line in `verify_platform_observability.sh` output.

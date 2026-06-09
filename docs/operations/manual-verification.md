@@ -1247,5 +1247,77 @@ writes outside of `llm_interactions`, `llm_proposal_artifacts`
       Slack / Discord / Telegram / PagerDuty / webhook / email
       receiver.
 
+## 17o. Backup / restore productionisation + DR drill (Stage 36)
+
+Stage 36 brings backup + restore up to production-readiness baseline.
+The test cluster runs the encrypted backup, manifest, isolated restore
+drill, audit integrity walk on the restored DB, RTO/RPO measurement,
+schedule dry-run, and migration down inventory.
+
+* [ ] `./scripts/verify_backup_drill.sh` ended
+      `BACKUP_DRILL_VERIFY: PASS`.
+* [ ] The drill produced
+      `source/dr-reports/dr_report_latest.json` with `status=passed`,
+      `production_executed=false`, `encrypted=true`,
+      `audit_integrity_status` in (`passed`, `empty_chain`), and a
+      `restore_db` value matching `aiagents_restore_drill_*`.
+* [ ] No `aiagents_restore_drill_*` database remains in the postgres
+      catalog after the drill (unless `KEEP_RESTORE_DRILL_DB=true` was
+      explicitly set).
+* [ ] `./scripts/verify_backup_production_readiness.sh` ended either
+      `BACKUP_PRODUCTION_READINESS: PASS` or
+      `BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS gaps=<csv>`. The
+      gap list is the production-blocker punch list -- record it
+      verbatim in the Stage 36 progress entry.
+* [ ] `./scripts/measure_backup_rto_rpo.sh` printed the
+      `RTO_RPO_SUMMARY_BEGIN ... RTO_RPO_SUMMARY_END` block and
+      ended `RTO_RPO_SUMMARY: PASS`.
+* [ ] `./scripts/check_migration_down_scripts.sh` ended
+      `MIGRATION_DOWN_SCRIPT_INVENTORY: PASS_WITH_GAPS gaps=<N>`
+      (Stage 36 does not yet ship down scripts).
+* [ ] `INSTALL_BACKUP_SCHEDULE=true ./scripts/install_backup_cron.sh`
+      was NOT executed (the schedule is dry-run-only on the test
+      cluster). The dry-run path ended
+      `BACKUP_SCHEDULE_DRY_RUN: PASS`.
+* [ ] `BACKUP_ENCRYPTION_KEY` was NEVER written to repo, logs,
+      `progress.md`, README, an `audit_logs` row, a notification
+      payload, or any operations response body. The opaque
+      `encryption_key_id` (sha256(key)[:8]) is the only key-derived
+      value the platform persists.
+* [ ] `BACKUP_STORAGE_ACCESS_KEY_ID` / `BACKUP_STORAGE_SECRET_ACCESS_KEY`
+      were NEVER written to repo, logs, or any operations response.
+* [ ] `GET /operations/backup/status` returned `production_executed=false`,
+      a non-null `latest_backup_manifest`, a non-null
+      `latest_dr_report`, and `gaps` carrying at least
+      `off_host_not_production`, `migration_down_gaps`, and
+      `encryption_test_only` or `encryption_no_key` on the default
+      cluster.
+* [ ] `GET /operations/backup/reports/latest` returned
+      `available=true` and a `report.status=passed`.
+* [ ] `GET /operations/safety` showed
+      `backup_production_ready=false`, `backup_gaps` carrying the
+      pillar list, `dr_runbook_present=true`,
+      `migration_down_scripts_complete=false`,
+      `production_deploy_enabled=false`,
+      `production_executed_true_count=0`,
+      `workflow_production_executed_true_count=0`,
+      `llm_patch_generation_enabled=false`,
+      `llm_workspace_write_enabled=false`,
+      `audit_chain_latest_status=passed`.
+* [ ] `GET /operations/summary` carried a `backup_summary` block with
+      `latest_backup_at`, `latest_restore_drill_status=passed`,
+      `rto_seconds`, `rpo_seconds`, `off_host_uploaded`,
+      `encryption_enabled`, `encryption_production_ready`,
+      `storage_mode`, `production_executed=false`.
+* [ ] `./scripts/verify_tamper_evident_audit.sh` is still PASS
+      (Stage 36 does NOT modify the existing audit chain; the drill
+      only re-verifies it against the restored DB).
+* [ ] The Stage 33 carry-forward limitations (HMAC key rotation /
+      key map loader, audit-service direct POST integrity gap)
+      remain recorded in
+      [`docs/operations/tamper-evident-audit.md`](docs/operations/tamper-evident-audit.md)
+      *and* in the Stage 36 progress entry. Stage 36 implements
+      neither remediation.
+
 If every box is ticked, the platform is ready for the next iteration.
 Nothing on this checklist authorizes a production deploy.

@@ -65,6 +65,12 @@ from shared.sdk.llm_budget import (
     BudgetPolicyStore,
     SCOPE_GLOBAL,
 )
+from shared.sdk.backup import (
+    BackupStorage,
+    encryption_status,
+    load_manifest,
+    storage_status,
+)
 from shared.sdk.qa import QAStore
 from shared.sdk.real_integration import collect_real_integration_inputs
 from shared.sdk.task_execution import TaskExecutionStore
@@ -716,7 +722,35 @@ async def operations_summary() -> dict:
         "approval_policy_summary": approval_policy_summary,
         "real_integration_summary": real_integration_summary,
         "audit_integrity_summary": audit_integrity_summary,
+        "backup_summary": _backup_compact_summary(),
         "production_safety": safety,
+    }
+
+
+def _backup_compact_summary() -> dict[str, Any]:
+    """Compact snapshot wired into /operations/summary."""
+
+    latest_manifest = _latest_backup_manifest()
+    latest_report = _read_dr_report_latest()
+    enc = encryption_status()
+    sto = storage_status()
+    return {
+        "latest_backup_at": latest_manifest.get("created_at") if latest_manifest else None,
+        "latest_backup_id": latest_manifest.get("backup_id") if latest_manifest else None,
+        "latest_restore_drill_status": (
+            latest_report.get("status") if latest_report else "not_run"
+        ),
+        "rto_seconds": (
+            float(latest_report.get("estimated_rto_seconds") or 0.0) if latest_report else None
+        ),
+        "rpo_seconds": latest_report.get("estimated_rpo_seconds") if latest_report else None,
+        "off_host_uploaded": (
+            bool(latest_manifest.get("off_host_uploaded")) if latest_manifest else False
+        ),
+        "encryption_enabled": enc["enabled"],
+        "encryption_production_ready": enc["production_ready"],
+        "storage_mode": sto["mode"],
+        "production_executed": False,
     }
 
 
@@ -1482,6 +1516,9 @@ async def operations_safety() -> dict:
     # Read presence + caps; never reads the API key value.
     llm_budget_summary = await _llm_budget_safety_summary(llm_provider=llm_provider)
 
+    # Stage 36 -- backup / restore / DR drill safety snapshot.
+    backup_safety = _backup_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1559,6 +1596,17 @@ async def operations_safety() -> dict:
         "github_test_repo": github_test_repo,
         "github_sandbox_guard_active": real_github_guard_active,
         "real_llm_enabled": llm_external_call_enabled,
+        # Stage 36 -- backup / restore / DR safety snapshot. Booleans
+        # + opaque key_id only; never carries credentials.
+        "backup_encryption_enabled": backup_safety["encryption_enabled"],
+        "backup_encryption_production_ready": backup_safety["encryption_production_ready"],
+        "backup_off_host_enabled": backup_safety["off_host_enabled"],
+        "backup_storage_mode": backup_safety["storage_mode"],
+        "latest_restore_drill_status": backup_safety["latest_restore_drill_status"],
+        "backup_production_ready": backup_safety["backup_production_ready"],
+        "backup_gaps": backup_safety["backup_gaps"],
+        "migration_down_scripts_complete": backup_safety["migration_down_scripts_complete"],
+        "dr_runbook_present": backup_safety["dr_runbook_present"],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -2747,3 +2795,230 @@ async def operations_llm_plan_only_for_task(task_id: str) -> dict:
         "production_executed": False,
         "generated_at": _utcnow_iso(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Stage 36 -- backup / restore / DR drill operations view.
+# Read-only. Never returns an encryption key value, a storage
+# credential value, or a database password. Manifest files + DR
+# reports are returned verbatim because they are designed to be
+# safe to share (the on-disk format strips secrets at write time).
+# ---------------------------------------------------------------------------
+
+
+_BACKUP_DR_REPORTS_DIR = os.environ.get("DR_REPORTS_DIR", "source/dr-reports")
+_BACKUP_DIR = os.environ.get("BACKUP_DIR", "backups")
+_DR_RUNBOOK_PATHS = (
+    "docs/operations/backup-restore-dr.md",
+    "docs/operations/restore-drill-runbook.md",
+    "docs/operations/backup-schedule.md",
+)
+
+
+def _backup_safety_summary() -> dict[str, Any]:
+    """Booleans-only snapshot wired into /operations/safety."""
+
+    enc = encryption_status()
+    sto = storage_status()
+    latest_report = _read_dr_report_latest()
+    runbook_present = all(os.path.isfile(p) for p in _DR_RUNBOOK_PATHS)
+    migration_gaps = _migration_down_inventory()["gaps"]
+    gaps: list[str] = []
+    if not enc["enabled"]:
+        gaps.append("encryption_no_key")
+    elif not enc["production_ready"]:
+        gaps.append("encryption_test_only")
+    if sto["mode"] != "s3-compatible-placeholder" or not sto.get("production_ready"):
+        gaps.append("off_host_not_production")
+    if latest_report is None:
+        gaps.append("no_dr_report")
+    elif latest_report.get("status") != "passed":
+        gaps.append(f"dr_report_{latest_report.get('status', 'unknown')}")
+    if migration_gaps > 0:
+        gaps.append("migration_down_gaps")
+    if not runbook_present:
+        gaps.append("dr_runbook_missing")
+    return {
+        "encryption_enabled": enc["enabled"],
+        "encryption_production_ready": enc["production_ready"],
+        "off_host_enabled": sto["mode"] != "disabled" and sto.get("credential_complete", False),
+        "storage_mode": sto["mode"],
+        "latest_restore_drill_status": (
+            latest_report.get("status") if latest_report else "not_run"
+        ),
+        "backup_production_ready": not gaps,
+        "backup_gaps": gaps,
+        "migration_down_scripts_complete": migration_gaps == 0,
+        "dr_runbook_present": runbook_present,
+    }
+
+
+def _read_dr_report_latest() -> dict[str, Any] | None:
+    """Return ``source/dr-reports/dr_report_latest.json`` or None."""
+
+    latest = os.path.join(_BACKUP_DR_REPORTS_DIR, "dr_report_latest.json")
+    if not os.path.isfile(latest):
+        return None
+    try:
+        with open(latest, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _list_dr_reports(limit: int = 25) -> list[dict[str, Any]]:
+    if not os.path.isdir(_BACKUP_DR_REPORTS_DIR):
+        return []
+    paths: list[tuple[float, str]] = []
+    for name in os.listdir(_BACKUP_DR_REPORTS_DIR):
+        if not name.startswith("dr_report_"):
+            continue
+        if name == "dr_report_latest.json":
+            continue
+        full = os.path.join(_BACKUP_DR_REPORTS_DIR, name)
+        try:
+            paths.append((os.path.getmtime(full), full))
+        except OSError:
+            continue
+    paths.sort(reverse=True)
+    out: list[dict[str, Any]] = []
+    for _, p in paths[:limit]:
+        try:
+            with open(p, "r", encoding="utf-8") as fh:
+                payload = json.load(fh)
+            out.append(payload)
+        except (OSError, ValueError):
+            continue
+    return out
+
+
+def _latest_backup_manifest() -> dict[str, Any] | None:
+    if not os.path.isdir(_BACKUP_DIR):
+        return None
+    candidates: list[tuple[float, str]] = []
+    for name in os.listdir(_BACKUP_DIR):
+        if not name.startswith("backup_manifest_") or not name.endswith(".json"):
+            continue
+        full = os.path.join(_BACKUP_DIR, name)
+        try:
+            candidates.append((os.path.getmtime(full), full))
+        except OSError:
+            continue
+    if not candidates:
+        return None
+    candidates.sort(reverse=True)
+    try:
+        manifest = load_manifest(candidates[0][1])
+    except Exception:
+        return None
+    payload = json.loads(manifest.to_canonical_json())
+    payload["manifest_path"] = candidates[0][1]
+    return payload
+
+
+def _migration_down_inventory() -> dict[str, Any]:
+    migrations_dir = os.environ.get("MIGRATIONS_DIR", "migrations")
+    if not os.path.isdir(migrations_dir):
+        return {"total": 0, "with_down": 0, "gaps": 0, "missing": []}
+    total = 0
+    with_down = 0
+    missing: list[str] = []
+    for name in sorted(os.listdir(migrations_dir)):
+        if not name.endswith(".sql") or name.endswith("_down.sql"):
+            continue
+        total += 1
+        stem = name[: -len(".sql")]
+        down_path = os.path.join(migrations_dir, f"{stem}_down.sql")
+        if os.path.isfile(down_path):
+            with_down += 1
+        else:
+            missing.append(name)
+    return {
+        "total": total,
+        "with_down": with_down,
+        "gaps": len(missing),
+        "missing": missing,
+    }
+
+
+@router.get("/backup/status")
+@_instrument("/operations/backup/status", "operations.backup_status")
+async def operations_backup_status() -> dict:
+    enc = encryption_status()
+    sto = storage_status()
+    latest_report = _read_dr_report_latest()
+    latest_manifest = _latest_backup_manifest()
+    migration_inv = _migration_down_inventory()
+    safety = _backup_safety_summary()
+    # Use BackupStorage just to confirm the mode is wired (no IO).
+    BackupStorage()
+    rto_seconds = (
+        float(latest_report.get("estimated_rto_seconds") or 0.0) if latest_report else None
+    )
+    rpo_seconds = latest_report.get("estimated_rpo_seconds") if latest_report else None
+    return {
+        "latest_backup_manifest": latest_manifest,
+        "latest_dr_report": latest_report,
+        "backup_schedule_configured": _backup_schedule_installed(),
+        "off_host_storage_configured": sto.get("credential_complete", False),
+        "encryption_configured": enc["enabled"],
+        "encryption_production_ready": enc["production_ready"],
+        "encryption_mode": enc["mode"],
+        "encryption_key_id": enc["key_id"],
+        "storage_mode": sto["mode"],
+        "last_restore_drill_status": (latest_report.get("status") if latest_report else "not_run"),
+        "rto_seconds": rto_seconds,
+        "rpo_seconds": rpo_seconds,
+        "migration_down_inventory": migration_inv,
+        "production_ready": safety["backup_production_ready"],
+        "gaps": safety["backup_gaps"],
+        "production_executed": False,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/backup/reports")
+@_instrument("/operations/backup/reports", "operations.backup_reports")
+async def operations_backup_reports(limit: int = 25) -> dict:
+    capped = max(1, min(int(limit or 25), 100))
+    reports = _list_dr_reports(limit=capped)
+    return {
+        "count": len(reports),
+        "reports": reports,
+        "filter": {"limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/backup/reports/latest")
+@_instrument("/operations/backup/reports/latest", "operations.backup_reports_latest")
+async def operations_backup_reports_latest() -> dict:
+    latest = _read_dr_report_latest()
+    if latest is None:
+        return {
+            "available": False,
+            "report": None,
+            "generated_at": _utcnow_iso(),
+        }
+    return {
+        "available": True,
+        "report": latest,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+def _backup_schedule_installed() -> bool:
+    """Best-effort check for whether the operator installed the cron line."""
+
+    try:
+        import subprocess
+
+        result = subprocess.run(
+            ["crontab", "-l"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+        return "backup_postgres_encrypted.sh" in (result.stdout or "")
+    except Exception:
+        return False

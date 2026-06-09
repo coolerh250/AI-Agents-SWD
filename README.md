@@ -2356,6 +2356,64 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Backup / Restore / DR Drill (Stage 36)
+
+Stage 36 brings PostgreSQL backup + restore up to production-readiness
+baseline. The platform itself is NOT a production deploy; the tooling
+described here exposes which gaps still block the production gate.
+
+- New SDK: [`shared/sdk/backup/`](shared/sdk/backup/) (manifest,
+  checksum, encryption metadata, pluggable storage interface, isolated
+  restore-DB rules).
+- New scripts:
+  - [`scripts/backup_postgres_encrypted.sh`](scripts/backup_postgres_encrypted.sh)
+    -- pg_dump + openssl AES-256-CBC + manifest + sha256 (never prints
+    the key value).
+  - [`scripts/decrypt_backup_for_restore.sh`](scripts/decrypt_backup_for_restore.sh).
+  - [`scripts/upload_backup_artifact.sh`](scripts/upload_backup_artifact.sh)
+    / [`scripts/download_backup_artifact.sh`](scripts/download_backup_artifact.sh)
+    -- local-filesystem (real) + s3-compatible-placeholder (wired but
+    not implemented) + disabled.
+  - [`scripts/run_restore_drill.sh`](scripts/run_restore_drill.sh) --
+    encrypted backup + isolated `aiagents_restore_drill_<ts>` restore
+    + row count + audit integrity walk + cleanup +
+    `source/dr-reports/dr_report_<ts>.json`.
+  - [`scripts/measure_backup_rto_rpo.sh`](scripts/measure_backup_rto_rpo.sh).
+  - [`scripts/install_backup_cron.sh`](scripts/install_backup_cron.sh)
+    (dry-run by default) / [`scripts/uninstall_backup_cron.sh`](scripts/uninstall_backup_cron.sh).
+  - [`scripts/check_migration_down_scripts.sh`](scripts/check_migration_down_scripts.sh).
+  - [`scripts/verify_backup_drill.sh`](scripts/verify_backup_drill.sh)
+    and [`scripts/verify_backup_production_readiness.sh`](scripts/verify_backup_production_readiness.sh).
+- New endpoints: `GET /operations/backup/status`,
+  `GET /operations/backup/reports`,
+  `GET /operations/backup/reports/latest`.
+- `GET /operations/safety` gains `backup_encryption_enabled`,
+  `backup_encryption_production_ready`, `backup_off_host_enabled`,
+  `backup_storage_mode`, `latest_restore_drill_status`,
+  `backup_production_ready`, `backup_gaps`,
+  `migration_down_scripts_complete`, `dr_runbook_present`.
+- `GET /operations/summary` carries a `backup_summary` block with
+  `latest_backup_at`, `latest_backup_id`,
+  `latest_restore_drill_status`, `rto_seconds`, `rpo_seconds`,
+  `off_host_uploaded`, `encryption_enabled`, `storage_mode`,
+  `production_executed`.
+
+Verification:
+
+```bash
+./scripts/verify_backup_drill.sh
+./scripts/verify_backup_production_readiness.sh
+```
+
+`verify_backup_production_readiness.sh` is expected to return
+`PASS_WITH_GAPS` on the test cluster: off-host S3 is wired-but-not-
+implemented, the cron entry is dry-run-only, and migration down scripts
+are not yet shipped. The remediation roadmap is owned by future steps.
+
+See [`docs/operations/backup-restore-dr.md`](docs/operations/backup-restore-dr.md),
+[`docs/operations/restore-drill-runbook.md`](docs/operations/restore-drill-runbook.md),
+and [`docs/operations/backup-schedule.md`](docs/operations/backup-schedule.md).
+
 ## LLM Cost Governance + Real LLM Plan-Only Pilot (Stage 35)
 
 Stage 35 adds an enforceable budget for every real LLM call and
