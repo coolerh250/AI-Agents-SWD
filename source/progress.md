@@ -7019,3 +7019,213 @@ issues & blockers, and next-step suggestions.
     runbook now mentions the backfill cadence.
   - **Following Stages 22 -- 33, Claude Code does not decide
     the Step 34 roadmap.**
+
+## Stage 35 -- Step 34: LLM Cost Governance & Real LLM Plan-Only Pilot
+
+- **Execution window:** 2026-06-09 (CST). Branch: `main`.
+  Pre-Stage-35 HEAD `963301d` (Stage 34 progress log). No
+  modification of any existing table; everything additive (one
+  migration, one shared SDK package, real plan-only provider,
+  operations endpoints, metrics + spans, scripts, tests, docs).
+- **Carry-forward from Step 33 (recorded explicitly):**
+  the HMAC key-rotation gap and the audit-service direct
+  POST integrity gap remain open. Stage 35 did NOT implement
+  either remediation. Both items are now documented in
+  `docs/operations/tamper-evident-audit.md` under
+  "Carry-forward limitations (recorded explicitly, Stage 35+)"
+  so future work cannot silently drop them.
+- **LLM budget data model:** `migrations/013_llm_cost_governance.sql`
+  adds `llm_budget_policies` (per-scope cost / token caps;
+  enforcement_mode ∈ {block, warn_only}; status ∈
+  {active, inactive, expired}) and `llm_budget_events` (per-
+  decision row; event_type ∈ {preflight, recorded_usage,
+  budget_exceeded, budget_warning}; decision ∈ {allowed,
+  blocked, warning, recorded}). Migration is idempotent
+  (`CREATE TABLE IF NOT EXISTS` + `CREATE INDEX IF NOT EXISTS`)
+  and untouches every existing `llm_*` table.
+- **Budget SDK result:** new `shared/sdk/llm_budget/` package
+  with five modules. `estimator.py` carries the conservative
+  per-1K-token USD pricing table for OpenAI + Anthropic +
+  mock; an unknown model name falls back to the MOST expensive
+  entry in the provider's table so the budget gate never
+  silently approves a $0 estimate. `store.py` reads + writes
+  the two new tables via short-lived asyncpg connections.
+  `policy.py::BudgetPolicyEvaluator.preflight()` is the
+  single chokepoint: estimates tokens + cost, looks up the
+  most-specific active policy, evaluates token / cost-per-task /
+  cost-per-day / cost-per-month caps in order, returns a
+  `BudgetDecision`, and inserts one `llm_budget_events.preflight`
+  row regardless of outcome. `record_usage()` writes the
+  ledger row + emits a `budget_exceeded` event when the
+  cumulative usage tips a cap.
+- **Real LLM plan-only provider:** new
+  `shared/sdk/llm/plan_only_provider.py` with
+  `RealLLMPlanOnlyProvider` (vendor=`openai` or `anthropic`).
+  Implements ONLY `generate_development_plan`. Both
+  `generate_patch_proposal` and `generate_test_plan` raise
+  `LLMProviderError("plan_only_provider_refuses_*")` --
+  pinned by `tests/test_real_llm_plan_only_provider.py` and
+  `tests/test_llm_plan_only_no_workspace_write.py`. The
+  provider module does not import `CodeWorkspaceStore`,
+  `PRDraftStore`, or any code_change_artifacts symbol.
+  The wire call is httpx-based; an absent httpx dependency,
+  a guard refusal, or a wire error all return a deterministic
+  skipped plan so the caller's audit / operations path still
+  has a record. Every wire response chunk is run through
+  `redact_text` before it enters the plan's
+  summary / proposed_steps / assumptions / risks fields, and
+  the response hash (first 16 chars) is recorded in the
+  plan's assumptions so an operator can correlate without
+  storing the body.
+- **Plan-only guard result:** new
+  `shared.sdk.llm.real_llm_plan_only_guard()` -- six gate
+  checks (interaction_type must equal `development_plan`;
+  allow_real; provider in `external_openai` / `external_anthropic`;
+  `RUN_REAL_LLM_TEST=true`; `ENABLE_REAL_LLM_NETWORK_CALL=true`;
+  matching provider API key present). Stage 30's
+  `real_llm_guard` is unchanged.
+- **Operations endpoints result:** the orchestrator now exposes
+  `GET /operations/llm/budget`,
+  `GET /operations/llm/budget/policies`,
+  `POST /operations/llm/budget/policies` (input model
+  `_BudgetPolicyIn`), `GET /operations/llm/budget/usage`,
+  `GET /operations/llm/budget/events`, and
+  `GET /operations/llm/plan-only/{task_id}` (joins
+  llm_interactions + llm_proposal_artifacts + llm_usage_records
+  + llm_budget_events; pins `plan_only: true`,
+  `requires_human_review: true`, `production_executed: false`).
+- **Operations / safety result:** `/operations/safety` gains
+  ten Stage 35 fields:
+  `real_llm_enabled_pilot`, `llm_real_plan_only_enabled`,
+  `llm_patch_generation_enabled` (**hard-coded false**),
+  `llm_workspace_write_enabled` (**hard-coded false**),
+  `llm_cost_governance_enabled`, `llm_budget_policy_active`,
+  `llm_budget_enforcement_mode`, `llm_daily_budget_remaining`,
+  `llm_monthly_budget_remaining`, `llm_budget_exceeded`. The
+  hard-coded `false` on the patch + workspace fields is
+  asserted by `tests/test_llm_budget_operations.py::test_safety_fields_assert_patch_and_workspace_disabled`.
+- **Audit decision types reserved:**
+  `llm_budget_policy_created`, `llm_budget_preflight_allowed`,
+  `llm_budget_exceeded`, `llm_real_plan_created`,
+  `llm_plan_blocked_by_policy`, `llm_real_test_skipped`. All
+  six are documented in `docs/operations/llm-cost-governance.md`
+  and pinned by the audit-notification test.
+- **Notification events reserved (default-blocked by Stage 33
+  policy):** `llm.plan_ready_for_review`,
+  `llm.budget_exceeded`, `llm.real_test_skipped`,
+  `llm.plan_blocked_by_policy`. These do NOT widen the
+  `REAL_DISCORD_DENYLIST=workflow.*, qa.*, code.*, github.*,
+  task.*, llm.*, ...` (Stage 33 default). Pinned by
+  `tests/test_llm_cost_governance_audit_notification.py::test_real_discord_default_denylist_still_includes_llm`.
+- **Metrics result:** seven new Prometheus counters in
+  `shared/sdk/observability/metrics.py`
+  (`llm_budget_preflight_total{provider,decision,reason}`,
+  `llm_budget_allowed_total{provider,model}`,
+  `llm_budget_blocked_total{provider,reason}`,
+  `llm_real_plan_calls_total{provider,model,result}`,
+  `llm_real_plan_blocked_total{provider,reason}`,
+  `llm_cost_usd_total{provider,model}`,
+  `llm_tokens_total{provider,model,kind}`). Spans named per
+  the spec: `llm_budget.preflight`, `llm_budget.record_usage`,
+  `llm_provider.real_plan_call`,
+  `llm_provider.plan_schema_validate`,
+  `llm_provider.plan_policy_validate`,
+  `llm_provider.plan_persist`.
+- **Tests result:** nine new test files (87 new tests, all
+  green locally): `test_llm_budget_estimator.py` (8),
+  `test_llm_budget_store.py` (10),
+  `test_llm_budget_policy.py` (14),
+  `test_real_llm_guard.py` (10),
+  `test_real_llm_plan_only_provider.py` (10),
+  `test_llm_budget_operations.py` (4),
+  `test_llm_cost_governance_audit_notification.py` (3),
+  `test_llm_cost_metrics.py` (3),
+  `test_llm_plan_only_no_workspace_write.py` (5).
+- **Runtime smoke result:** `scripts/check_runtime_state.sh`
+  gained 11 new Stage 35 smokes (`LLM_BUDGET_POLICY_SMOKE`,
+  `LLM_BUDGET_PREFLIGHT_ALLOW_SMOKE`,
+  `LLM_BUDGET_PREFLIGHT_BLOCK_SMOKE`,
+  `REAL_LLM_PLAN_ONLY_GUARD_SMOKE`,
+  `REAL_LLM_PLAN_ONLY_SKIPPED_SMOKE`,
+  `LLM_NO_PATCH_REAL_PROVIDER_SMOKE`,
+  `LLM_NO_WORKSPACE_WRITE_SMOKE`,
+  `LLM_BUDGET_OPERATIONS_SMOKE`,
+  `LLM_COST_AUDIT_SMOKE`,
+  `LLM_COST_NOTIFICATION_SMOKE`,
+  `LLM_COST_METRICS_SMOKE`). New
+  `scripts/verify_llm_cost_governance.sh` and
+  `scripts/verify_real_llm_plan_only_pilot.sh`. The plan-only
+  script self-skips when `RUN_REAL_LLM_TEST` /
+  `ENABLE_REAL_LLM_NETWORK_CALL` / provider API key are
+  absent and ends `REAL_LLM_PLAN_ONLY_PILOT_VERIFY: PASS`.
+- **Tamper-evident audit regression result:** the integrity
+  chain on `audit_logs` is untouched; Stage 35 adds two
+  sibling tables that are NOT covered by the Stage 34
+  integrity chain (by design -- they hold operational
+  decisions, not audit history). The existing
+  `verify_tamper_evident_audit.sh` regression remains PASS.
+  Carry-forward limitations recorded.
+- **Production safety result:** `production_executed=true`
+  counts on `deployment_records` + `workflow_states` remain
+  `0`. `HARD_SAFETY_ACTIONS` unchanged. No production deploy;
+  no real LLM (test cluster has no API key); no production
+  GitHub write; no PR merge; no branch protection change.
+- **Risks / observations (Claude Code reports only):**
+  - **Real LLM skipped or executed.** Default test cluster has
+    no provider API key -- the pilot path returns the
+    deterministic skipped plan and `verify_real_llm_plan_only_pilot.sh`
+    emits `REAL_LLM_PLAN_ONLY_SKIPPED: PASS`. Operators who
+    want to execute the pilot must set
+    `RUN_REAL_LLM_TEST=true`, `ENABLE_REAL_LLM_NETWORK_CALL=true`,
+    and the provider key.
+  - **Budget cap limitations.** Caps are checked in order:
+    token_per_task -> cost_per_task -> cost_per_day ->
+    cost_per_month. A policy without ANY caps would allow
+    unlimited spend; the spec mandates at least one cap and
+    the verify script's "tiny policy" path pins the behavior.
+    `enforcement_mode=warn_only` does NOT block but writes
+    `budget_warning` rows + returns `BudgetDecision.warning=true`;
+    the caller is expected to log + proceed.
+  - **Provider pricing limitations.** `DEFAULT_PRICING` is
+    static. Provider rate changes require a code update or a
+    custom `pricing=` constructor argument. Unknown models
+    fall back to the most expensive entry in the provider's
+    table -- intentionally conservative.
+  - **No patch / no workspace limitation.** The plan-only
+    path is hard-coded; `tests/test_llm_plan_only_no_workspace_write.py`
+    asserts the provider module does not import code-workspace
+    / PR-draft stores AND that the operations endpoint
+    body does not reference any of those symbols. A future
+    "real patch" pilot would require a separate provider class
+    + separate budget policy scope.
+  - **API key handling.** `OPENAI_API_KEY` /
+    `ANTHROPIC_API_KEY` are read at call time only and never
+    pass through the orchestrator response, the audit log, the
+    notification payload, or any operations endpoint.
+    `scripts/check_llm_runtime_inputs.sh` reports
+    presence + length only.
+  - **Step 33 carry-forward limitations** -- still open;
+    recorded in `tamper-evident-audit.md`. Stage 35 does NOT
+    implement either remediation.
+  - **Production deploy disabled.** Unchanged from Stages
+    32 / 33 / 34. `production_executed=true=0`,
+    `production_deploy_enabled=false`,
+    `llm_external_call_enabled` only true when operator
+    explicitly opts in.
+  - **Next production blocker (operator-decided, not Claude
+    Code's call):** the remaining Pre-Step 31 assessment
+    items -- K8s/Helm/Argo substrate, backup/restore
+    productionisation, incident-response runbook, HMAC key
+    rotation / key map loader, audit-service direct-POST
+    integrity gap closure.
+  - **Other.** The orchestrator's `/operations/llm/plan-only/{task_id}`
+    endpoint is the canonical Stage 35 read-path. The
+    `verify_real_llm_plan_only_pilot.sh` script writes
+    interactions / proposals / usage / budget events directly
+    via the shared SDK (no orchestrator HTTP write endpoint)
+    so the test cluster does not need a new write endpoint;
+    a future iteration could ship that endpoint if the team
+    wants the operator-visible "run a pilot from a Discord
+    command" flow.
+  - **Following Stages 22 -- 34, Claude Code does not decide
+    the Step 35 roadmap.**

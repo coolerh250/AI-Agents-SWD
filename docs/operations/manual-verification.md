@@ -1156,6 +1156,48 @@ operations endpoint. See
 [`tamper-evident-audit.md`](./tamper-evident-audit.md) for the threat
 model + key-rotation roadmap.
 
+## 17n. LLM cost governance + real LLM plan-only pilot (Stage 35)
+
+Stage 35 makes every real LLM call go through a budget gate and
+opens a narrow plan-only pilot.
+
+```bash
+./scripts/check_llm_runtime_inputs.sh        # presence only; never prints key values
+./scripts/verify_llm_cost_governance.sh      # always exercises mock + cap paths
+./scripts/verify_real_llm_plan_only_pilot.sh # SKIPPED when real env absent
+./scripts/check_runtime_state.sh | grep -E 'LLM_BUDGET|REAL_LLM_PLAN|LLM_NO_'
+```
+
+Expected (default test cluster, mock provider, no real LLM env):
+
+* `LLM_BUDGET_POLICY_SMOKE: PASS` (Stage 35 tables present after
+  migration 013).
+* `LLM_BUDGET_PREFLIGHT_ALLOW_SMOKE: PASS` (mock provider is exempt).
+* `LLM_BUDGET_PREFLIGHT_BLOCK_SMOKE: PASS` (real provider with no
+  active policy blocks).
+* `REAL_LLM_PLAN_ONLY_GUARD_SMOKE: PASS`.
+* `REAL_LLM_PLAN_ONLY_SKIPPED_SMOKE: PASS`.
+* `LLM_NO_PATCH_REAL_PROVIDER_SMOKE: PASS`.
+* `LLM_NO_WORKSPACE_WRITE_SMOKE: PASS` -- `/operations/safety`
+  pins `llm_workspace_write_enabled=false` +
+  `llm_patch_generation_enabled=false`.
+* `LLM_BUDGET_OPERATIONS_SMOKE: PASS`,
+  `LLM_COST_AUDIT_SMOKE: PASS`,
+  `LLM_COST_NOTIFICATION_SMOKE: PASS`,
+  `LLM_COST_METRICS_SMOKE: PASS`.
+* `LLM_COST_GOVERNANCE_VERIFY: PASS`.
+* `REAL_LLM_PLAN_ONLY_PILOT_VERIFY: PASS` (with skipped sections).
+
+Expected (real LLM env present): the pilot script issues ONE
+`generate_development_plan`, records actual usage, then asserts
+`code_workspaces`, `code_change_artifacts`, and `pr_draft_artifacts`
+all carry zero rows for the task -- the plan-only path created NO
+writes outside of `llm_interactions`, `llm_proposal_artifacts`
+(`proposal_type=development_plan_only`), `llm_usage_records`, and
+`llm_budget_events`. See
+[`llm-cost-governance.md`](./llm-cost-governance.md) and
+[`real-llm-plan-only-pilot.md`](./real-llm-plan-only-pilot.md).
+
 ## 18. Sign-off checklist
 
 * [ ] `git log -1` matches the commit the team agreed to ship.

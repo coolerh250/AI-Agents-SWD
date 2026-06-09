@@ -47,6 +47,9 @@ ALLOWED_PROVIDERS: tuple[str, ...] = (
     "disabled",
     "external_openai_placeholder",
     "external_anthropic_placeholder",
+    # Stage 35 -- real LLM plan-only pilot.
+    "external_openai",
+    "external_anthropic",
 )
 
 #: Reasons surfaced by the real-LLM guard.
@@ -206,6 +209,15 @@ def get_provider(name: str | None = None) -> LLMProvider:
         return cast(LLMProvider, ExternalLLMProviderGuard("openai"))
     if raw == "external_anthropic_placeholder":
         return cast(LLMProvider, ExternalLLMProviderGuard("anthropic"))
+    if raw == "external_openai":
+        # Local import to avoid circular dependency at module load.
+        from shared.sdk.llm.plan_only_provider import RealLLMPlanOnlyProvider
+
+        return cast(LLMProvider, RealLLMPlanOnlyProvider(vendor="openai"))
+    if raw == "external_anthropic":
+        from shared.sdk.llm.plan_only_provider import RealLLMPlanOnlyProvider
+
+        return cast(LLMProvider, RealLLMPlanOnlyProvider(vendor="anthropic"))
     # Unknown provider — refuse via DisabledLLMProvider so we never
     # accidentally interpret it as ``mock``.
     return cast(LLMProvider, DisabledLLMProvider())

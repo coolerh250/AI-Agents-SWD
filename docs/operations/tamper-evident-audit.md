@@ -242,6 +242,31 @@ and start a new sub-chain with the new key. The current verifier only
 holds one key in process; a future iteration will load the key map
 keyed by `signing_key_id` (out of scope for Stage 34).
 
+## Carry-forward limitations (recorded explicitly, Stage 35+)
+
+These two items remain open after Stage 34 and Stage 35 and **must
+not be silently dropped** from future work:
+
+1. **HMAC key rotation / key map loader.** The signer reads a single
+   `AUDIT_HMAC_KEY` from env at process start. When an operator
+   rotates the key, rows signed with the old key cannot be verified
+   by the new key. The schema already records `signing_key_id` per
+   row so a future iteration can load a key map (e.g. from a Vault
+   path or a SecretProvider keyed by `signing_key_id`). Stage 35 did
+   NOT implement this; the operator-facing workaround is to keep
+   running the verifier with the OLD key on the OLD chain section
+   and the NEW key on the NEW section.
+2. **audit-service direct POST `/audit/events` immediate integrity
+   gap.** Audit rows that land via the direct POST handler bypass
+   the audit-worker and therefore do NOT pick up an integrity
+   record at write time. Today the recovery is the backfill script
+   (run after the fact). Future remediation options: (a) move the
+   audit-service handler to publish onto `stream.audit` instead of
+   writing directly; (b) call `AuditIntegrityStore.create_integrity_record_for_audit_log`
+   inline from the audit-service handler. Stage 35 did NOT implement
+   either; the runbook recommends running the backfill on the
+   cadence at which the direct-POST endpoint is exercised.
+
 ## How to verify (end-to-end)
 
 ```bash

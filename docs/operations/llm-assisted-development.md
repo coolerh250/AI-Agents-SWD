@@ -7,6 +7,13 @@
 > ends in `REAL_LLM_TEST_SKIPPED` until the operator opts in by
 > setting `RUN_REAL_LLM_TEST=true`, `ENABLE_REAL_LLM_NETWORK_CALL=true`,
 > and supplying a key. Even then, Stage 30 still refuses the network.
+>
+> **Stage 35 update:** the `external_openai` and `external_anthropic`
+> providers ship a real wire-level plan-only call (no patch, no
+> workspace write, no PR draft). Every real call must clear an
+> `llm_budget_policies` cap first. See
+> [`llm-cost-governance.md`](llm-cost-governance.md) and
+> [`real-llm-plan-only-pilot.md`](real-llm-plan-only-pilot.md).
 
 ## Provider modes
 
@@ -16,6 +23,8 @@
 | `disabled`                           | Every call raises `LLMProviderError`.                  |
 | `external_openai_placeholder`        | Interface guard. Always skips the real call.           |
 | `external_anthropic_placeholder`     | Interface guard. Always skips the real call.           |
+| `external_openai` *(Stage 35)*       | Plan-only real call. Refuses patch / test plan. Budget gated. |
+| `external_anthropic` *(Stage 35)*    | Plan-only real call. Refuses patch / test plan. Budget gated. |
 
 Switch the provider via `LLM_PROVIDER=<name>`. Anything else falls
 back to `disabled` so a misconfigured env var never silently behaves

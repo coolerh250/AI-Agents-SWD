@@ -38,6 +38,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, HTTPException
+from pydantic import BaseModel, Field
 
 from progress import build_audit_timeline, build_progress, build_retry_timeline
 from shared.sdk.agent_execution.store import AgentExecutionStore
@@ -60,6 +61,10 @@ from shared.sdk.audit_integrity import (
 )
 from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.llm import LLMInteractionStore
+from shared.sdk.llm_budget import (
+    BudgetPolicyStore,
+    SCOPE_GLOBAL,
+)
 from shared.sdk.qa import QAStore
 from shared.sdk.real_integration import collect_real_integration_inputs
 from shared.sdk.task_execution import TaskExecutionStore
@@ -1473,6 +1478,10 @@ async def operations_safety() -> dict:
     # Stage 34 -- pull the integrity summary (booleans + counts only).
     audit_integrity = await _audit_integrity_summary()
 
+    # Stage 35 -- LLM cost governance + real-LLM plan-only pilot.
+    # Read presence + caps; never reads the API key value.
+    llm_budget_summary = await _llm_budget_safety_summary(llm_provider=llm_provider)
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1509,6 +1518,19 @@ async def operations_safety() -> dict:
         "llm_external_call_enabled": llm_external_call_enabled,
         "llm_policy_enforced": True,
         "llm_requires_human_review": True,
+        # Stage 35 -- LLM cost governance + real-LLM plan-only pilot.
+        # Booleans + counts only; no API key, no cost dollars derived
+        # from secrets.
+        "real_llm_enabled_pilot": llm_external_call_enabled,
+        "llm_real_plan_only_enabled": llm_external_call_enabled,
+        "llm_patch_generation_enabled": False,
+        "llm_workspace_write_enabled": False,
+        "llm_cost_governance_enabled": llm_budget_summary["enabled"],
+        "llm_budget_policy_active": llm_budget_summary["policy_active"],
+        "llm_budget_enforcement_mode": llm_budget_summary["enforcement_mode"],
+        "llm_daily_budget_remaining": llm_budget_summary["daily_budget_remaining"],
+        "llm_monthly_budget_remaining": llm_budget_summary["monthly_budget_remaining"],
+        "llm_budget_exceeded": llm_budget_summary["budget_exceeded"],
         "delegated_agent_enabled": delegated_agent_enabled,
         "active_delegated_policies": delegated_active_count,
         "hard_policy_enforced": True,
@@ -2475,3 +2497,253 @@ async def operations_audit_receipt(audit_log_id: str) -> dict:
     body["verification_status"] = "valid_locally"
     body["generated_at"] = _utcnow_iso()
     return body
+
+
+# ---------------------------------------------------------------------------
+# Stage 35 -- LLM cost governance + real-LLM plan-only pilot operations view.
+# ---------------------------------------------------------------------------
+
+
+async def _llm_budget_safety_summary(*, llm_provider: str) -> dict[str, Any]:
+    """Return a small budget snapshot for /operations/safety.
+
+    Booleans + counts only; never reads an API key value. The
+    function is safe to call even when the budget tables are
+    unreachable (returns ``enabled=False`` + ``policy_active=False``).
+    """
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "policy_active": False,
+        "enforcement_mode": None,
+        "daily_budget_remaining": None,
+        "monthly_budget_remaining": None,
+        "budget_exceeded": False,
+        "policy_id": None,
+        "policy_name": None,
+        "max_cost_per_task_usd": None,
+        "max_tokens_per_task": None,
+    }
+    store = BudgetPolicyStore()
+    try:
+        policy = await store.get_active_policy(provider=llm_provider)
+        if policy is not None:
+            summary.update(
+                policy_active=True,
+                policy_id=policy.policy_id,
+                policy_name=policy.policy_name,
+                enforcement_mode=policy.enforcement_mode,
+                max_cost_per_task_usd=policy.max_cost_per_task_usd,
+                max_tokens_per_task=policy.max_tokens_per_task,
+            )
+            if policy.max_cost_per_day_usd:
+                daily = await store.get_daily_usage_usd(provider=policy.provider)
+                summary["daily_budget_remaining"] = max(
+                    0.0, float(policy.max_cost_per_day_usd) - daily
+                )
+            if policy.max_cost_per_month_usd:
+                monthly = await store.get_monthly_usage_usd(provider=policy.provider)
+                summary["monthly_budget_remaining"] = max(
+                    0.0, float(policy.max_cost_per_month_usd) - monthly
+                )
+            from shared.sdk.llm_budget import DECISION_BLOCKED, EVENT_TYPE_BUDGET_EXCEEDED
+
+            blocked = await store.list_events(
+                provider=policy.provider,
+                event_type=EVENT_TYPE_BUDGET_EXCEEDED,
+                decision=DECISION_BLOCKED,
+                limit=1,
+            )
+            summary["budget_exceeded"] = bool(blocked)
+    except Exception:
+        summary["enabled"] = False
+    return summary
+
+
+async def _llm_budget_payload(*, provider: str | None = None) -> dict[str, Any]:
+    store = BudgetPolicyStore()
+    policies_active: list[dict[str, Any]] = []
+    summary_block: dict[str, Any] = {}
+    warnings: list[str] = []
+    try:
+        if provider:
+            policy = await store.get_active_policy(provider=provider)
+            policies_active = [policy.to_safe_dict()] if policy else []
+        else:
+            rows = await store.list_policies(status="active", limit=50)
+            policies_active = [p.to_safe_dict() for p in rows]
+        summary_block = await store.get_usage_summary(provider=provider)
+    except Exception as exc:
+        warnings.append(f"budget_store_unavailable:{exc.__class__.__name__}")
+    return {
+        "provider_filter": provider,
+        "active_policies": policies_active,
+        "usage_summary": summary_block,
+        "warnings": warnings,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/budget")
+@_instrument("/operations/llm/budget", "operations.llm_budget_view")
+async def operations_llm_budget(provider: str | None = None) -> dict:
+    return await _llm_budget_payload(provider=provider)
+
+
+@router.get("/llm/budget/policies")
+@_instrument("/operations/llm/budget/policies", "operations.llm_budget_policies")
+async def operations_llm_budget_policies(
+    provider: str | None = None,
+    status: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = BudgetPolicyStore()
+    try:
+        rows = await store.list_policies(provider=provider, status=status, limit=capped)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"budget store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "policies": [r.to_safe_dict() for r in rows],
+        "filter": {"provider": provider, "status": status, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/budget/usage")
+@_instrument("/operations/llm/budget/usage", "operations.llm_budget_usage")
+async def operations_llm_budget_usage(
+    provider: str | None = None,
+    task_id: str | None = None,
+) -> dict:
+    store = BudgetPolicyStore()
+    out: dict[str, Any] = {
+        "provider": provider,
+        "task_id": task_id,
+        "generated_at": _utcnow_iso(),
+    }
+    try:
+        out["summary"] = await store.get_usage_summary(provider=provider)
+        if task_id:
+            out["task_usage"] = await store.get_task_usage(task_id=task_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"budget store unavailable: {exc}") from exc
+    return out
+
+
+@router.get("/llm/budget/events")
+@_instrument("/operations/llm/budget/events", "operations.llm_budget_events")
+async def operations_llm_budget_events(
+    provider: str | None = None,
+    task_id: str | None = None,
+    event_type: str | None = None,
+    decision: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = BudgetPolicyStore()
+    try:
+        rows = await store.list_events(
+            task_id=task_id,
+            provider=provider,
+            event_type=event_type,
+            decision=decision,
+            limit=capped,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"budget store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "events": [r.to_safe_dict() for r in rows],
+        "filter": {
+            "provider": provider,
+            "task_id": task_id,
+            "event_type": event_type,
+            "decision": decision,
+            "limit": capped,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+class _BudgetPolicyIn(BaseModel):
+    policy_name: str
+    provider: str = "mock"
+    scope_type: str = SCOPE_GLOBAL
+    scope_id: str | None = None
+    model_name: str | None = None
+    max_tokens_per_task: int | None = None
+    max_cost_per_task_usd: float | None = None
+    max_cost_per_day_usd: float | None = None
+    max_cost_per_month_usd: float | None = None
+    enforcement_mode: str = "block"
+    status: str = "active"
+    created_by: str = ""
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+@router.post("/llm/budget/policies")
+@_instrument("/operations/llm/budget/policies", "operations.llm_budget_policy_create")
+async def operations_llm_budget_policy_create(payload: _BudgetPolicyIn) -> dict:
+    store = BudgetPolicyStore()
+    try:
+        policy = await store.create_policy(
+            policy_name=payload.policy_name,
+            provider=payload.provider,
+            scope_type=payload.scope_type,
+            scope_id=payload.scope_id,
+            model_name=payload.model_name,
+            max_tokens_per_task=payload.max_tokens_per_task,
+            max_cost_per_task_usd=payload.max_cost_per_task_usd,
+            max_cost_per_day_usd=payload.max_cost_per_day_usd,
+            max_cost_per_month_usd=payload.max_cost_per_month_usd,
+            enforcement_mode=payload.enforcement_mode,
+            status=payload.status,
+            created_by=payload.created_by,
+            metadata=payload.metadata or {},
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    return {**policy.to_safe_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.get("/llm/plan-only/{task_id}")
+@_instrument("/operations/llm/plan-only/{task_id}", "operations.llm_plan_only_view")
+async def operations_llm_plan_only_for_task(task_id: str) -> dict:
+    """Return a Stage-35-specific summary for a task's real-LLM plan-only run.
+
+    Joins llm_interactions (interaction_type=development_plan) +
+    llm_proposal_artifacts + llm_usage_records + llm_budget_events.
+    The endpoint never returns prompts / responses verbatim -- it
+    reuses the existing redacted previews from the underlying stores.
+    """
+    interactions_store = LLMInteractionStore()
+    budget_store = BudgetPolicyStore()
+    try:
+        interactions = await interactions_store.list_interactions(
+            task_id=task_id, interaction_type="development_plan", limit=20
+        )
+        proposals = await interactions_store.list_proposals(task_id=task_id, limit=20)
+        usage = await interactions_store.list_usage(task_id=task_id, limit=20)
+        budget_events = await budget_store.list_events(task_id=task_id, limit=50)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"llm store unavailable: {exc}") from exc
+
+    plan_only_proposals = [
+        p.to_dict()
+        for p in proposals
+        if p.proposal_type in ("development_plan_only", "development_plan")
+    ]
+    real_llm_used = any((i.provider or "").startswith("external_") for i in interactions)
+    return {
+        "task_id": task_id,
+        "real_llm_used": real_llm_used,
+        "plan_only": True,
+        "interactions": [i.to_dict() for i in interactions],
+        "plan_only_proposals": plan_only_proposals,
+        "usage_records": [u.to_dict() for u in usage],
+        "budget_events": [e.to_safe_dict() for e in budget_events],
+        "requires_human_review": True,
+        "production_executed": False,
+        "generated_at": _utcnow_iso(),
+    }

@@ -46,6 +46,16 @@ The full prompt and response are **never** written to disk, the
 audit log, or notifications. Only the hash + redacted preview enter
 `llm_interactions`.
 
+**Stage 35 update:** the `RealLLMPlanOnlyProvider` runs every wire
+response chunk through the same `redact_text` helper BEFORE the
+parsed plan's `summary`, `proposed_steps`, `assumptions`, `questions`,
+`risks`, and `test_strategy` fields are populated. Token-shaped
+strings in the model's reply never reach the operator-visible
+preview. The provider also adds the response hash (first 16 hex
+chars only) to the plan's `assumptions` list so an operator can
+correlate the recorded interaction with the wire response without
+storing the body.
+
 ## Schema-invalid handling
 
 If the LLM returns JSON that does not match the requested schema —

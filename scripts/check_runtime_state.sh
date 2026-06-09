@@ -2429,4 +2429,134 @@ else
 fi
 
 echo
+echo "=== Stage 35: LLM cost governance + real-LLM plan-only smokes ==="
+
+# 55. budget tables created by migration 013
+COMPOSE_BIN="docker compose -f infra/docker-compose/docker-compose.yml"
+bp_present=$($COMPOSE_BIN exec -T postgres psql -U postgres -d aiagents -tAc \
+  "SELECT (to_regclass('llm_budget_policies') IS NOT NULL) AND (to_regclass('llm_budget_events') IS NOT NULL);" \
+  2>/dev/null | tr -d '[:space:]')
+if [ "$bp_present" = "t" ]; then
+  echo "LLM_BUDGET_POLICY_SMOKE: PASS"
+else
+  echo "LLM_BUDGET_POLICY_SMOKE: CHECK"
+fi
+
+# 56. preflight allow + block via the SDK (mock provider always allowed;
+# external provider with no policy must block).
+preflight_out=$(python3 - <<'PY' 2>/dev/null
+import asyncio, sys
+sys.path.insert(0, '.')
+from shared.sdk.llm_budget import BudgetPolicyEvaluator
+async def main():
+    e = BudgetPolicyEvaluator()
+    mock = await e.preflight(provider="mock", model_name="mock-deterministic", prompt_text="hi", task_id="smoke")
+    real = await e.preflight(provider="external_openai", model_name="gpt-4o-mini", prompt_text="hi", task_id="smoke")
+    print(f"mock={mock.decision} real={real.decision} real_reason={real.reason}")
+asyncio.run(main())
+PY
+)
+echo "  $preflight_out"
+case "$preflight_out" in
+  *mock=allowed*) echo "LLM_BUDGET_PREFLIGHT_ALLOW_SMOKE: PASS" ;;
+  *) echo "LLM_BUDGET_PREFLIGHT_ALLOW_SMOKE: CHECK" ;;
+esac
+case "$preflight_out" in
+  *real=blocked*) echo "LLM_BUDGET_PREFLIGHT_BLOCK_SMOKE: PASS" ;;
+  *) echo "LLM_BUDGET_PREFLIGHT_BLOCK_SMOKE: CHECK" ;;
+esac
+
+# 57. plan-only guard refuses by default
+guard_out=$(python3 - <<'PY' 2>/dev/null
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import real_llm_plan_only_guard
+allowed, reason = real_llm_plan_only_guard(provider_name="external_openai", allow_real=True, interaction_type="development_plan", env={})
+print(f"allowed={allowed} reason={reason}")
+PY
+)
+echo "  $guard_out"
+case "$guard_out" in
+  *allowed=False*) echo "REAL_LLM_PLAN_ONLY_GUARD_SMOKE: PASS" ;;
+  *) echo "REAL_LLM_PLAN_ONLY_GUARD_SMOKE: CHECK" ;;
+esac
+
+# 58. skipped-mode contract -- real plan-only provider returns a skipped plan
+skipped_out=$(python3 - <<'PY' 2>/dev/null
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import RealLLMPlanOnlyProvider
+provider = RealLLMPlanOnlyProvider(vendor="openai", env={})
+plan = provider.generate_development_plan(task_id="smoke", prompt_contract={"interaction_type":"development_plan"}, allow_real=True, env={})
+print(plan.summary[:60])
+PY
+)
+echo "  $skipped_out"
+case "$skipped_out" in
+  *real_llm_test_skipped*) echo "REAL_LLM_PLAN_ONLY_SKIPPED_SMOKE: PASS" ;;
+  *) echo "REAL_LLM_PLAN_ONLY_SKIPPED_SMOKE: CHECK" ;;
+esac
+
+# 59. real provider refuses patch + workspace path
+no_patch_out=$(python3 - <<'PY' 2>/dev/null
+import sys
+sys.path.insert(0, '.')
+from shared.sdk.llm import RealLLMPlanOnlyProvider, LLMProviderError
+provider = RealLLMPlanOnlyProvider(vendor="openai", env={})
+try:
+    provider.generate_patch_proposal(task_id="smoke")
+    print("FAIL")
+except LLMProviderError as e:
+    print("OK", str(e)[:40])
+PY
+)
+echo "  $no_patch_out"
+case "$no_patch_out" in
+  OK*) echo "LLM_NO_PATCH_REAL_PROVIDER_SMOKE: PASS" ;;
+  *) echo "LLM_NO_PATCH_REAL_PROVIDER_SMOKE: CHECK" ;;
+esac
+
+# 60. /operations/safety pins llm_workspace_write_enabled=false
+saf_body=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$saf_body" | grep -qE '"llm_workspace_write_enabled":\s*false' \
+   && echo "$saf_body" | grep -qE '"llm_patch_generation_enabled":\s*false'; then
+  echo "LLM_NO_WORKSPACE_WRITE_SMOKE: PASS"
+else
+  echo "LLM_NO_WORKSPACE_WRITE_SMOKE: CHECK"
+fi
+
+# 61. /operations/llm/budget reachable
+budget_code=$(curl -sS -m 5 -o /dev/null -w '%{http_code}' \
+  "http://localhost:8000/operations/llm/budget" || echo 000)
+if [ "$budget_code" = "200" ]; then
+  echo "LLM_BUDGET_OPERATIONS_SMOKE: PASS"
+else
+  echo "LLM_BUDGET_OPERATIONS_SMOKE: CHECK (http=$budget_code)"
+fi
+
+# 62. audit decision_type filter reachable for Stage 35 types
+au_skipped=$(curl -sS -m 10 "http://localhost:8003/audit/events?decision_type=llm_real_test_skipped&limit=5" || echo '{}')
+if echo "$au_skipped" | grep -q '"events"'; then
+  echo "LLM_COST_AUDIT_SMOKE: PASS"
+else
+  echo "LLM_COST_AUDIT_SMOKE: CHECK"
+fi
+
+# 63. notification deliveries endpoint reachable
+notif_view=$(curl -sS -m 5 "http://localhost:8008/deliveries?limit=1" || echo '{}')
+if echo "$notif_view" | grep -q '"deliveries"'; then
+  echo "LLM_COST_NOTIFICATION_SMOKE: PASS"
+else
+  echo "LLM_COST_NOTIFICATION_SMOKE: CHECK"
+fi
+
+# 64. /metrics carries Stage 35 counters
+om_metrics=$(curl -sS -m 5 "http://localhost:8000/metrics" || echo '')
+if echo "$om_metrics" | grep -qE 'llm_budget_preflight_total|llm_real_plan_calls_total|llm_cost_usd_total'; then
+  echo "LLM_COST_METRICS_SMOKE: PASS"
+else
+  echo "LLM_COST_METRICS_SMOKE: CHECK"
+fi
+
+echo
 echo "CHECK_RUNTIME_STATE_DONE"

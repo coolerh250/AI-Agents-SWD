@@ -281,6 +281,43 @@ AUDIT_TAMPER_DETECTED_TOTAL = Counter(
     ["reason"],
 )
 
+# Stage 35 -- LLM cost governance + real-LLM plan-only pilot.
+LLM_BUDGET_PREFLIGHT_TOTAL = Counter(
+    "llm_budget_preflight_total",
+    "Budget preflight evaluations executed (per provider + decision + reason)",
+    ["provider", "decision", "reason"],
+)
+LLM_BUDGET_ALLOWED_TOTAL = Counter(
+    "llm_budget_allowed_total",
+    "Budget preflights that returned decision=allowed",
+    ["provider", "model"],
+)
+LLM_BUDGET_BLOCKED_TOTAL = Counter(
+    "llm_budget_blocked_total",
+    "Budget preflights that returned decision=blocked (per reason)",
+    ["provider", "reason"],
+)
+LLM_REAL_PLAN_CALLS_TOTAL = Counter(
+    "llm_real_plan_calls_total",
+    "Real-LLM plan-only calls attempted (per provider + model + result)",
+    ["provider", "model", "result"],
+)
+LLM_REAL_PLAN_BLOCKED_TOTAL = Counter(
+    "llm_real_plan_blocked_total",
+    "Real-LLM plan-only calls blocked by guard or budget (per reason)",
+    ["provider", "reason"],
+)
+LLM_COST_USD_TOTAL = Counter(
+    "llm_cost_usd_total",
+    "Cumulative LLM cost in USD (rounded to 6 decimals)",
+    ["provider", "model"],
+)
+LLM_TOKENS_TOTAL = Counter(
+    "llm_tokens_total",
+    "Cumulative LLM tokens consumed (per provider + model + kind)",
+    ["provider", "model", "kind"],  # kind: prompt | completion | total
+)
+
 
 # Stage 27 — flexible task execution loop metrics.
 TASK_WORK_ITEMS_TOTAL = Counter(

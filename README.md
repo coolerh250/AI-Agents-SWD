@@ -2356,6 +2356,46 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## LLM Cost Governance + Real LLM Plan-Only Pilot (Stage 35)
+
+Stage 35 adds an enforceable budget for every real LLM call and
+opens a narrow plan-only pilot path. Two new tables
+(`llm_budget_policies` + `llm_budget_events`) carry per-scope cost /
+token caps and a row per preflight / recorded-usage / budget-exceeded
+decision. The mock provider is exempt; every real LLM call MUST
+clear an active policy before touching the wire.
+
+- New providers: `external_openai`, `external_anthropic` (plan-only).
+- Both providers REFUSE `generate_patch_proposal` /
+  `generate_test_plan` -- only `generate_development_plan` is
+  implemented.
+- Endpoints: `GET /operations/llm/budget`,
+  `GET /operations/llm/budget/policies`,
+  `POST /operations/llm/budget/policies`,
+  `GET /operations/llm/budget/usage`,
+  `GET /operations/llm/budget/events`,
+  `GET /operations/llm/plan-only/{task_id}`.
+- `GET /operations/safety` gains `real_llm_enabled_pilot`,
+  `llm_real_plan_only_enabled`,
+  `llm_patch_generation_enabled` (**always false**),
+  `llm_workspace_write_enabled` (**always false**),
+  `llm_cost_governance_enabled`, `llm_budget_policy_active`,
+  `llm_budget_enforcement_mode`, `llm_daily_budget_remaining`,
+  `llm_monthly_budget_remaining`, `llm_budget_exceeded`.
+
+Verification:
+
+```bash
+./scripts/check_llm_runtime_inputs.sh
+./scripts/verify_llm_cost_governance.sh
+./scripts/verify_real_llm_plan_only_pilot.sh
+```
+
+Without the real-LLM env, the pilot script emits
+`REAL_LLM_PLAN_ONLY_SKIPPED: PASS` and exits 0. See
+[`docs/operations/llm-cost-governance.md`](docs/operations/llm-cost-governance.md)
+and [`docs/operations/real-llm-plan-only-pilot.md`](docs/operations/real-llm-plan-only-pilot.md).
+
 ## Tamper-Evident Audit Chain (Stage 34)
 
 Stage 34 adds a hash-chain integrity record next to every

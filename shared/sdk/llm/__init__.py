@@ -48,9 +48,15 @@ from shared.sdk.llm.provider import (
     DisabledLLMProvider,
     ExternalLLMProviderGuard,
     LLMProvider,
+    LLMProviderError,
     MockLLMProvider,
     get_provider,
     real_llm_guard,
+)
+from shared.sdk.llm.plan_only_provider import (
+    REAL_PROVIDER_NAMES,
+    RealLLMPlanOnlyProvider,
+    real_llm_plan_only_guard,
 )
 from shared.sdk.llm.store import LLMInteractionStore
 
@@ -68,16 +74,20 @@ __all__ = [
     "LLMPatchProposal",
     "LLMProposalArtifact",
     "LLMProvider",
+    "LLMProviderError",
     "LLMSafetyPolicy",
     "LLMTestPlan",
     "LLMUsageRecord",
     "MockLLMProvider",
     "PROMPT_CONTRACT_VERSION",
     "REAL_LLM_GUARD_REASONS",
+    "REAL_PROVIDER_NAMES",
+    "RealLLMPlanOnlyProvider",
     "apply_llm_safety_policy",
     "build_prompt_contract",
     "get_provider",
     "hash_text",
     "real_llm_guard",
+    "real_llm_plan_only_guard",
     "redact_text",
 ]
