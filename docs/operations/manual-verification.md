@@ -1319,5 +1319,84 @@ schedule dry-run, and migration down inventory.
       *and* in the Stage 36 progress entry. Stage 36 implements
       neither remediation.
 
-If every box is ticked, the platform is ready for the next iteration.
-Nothing on this checklist authorizes a production deploy.
+## 17q. Validation pilot run (Stage 37)
+
+The validation pilot exercises 8 controlled scenarios (simple task,
+docs delivery, API demo, clarification, policy block, human approval,
+LLM plan-only, QA auto-fix) through the gateway intake path. It
+proves that controlled external task assignment is viable for a
+**validation environment**; it is NOT a production-readiness
+statement.
+
+* [ ] `scripts/check_real_integration_inputs.sh` and
+      `scripts/check_llm_runtime_inputs.sh` were run first. Their
+      output reports presence + length only, never a token value.
+* [ ] Pilot mode is recorded (one of `DISCORD_REAL_EXECUTED`,
+      `DISCORD_SKIPPED`; one of `GITHUB_REAL_EXECUTED`,
+      `GITHUB_SKIPPED`; one of `LLM_REAL_PLAN_ONLY_EXECUTED`,
+      `LLM_SKIPPED`). SKIPPED is PASS for this pilot.
+* [ ] At least 8 pilot tasks ran with task_id prefix
+      `validation-pilot-YYYYMMDDHHMMSS-*`.
+* [ ] Scenario A (simple task): work item has
+      `execution_mode=simple_task`, `scrum_enabled=false`,
+      `development_required=false`, `workspace_count=0`,
+      `production_executed=false`.
+* [ ] Scenario D (clarification): work item stuck at
+      `status=needs_clarification`, workflow `stage=dispatched`, no
+      GitHub PR.
+* [ ] Scenarios B and C: workflow `stage=completed`,
+      `execution_mode=delivery_task`, `github.dry_run=true`,
+      `github.status=success`, all 4 agents progressed (requirement,
+      development, qa, devops).
+* [ ] Scenarios E, F, H: workflow `stage=completed`,
+      `production_executed=false`. Deeper paths (controlled code
+      generation policy block, human approval policy lifecycle, QA
+      findings + auto-fix) are exercised by the regression verify
+      scripts (E -> `verify_controlled_code_generation.sh`, F ->
+      `verify_flexible_human_approval_policy.sh`, H ->
+      `verify_qa_auto_fix_loop.sh`).
+* [ ] Scenario G (LLM plan-only): without real LLM env,
+      `REAL_LLM_PLAN_ONLY_SKIPPED: PASS` is recorded;
+      `plan_only=True`; `real_llm_used=False`; no workspace write;
+      no code artifacts; no PR draft from LLM alone.
+* [ ] For every pilot task, the operations / audit / notification
+      surfaces returned non-empty results:
+      `/operations/workflows/{task_id}` returns the workflow,
+      `/audit/events?task_id=...` returns audit events,
+      `/deliveries?task_id=...` returns notification deliveries.
+* [ ] No real Discord delivery happened unless real Discord env was
+      explicitly opted in. The Stage 32 default-deny stream filter
+      kept internal events (`workflow.*`, `qa.*`, `audit.*`, `llm.*`,
+      `backup.*`, `restore_drill.*`, ...) off the channel.
+* [ ] No real GitHub write happened unless real GitHub sandbox env
+      was explicitly opted in. PR URLs in the report carry
+      `dry_run=true`. No PR merge, no branch protection change.
+* [ ] `source/pilot-reports/validation_pilot_<ts>.json` and
+      `source/pilot-reports/validation_pilot_latest.json` were
+      written and committed (the JSON files carry no credentials).
+* [ ] Full regression after the pilot: `pytest` 1266 passed, all 17
+      `verify_*.sh` PASS (or PASS_WITH_GAPS for
+      `verify_backup_production_readiness.sh`; SKIPPED is PASS for
+      real-integration scripts when env is absent).
+* [ ] Production safety counters after the pilot are still zero:
+      `deployment_records production_executed=true` = 0,
+      `workflow_states execution_result->>'production_executed'='true'`
+      = 0. `/operations/safety` `result=safe`,
+      `production_deploy_enabled=false`,
+      `llm_patch_generation_enabled=false`,
+      `llm_workspace_write_enabled=false`,
+      `audit_chain_latest_status=passed`.
+* [ ] Step 33 carry-forward limitations are still recorded in
+      `docs/operations/tamper-evident-audit.md` and Stage 37
+      progress entry; Stage 37 implements neither remediation.
+* [ ] Stage 36 backup readiness gaps are still recorded; Stage 37
+      does NOT remediate them.
+* [ ] **Future stage candidate** -- "LLM Model Routing & Agent
+      Model Policy" is recorded in the pilot report
+      (`future_stage_candidates`), in `validation-pilot-run.md`, and
+      in the Stage 37 progress entry. Stage 37 does NOT implement
+      this routing layer.
+
+If every box is ticked, the platform is suitable for a wider
+**validation environment** rollout. **Nothing on this checklist
+authorizes a production deploy.**

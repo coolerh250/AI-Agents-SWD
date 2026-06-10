@@ -7556,3 +7556,204 @@ issues & blockers, and next-step suggestions.
     rollback plan); (d) implement the Step 33 HMAC key map
     loader + audit-service direct-POST integrity inline.
   - Stage 36 does NOT pick which of (a)-(d) is next.
+
+---
+
+## Stage 37 — Validation Pilot Run (Controlled External Task Assignment & Agent Delivery)
+
+- **Execution time:** 2026-06-10 02:47 -- 03:15 UTC
+  (validation environment, 10.0.1.31).
+- **Git commit at pilot start:** `3362ea5`.
+- **Git commit at pilot end:** `e5dab41` (+ this Stage 37 progress
+  commit). Single defect fix commit landed during baseline.
+- **Pilot mode:**
+  - real Discord: **SKIPPED** (no `DISCORD_BOT_TOKEN`,
+    `DISCORD_TEST_CHANNEL_ID`, `DISCORD_TEST_GUILD_ID`, or
+    `RUN_REAL_DISCORD_TEST` — operator-decided opt-in).
+  - real GitHub sandbox: **SKIPPED** (no `GITHUB_TOKEN`,
+    `GITHUB_TEST_REPO`, or `RUN_REAL_GITHUB_TEST`).
+  - real LLM plan-only: **SKIPPED** (provider key + `RUN_REAL_LLM_TEST`
+    + `ENABLE_REAL_LLM_NETWORK_CALL` all absent;
+    `REAL_LLM_TEST_SKIPPED: PASS`).
+- **Modified files (Stage 37):**
+  - NEW `docs/operations/validation-pilot-run.md` — pilot
+    procedure, scenario matrix, mode resolution, report fields,
+    future stage candidates (with LLM Model Routing & Agent Model
+    Policy scope), carry-forward limitations.
+  - NEW `scripts/build_validation_pilot_report.py` — pilot report
+    generator (deterministic JSON; no credentials).
+  - NEW `source/pilot-reports/validation_pilot_<ts>.json` +
+    `validation_pilot_latest.json` — pilot evidence + verdict.
+  - UPDATED `scripts/verify_platform_observability.sh` —
+    SIGPIPE defect remediation (see "Defect fix" below).
+  - UPDATED `docs/operations/manual-verification.md` — new
+    section `17q` with the validation pilot checklist.
+
+- **Defect fix (single commit, no platform feature change):**
+  `e5dab41` `fix(verify): defeat SIGPIPE in
+  verify_platform_observability metric checks`. The script's
+  `set -o pipefail` plus `echo "$var" | grep -q PATTERN` race
+  triggered intermittently before Stage 36 and became
+  deterministic after Stage 36 added 11 new metrics that enlarged
+  the orchestrator `/metrics` payload. The fix switches three
+  metric-presence assertions (`workflow_total`,
+  `agent_execution_total`, `retry_total|deadletter_total`) to
+  herestring (`grep -q PATTERN <<< "$var"`) so the upstream
+  process cannot receive SIGPIPE. No platform code changed; no
+  test required because the script is a verifier, not part of
+  the runtime.
+
+- **Pilot scenarios executed (8 tasks, prefix
+  `validation-pilot-20260610024716-*`):**
+
+  | Scenario | Task ID suffix | Result | Key evidence |
+  |----------|---------------|--------|--------------|
+  | A: Simple Task | `A_simple_clean` | PASS | `execution_mode=simple_task`, `scrum_enabled=false`, `development_required=false`, `workspace_count=0`, `production_executed=false`, 21 audit events, 11 notifications |
+  | B: Docs Delivery | `B_docs` | PASS | `delivery_task`, agent pipeline completed (requirement -> development -> qa -> devops), GitHub dry-run PR (`pr/4`), 30 audit events, 16 notifications |
+  | C: API Demo | `C_api_demo` | PASS | `delivery_task`, agent pipeline completed, GitHub dry-run PR (`pr/1`), 30 audit events, 16 notifications |
+  | D: Clarification | `D_clarify` | PASS | `needs_clarification`, work item stuck at `dispatched`, no PR, 6 audit events, 3 notifications |
+  | E: Policy Block | `E_policy_block` | PASS_via_regression | inline mock workflow completed safely (`dry_run=true`, `production_executed=false`); deeper path verified by `verify_controlled_code_generation.sh` PASS |
+  | F: Human Approval | `F_approval` | PASS_via_regression | inline mock workflow completed safely; deeper path verified by `verify_flexible_human_approval_policy.sh` PASS |
+  | G: LLM Plan-only | `G_llm_plan` | PASS_SKIPPED | `plan_only=True`, `real_llm_used=False`; real LLM correctly skipped because env absent |
+  | H: QA Auto-Fix | `H_qa_autofix` | PASS_via_regression | inline mock workflow completed safely; deeper path verified by `verify_qa_auto_fix_loop.sh` PASS |
+
+  Total: **8 / 8 PASS**, 0 FAIL. Pilot report:
+  `source/pilot-reports/validation_pilot_20260610024716.json` +
+  `validation_pilot_latest.json`.
+
+- **External platform result:**
+  - Discord test channel used? **NO / SKIPPED**. Inline mock
+    `/intake/mock` on `communication-gateway:8004` drove all 8
+    scenarios; no real Discord traffic.
+  - GitHub sandbox repo used? **NO / SKIPPED**. Every PR URL in
+    the report carries `dry_run=true` +
+    `event_type=github.pr.dry_run`. No real GitHub write.
+  - Any production repo write? **NO**.
+
+- **Agent workflow result:**
+  - intake-agent: PASS — every task produced a
+    `requirement_spec` artifact.
+  - requirement-agent: PASS — `agent_progress.requirement-agent=completed`
+    for all delivery_task scenarios.
+  - development-agent: PASS — completed.
+  - qa-agent: PASS — completed.
+  - devops-agent: PASS — completed (`deployment_simulated=true`,
+    `production_executed=false`).
+  - approval policy: see Scenario F + regression.
+  - notification-worker: PASS — per-task deliveries reachable via
+    `/deliveries?task_id=...`; 11–16 deliveries per delivery_task
+    scenario.
+  - audit-worker: PASS — per-task audit timelines reachable via
+    `/audit/events?task_id=...`; 21–30 events per delivery_task
+    scenario; tamper-evident audit regression PASS.
+
+- **Delivery result:**
+  - code workspace: not populated by the inline mock workflow;
+    `verify_controlled_code_generation.sh` exercises this during
+    regression. PASS.
+  - QA validation: not populated by the inline mock workflow;
+    `verify_qa_auto_fix_loop.sh` exercises this during regression.
+    PASS.
+  - auto-fix: as above — `verify_qa_auto_fix_loop.sh` PASS.
+  - GitHub dry-run / sandbox PR: every delivery_task scenario
+    produced a synthetic `pr_url` with `dry_run=true`. No real
+    GitHub write.
+  - final task statuses: 7 completed (`stage=completed`), 1 stuck
+    at `needs_clarification` (D, by design).
+
+- **Operations / Audit / Notification:**
+  - operations view: `/operations/workflows/{task_id}` returned
+    full payload for all 8 tasks.
+  - audit timeline: per-task counts captured in the report.
+  - tamper-evident audit: `verify_tamper_evident_audit.sh` PASS.
+  - notification delivery: `verify_notification_delivery.sh` PASS;
+    no real Discord delivery; Stage 32 default-deny stream filter
+    confirmed by `verify_real_discord_delivery_filter.sh` PASS.
+  - observability: `verify_platform_observability.sh` PASS
+    (81/81 after the SIGPIPE defect fix).
+
+- **Safety:**
+  - `production_executed=true` counts:
+    `deployment_records=0`, `workflow_states=0`.
+  - real Discord delivery filter: ENFORCED;
+    `real_discord_stream_delivery_default_blocked=true`.
+  - GitHub production write: DISABLED;
+    `github_external_write_enabled=false`.
+  - real LLM: DISABLED; `real_llm_enabled=false`,
+    `llm_patch_generation_enabled=false`,
+    `llm_workspace_write_enabled=false`.
+  - backup readiness:
+    `BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS gaps=encryption_no_key,
+    storage_not_off_host, schedule_dry_run_only, migration_down_gaps`.
+  - known gaps: Step 33 carry-forward (HMAC key rotation / key map
+    loader; audit-service direct POST integrity gap), Stage 36
+    backup readiness gaps, LLM Model Routing & Agent Model Policy
+    not yet implemented.
+
+- **Regression after the pilot:**
+  - `pytest -q --no-header`: **1266 passed, 0 failed, 1 warning**
+    in 55.91s.
+  - `check_runtime_state.sh`: **CHECK_RUNTIME_STATE_DONE**.
+  - `verify_backup_drill.sh`: **BACKUP_DRILL_VERIFY: PASS**.
+  - `verify_backup_production_readiness.sh`:
+    **BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS**
+    (`encryption_no_key, storage_not_off_host,
+    schedule_dry_run_only, migration_down_gaps`).
+  - `verify_llm_cost_governance.sh`: **PASS**.
+  - `verify_real_llm_plan_only_pilot.sh`: **PASS** (skipped mode).
+  - `verify_tamper_evident_audit.sh`: **PASS**.
+  - `verify_real_discord_delivery_filter.sh`: **PASS**.
+  - `verify_real_integration_pilot.sh`: **PASS**.
+  - `verify_notification_delivery.sh`: **PASS**.
+  - `verify_operations_view.sh`: **PASS**.
+  - `verify_unified_audit.sh`: **PASS**.
+  - `verify_platform_observability.sh`: **PASS** (81/81 after fix).
+  - `verify_flexible_human_approval_policy.sh`: **PASS**.
+  - `verify_llm_proposal_promotion.sh`: **PASS**.
+  - `verify_qa_auto_fix_loop.sh`: **PASS**.
+  - `verify_controlled_code_generation.sh`: **PASS**.
+
+- **Pilot assessment:**
+  - Controlled external task assignment viable? **YES** (validation
+    environment scope).
+  - Agents can complete controlled tasks? **YES** for the inline
+    mock workflow (all four pipeline agents complete).
+  - Suitable for wider validation environment? **YES**.
+  - Suitable for production? **NO**. Remaining blockers:
+    real Discord / GitHub / LLM enablement, Stage 36 backup
+    readiness gaps, Step 33 carry-forward limitations,
+    K8s/Helm/Argo substrate, incident response runbook, LLM
+    Model Routing & Agent Model Policy not yet implemented.
+
+- **Future stage candidates (observations only; Claude Code does
+  NOT decide which is next):**
+  1. **LLM Model Routing & Agent Model Policy** -- per-agent model
+     policy, task-risk-based routing, budget-aware selection,
+     provider fallback, schema compatibility check, human approval
+     override, model usage audit. **Agents may NOT pick a real
+     model autonomously; agents only submit a capability request,
+     the Model Router / Policy decides.** Documented in
+     `validation-pilot-run.md` "LLM Model Routing & Agent Model
+     Policy (future stage scope)".
+  2. Backup / DR gap closure (S3 client + scheduled backup +
+     migration `*_down.sql` + production encryption key).
+  3. Audit HMAC key rotation / key map loader (Step 33
+     carry-forward).
+  4. audit-service direct POST `/audit/events` integrity gap
+     closure (Step 33 carry-forward).
+  5. Kubernetes / Helm / ArgoCD runtime baseline.
+  6. Incident response runbook / external alert receiver.
+
+- **Recommendation:** Controlled external task assignment via the
+  gateway intake path is viable for a wider validation environment
+  rollout. The platform is NOT production-ready until at minimum
+  the four Stage 36 backup readiness gaps close, the two Step 33
+  carry-forward integrity items close, and LLM Model Routing &
+  Agent Model Policy is implemented. The Stage 37 pilot does NOT
+  authorise production deploy; it only validates fitness for the
+  validation environment.
+
+- **Following Stages 22 -- 36, Claude Code does not decide the
+  next stage roadmap.** Operators choose from the future stage
+  candidate list above.
+

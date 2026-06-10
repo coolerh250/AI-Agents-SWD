@@ -1,0 +1,489 @@
+{
+  "backup_readiness_gaps": [
+    "encryption_no_key",
+    "storage_not_off_host",
+    "schedule_dry_run_only",
+    "migration_down_gaps"
+  ],
+  "backup_readiness_status": "PASS_WITH_GAPS",
+  "completed_at": "2026-06-10T03:02:38Z",
+  "failed_tasks": 0,
+  "future_stage_candidates": [
+    {
+      "name": "LLM Model Routing & Agent Model Policy",
+      "scope": [
+        "per-agent model policy",
+        "task-risk based model routing",
+        "budget-aware model selection",
+        "provider fallback",
+        "schema compatibility check",
+        "human approval override",
+        "model usage audit",
+        "agents may NOT pick a real model autonomously",
+        "agents only submit a capability request; the Model Router / Policy chooses the model"
+      ]
+    },
+    {
+      "name": "Backup / DR gap closure (S3 client + scheduled backup + migration *_down.sql + production encryption key)"
+    },
+    {
+      "name": "Audit HMAC key rotation / key map loader (Step 33 carry-forward)"
+    },
+    {
+      "name": "audit-service direct POST integrity gap closure (Step 33 carry-forward)"
+    },
+    {
+      "name": "Kubernetes / Helm / ArgoCD runtime baseline"
+    },
+    {
+      "name": "Incident response runbook / external alert receiver"
+    }
+  ],
+  "git_commit": "e5dab41e332c6268cb4531ad365f3beb2214f480",
+  "known_gaps": [
+    "Real Discord pilot: SKIPPED (no DISCORD_BOT_TOKEN / DISCORD_TEST_CHANNEL_ID)",
+    "Real GitHub sandbox pilot: SKIPPED (no GITHUB_TOKEN / GITHUB_TEST_REPO)",
+    "Real LLM plan-only pilot: SKIPPED (no provider key + RUN_REAL_LLM_TEST + ENABLE_REAL_LLM_NETWORK_CALL)",
+    "Step 33 carry-forward: HMAC key rotation / key map loader",
+    "Step 33 carry-forward: audit-service direct POST integrity gap",
+    "Backup readiness gaps (Stage 36) still open",
+    "LLM Model Routing & Agent Model Policy: not implemented"
+  ],
+  "passed_tasks": 8,
+  "pilot_id": "validation-pilot-20260610024716",
+  "pilot_mode": {
+    "real_discord": "SKIPPED",
+    "real_github": "SKIPPED",
+    "real_llm": "SKIPPED"
+  },
+  "production_safety_counts": {
+    "deployment_records_production_executed_true": 0,
+    "workflow_states_production_executed_true": 0
+  },
+  "real_discord_executed": false,
+  "real_github_executed": false,
+  "real_llm_executed": false,
+  "recommendation": "Controlled external task assignment via the gateway intake path is viable. The deterministic agent pipeline (intake -> requirement -> development -> qa -> devops -> github dry-run) completes for delivery_task scenarios. Deeper controlled code generation, QA findings, approval policy, and real LLM plan-only paths are exercised by the existing verify_*.sh regression suite (all PASS) and not by the inline mock workflow. The platform is suitable for a wider validation environment pilot but NOT for production: real Discord / GitHub / LLM, off-host backup, scheduled backup, K8s/Helm/Argo substrate, and incident response runbook all remain operator-decided next steps.",
+  "started_at": "2026-06-10T02:47:00Z",
+  "tasks": [
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generation_blocked",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 21,
+      "audit_present": true,
+      "development_required": false,
+      "execution_mode": "simple_task",
+      "expectation": "execution_mode=simple_task; no workspace; scrum_enabled=false",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 7486,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": null,
+        "real_llm_used": null
+      },
+      "notes": "execution_mode=simple_task; no workspace; scrum_enabled=false",
+      "notification_count": 11,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS",
+      "scenario": "A: Simple Task",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-A_simple_clean",
+      "work_item_status": "completed",
+      "workflow_id": "wf-dc2d5ed21b69",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generated",
+        "code_pr_draft_created",
+        "code_validation_passed",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa_validation_passed",
+        "qa_validation_started",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 30,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "execution_mode=delivery_task; GitHub dry-run PR; agent pipeline completed",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 4557,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "execution_mode=delivery_task; GitHub dry-run PR; agent pipeline completed",
+      "notification_count": 16,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS",
+      "scenario": "B: Docs Delivery",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-B_docs",
+      "work_item_status": "completed",
+      "workflow_id": "wf-3a487eed19b0",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generated",
+        "code_pr_draft_created",
+        "code_validation_passed",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa_validation_passed",
+        "qa_validation_started",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 30,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "execution_mode=delivery_task; GitHub dry-run PR; agent pipeline completed",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 1319,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "execution_mode=delivery_task; GitHub dry-run PR; agent pipeline completed",
+      "notification_count": 16,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS",
+      "scenario": "C: API Demo",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-C_api_demo",
+      "work_item_status": "completed",
+      "workflow_id": "wf-413fc4cee4c0",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "clarification_requested",
+        "intake",
+        "notification_delivery",
+        "workflow"
+      ],
+      "audit_event_count": 6,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "needs_clarification; no PR; not advanced past dispatched",
+      "final_stage": "dispatched",
+      "github_result": {
+        "checks_status": null,
+        "dry_run": null,
+        "event_type": null,
+        "pr_number": null,
+        "status": null
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "needs_clarification; no PR; not advanced past dispatched",
+      "notification_count": 3,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS",
+      "scenario": "D: Clarification",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-D_clarify",
+      "work_item_status": "needs_clarification",
+      "workflow_id": "wf-f584ae88781a",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generated",
+        "code_pr_draft_created",
+        "code_validation_passed",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa_validation_passed",
+        "qa_validation_started",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 30,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "deterministic mock workflow completed; hard safety rails intact",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 7832,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "deterministic mock workflow completed; hard safety rails intact",
+      "notification_count": 16,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS_via_regression",
+      "scenario": "E: Policy Block",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-E_policy_block",
+      "work_item_status": "completed",
+      "workflow_id": "wf-f84a161d707a",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generated",
+        "code_pr_draft_created",
+        "code_validation_passed",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa_validation_passed",
+        "qa_validation_started",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 30,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "deterministic mock workflow completed; no approval decisions in this path",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 9849,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "deterministic mock workflow completed; no approval decisions in this path",
+      "notification_count": 16,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS_via_regression",
+      "scenario": "F: Human Approval",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-F_approval",
+      "work_item_status": "completed",
+      "workflow_id": "wf-66cbfe27728c",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generation_blocked",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 21,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "plan_only=True; real LLM SKIPPED (no env)",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 7578,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "plan_only=True; real LLM SKIPPED (no env)",
+      "notification_count": 11,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS_SKIPPED",
+      "scenario": "G: LLM Plan-only",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-G_llm_plan",
+      "work_item_status": "completed",
+      "workflow_id": "wf-372a74189c40",
+      "workspace_count": 0
+    },
+    {
+      "approval_result": {
+        "decision_count": 0
+      },
+      "audit_decision_types": [
+        "code_generated",
+        "code_pr_draft_created",
+        "code_validation_passed",
+        "code_workspace_created",
+        "github_automation",
+        "github_pr_integration",
+        "intake",
+        "notification_delivery",
+        "qa_validation_passed",
+        "qa_validation_started",
+        "task_ready_for_development",
+        "workflow"
+      ],
+      "audit_event_count": 30,
+      "audit_present": true,
+      "development_required": true,
+      "execution_mode": "delivery_task",
+      "expectation": "deterministic mock workflow completed; QA store not driven inline",
+      "final_stage": "completed",
+      "github_result": {
+        "checks_status": "success",
+        "dry_run": true,
+        "event_type": "github.pr.dry_run",
+        "pr_number": 1313,
+        "status": "success"
+      },
+      "llm_result": {
+        "interaction_count": 0,
+        "plan_only": true,
+        "real_llm_used": false
+      },
+      "notes": "deterministic mock workflow completed; QA store not driven inline",
+      "notification_count": 16,
+      "notification_present": true,
+      "operations_present": true,
+      "production_executed": false,
+      "qa_result": {
+        "auto_fix_request_count": 0,
+        "finding_count": 0,
+        "run_count": 0
+      },
+      "result": "PASS_via_regression",
+      "scenario": "H: QA Auto-Fix",
+      "scrum_enabled": false,
+      "task_id": "validation-pilot-20260610024716-H_qa_autofix",
+      "work_item_status": "completed",
+      "workflow_id": "wf-4d93a2d76c01",
+      "workspace_count": 0
+    }
+  ],
+  "total_tasks": 8
+}
