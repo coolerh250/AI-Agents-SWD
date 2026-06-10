@@ -7286,3 +7286,273 @@ issues & blockers, and next-step suggestions.
     command" flow.
   - **Following Stages 22 -- 34, Claude Code does not decide
     the Step 35 roadmap.**
+
+---
+
+## Stage 36 — Backup / Restore Productionisation & DR Drill
+
+- **Execution time:** 2026-06-09 (UTC) — deliverable commit on
+  `main`, deploy + verification on 10.0.1.31.
+- **Git branch / commit:**
+  - Deliverable: `00e838b` — "Stage 36: Backup / Restore
+    Productionisation & DR Drill"
+  - Stage 36 progress log: this entry
+  - Previous: `6eab0ab` (Stage 35 progress log)
+- **Modified files (high-level):**
+  - **New backup SDK** (`shared/sdk/backup/`): `__init__.py`,
+    `models.py` (`BackupArtifactRef`, `RestoreDrillReport`,
+    storage / drill status constants), `checksum.py`
+    (streamed sha256 + `verify_sha256`), `manifest.py`
+    (`BackupManifest` deterministic JSON + write/load,
+    forbidden-field guard, `production_executed` pinned False),
+    `encryption.py` (env-key + test-only-keyfile resolution,
+    `key_id = sha256(key)[:8]`, never carries key value),
+    `storage.py` (`BackupStorage` facade: local-filesystem REAL,
+    s3-compatible-placeholder skipped with
+    `s3_upload_not_implemented`, disabled), `restore.py`
+    (`isolated_restore_db_name` + `assert_isolated_restore_db`
+    refusing `aiagents` / `postgres` / `template*`).
+  - **New shell scripts:**
+    `backup_postgres_encrypted.sh`, `decrypt_backup_for_restore.sh`,
+    `upload_backup_artifact.sh`, `download_backup_artifact.sh`,
+    `run_restore_drill.sh`, `measure_backup_rto_rpo.sh`,
+    `install_backup_cron.sh` (dry-run default),
+    `uninstall_backup_cron.sh`,
+    `check_migration_down_scripts.sh`,
+    `verify_backup_drill.sh`,
+    `verify_backup_production_readiness.sh`.
+  - **Updated**: `scripts/check_runtime_state.sh` (11 new
+    Stage 36 smokes — see below); `shared/sdk/observability/metrics.py`
+    (11 new counters/histograms: `BACKUP_CREATED_TOTAL`,
+    `BACKUP_ENCRYPTED_TOTAL`, `BACKUP_UPLOAD_SKIPPED_TOTAL`,
+    `BACKUP_UPLOAD_SUCCESS_TOTAL`, `RESTORE_DRILL_RUNS_TOTAL`,
+    `RESTORE_DRILL_FAILED_TOTAL`, `BACKUP_DURATION_SECONDS`,
+    `RESTORE_DURATION_SECONDS`, `BACKUP_ARTIFACT_SIZE_BYTES`,
+    `BACKUP_RTO_SECONDS`, `BACKUP_RPO_SECONDS`);
+    `shared/sdk/notifications/real_delivery_policy.py`
+    (denylist extended with `backup.*` + `restore_drill.*`);
+    `apps/orchestrator/src/operations.py`
+    (3 new endpoints `/operations/backup/status`,
+    `/operations/backup/reports`,
+    `/operations/backup/reports/latest`; 9 new safety fields;
+    new `backup_summary` block on `/operations/summary`;
+    pure-Python `_backup_safety_summary` /
+    `_backup_compact_summary` helpers; `production_executed=false`
+    pinned on `/operations/backup/status`).
+  - **New tests** (48 across 9 files, all green):
+    `test_backup_manifest.py`, `test_backup_checksum.py`,
+    `test_backup_encryption.py`, `test_backup_storage.py`,
+    `test_restore_drill_report.py`,
+    `test_backup_operations_view.py`,
+    `test_backup_audit_notification.py`,
+    `test_backup_metrics.py`, `test_migration_down_inventory.py`.
+  - **New docs:** `docs/operations/backup-restore-dr.md`,
+    `docs/operations/restore-drill-runbook.md`,
+    `docs/operations/backup-schedule.md`. Updated:
+    `README.md` (Stage 36 section), `docs/operations/manual-verification.md`
+    (new `17o`), `docs/operations/observability-runbook.md`
+    (new `17p`), `docs/operations/tamper-evident-audit.md`
+    (carry-forward limitations updated with "Stage 36 did
+    NOT implement either remediation").
+  - **New artifacts** committed (no secret data):
+    `source/dr-reports/.gitkeep`,
+    `source/dr-reports/dr_report_latest.json`,
+    `source/dr-reports/dr_report_20260609T105815Z.json`.
+- **Deployment target:** 10.0.1.31 (`aiagents-test` stack, 22+
+  containers). Production deploy NOT performed.
+
+- **Test results (local):**
+  - `pytest -q`: **1151 passed, 115 skipped, 0 failed** in
+    1335.08s. Skips are unchanged pre-existing skip marks;
+    no Stage 36 test skips.
+  - `ruff check .`: **All checks passed!** (no warnings).
+  - `black --check .`: **336 files unchanged**.
+  - `mypy shared/`: **Success: no issues found in 94 source files**.
+  - `mypy shared/sdk/backup`: **Success: no issues found in
+    7 source files**.
+
+- **Test results (remote 10.0.1.31):**
+  - `git pull --ff-only` to `00e838b`. `docker compose build
+    orchestrator` + `up -d --force-recreate orchestrator`
+    succeeded; 23 containers running.
+  - `pytest -q --no-header`: **1266 passed, 0 failed, 1 warning**
+    in 56.78s.
+  - `./scripts/check_runtime_state.sh`: **exit 0, CHECK_RUNTIME_STATE_DONE**
+    after activating `.venv`. All 11 Stage 36 smokes PASS:
+    `BACKUP_MANIFEST_SMOKE`, `BACKUP_ENCRYPTION_SMOKE`,
+    `BACKUP_CHECKSUM_SMOKE`, `BACKUP_OPERATIONS_SMOKE`,
+    `RESTORE_DRILL_SMOKE`, `RTO_RPO_MEASUREMENT_SMOKE`,
+    `BACKUP_STORAGE_SKIPPED_SMOKE`, `BACKUP_AUDIT_SMOKE`,
+    `BACKUP_NOTIFICATION_SMOKE`, `BACKUP_METRICS_SMOKE`,
+    `MIGRATION_DOWN_INVENTORY_SMOKE`. Stage 24's existing
+    `BACKUP_RESTORE_SMOKE` also still PASS.
+  - `./scripts/verify_backup_drill.sh`: **BACKUP_DRILL_VERIFY: PASS**.
+    Drill (`drill-20260609T105815Z`) created encrypted backup
+    (`backups/aiagents-20260609T105815Z.dump.enc`, sha256
+    verified), uploaded skip-path emitted
+    `BACKUP_UPLOAD: SKIPPED s3_upload_not_implemented`,
+    created isolated DB `aiagents_restore_drill_20260609t105815z`,
+    decrypted + `pg_restore --no-owner --clean --if-exists
+    --exit-on-error` (rc=0), row counts:
+    `audit_logs=233858, audit_integrity_records=233814,
+    workflow_states=3665, deployment_records=2758,
+    notification_deliveries=115248, llm_interactions=0,
+    llm_budget_events=9`. Audit integrity chain walk on the
+    restored DB returned `audit_integrity_status=passed`
+    with `mismatches=0` over 233 814 records. Cleanup ran
+    (`DROP DATABASE` succeeded; no residual
+    `aiagents_restore_drill_*` rows). DR report written to
+    `source/dr-reports/dr_report_20260609T105815Z.json` +
+    `dr_report_latest.json`.
+  - `./scripts/verify_backup_production_readiness.sh`:
+    **BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS gaps=encryption_no_key,storage_not_off_host,schedule_dry_run_only,migration_down_gaps**.
+    Expected on the test cluster: no operator-provided
+    `BACKUP_ENCRYPTION_KEY` (drill auto-generates a
+    test-only keyfile then `shred`s it), local-filesystem
+    storage mode rather than S3, schedule still dry-run,
+    13 migrations with no `*_down.sql` companions.
+    `dr_status=latest_passed`, `runbook_status=present`.
+  - `./scripts/measure_backup_rto_rpo.sh`:
+    **RTO_RPO_SUMMARY: PASS** with
+    `backup_duration_seconds=4.099`,
+    `restore_duration_seconds=4.719`,
+    `total_drill_duration_seconds=13.892`,
+    `estimated_rto_seconds=13.892`,
+    `estimated_rpo_seconds=0.0`, `rpo_status=manual_only`,
+    `audit_integrity_status=passed`.
+  - `./scripts/verify_llm_cost_governance.sh`:
+    **LLM_COST_GOVERNANCE_VERIFY: PASS**.
+  - `./scripts/verify_real_llm_plan_only_pilot.sh`:
+    **REAL_LLM_PLAN_ONLY_PILOT_VERIFY: PASS** (skipped mode).
+  - `./scripts/verify_tamper_evident_audit.sh`:
+    **TAMPER_EVIDENT_AUDIT_VERIFY: PASS**.
+  - `./scripts/verify_real_discord_delivery_filter.sh`:
+    **REAL_DISCORD_DELIVERY_FILTER_VERIFY: PASS**.
+  - `./scripts/verify_real_integration_pilot.sh`:
+    **REAL_INTEGRATION_PILOT_VERIFY: PASS**.
+  - `./scripts/verify_notification_delivery.sh`:
+    **NOTIFICATION_DELIVERY_VERIFY: PASS**.
+  - `./scripts/verify_operations_view.sh`:
+    **OPERATIONS_VIEW_VERIFY: PASS**.
+  - `./scripts/verify_unified_audit.sh`:
+    **UNIFIED_AUDIT_VERIFY: PASS**.
+  - `./scripts/verify_platform_observability.sh`:
+    **PLATFORM_OBSERVABILITY_VERIFY: PASS** (81/81). First
+    post-recreate run momentarily reported
+    `metrics.orchestrator.workflow_total: FAIL` because the
+    orchestrator counter was still at zero immediately after
+    `--force-recreate`; the Prometheus client only emits
+    `workflow_total{...}` lines after the first increment.
+    Once the orchestrator processed any workflow the metric
+    appeared and the script passes deterministically.
+    Recorded as an observation, NOT a Stage 36 regression.
+  - `./scripts/verify_flexible_human_approval_policy.sh`:
+    **FLEXIBLE_HUMAN_APPROVAL_POLICY_VERIFY: PASS**.
+  - `./scripts/verify_llm_proposal_promotion.sh`:
+    **LLM_PROPOSAL_PROMOTION_VERIFY: PASS**.
+  - `./scripts/verify_qa_auto_fix_loop.sh`:
+    **QA_AUTO_FIX_LOOP_VERIFY: PASS**.
+  - `./scripts/verify_controlled_code_generation.sh`:
+    **CONTROLLED_CODE_GENERATION_VERIFY: PASS**.
+
+  - **Production safety counters** on remote:
+    `deployment_records production_executed=true` -> **0**;
+    `workflow_states execution_result->>'production_executed'='true'` -> **0**.
+
+  - **Operations endpoints sampled on remote:**
+    - `GET /operations/backup/status`: returns
+      `production_executed=false`, `production_ready=false`,
+      `latest_dr_report.status=passed`,
+      `latest_dr_report.audit_integrity_status=passed`,
+      `latest_dr_report.restore_db=aiagents_restore_drill_*`,
+      `latest_dr_report.encrypted=true`,
+      `latest_dr_report.cleanup_completed=true`. Inside the
+      orchestrator container the `migration_down_inventory`
+      block reports `total=0` because the orchestrator image
+      does not bind-mount `migrations/`; the host-side script
+      is the authoritative inventory and reports
+      `total=13, gaps=13`. Same artifact for
+      `dr_runbook_missing` in the container view. Recorded
+      as an observation; out of scope for Stage 36 to mount
+      those host paths into the container.
+    - `GET /operations/backup/reports/latest`: returns
+      `available=true` and the full DR report payload.
+    - `GET /operations/safety`: gains all 9 Stage 36 fields.
+
+- **Issues & blockers (observations only):**
+  - **off-host storage executed?** No real S3 upload.
+    `BACKUP_STORAGE_MODE` defaulted to `local-filesystem`;
+    the S3 mode is wired but Stage 36 intentionally skips
+    with `s3_upload_not_implemented`. The DR report carries
+    `off_host_uploaded=false`. Production gate: pick an S3
+    client (boto3 / minio) in a future stage.
+  - **encryption key handling**: Stage 36 ran in
+    `test-only-generated` mode -- the drill auto-creates a
+    `/tmp` keyfile with `chmod 600`, encrypts the artifact,
+    then `shred`s the keyfile at the end. The opaque
+    `encryption_key_id` (sha256(key)[:8]) appears in the
+    manifest; the key bytes never appear in logs, manifest,
+    DR report, audit row, notification payload, or any
+    operations response.
+  - **migration down gaps**: all 13 production migrations
+    lack a `*_down.sql`. Stage 36 reports the inventory but
+    does NOT write down scripts. Recorded gap:
+    `migration_down_gaps`.
+  - **RTO/RPO limitations**: RTO comes from the most recent
+    drill (single sample, single-host postgres,
+    docker-compose stack). Real production RTO would
+    measure restore on the target topology + DNS / cert /
+    service-bring-up time. RPO is reported `manual_only`
+    until a real schedule cadence is committed.
+  - **Step 33 carry-forward limitations (still open)** --
+    Stage 36 implements neither remediation; the docs now
+    explicitly carry both forward with
+    "Stage 36 did NOT implement either remediation":
+    1. HMAC key rotation / key map loader.
+    2. audit-service direct POST `/audit/events` immediate
+       integrity gap.
+  - **production deploy disabled**: unchanged. No real
+    GitHub write, no PR merge, no branch protection change,
+    no HARD_SAFETY_ACTIONS modification, no real LLM, no
+    real Discord stream delivery. `production_executed=true=0`
+    on `deployment_records` and `workflow_states`.
+  - **Next production blocker (operator-decided, not
+    Claude Code's call):** the four gaps reported by
+    `verify_backup_production_readiness.sh`
+    (`encryption_no_key`, `storage_not_off_host`,
+    `schedule_dry_run_only`, `migration_down_gaps`) plus
+    the two carry-forward Step 33 items above, plus the
+    pre-existing Pre-Step 31 production-readiness items
+    (K8s/Helm/Argo substrate, incident-response runbook,
+    real production secret store, real off-host backup
+    target).
+  - **Other observations:**
+    - `verify_platform_observability.sh` showed a one-off
+      first-run FAIL on `metrics.orchestrator.workflow_total`
+      immediately after `--force-recreate orchestrator`
+      because the counter was still at zero. Same potential
+      exists for every observability check that assumes
+      warm counters.
+    - The host-side production-readiness verifier
+      (`verify_backup_production_readiness.sh`) reports
+      `runbook_status=present` and `migration_status=gaps`;
+      the orchestrator-container operations view sees both
+      directories as absent because they are not bind-mounted
+      in. This intentional read-locality split is recorded;
+      operators should treat the verify-script output as the
+      authoritative production-readiness verdict, not the
+      `/operations/backup/status` `gaps` field.
+  - **Claude Code only reports observations -- Step 36 (and
+    any future production-readiness ramp) is operator-decided,
+    not Claude Code's call.**
+
+- **Next-step suggestions (observations only, not a roadmap):**
+  - Operator-decided whether to (a) pick a real off-host
+    storage target + ship `boto3` + flip
+    `storage_not_off_host` to production-ready;
+    (b) commit the cron line + log rotation so
+    `schedule_dry_run_only` clears; (c) author the 13
+    `*_down.sql` files (or accept the gap with a documented
+    rollback plan); (d) implement the Step 33 HMAC key map
+    loader + audit-service direct-POST integrity inline.
+  - Stage 36 does NOT pick which of (a)-(d) is next.
