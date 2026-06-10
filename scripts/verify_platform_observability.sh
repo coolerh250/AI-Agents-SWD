@@ -96,7 +96,9 @@ echo "============================================================"
 echo "3. Metrics endpoints"
 echo "============================================================"
 orch_metrics=$(curl -sS -m 10 "$ORCH/metrics" || echo '')
-if echo "$orch_metrics" | grep -q '^workflow_total'; then
+# Use a herestring instead of `echo | grep -q` so an early grep match
+# does not SIGPIPE the upstream echo and trip `set -o pipefail`.
+if grep -q '^workflow_total' <<< "$orch_metrics"; then
   record "metrics.orchestrator.workflow_total" PASS
 else
   record "metrics.orchestrator.workflow_total" FAIL
@@ -107,7 +109,7 @@ for entry in intake-agent:8010 requirement-agent:8011 development-agent:8012 qa-
   name="${entry%%:*}"
   port="${entry##*:}"
   body=$(curl -sS -m 10 "http://localhost:${port}/metrics" || echo '')
-  if echo "$body" | grep -q '^agent_execution_total'; then
+  if grep -q '^agent_execution_total' <<< "$body"; then
     agent_hit=$((agent_hit+1))
   fi
 done
@@ -118,7 +120,7 @@ else
 fi
 
 retry_metrics=$(curl -sS -m 10 "http://localhost:8015/metrics" || echo '')
-if echo "$retry_metrics" | grep -qE '^(retry_total|deadletter_total)'; then
+if grep -qE '^(retry_total|deadletter_total)' <<< "$retry_metrics"; then
   record "metrics.retry-scheduler.retry_or_deadletter" PASS
 else
   record "metrics.retry-scheduler.retry_or_deadletter" FAIL
