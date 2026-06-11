@@ -349,6 +349,18 @@ class ModelRouterStore:
         task_type: str = AGENT_DEFAULT_TASK_TYPE,
         risk_level: str = "low",
     ) -> AgentModelPolicy | None:
+        """Look up the most specific active policy for (agent, capability).
+
+        Ordering preference:
+          1. exact task_type AND exact risk_level
+          2. exact task_type AND task_type=default risk fallback
+          3. any active row for (agent, capability)
+        Falling through to step 3 keeps an existing seeded policy from
+        being missed when the caller's risk_level doesn't match. The
+        policy itself still controls what's allowed -- the router does
+        not relax safety just because the lookup widened.
+        """
+
         conn = await self._connect()
         try:
             row = await conn.fetchrow(
@@ -357,11 +369,11 @@ class ModelRouterStore:
                 WHERE status = 'active'
                   AND agent_name = $1
                   AND capability = $2
-                  AND (task_type = $3 OR task_type = 'default')
-                  AND (risk_level = $4 OR risk_level = 'low')
                 ORDER BY
                     (task_type = $3) DESC,
-                    (risk_level = $4) DESC
+                    (task_type = 'default') DESC,
+                    (risk_level = $4) DESC,
+                    (risk_level = 'low') DESC
                 LIMIT 1
                 """,
                 agent_name,
