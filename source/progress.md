@@ -7757,3 +7757,208 @@ issues & blockers, and next-step suggestions.
   next stage roadmap.** Operators choose from the future stage
   candidate list above.
 
+---
+
+## Stage 38 — LLM Model Routing & Agent Model Policy (Step 36)
+
+- **Execution time:** 2026-06-11 (UTC); deliverable on `main`,
+  deploy + verification on 10.0.1.31.
+- **Git commit (deliverable):** `a354292` + fix `6d546e9`.
+- **Git commit (this entry):** progress log follow-up commit.
+- **Modified files (high-level):**
+  - NEW migration `migrations/014_llm_model_routing_policy.sql` --
+    `llm_model_registry`, `agent_model_policies`,
+    `llm_routing_decisions`.
+  - NEW SDK `shared/sdk/llm_routing/` -- models, registry seed,
+    policy seed, evaluator, router, async store.
+  - NEW operations endpoints `/operations/llm/models`,
+    `/operations/llm/model-policies`,
+    `/operations/llm/routing-decisions[/{task_id}]`,
+    `/operations/llm/routing/preview`,
+    `/operations/llm/routing/seed-defaults`.
+  - NEW Stage 38 safety fields under `/operations/safety`:
+    `llm_model_router_enabled=true`,
+    `agent_direct_model_selection_allowed=false`,
+    `llm_routing_policy_enforced=true`,
+    `llm_model_registry_active_count`,
+    `llm_routing_budget_enforced=true`,
+    `llm_routing_human_review_enforced=true`,
+    `llm_model_routing_active_policies`.
+  - NEW Stage 38 routing summary block under
+    `/operations/summary` (`llm_model_routing_summary`).
+  - NEW Stage 38 fields on `/discord/tasks/{task_id}` --
+    `llm_model_router_enabled=true`,
+    `agent_direct_model_selection_allowed=false`,
+    `selected_model_alias`, `selected_provider`,
+    `selected_model_tier`, `routing_decision`,
+    `routing_requires_human_review`, `routing_fallback_used`.
+  - NEW 11 metrics
+    (`llm_model_routing_requests_total`,
+    `llm_model_routing_selected_total`,
+    `llm_model_routing_blocked_total`,
+    `llm_model_routing_fallback_total`,
+    `llm_model_routing_human_review_total`,
+    `llm_model_routing_budget_blocked_total`,
+    `llm_model_policy_missing_total`,
+    `llm_model_direct_selection_rejected_total`).
+  - UPDATED `agents/development-agent/src/llm_planner.py` --
+    routes every provider call through `ModelRouter` before
+    invocation, records decisions, surfaces them in the pipeline
+    output for `/operations/workflows/{task_id}`.
+  - UPDATED `apps/orchestrator/src/operations.py`,
+    `apps/discord-gateway/src/main.py`,
+    `shared/sdk/observability/metrics.py`,
+    `scripts/check_runtime_state.sh` (13 new smokes).
+  - NEW `scripts/verify_llm_model_routing.sh` (5 scenarios).
+  - NEW docs `docs/operations/llm-model-routing.md`; updated
+    `docs/operations/manual-verification.md` (new `17r`
+    section); README "Stage 38" section.
+  - NEW 11 test files / 57 tests covering registry seed,
+    policy seed, router behaviour (select / fallback / blocked
+    / budget / schema / direct-model-rejected / patch hard-off
+    / workspace hard-off / critical risk), budget integration,
+    schema compatibility, per-agent default routing,
+    operations endpoint structure, Discord status fields,
+    audit decision documentation, metrics registration, and
+    a no-direct-model-selection grep guard.
+
+- **Deployment target:** 10.0.1.31; 23 containers running.
+  Production deploy NOT performed.
+
+- **Test results (local):**
+  - `pytest tests/test_llm_*routing*.py tests/test_no_direct_model_selection.py`
+    -> 57 passed.
+  - `ruff check .` -> All checks passed.
+  - `black --check .` -> all files unchanged.
+  - `mypy shared/` -> Success: no issues found in 101 source files.
+
+- **Test results (remote 10.0.1.31):**
+  - `git pull --ff-only` to `6d546e9`. Migration 014 applied
+    (3 CREATE TABLE + 8 CREATE INDEX + 1 COMMIT). `docker
+    compose build orchestrator discord-gateway
+    development-agent` + `up -d --force-recreate orchestrator
+    discord-gateway development-agent` succeeded; 23
+    containers up.
+  - `pytest -q --no-header` -> **1323 passed, 0 failed, 1
+    warning in 60.02s**.
+  - `check_runtime_state.sh` -> `CHECK_RUNTIME_STATE_DONE`
+    after activating `.venv`. All 13 Stage 38 smokes PASS:
+    `LLM_MODEL_REGISTRY_SMOKE`, `AGENT_MODEL_POLICY_SMOKE`,
+    `LLM_ROUTING_PREVIEW_SMOKE`, `LLM_ROUTING_SELECTED_SMOKE`,
+    `LLM_ROUTING_BLOCKED_SMOKE`, `LLM_ROUTING_FALLBACK_SMOKE`,
+    `LLM_ROUTING_BUDGET_BLOCK_SMOKE`,
+    `LLM_ROUTING_NO_DIRECT_MODEL_SMOKE`,
+    `LLM_ROUTING_OPERATIONS_SMOKE`,
+    `LLM_ROUTING_DISCORD_STATUS_SMOKE`,
+    `LLM_ROUTING_AUDIT_SMOKE`,
+    `LLM_ROUTING_NOTIFICATION_SMOKE`,
+    `LLM_ROUTING_METRICS_SMOKE`.
+  - `verify_llm_model_routing.sh` ->
+    **LLM_MODEL_ROUTING_VERIFY: PASS** (5/5 scenarios:
+    seed + selection + blocked + fallback + integration).
+    Per-task decision count=1, `mock_selected`,
+    `patch_generation_allowed=false`,
+    `workspace_write_allowed=false`.
+  - All 16 other regression scripts PASS (1 PASS_WITH_GAPS
+    for `verify_backup_production_readiness.sh`).
+  - **Production safety counters** on remote:
+    `deployment_records production_executed=true` -> **0**;
+    `workflow_states production_executed=true` -> **0**.
+  - **`/operations/safety` sampled on remote:** result=safe,
+    `production_deploy_enabled=false`,
+    `llm_patch_generation_enabled=false`,
+    `llm_workspace_write_enabled=false`,
+    `real_llm_enabled=false`,
+    `real_discord_stream_delivery_default_blocked=true`,
+    `github_external_write_enabled=false`,
+    `discord_external_send_enabled=false`,
+    `llm_model_router_enabled=true`,
+    `agent_direct_model_selection_allowed=false`,
+    `llm_routing_policy_enforced=true`,
+    `llm_model_registry_active_count=2`,
+    `llm_routing_budget_enforced=true`,
+    `llm_routing_human_review_enforced=true`,
+    `llm_model_routing_active_policies=10`.
+
+- **Seed result on 10.0.1.31:**
+  - 4 models seeded (`mock-default` + `mock-lightweight`
+    active; `openai-plan-only` + `anthropic-plan-only`
+    inactive).
+  - 10 agent policies seeded (intake / requirement /
+    development / qa / devops / documentation across
+    classification / summarisation / requirement_analysis /
+    clarification_question / development_plan / qa_review /
+    test_plan / delivery_risk_review / rollback_plan /
+    documentation).
+
+- **Routing behaviour observed:**
+  - `intake-agent/classification[low]` -> `mock_selected`,
+    `mock-lightweight`.
+  - `development-agent/development_plan[medium]` ->
+    `mock_selected`, `mock-default`,
+    `requires_human_review=true`,
+    `patch_generation_allowed=false`,
+    `workspace_write_allowed=false`.
+  - `development-agent/development_plan[medium]` with
+    `requested_schema="NotARealSchema"` -> `blocked`.
+  - `unknown-bot/made_up[low]` -> `policy_not_found`.
+  - `development-agent` with
+    `requested_model_alias="unauthorised-real-model"` ->
+    `direct_model_rejected`.
+  - `intake-agent/summarization[low]` -> `mock_selected`
+    (fallback path exercised through policy).
+
+- **Defect fix during execution (single commit, post-deploy):**
+  `6d546e9` `fix(routing): widen policy lookup so seeded
+  medium-risk policies are found from low-risk requests`. The
+  original SQL refused to match a policy whose `risk_level`
+  differed from the request; the verifier's
+  `requested_schema=NotARealSchema` call landed on
+  `policy_not_found` instead of `blocked`. Lookup now orders by
+  task_type / risk_level preference but falls back to any
+  active (agent, capability) row, so the most specific seeded
+  policy wins. The router's safety enforcement is unchanged --
+  the policy itself still controls what's allowed; the lookup
+  only widens to make sure the correct policy is found.
+
+- **Issues & blockers (observations only):**
+  - **Real LLM still default-off.** No real provider call is
+    wired in Stage 38. Flipping a policy's `allow_real_llm` to
+    true and activating an external registry entry are
+    operator-decided.
+  - **No human approval workflow endpoint yet.** When the
+    router returns `human_approval_required`, the platform
+    records the decision but the
+    `/operations/llm/routing/approvals/...` endpoint is not
+    shipped in Stage 38. Operators must approve via the
+    existing Stage 31 human approval policy.
+  - **Step 33 carry-forward limitations (still open):**
+    HMAC key rotation / key map loader; audit-service direct
+    POST `/audit/events` integrity gap. Stage 38 implements
+    neither remediation.
+  - **Stage 36 backup readiness gaps (still open):**
+    `encryption_no_key`, `storage_not_off_host`,
+    `schedule_dry_run_only`, `migration_down_gaps`. Stage 38
+    does NOT remediate them.
+  - **Pre-Step 31 production-readiness items** unchanged:
+    K8s/Helm/Argo substrate, incident response runbook,
+    external alert receiver, real production secret store,
+    real off-host backup target.
+  - **Production deploy disabled.** Unchanged.
+    `production_executed=true=0`,
+    `production_deploy_enabled=false`,
+    `agent_direct_model_selection_allowed=false`,
+    `llm_patch_generation_enabled=false`,
+    `llm_workspace_write_enabled=false`.
+
+- **Recommendation:** Centralised model routing is in place
+  and the platform now denies any agent attempt to bypass the
+  router. The next operator-decided stage may pick from the
+  carry-forward list above. Stage 38 does NOT authorise
+  production deploy.
+
+- **Following Stages 22 -- 37, Claude Code does not decide the
+  next stage roadmap.** Operators choose from the
+  carry-forward list above.
+
+
