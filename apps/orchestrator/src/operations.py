@@ -65,6 +65,14 @@ from shared.sdk.llm_budget import (
     BudgetPolicyStore,
     SCOPE_GLOBAL,
 )
+from shared.sdk.llm_routing import (
+    AGENT_DEFAULT_TASK_TYPE,
+    ModelRouter,
+    ModelRouterStore,
+    build_capability_request,
+    default_agent_policies,
+    default_models,
+)
 from shared.sdk.backup import (
     BackupStorage,
     encryption_status,
@@ -723,7 +731,20 @@ async def operations_summary() -> dict:
         "real_integration_summary": real_integration_summary,
         "audit_integrity_summary": audit_integrity_summary,
         "backup_summary": _backup_compact_summary(),
+        "llm_model_routing_summary": await _llm_routing_compact_summary(),
         "production_safety": safety,
+    }
+
+
+async def _llm_routing_compact_summary() -> dict[str, Any]:
+    summary = await _llm_routing_safety_summary()
+    return {
+        "model_router_enabled": summary["enabled"],
+        "registry_active_count": summary["registry_active_count"],
+        "policy_active_count": summary["policy_active_count"],
+        "agent_direct_model_selection_allowed": False,
+        "patch_generation_hard_disabled": True,
+        "workspace_write_hard_disabled": True,
     }
 
 
@@ -1097,6 +1118,16 @@ async def operations_workflow_view(task_id: str) -> dict:
             "records": 0,
         },
         "policy_violations": [],
+        # Stage 38 -- per-task routing decisions (most recent first).
+        "routing_decisions": [],
+        "selected_model": None,
+        "selected_provider": None,
+        "model_policy": None,
+        "fallback_used": False,
+        "routing_blocked": False,
+        "routing_reason": None,
+        "model_cost_estimate": 0.0,
+        "model_requires_human_review": True,
     }
     try:
         llm_store = LLMInteractionStore()
@@ -1130,6 +1161,37 @@ async def operations_workflow_view(task_id: str) -> dict:
         )
     except Exception:
         warnings.append("llm_assistance_unavailable")
+
+    # Stage 38 -- fold routing decisions into llm_assistance so the
+    # Discord status + operations workflow view both see them.
+    try:
+        routing_store = ModelRouterStore()
+        routing_rows = await routing_store.list_decisions(task_id=task_id, limit=50)
+        if routing_rows:
+            latest_routing = routing_rows[0]
+            llm_assistance_section["routing_decisions"] = [r.to_safe_dict() for r in routing_rows]
+            llm_assistance_section["selected_model"] = latest_routing.selected_model_alias
+            llm_assistance_section["selected_provider"] = latest_routing.selected_provider
+            llm_assistance_section["model_policy"] = latest_routing.policy_id
+            llm_assistance_section["fallback_used"] = bool(latest_routing.fallback_used)
+            llm_assistance_section["routing_blocked"] = latest_routing.decision in {
+                "blocked",
+                "budget_blocked",
+                "schema_unsupported",
+                "provider_unavailable",
+                "policy_not_found",
+                "human_approval_required",
+                "direct_model_rejected",
+            }
+            llm_assistance_section["routing_reason"] = latest_routing.reason
+            llm_assistance_section["model_cost_estimate"] = float(
+                latest_routing.estimated_cost_usd or 0.0
+            )
+            llm_assistance_section["model_requires_human_review"] = bool(
+                latest_routing.requires_human_review
+            )
+    except Exception:
+        warnings.append("llm_routing_unavailable")
 
     # Stage 31 -- approval policy section (active policies + recent
     # decisions + delegated usage). Safe-degrades to an empty shape when
@@ -1519,6 +1581,9 @@ async def operations_safety() -> dict:
     # Stage 36 -- backup / restore / DR drill safety snapshot.
     backup_safety = _backup_safety_summary()
 
+    # Stage 38 -- LLM Model Routing & Agent Model Policy safety snapshot.
+    routing_safety = await _llm_routing_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1568,6 +1633,15 @@ async def operations_safety() -> dict:
         "llm_daily_budget_remaining": llm_budget_summary["daily_budget_remaining"],
         "llm_monthly_budget_remaining": llm_budget_summary["monthly_budget_remaining"],
         "llm_budget_exceeded": llm_budget_summary["budget_exceeded"],
+        # Stage 38 -- LLM Model Routing & Agent Model Policy.
+        # Booleans + counts only; never carries an API key.
+        "llm_model_router_enabled": routing_safety["enabled"],
+        "agent_direct_model_selection_allowed": False,
+        "llm_routing_policy_enforced": True,
+        "llm_model_registry_active_count": routing_safety["registry_active_count"],
+        "llm_routing_budget_enforced": True,
+        "llm_routing_human_review_enforced": True,
+        "llm_model_routing_active_policies": routing_safety["policy_active_count"],
         "delegated_agent_enabled": delegated_agent_enabled,
         "active_delegated_policies": delegated_active_count,
         "hard_policy_enforced": True,
@@ -3022,3 +3096,200 @@ def _backup_schedule_installed() -> bool:
         return "backup_postgres_encrypted.sh" in (result.stdout or "")
     except Exception:
         return False
+
+
+# ---------------------------------------------------------------------------
+# Stage 38 -- LLM Model Routing & Agent Model Policy operations view.
+# Read-only. Never returns an API key, prompt body, or response body.
+# ---------------------------------------------------------------------------
+
+
+async def _llm_routing_safety_summary() -> dict[str, Any]:
+    """Counts-only snapshot used by /operations/safety.
+
+    Falls back to ``enabled=False`` when the routing tables are
+    unreachable so a fresh stack still answers the endpoint.
+    """
+
+    summary: dict[str, Any] = {
+        "enabled": True,
+        "registry_active_count": 0,
+        "policy_active_count": 0,
+    }
+    store = ModelRouterStore()
+    try:
+        models = await store.list_models(status="active", limit=500)
+        policies = await store.list_policies(status="active", limit=500)
+        summary["registry_active_count"] = len(models)
+        summary["policy_active_count"] = len(policies)
+    except Exception:
+        summary["enabled"] = False
+    return summary
+
+
+@router.get("/llm/models")
+@_instrument("/operations/llm/models", "operations.llm_models")
+async def operations_llm_models(
+    status: str | None = "active",
+    provider: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = ModelRouterStore()
+    try:
+        rows = await store.list_models(status=status, provider=provider, limit=capped)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"model registry unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "models": [r.to_safe_dict() for r in rows],
+        "filter": {"status": status, "provider": provider, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/model-policies")
+@_instrument("/operations/llm/model-policies", "operations.llm_model_policies")
+async def operations_llm_model_policies(
+    agent_name: str | None = None,
+    status: str | None = "active",
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = ModelRouterStore()
+    try:
+        rows = await store.list_policies(agent_name=agent_name, status=status, limit=capped)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"policy store unavailable: {exc}") from exc
+    return {
+        "count": len(rows),
+        "policies": [r.to_safe_dict() for r in rows],
+        "filter": {"agent_name": agent_name, "status": status, "limit": capped},
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/routing-decisions")
+@_instrument("/operations/llm/routing-decisions", "operations.llm_routing_decisions")
+async def operations_llm_routing_decisions(
+    task_id: str | None = None,
+    agent_name: str | None = None,
+    decision: str | None = None,
+    limit: int = 100,
+) -> dict:
+    capped = max(1, min(int(limit or 100), 500))
+    store = ModelRouterStore()
+    try:
+        rows = await store.list_decisions(
+            task_id=task_id, agent_name=agent_name, decision=decision, limit=capped
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"routing decisions store unavailable: {exc}"
+        ) from exc
+    return {
+        "count": len(rows),
+        "decisions": [r.to_safe_dict() for r in rows],
+        "filter": {
+            "task_id": task_id,
+            "agent_name": agent_name,
+            "decision": decision,
+            "limit": capped,
+        },
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/llm/routing-decisions/{task_id}")
+@_instrument(
+    "/operations/llm/routing-decisions/{task_id}",
+    "operations.llm_routing_decisions_for_task",
+)
+async def operations_llm_routing_decisions_for_task(task_id: str) -> dict:
+    store = ModelRouterStore()
+    try:
+        rows = await store.list_decisions(task_id=task_id, limit=200)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"routing decisions store unavailable: {exc}"
+        ) from exc
+    return {
+        "task_id": task_id,
+        "count": len(rows),
+        "decisions": [r.to_safe_dict() for r in rows],
+        "generated_at": _utcnow_iso(),
+    }
+
+
+class _RoutingPreviewIn(BaseModel):
+    agent_name: str
+    capability: str
+    task_id: str | None = None
+    workflow_id: str | None = None
+    task_type: str = AGENT_DEFAULT_TASK_TYPE
+    risk_level: str = "low"
+    requested_schema: str | None = None
+    requested_model_alias: str | None = None
+    estimated_input_tokens: int = 0
+    max_output_tokens: int | None = None
+    allow_real_llm_requested: bool = False
+    persist: bool = False
+
+
+@router.post("/llm/routing/preview")
+@_instrument("/operations/llm/routing/preview", "operations.llm_routing_preview")
+async def operations_llm_routing_preview(payload: _RoutingPreviewIn) -> dict:
+    store = ModelRouterStore()
+    request = build_capability_request(
+        agent_name=payload.agent_name,
+        capability=payload.capability,
+        task_id=payload.task_id,
+        workflow_id=payload.workflow_id,
+        task_type=payload.task_type,
+        risk_level=payload.risk_level,
+        requested_schema=payload.requested_schema,
+        requested_model_alias=payload.requested_model_alias,
+        estimated_input_tokens=int(payload.estimated_input_tokens or 0),
+        max_output_tokens=payload.max_output_tokens,
+        allow_real_llm_requested=bool(payload.allow_real_llm_requested),
+    )
+    router_instance = ModelRouter(store=store)
+    try:
+        decision = await router_instance.route(request, persist=bool(payload.persist))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"routing failed: {exc}") from exc
+    return {
+        "request": request.to_dict(),
+        "decision": decision.to_safe_dict(),
+        "persisted": bool(payload.persist),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.post("/llm/routing/seed-defaults")
+@_instrument("/operations/llm/routing/seed-defaults", "operations.llm_routing_seed_defaults")
+async def operations_llm_routing_seed_defaults() -> dict:
+    """Idempotent seed for the default registry + agent policies.
+
+    Useful in test clusters: re-run after a migration to ensure the
+    expected baseline is in place. Never overwrites operator-set
+    flags beyond what the seed declares.
+    """
+
+    store = ModelRouterStore()
+    seeded_models: list[str] = []
+    seeded_policies: list[str] = []
+    try:
+        for entry in default_models():
+            model = await store.upsert_model(entry)
+            seeded_models.append(model.model_alias)
+        for entry in default_agent_policies():
+            policy = await store.upsert_policy(entry)
+            seeded_policies.append(f"{policy.agent_name}/{policy.capability}[{policy.risk_level}]")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"seed failed: {exc}") from exc
+    return {
+        "seeded_models": seeded_models,
+        "seeded_policies": seeded_policies,
+        "generated_at": _utcnow_iso(),
+    }

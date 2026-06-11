@@ -54,10 +54,30 @@ from shared.sdk.llm import (
     redact_text,
 )
 from shared.sdk.llm.models import LLMDevelopmentPlan, LLMPatchProposal
+from shared.sdk.llm_routing import (
+    DECISION_BUDGET_BLOCKED,
+    DECISION_DIRECT_MODEL_REJECTED,
+    DECISION_FALLBACK_SELECTED,
+    DECISION_MOCK_SELECTED,
+    DECISION_POLICY_NOT_FOUND,
+    DECISION_SELECTED,
+    LLMRoutingDecision,
+    ModelRouter,
+    ModelRouterStore,
+    build_capability_request,
+)
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.observability.metrics import (
     LLM_ESTIMATED_COST_TOTAL,
     LLM_INTERACTIONS_TOTAL,
+    LLM_MODEL_DIRECT_SELECTION_REJECTED_TOTAL,
+    LLM_MODEL_POLICY_MISSING_TOTAL,
+    LLM_MODEL_ROUTING_BLOCKED_TOTAL,
+    LLM_MODEL_ROUTING_BUDGET_BLOCKED_TOTAL,
+    LLM_MODEL_ROUTING_FALLBACK_TOTAL,
+    LLM_MODEL_ROUTING_HUMAN_REVIEW_TOTAL,
+    LLM_MODEL_ROUTING_REQUESTS_TOTAL,
+    LLM_MODEL_ROUTING_SELECTED_TOTAL,
     LLM_POLICY_BLOCKS_TOTAL,
     LLM_PROPOSALS_TOTAL,
     LLM_REAL_CALLS_BLOCKED_TOTAL,
@@ -97,6 +117,7 @@ class LLMPlannerPipeline:
         llm_store: LLMInteractionStore | None = None,
         code_store: CodeWorkspaceStore | None = None,
         provider_name: str | None = None,
+        router_store: ModelRouterStore | None = None,
     ) -> None:
         self._llm_store = llm_store or LLMInteractionStore()
         self._code_store = code_store or CodeWorkspaceStore()
@@ -104,6 +125,12 @@ class LLMPlannerPipeline:
         self._provider_name = name or "mock"
         self._provider = get_provider(self._provider_name)
         self._policy = LLMSafetyPolicy()
+        # Stage 38 -- Model Router. Defaults to a DB-backed store; tests
+        # inject a fake. ``None`` makes the routing call a no-op, which
+        # keeps existing tests that don't touch the DB unchanged.
+        self._router_store = router_store
+        self._router = ModelRouter(store=router_store) if router_store is not None else None
+        self._routing_decisions: list[LLMRoutingDecision] = []
 
     @property
     def provider_name(self) -> str:
@@ -167,6 +194,7 @@ class LLMPlannerPipeline:
             description=description,
             request_type=request_type,
             execution_mode=execution_mode,
+            workflow_id=workflow_id,
         )
         plan_interaction = await self._persist_interaction(
             task_id=task_id,
@@ -181,6 +209,7 @@ class LLMPlannerPipeline:
             description=description,
             request_type=request_type,
             execution_mode=execution_mode,
+            workflow_id=workflow_id,
         )
         proposal_interaction = await self._persist_interaction(
             task_id=task_id,
@@ -287,6 +316,11 @@ class LLMPlannerPipeline:
                 "estimated_cost": 0.0,
             },
             "requires_human_review": True,
+            # Stage 38 -- routing decisions taken for this task. Empty
+            # list when the router was not wired (mock / unit-test
+            # paths). The orchestrator surfaces these via
+            # /operations/llm/routing-decisions/{task_id}.
+            "routing_decisions": [d.to_safe_dict() for d in self._routing_decisions],
             "_plan_obj": plan,
             "_proposal_obj": proposal,
         }
@@ -305,6 +339,100 @@ class LLMPlannerPipeline:
                 provider=self._provider_name, reason="network_call_disabled"
             ).inc()
 
+    async def _route_capability(
+        self,
+        *,
+        task_id: str,
+        workflow_id: str | None,
+        capability: str,
+        risk_level: str,
+        requested_schema: str,
+        estimated_input_tokens: int,
+        allow_real_llm_requested: bool = False,
+        allow_patch_generation_requested: bool = False,
+    ) -> LLMRoutingDecision | None:
+        """Stage 38 -- record a routing decision (if router is wired).
+
+        Returns the decision so the caller can decide whether to
+        proceed with the provider call. When ``self._router`` is
+        ``None`` (tests / call sites that don't drive the DB) the
+        method returns ``None`` and the caller stays on the historic
+        provider path.
+        """
+
+        if self._router is None:
+            return None
+        request = build_capability_request(
+            agent_name="development-agent",
+            capability=capability,
+            task_id=task_id,
+            workflow_id=workflow_id,
+            risk_level=risk_level,
+            requested_schema=requested_schema,
+            estimated_input_tokens=int(estimated_input_tokens or 0),
+            allow_real_llm_requested=bool(allow_real_llm_requested),
+            allow_patch_generation_requested=bool(allow_patch_generation_requested),
+        )
+        LLM_MODEL_ROUTING_REQUESTS_TOTAL.labels(
+            agent_name="development-agent", capability=capability
+        ).inc()
+        with start_span(
+            "llm_routing.request",
+            **{
+                "service.name": "development-agent",
+                "agent_name": "development-agent",
+                "capability": capability,
+                "task_id": task_id or "",
+                "requested_schema": requested_schema,
+                "risk_level": risk_level,
+            },
+        ):
+            decision = await self._router.route(request, persist=True)
+        self._record_routing_metrics(decision)
+        self._routing_decisions.append(decision)
+        return decision
+
+    def _record_routing_metrics(self, decision: LLMRoutingDecision) -> None:
+        if decision.decision in (
+            DECISION_SELECTED,
+            DECISION_MOCK_SELECTED,
+            DECISION_FALLBACK_SELECTED,
+        ):
+            LLM_MODEL_ROUTING_SELECTED_TOTAL.labels(
+                agent_name=decision.agent_name,
+                provider=decision.selected_provider or "unknown",
+                model_tier=decision.selected_model_tier or "unknown",
+                decision=decision.decision,
+            ).inc()
+            if decision.fallback_used:
+                LLM_MODEL_ROUTING_FALLBACK_TOTAL.labels(
+                    agent_name=decision.agent_name,
+                    model_tier=decision.selected_model_tier or "unknown",
+                ).inc()
+        else:
+            LLM_MODEL_ROUTING_BLOCKED_TOTAL.labels(
+                agent_name=decision.agent_name,
+                reason=decision.reason or "unknown",
+            ).inc()
+        if decision.decision == DECISION_POLICY_NOT_FOUND:
+            LLM_MODEL_POLICY_MISSING_TOTAL.labels(
+                agent_name=decision.agent_name, capability=decision.capability
+            ).inc()
+        if decision.decision == DECISION_BUDGET_BLOCKED:
+            LLM_MODEL_ROUTING_BUDGET_BLOCKED_TOTAL.labels(
+                agent_name=decision.agent_name,
+                provider=decision.selected_provider or "unknown",
+            ).inc()
+        if decision.decision == DECISION_DIRECT_MODEL_REJECTED:
+            LLM_MODEL_DIRECT_SELECTION_REJECTED_TOTAL.labels(
+                agent_name=decision.agent_name, capability=decision.capability
+            ).inc()
+        if decision.requires_human_review:
+            LLM_MODEL_ROUTING_HUMAN_REVIEW_TOTAL.labels(
+                agent_name=decision.agent_name,
+                capability=decision.capability,
+            ).inc()
+
     async def _call_plan_provider(
         self,
         *,
@@ -312,7 +440,22 @@ class LLMPlannerPipeline:
         description: str,
         request_type: str,
         execution_mode: str,
+        workflow_id: str | None = None,
     ) -> LLMDevelopmentPlan:
+        # Stage 38 -- consult Model Router first. For mock provider
+        # the routing yields mock_selected and the call proceeds. For
+        # a real provider with no active policy / unauthorised alias /
+        # budget overrun, the router blocks and we raise.
+        decision = await self._route_capability(
+            task_id=task_id,
+            workflow_id=workflow_id,
+            capability="development_plan",
+            risk_level="medium",
+            requested_schema="LLMDevelopmentPlan",
+            estimated_input_tokens=max(len(description) // 4, 1),
+            allow_real_llm_requested=real_llm_enabled(),
+        )
+        self._guard_routing(decision, "development_plan")
         with start_span(
             "llm.call_provider",
             **{
@@ -339,7 +482,29 @@ class LLMPlannerPipeline:
         description: str,
         request_type: str,
         execution_mode: str,
+        workflow_id: str | None = None,
     ) -> LLMPatchProposal:
+        # Stage 38 -- patch_generation is hard-disabled at the router
+        # level for any real provider. The router records the
+        # decision (typically mock_selected for the default config or
+        # BLOCKED with patch_generation_hard_disabled when the caller
+        # opted in). The mock provider then continues to produce its
+        # deterministic proposal artifact.
+        decision = await self._route_capability(
+            task_id=task_id,
+            workflow_id=workflow_id,
+            capability="code_patch_proposal",
+            risk_level="high",
+            requested_schema="LLMPatchProposal",
+            estimated_input_tokens=max(len(description) // 4, 1),
+            allow_real_llm_requested=real_llm_enabled(),
+            # Patch generation is hard-disabled. We pass the flag
+            # explicitly so the router records ``DECISION_BLOCKED``
+            # with reason ``patch_generation_hard_disabled`` whenever
+            # this code path is exercised in real mode.
+            allow_patch_generation_requested=real_llm_enabled(),
+        )
+        self._guard_routing(decision, "code_patch_proposal", allow_mock_fallback=True)
         with start_span(
             "llm.call_provider",
             **{
@@ -358,6 +523,35 @@ class LLMPlannerPipeline:
                 request_type=request_type,
                 execution_mode=execution_mode,
             )
+
+    def _guard_routing(
+        self,
+        decision: LLMRoutingDecision | None,
+        capability: str,
+        *,
+        allow_mock_fallback: bool = True,
+    ) -> None:
+        """Raise unless the routing decision authorises a provider call.
+
+        Mock provider invocation is still allowed when the router
+        could not be consulted (no DB / no router). The intent is to
+        gate real-LLM calls, not to break the mock baseline.
+        """
+
+        if decision is None:
+            return
+        if decision.is_select:
+            return
+        # Decision is non-select. For mock provider we MAY still
+        # produce the mock artifact (the deterministic mock has no
+        # external side effects) when the call site has indicated it
+        # can fall back; otherwise we raise an LLMProviderError.
+        if allow_mock_fallback and self._provider_name == "mock":
+            return
+        raise RuntimeError(
+            f"ModelRouter blocked {capability}: decision={decision.decision} "
+            f"reason={decision.reason}"
+        )
 
     # ------------------------------------------------------------------
     # Interaction persistence (hash + redacted preview only)

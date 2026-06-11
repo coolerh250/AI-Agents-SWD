@@ -2356,6 +2356,55 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## LLM Model Routing & Agent Model Policy (Stage 38)
+
+Stage 38 centralises every "which model do we use for this LLM call?"
+decision. Agents no longer pick models. Agents submit a standardised
+`LLMCapabilityRequest` describing what capability they need, plus risk
+level, schema, and estimated tokens. A central `ModelRouter` consults
+`agent_model_policies`, `llm_model_registry`, the Stage 35 budget
+gate, and the existing Stage 30 / 35 safety rails to return a
+`LLMRoutingDecision`.
+
+- New SDK: [`shared/sdk/llm_routing/`](shared/sdk/llm_routing/) -- models,
+  registry, policy, router, evaluator, async store.
+- New migration: [`migrations/014_llm_model_routing_policy.sql`](migrations/014_llm_model_routing_policy.sql)
+  adds `llm_model_registry`, `agent_model_policies`, `llm_routing_decisions`.
+- Default seed: mock-only + plan-only real provider entries are
+  seeded `inactive`; agent policies block real LLM, patch generation,
+  and workspace write by default.
+- Hard rails (router-enforced regardless of registry / policy state):
+  patch generation hard-disabled; workspace write hard-disabled;
+  unauthorised `requested_model_alias` -> `direct_model_rejected`.
+- New endpoints: `GET /operations/llm/models`,
+  `GET /operations/llm/model-policies`,
+  `GET /operations/llm/routing-decisions`,
+  `GET /operations/llm/routing-decisions/{task_id}`,
+  `POST /operations/llm/routing/preview`,
+  `POST /operations/llm/routing/seed-defaults`.
+- `GET /operations/safety` gains `llm_model_router_enabled`,
+  `agent_direct_model_selection_allowed=false`,
+  `llm_routing_policy_enforced=true`,
+  `llm_model_registry_active_count`,
+  `llm_routing_budget_enforced=true`,
+  `llm_routing_human_review_enforced=true`,
+  `llm_model_routing_active_policies`.
+- `GET /operations/summary` gets an `llm_model_routing_summary`
+  block.
+- `GET /discord/tasks/{task_id}` gains `llm_model_router_enabled`,
+  `agent_direct_model_selection_allowed=false`,
+  `selected_model_alias`, `selected_provider`, `selected_model_tier`,
+  `routing_decision`, `routing_requires_human_review`,
+  `routing_fallback_used`.
+
+Verification:
+
+```bash
+./scripts/verify_llm_model_routing.sh
+```
+
+See [`docs/operations/llm-model-routing.md`](docs/operations/llm-model-routing.md).
+
 ## Backup / Restore / DR Drill (Stage 36)
 
 Stage 36 brings PostgreSQL backup + restore up to production-readiness

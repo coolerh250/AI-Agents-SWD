@@ -593,6 +593,49 @@ BACKUP_RPO_SECONDS = Histogram(
 )
 
 
+# Stage 38 -- LLM Model Routing & Agent Model Policy metrics.
+LLM_MODEL_ROUTING_REQUESTS_TOTAL = Counter(
+    "llm_model_routing_requests_total",
+    "ModelRouter requests received (per agent + capability)",
+    ["agent_name", "capability"],
+)
+LLM_MODEL_ROUTING_SELECTED_TOTAL = Counter(
+    "llm_model_routing_selected_total",
+    "ModelRouter decisions that selected (or mock-selected) a model",
+    ["agent_name", "provider", "model_tier", "decision"],
+)
+LLM_MODEL_ROUTING_BLOCKED_TOTAL = Counter(
+    "llm_model_routing_blocked_total",
+    "ModelRouter decisions that blocked (per reason)",
+    ["agent_name", "reason"],
+)
+LLM_MODEL_ROUTING_FALLBACK_TOTAL = Counter(
+    "llm_model_routing_fallback_total",
+    "ModelRouter decisions that used a fallback model",
+    ["agent_name", "model_tier"],
+)
+LLM_MODEL_ROUTING_HUMAN_REVIEW_TOTAL = Counter(
+    "llm_model_routing_human_review_total",
+    "ModelRouter decisions that flagged requires_human_review=true",
+    ["agent_name", "capability"],
+)
+LLM_MODEL_ROUTING_BUDGET_BLOCKED_TOTAL = Counter(
+    "llm_model_routing_budget_blocked_total",
+    "ModelRouter decisions blocked by budget gate (Stage 35)",
+    ["agent_name", "provider"],
+)
+LLM_MODEL_POLICY_MISSING_TOTAL = Counter(
+    "llm_model_policy_missing_total",
+    "ModelRouter calls that landed without an active policy",
+    ["agent_name", "capability"],
+)
+LLM_MODEL_DIRECT_SELECTION_REJECTED_TOTAL = Counter(
+    "llm_model_direct_selection_rejected_total",
+    "ModelRouter requests carrying an unauthorised requested_model_alias",
+    ["agent_name", "capability"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

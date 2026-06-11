@@ -1400,3 +1400,80 @@ statement.
 If every box is ticked, the platform is suitable for a wider
 **validation environment** rollout. **Nothing on this checklist
 authorizes a production deploy.**
+
+## 17r. LLM Model Routing & Agent Model Policy (Stage 38)
+
+Stage 38 introduces the central `ModelRouter`. Agents must submit a
+standardised `LLMCapabilityRequest` and let the router choose the
+model (or block). The router enforces hard rails:
+
+* `agent_direct_model_selection_allowed=false`
+* `llm_patch_generation_enabled=false` (hard)
+* `llm_workspace_write_enabled=false` (hard)
+* missing policy -> `policy_not_found`
+* unauthorised model alias -> `direct_model_rejected`
+* budget cap exceeded -> `budget_blocked`
+* schema unsupported -> `schema_unsupported`
+* high / critical risk -> `requires_human_review=true`
+* `critical` risk + `allow_real_llm=false` -> `human_approval_required`
+
+* [ ] `./scripts/verify_llm_model_routing.sh` ended
+      `LLM_MODEL_ROUTING_VERIFY: PASS`.
+* [ ] `POST /operations/llm/routing/seed-defaults` returned a
+      `seeded_models` list including `mock-default` and
+      `mock-lightweight`, and a `seeded_policies` list including
+      every pipeline agent (intake, requirement, development, qa,
+      devops).
+* [ ] `POST /operations/llm/routing/preview` with
+      `{"agent_name":"development-agent","capability":"development_plan",
+      "requested_schema":"LLMDevelopmentPlan"}` returned
+      `decision=mock_selected`, `selected_provider="mock"`,
+      `selected_model_alias="mock-default"`,
+      `patch_generation_allowed=false`,
+      `workspace_write_allowed=false`,
+      `requires_human_review=true`.
+* [ ] `POST /operations/llm/routing/preview` with
+      `{"agent_name":"development-agent","capability":"development_plan",
+      "requested_model_alias":"unauthorised-real-model"}` returned
+      `decision=direct_model_rejected`.
+* [ ] `POST /operations/llm/routing/preview` with
+      `{"agent_name":"unknown-bot","capability":"made_up"}`
+      returned `decision=policy_not_found`.
+* [ ] `GET /operations/llm/models?status=active`,
+      `GET /operations/llm/model-policies?status=active`, and
+      `GET /operations/llm/routing-decisions` all returned HTTP 200.
+* [ ] `GET /operations/safety` includes Stage 38 fields:
+      `llm_model_router_enabled`,
+      `agent_direct_model_selection_allowed=false`,
+      `llm_routing_policy_enforced=true`,
+      `llm_model_registry_active_count`,
+      `llm_routing_budget_enforced=true`,
+      `llm_routing_human_review_enforced=true`,
+      `llm_model_routing_active_policies`.
+* [ ] `GET /operations/summary` carries an
+      `llm_model_routing_summary` block with
+      `model_router_enabled`, `registry_active_count`,
+      `policy_active_count`,
+      `agent_direct_model_selection_allowed=false`,
+      `patch_generation_hard_disabled=true`,
+      `workspace_write_hard_disabled=true`.
+* [ ] `GET /discord/tasks/{task_id}` carries Stage 38 routing
+      fields: `llm_model_router_enabled=true`,
+      `agent_direct_model_selection_allowed=false`,
+      `selected_model_alias`, `selected_provider`,
+      `selected_model_tier`, `routing_decision`,
+      `routing_requires_human_review`, `routing_fallback_used`.
+* [ ] Real LLM still default-off. `RUN_REAL_LLM_TEST`,
+      `ENABLE_REAL_LLM_NETWORK_CALL`, `OPENAI_API_KEY`, and
+      `ANTHROPIC_API_KEY` were NOT set on the test cluster;
+      `verify_real_llm_plan_only_pilot.sh` reports
+      `REAL_LLM_PLAN_ONLY_SKIPPED: PASS`.
+* [ ] `llm.routing_*` notification events remain in the Stage 33
+      default-deny denylist (real Discord delivery filter PASS).
+* [ ] Step 33 carry-forward limitations are still recorded; Stage
+      38 implements neither remediation.
+* [ ] Stage 36 backup readiness gaps are still recorded.
+
+If every box is ticked, the platform's LLM call path is centralised
+behind the Model Router. **Nothing on this checklist authorizes a
+production deploy.**

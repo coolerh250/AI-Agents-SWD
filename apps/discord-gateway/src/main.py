@@ -724,6 +724,57 @@ async def lookup_task(task_id: str) -> dict:
             if isinstance(body.get("approval_policy"), dict)
             else ""
         ),
+        # Stage 38 -- LLM Model Routing & Agent Model Policy.
+        # Pulled from the orchestrator operations view; never exposes
+        # API keys, provider secrets, or arbitrary model selection.
+        "llm_model_router_enabled": True,
+        "agent_direct_model_selection_allowed": False,
+        "selected_model_alias": (
+            (((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}).get(
+                "selected_model_alias", ""
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "selected_provider": (
+            (((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}).get(
+                "selected_provider", ""
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "selected_model_tier": (
+            (((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}).get(
+                "selected_model_tier", ""
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "routing_decision": (
+            (((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}).get(
+                "decision", ""
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else ""
+        ),
+        "routing_requires_human_review": (
+            bool(
+                (
+                    ((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}
+                ).get("requires_human_review", True)
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else True
+        ),
+        "routing_fallback_used": (
+            bool(
+                (
+                    ((body.get("llm_assistance") or {}).get("routing_decisions") or [None])[0] or {}
+                ).get("fallback_used", False)
+            )
+            if isinstance(body.get("llm_assistance"), dict)
+            else False
+        ),
         "sandbox": True,
     }
 

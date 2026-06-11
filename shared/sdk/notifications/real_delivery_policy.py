@@ -57,6 +57,9 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     # specific event_type to the allowlist.
     "backup.*",
     "restore_drill.*",
+    # Stage 38 -- routing decisions land on ``llm.routing_*``; they
+    # are already covered by the broader ``llm.*`` pattern above.
+    # Listed here as documentation only.
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"
