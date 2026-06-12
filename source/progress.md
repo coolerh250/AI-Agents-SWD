@@ -7962,3 +7962,300 @@ issues & blockers, and next-step suggestions.
   carry-forward list above.
 
 
+## Stage 39 — Audit Integrity Remediation: HMAC Key Rotation & Direct POST Integrity Closure (Step 37)
+
+- **Execution time:** 2026-06-11 (UTC); deliverable on `main`,
+  deploy + verification on 10.0.1.31.
+- **Inventory observation (Section 1 of the spec, before any
+  modification):**
+  - `audit_logs.id` is UUID; `audit_integrity_records.audit_log_id`
+    is UUID; unique `(chain_version, sequence_number)` already
+    enforced. Migration 012 unchanged.
+  - Pre-Stage-39 `AuditSigner` read a single `AUDIT_HMAC_KEY` at
+    process start; no keyring, no rotation, no per-row key
+    lookup.
+  - Pre-Stage-39 `AuditChainVerifier` held a single signer and
+    rejected the whole chain when a signed row failed
+    verification under the *current* active key. No mode
+    selector.
+  - Pre-Stage-39 `AuditIntegrityStore.create_integrity_record_for_audit_log`
+    used `SELECT ... FOR UPDATE` on the latest row but did NOT
+    take an advisory lock; concurrent direct-POST writers could
+    race on `sequence_number+1`.
+  - Pre-Stage-39 `audit-service POST /audit/events` inserted the
+    `audit_logs` row directly and published `audit.recorded` on
+    `stream.audit`. The audit-worker explicitly skips the
+    `audit.recorded` echo, so direct-POST rows were **never**
+    paired with integrity rows except via the backfill script.
+    `backfill_audit_integrity.sh` was load-bearing, not recovery.
+- **Modified files (high-level):**
+  - NEW migration `migrations/015_audit_integrity_key_rotation.sql`
+    -- `audit_hmac_key_metadata` (`key_id`, `key_status`,
+    `source`, `first_seen_at`, `last_seen_at`, `active_from`,
+    `active_until`, `metadata`). Idempotent, additive.
+  - NEW SDK `shared/sdk/audit_integrity/keyring.py` --
+    `AuditHmacKeyring` (loader), `KeyringSnapshot`,
+    `keyring_metadata_rows()`. Supports
+    `AUDIT_HMAC_KEYRING_JSON`, `AUDIT_HMAC_ACTIVE_KEY_ID`,
+    legacy `AUDIT_HMAC_KEY` fallback. Modes: `none` /
+    `legacy_single_key` / `multi_keyring` / `invalid`. The
+    snapshot exposes only `mode`, `active_key_id`,
+    `known_key_ids`, `invalid_reason`, `source` -- never the
+    key value.
+  - NEW SDK `shared/sdk/audit_integrity/audit_events.py` --
+    Stage 39 decision_type and notification event_type
+    constants + `safe_keyring_artifact_refs()` helper that
+    builds an `artifact_refs` dict (`key_id`, `keyring_mode`,
+    `verification_mode`, `signature_status`,
+    `direct_post_integrity_enabled`, `production_executed=False`,
+    `known_key_ids`).
+  - REWRITTEN `shared/sdk/audit_integrity/signer.py` --
+    `AuditSigner` is now keyring-backed; `sign()` uses the
+    active key; `verify_with(row_hash, signature, signing_key_id)`
+    looks up the per-row key id. New verify outcomes: `ok` /
+    `key_missing` / `signature_failed` / `no_keyring`. Refuses
+    to sign when keyring is `invalid`. Backward-compatible
+    `verify()` retained for legacy callers.
+  - REWRITTEN `shared/sdk/audit_integrity/verifier.py` --
+    `AuditChainVerifier(mode=...)` accepts `permissive` /
+    `strict` / `chain_only` and resolves the default via
+    `AUDIT_VERIFY_SIGNATURE_MODE`. Per-row signature verify
+    by `signing_key_id`. New counters on `VerificationResult`:
+    `mode`, `keyring_mode`, `active_signing_key_id`,
+    `known_key_ids`, `signed_records`, `unsigned_records`,
+    `key_missing_records`, `signature_failed_records`,
+    `warnings`. Strict-mode `key_missing` and unsigned-row
+    failure paths added; permissive mode downgrades a
+    key-missing run to `partial`.
+  - UPDATED `shared/sdk/audit_integrity/store.py` --
+    `create_integrity_record_in_txn(conn, ..., signer=...)`
+    helper for callers that already hold a transaction (the
+    audit-service direct POST handler). All write paths
+    (stream worker, direct POST, backfill) acquire
+    `pg_advisory_xact_lock(hashtext('audit_integrity_chain_v1'))`
+    inside the transaction. Up to 5 retries on
+    `UniqueViolationError`. New methods
+    `upsert_keyring_metadata()`, `list_key_metadata()`,
+    `count_signed_records_by_key()`,
+    `count_missing_integrity_records()`. Backfill summary now
+    reports `missing_before` / `missing_after`.
+  - UPDATED `apps/audit-service/src/main.py` -- direct POST now
+    inserts `audit_logs` + integrity row in the same
+    transaction; the handler returns `503` and rolls back on
+    any integrity failure (no orphan audit row). New
+    `/audit/keyring/status` read-only endpoint surfaces the
+    keyring snapshot. The handler never reads
+    `AUDIT_HMAC_KEY` directly -- the SDK-level signer does that
+    at startup.
+  - UPDATED `apps/audit-worker/src/worker.py` -- still uses
+    `AuditIntegrityStore.create_integrity_record_for_audit_log`,
+    which now uses the advisory lock + retry under the hood.
+    Stream path remains best-effort with `audit_integrity_degraded`
+    surfaced through status.
+  - UPDATED `apps/orchestrator/src/operations.py`:
+    - NEW `GET /operations/audit/keyring` (keyring snapshot +
+      metadata rows + signed-records-by-key counts).
+    - `POST /operations/audit/verify-chain` now accepts a
+      `mode` parameter (JSON body or query string).
+    - `GET /operations/audit/receipt/{audit_log_id}` returns
+      `signing_key_id`, `signature_status`,
+      `signature_verification_status`, `key_available`,
+      `keyring_mode`.
+    - `GET /operations/audit/integrity` adds
+      `hmac_keyring_configured`, `hmac_keyring_mode`,
+      `hmac_keyring_valid`, `active_signing_key_id`,
+      `known_key_ids`, `signed_records`, `unsigned_records`,
+      `key_missing_records`, `signature_failed_records`,
+      `latest_verification_mode`,
+      `direct_post_integrity_enabled`,
+      `direct_post_missing_integrity_records`,
+      `audit_integrity_writer_locking_enabled`.
+    - `GET /operations/safety` adds
+      `audit_hmac_keyring_configured`,
+      `audit_hmac_keyring_valid`,
+      `audit_hmac_keyring_mode`,
+      `audit_hmac_active_signing_key_id`,
+      `audit_hmac_rotation_supported=true`,
+      `audit_direct_post_integrity_enabled=true`,
+      `audit_direct_post_integrity_gap_closed`,
+      `audit_integrity_concurrency_lock_enabled=true`,
+      `audit_integrity_strict_verify_ready`,
+      `audit_signature_key_missing_count`.
+  - UPDATED `shared/sdk/observability/metrics.py` -- 9 new
+    counters / 1 histogram:
+    `audit_hmac_keyring_load_total{mode,source}`,
+    `audit_hmac_keyring_invalid_total{reason}`,
+    `audit_signature_verified_total{mode,signing_key_id}`,
+    `audit_signature_failed_total{mode,reason}`,
+    `audit_signature_key_missing_total{mode}`,
+    `audit_direct_post_integrity_created_total{status}`,
+    `audit_direct_post_integrity_failures_total{reason}`,
+    `audit_integrity_sequence_lock_wait_seconds` (histogram),
+    `audit_integrity_concurrency_retries_total{reason}`.
+  - UPDATED `scripts/check_runtime_state.sh` -- 12 new
+    Stage 39 smokes (`AUDIT_KEYRING_OPERATIONS_SMOKE`,
+    `AUDIT_KEYRING_NONE_SMOKE`,
+    `AUDIT_KEYRING_LEGACY_SMOKE`,
+    `AUDIT_KEYRING_MULTIKEY_SMOKE`,
+    `AUDIT_HMAC_ROTATION_SMOKE`,
+    `AUDIT_SIGNATURE_VERIFY_MODE_SMOKE`,
+    `AUDIT_DIRECT_POST_INTEGRITY_SMOKE`,
+    `AUDIT_DIRECT_POST_NO_GAP_SMOKE`,
+    `AUDIT_INTEGRITY_CONCURRENCY_SMOKE`,
+    `AUDIT_KEYRING_SAFETY_SMOKE`,
+    `AUDIT_KEYRING_METRICS_SMOKE`,
+    `AUDIT_KEYRING_NO_SECRET_LEAK_SMOKE`).
+  - NEW `scripts/verify_audit_hmac_key_rotation.sh` (no-key /
+    legacy / multi-key rotation scenarios).
+  - NEW `scripts/verify_audit_direct_post_integrity.sh` (POST
+    `/audit/events` + receipt + verify-chain).
+  - NEW `scripts/verify_audit_integrity_remediation.sh` (drives
+    key rotation + direct-POST + concurrency smokes +
+    tamper-evident regression + no-secret-leak grep).
+  - NEW 10 test files (`tests/test_audit_keyring_loader.py`,
+    `tests/test_audit_hmac_key_rotation.py`,
+    `tests/test_audit_signature_verification_modes.py`,
+    `tests/test_audit_direct_post_integrity.py`,
+    `tests/test_audit_integrity_concurrency.py`,
+    `tests/test_audit_backfill_recovery_only.py`,
+    `tests/test_operations_audit_keyring.py`,
+    `tests/test_audit_keyring_metrics.py`,
+    `tests/test_audit_keyring_no_secret_leak.py`,
+    `tests/test_audit_direct_post_no_gap.py`). Existing
+    tests for the signer / store / verifier / backfill kept
+    passing.
+  - UPDATED docs: `docs/operations/tamper-evident-audit.md`
+    (new "Stage 39" section covering keyring, modes,
+    direct-POST closure, concurrency, rotation procedure,
+    endpoints, metrics, audit/notification vocabulary; the
+    two carry-forward items from Stages 34-36 are marked
+    closed). `docs/operations/manual-verification.md` adds a
+    new `17s` Stage 39 operator checklist. `README.md` adds
+    a "Stage 39" section above Stage 38.
+
+- **Hard safety contract observed in this stage:**
+  - HMAC key value never read by any handler, never logged,
+    never persisted in `audit_hmac_key_metadata`, never
+    returned by `/operations/audit/keyring`, never echoed by
+    any verify script. Only opaque `signing_key_id` strings
+    cross the API boundary.
+  - Migration 015 is strictly additive; no existing row is
+    mutated.
+  - `HARD_SAFETY_ACTIONS` unchanged.
+  - `DEFAULT_REAL_DELIVERY_DENYLIST` unchanged --
+    `audit.keyring_*`, `audit.direct_post_integrity_*`, and
+    `audit.signature_key_missing` already fall under the
+    pre-existing `audit.*` block.
+  - No real LLM call, no production deploy, no production
+    GitHub write, no PR merge, no branch protection change.
+
+- **Test results (local):**
+  - `pytest -q tests/test_audit_keyring_loader.py
+    tests/test_audit_hmac_key_rotation.py
+    tests/test_audit_signature_verification_modes.py
+    tests/test_audit_direct_post_integrity.py
+    tests/test_audit_integrity_concurrency.py
+    tests/test_audit_backfill_recovery_only.py
+    tests/test_operations_audit_keyring.py
+    tests/test_audit_keyring_metrics.py
+    tests/test_audit_keyring_no_secret_leak.py
+    tests/test_audit_direct_post_no_gap.py` -> all PASS.
+  - Full local `pytest -q --no-header` -> all PASS (Stage 39
+    additions on top of the Stage 38 baseline of 1208 passed,
+    115 skipped).
+  - `ruff check .`, `black --check .`, `mypy shared/` -> all
+    green.
+
+- **Test results (remote 10.0.1.31):**
+  - `git pull --ff-only`; migration 015 applied via
+    `cat migrations/015_*.sql | docker exec -i
+    aiagents-test-postgres-1 psql ...`.
+  - `docker compose build orchestrator audit-service
+    audit-worker` + `up -d --force-recreate orchestrator
+    audit-service audit-worker`; 23 containers up.
+  - `pytest -q --no-header` on the host -> PASS, no skipped
+    test in the new Stage 39 files. (DB tests for direct-POST
+    use the FastAPI `TestClient` with a stubbed `asyncpg.connect`
+    so the host venv suffices.)
+  - `./scripts/verify_audit_hmac_key_rotation.sh` ->
+    `A: AUDIT_HMAC_NO_KEY: PASS`,
+    `B: AUDIT_HMAC_LEGACY_SINGLE_KEY: PASS`,
+    `C: AUDIT_HMAC_MULTI_KEY_ROTATION: PASS`, end
+    `AUDIT_HMAC_KEY_ROTATION_VERIFY: PASS`.
+  - `./scripts/verify_audit_direct_post_integrity.sh` ->
+    `AUDIT_DIRECT_POST_INTEGRITY_VERIFY: PASS`. Receipt
+    contained `row_hash` and `signature_verification_status`;
+    `missing_integrity_records=0`; verify-chain (permissive)
+    returned `passed`.
+  - `./scripts/verify_audit_integrity_remediation.sh` ->
+    `AUDIT_INTEGRITY_REMEDIATION_VERIFY: PASS`.
+  - `./scripts/verify_tamper_evident_audit.sh` (Stage 34
+    regression) -> `TAMPER_EVIDENT_AUDIT_VERIFY: PASS`.
+  - `./scripts/check_runtime_state.sh` -> `CHECK_RUNTIME_STATE_DONE`;
+    all 12 new Stage 39 smokes PASS.
+  - `./scripts/verify_llm_model_routing.sh` ->
+    `LLM_MODEL_ROUTING_VERIFY: PASS` (Stage 38 regression).
+  - `./scripts/verify_llm_cost_governance.sh` -> PASS.
+  - `./scripts/verify_real_llm_plan_only_pilot.sh` ->
+    `REAL_LLM_PLAN_ONLY_SKIPPED: PASS` (no provider key).
+  - `./scripts/verify_real_discord_delivery_filter.sh` -> PASS;
+    `audit.*` events default-denied as before.
+  - `./scripts/verify_real_integration_pilot.sh` -> PASS.
+  - `./scripts/verify_notification_delivery.sh` -> PASS.
+  - `./scripts/verify_operations_view.sh` -> PASS.
+  - `./scripts/verify_unified_audit.sh` -> PASS.
+  - `./scripts/verify_platform_observability.sh` -> PASS.
+  - `./scripts/verify_flexible_human_approval_policy.sh` -> PASS.
+  - `./scripts/verify_llm_proposal_promotion.sh` -> PASS.
+  - `./scripts/verify_qa_auto_fix_loop.sh` -> PASS.
+  - `./scripts/verify_controlled_code_generation.sh` -> PASS.
+  - `./scripts/verify_backup_drill.sh` -> PASS.
+  - `./scripts/verify_backup_production_readiness.sh` ->
+    `PASS_WITH_GAPS` (encryption_no_key,
+    storage_not_off_host, schedule_dry_run_only,
+    migration_down_gaps still recorded).
+
+- **Production-safety counters (remote):**
+  - `deployment_records.production_executed_true = 0`.
+  - `workflow_states.production_executed_true = 0`.
+  - `/operations/safety.result = safe`.
+  - `audit_direct_post_integrity_gap_closed = true`.
+  - `audit_hmac_rotation_supported = true`.
+  - `audit_integrity_concurrency_lock_enabled = true`.
+  - `audit_integrity_degraded = false` (after verify run).
+  - `agent_direct_model_selection_allowed = false`.
+  - `llm_patch_generation_enabled = false`.
+  - `llm_workspace_write_enabled = false`.
+  - `production_deploy_enabled = false`.
+
+- **Observations (Claude Code does not decide
+  production readiness):**
+  - Stage 39 closes the two audit-integrity carry-forward items
+    recorded under Stages 34-36 (HMAC key rotation / key map
+    loader, and audit-service direct POST integrity gap). The
+    remaining carry-forward items are unchanged:
+    - **Backup / DR gaps:** `encryption_no_key`,
+      `storage_not_off_host`, `schedule_dry_run_only`,
+      `migration_down_gaps`. Stage 39 does not remediate them.
+    - **Pre-Stage-31 production-readiness items unchanged:**
+      K8s / Helm / ArgoCD substrate, incident response
+      runbook, external alert receiver, real production
+      secret store, real off-host backup target.
+  - **Production deploy disabled.** Unchanged.
+    `production_executed=true=0`,
+    `production_deploy_enabled=false`,
+    `agent_direct_model_selection_allowed=false`,
+    `llm_patch_generation_enabled=false`,
+    `llm_workspace_write_enabled=false`.
+
+- **Recommendation:** The audit chain now supports HMAC key
+  rotation end-to-end and the direct-POST integrity gap is
+  closed at the SQL boundary. The next operator-decided stage
+  may pick from the carry-forward list above (the highest-
+  impact items remain real production secret store, Kubernetes
+  baseline, and incident response runbook). Stage 39 does NOT
+  authorise production deploy.
+
+- **Following Stages 22 -- 38, Claude Code does not decide
+  the next stage roadmap.** Operators choose from the
+  carry-forward list above.
