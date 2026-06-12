@@ -7,6 +7,7 @@ dry-run result.
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import datetime, timezone
 from typing import Any
@@ -20,6 +21,34 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _parse_jsonb(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _parse_jsonb_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, list) else []
+        except (ValueError, TypeError):
+            return []
+    if isinstance(value, list):
+        return list(value)
+    return []
+
+
 def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     return {
         "policy_id": str(row["policy_id"]),
@@ -27,12 +56,12 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         "severity": row["severity"],
         "enabled": bool(row["enabled"]),
         "dry_run": bool(row["dry_run"]),
-        "escalation_targets": list(row["escalation_targets"] or []),
+        "escalation_targets": _parse_jsonb_list(row["escalation_targets"]),
         "escalation_delay_minutes": int(row["escalation_delay_minutes"]),
         "repeat_interval_minutes": int(row["repeat_interval_minutes"]),
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
-        "metadata": dict(row["metadata"] or {}),
+        "metadata": _parse_jsonb(row["metadata"]),
     }
 
 

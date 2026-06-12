@@ -20,6 +20,34 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _parse_jsonb(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
+def _parse_jsonb_list(value: Any) -> list:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, list) else []
+        except (ValueError, TypeError):
+            return []
+    if isinstance(value, list):
+        return list(value)
+    return []
+
+
 def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     return {
         "postmortem_id": str(row["postmortem_id"]),
@@ -28,15 +56,15 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         "summary": row["summary"],
         "root_cause": row["root_cause"],
         "impact": row["impact"],
-        "timeline": list(row["timeline"] or []),
-        "corrective_actions": list(row["corrective_actions"] or []),
+        "timeline": _parse_jsonb_list(row["timeline"]),
+        "corrective_actions": _parse_jsonb_list(row["corrective_actions"]),
         "owner": row["owner"],
         "due_at": _iso(row["due_at"]),
         "completed_at": _iso(row["completed_at"]),
         "document_path": row["document_path"],
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
-        "metadata": dict(row["metadata"] or {}),
+        "metadata": _parse_jsonb(row["metadata"]),
     }
 
 

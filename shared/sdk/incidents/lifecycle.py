@@ -39,6 +39,20 @@ def _iso(value: Any) -> str | None:
     return value.isoformat() if value is not None else None
 
 
+def _parse_jsonb(value: Any) -> dict[str, Any]:
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     return {
         "lifecycle_event_id": str(row["lifecycle_event_id"]),
@@ -50,7 +64,7 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         "actor_id": row["actor_id"],
         "reason": row["reason"],
         "created_at": _iso(row["created_at"]),
-        "metadata": dict(row["metadata"] or {}),
+        "metadata": _parse_jsonb(row["metadata"]),
     }
 
 

@@ -24,6 +24,21 @@ def _iso(value: Any) -> str | None:
     return str(value)
 
 
+def _parse_jsonb(value: Any) -> dict[str, Any]:
+    """Safely decode a JSONB column — asyncpg may return str or dict."""
+    if value is None:
+        return {}
+    if isinstance(value, str):
+        try:
+            decoded = json.loads(value)
+            return decoded if isinstance(decoded, dict) else {}
+        except (ValueError, TypeError):
+            return {}
+    if isinstance(value, dict):
+        return dict(value)
+    return {}
+
+
 def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
     return {
         "alert_id": str(row["alert_id"]),
@@ -34,10 +49,10 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         "severity": row["severity"],
         "normalized_severity": row["normalized_severity"],
         "status": row["status"],
-        "labels": dict(row["labels"] or {}),
-        "annotations": dict(row["annotations"] or {}),
+        "labels": _parse_jsonb(row["labels"]),
+        "annotations": _parse_jsonb(row["annotations"]),
         "raw_payload_hash": row["raw_payload_hash"],
-        "raw_payload_redacted": dict(row["raw_payload_redacted"] or {}),
+        "raw_payload_redacted": _parse_jsonb(row["raw_payload_redacted"]),
         "received_at": _iso(row["received_at"]),
         "starts_at": _iso(row["starts_at"]),
         "ends_at": _iso(row["ends_at"]),
@@ -46,7 +61,7 @@ def _row_to_dict(row: asyncpg.Record) -> dict[str, Any]:
         "incident_id": str(row["incident_id"]) if row["incident_id"] else None,
         "created_at": _iso(row["created_at"]),
         "updated_at": _iso(row["updated_at"]),
-        "metadata": dict(row["metadata"] or {}),
+        "metadata": _parse_jsonb(row["metadata"]),
     }
 
 
