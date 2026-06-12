@@ -2949,5 +2949,176 @@ else
   echo "AUDIT_KEYRING_NO_SECRET_LEAK_SMOKE: PASS"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 40 -- Incident Response & External Alert Receiver smokes (101-114)
+# ---------------------------------------------------------------------------
+echo
+echo "=== Stage 40: Incident Response & Alert Receiver smokes ==="
+
+# 101. /alerts/health reachable and receiver_enabled.
+alert_health=$(curl -sS -m 5 "http://localhost:8000/alerts/health" || echo '{}')
+if python3 -c 'import json,sys; assert json.load(sys.stdin).get("receiver_enabled") == True' 2>/dev/null <<< "$alert_health"; then
+  echo "INCIDENT_ALERTMANAGER_RECEIVER_SMOKE: PASS"
+else
+  echo "INCIDENT_ALERTMANAGER_RECEIVER_SMOKE: CHECK"
+fi
+
+# 102. POST /alerts/generic creates incident (non-empty response with action).
+gen_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/alerts/generic" \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"synthetic_test","alert_name":"Smoke_GenericAlert","severity":"warning","labels":{},"annotations":{}}' \
+  2>/dev/null || echo '{}')
+gen_action=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("action",""))' 2>/dev/null <<< "$gen_resp" || echo '')
+if [ "$gen_action" = "created" ] || [ "$gen_action" = "deduplicated" ]; then
+  echo "INCIDENT_GENERIC_RECEIVER_SMOKE: PASS"
+else
+  echo "INCIDENT_GENERIC_RECEIVER_SMOKE: CHECK (action=$gen_action)"
+fi
+
+# 103. Redaction: token field in payload → REDACTED in stored alert.
+red_resp=$(curl -sS -m 10 -X POST "http://localhost:8000/alerts/generic" \
+  -H 'Content-Type: application/json' \
+  -d '{"source":"synthetic_test","alert_name":"Smoke_Redaction","severity":"info","labels":{"token":"SHOULD_BE_REDACTED"},"annotations":{}}' \
+  2>/dev/null || echo '{}')
+red_inc=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("incident_id",""))' 2>/dev/null <<< "$red_resp" || echo '')
+if [ -n "$red_inc" ] && [ "$red_inc" != "None" ]; then
+  red_alerts=$(curl -sS -m 5 "http://localhost:8000/operations/incidents/$red_inc/alerts" 2>/dev/null || echo '{}')
+  if ! echo "$red_alerts" | grep -q "SHOULD_BE_REDACTED"; then
+    echo "INCIDENT_ALERT_REDACTION_SMOKE: PASS"
+  else
+    echo "INCIDENT_ALERT_REDACTION_SMOKE: CHECK (token value visible)"
+  fi
+else
+  echo "INCIDENT_ALERT_REDACTION_SMOKE: CHECK (no incident created)"
+fi
+
+# 104. Deduplification: second alert with same fingerprint → deduplicated or same incident.
+SMOKE_FP="smoke-dedup-fp-$$"
+SMOKE_ALERT="Smoke_Dedup_$$"
+dedup1=$(curl -sS -m 10 -X POST "http://localhost:8000/alerts/alertmanager" \
+  -H 'Content-Type: application/json' \
+  -d "{\"receiver\":\"smoke\",\"status\":\"firing\",\"alerts\":[{\"status\":\"firing\",\"labels\":{\"alertname\":\"$SMOKE_ALERT\",\"severity\":\"warning\"},\"annotations\":{},\"startsAt\":\"2026-01-01T00:00:00Z\",\"endsAt\":\"0001-01-01T00:00:00Z\",\"fingerprint\":\"$SMOKE_FP\"}]}" \
+  2>/dev/null || echo '{}')
+dedup2=$(curl -sS -m 10 -X POST "http://localhost:8000/alerts/alertmanager" \
+  -H 'Content-Type: application/json' \
+  -d "{\"receiver\":\"smoke\",\"status\":\"firing\",\"alerts\":[{\"status\":\"firing\",\"labels\":{\"alertname\":\"$SMOKE_ALERT\",\"severity\":\"warning\"},\"annotations\":{},\"startsAt\":\"2026-01-01T00:00:00Z\",\"endsAt\":\"0001-01-01T00:00:00Z\",\"fingerprint\":\"$SMOKE_FP\"}]}" \
+  2>/dev/null || echo '{}')
+d2_action=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d.get("results",[]); print(r[0].get("action","") if r else "")' 2>/dev/null <<< "$dedup2" || echo '')
+if [ "$d2_action" = "deduplicated" ]; then
+  echo "INCIDENT_DEDUPE_SMOKE: PASS"
+else
+  echo "INCIDENT_DEDUPE_SMOKE: CHECK (d2_action=$d2_action)"
+fi
+
+# 105. Incident created smoke: incident exists in /operations/incidents.
+smoke_inc=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d.get("results",[]); print(r[0].get("incident_id","") if r else "")' 2>/dev/null <<< "$dedup1" || echo '')
+if [ -n "$smoke_inc" ] && [ "$smoke_inc" != "None" ]; then
+  echo "INCIDENT_CREATE_SMOKE: PASS"
+else
+  echo "INCIDENT_CREATE_SMOKE: CHECK"
+fi
+
+# 106. Acknowledge smoke.
+if [ -n "$smoke_inc" ] && [ "$smoke_inc" != "None" ]; then
+  ack_r=$(curl -sS -m 5 -X POST "http://localhost:8000/operations/incidents/$smoke_inc/acknowledge" \
+    -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo '{}')
+  ack_s=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null <<< "$ack_r" || echo '')
+  if [ "$ack_s" = "acknowledged" ]; then
+    echo "INCIDENT_ACK_SMOKE: PASS"
+  else
+    echo "INCIDENT_ACK_SMOKE: CHECK (status=$ack_s)"
+  fi
+else
+  echo "INCIDENT_ACK_SMOKE: CHECK (no incident_id)"
+fi
+
+# 107. Resolve smoke.
+if [ -n "$smoke_inc" ] && [ "$smoke_inc" != "None" ]; then
+  res_r=$(curl -sS -m 5 -X POST "http://localhost:8000/operations/incidents/$smoke_inc/resolve" \
+    -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo '{}')
+  res_s=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null <<< "$res_r" || echo '')
+  if [ "$res_s" = "resolved" ]; then
+    echo "INCIDENT_RESOLVE_SMOKE: PASS"
+  else
+    echo "INCIDENT_RESOLVE_SMOKE: CHECK (status=$res_s)"
+  fi
+else
+  echo "INCIDENT_RESOLVE_SMOKE: CHECK (no incident_id)"
+fi
+
+# 108. Close smoke.
+if [ -n "$smoke_inc" ] && [ "$smoke_inc" != "None" ]; then
+  clo_r=$(curl -sS -m 5 -X POST "http://localhost:8000/operations/incidents/$smoke_inc/close" \
+    -H 'Content-Type: application/json' -d '{"reason":"smoke test"}' 2>/dev/null || echo '{}')
+  clo_s=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null <<< "$clo_r" || echo '')
+  if [ "$clo_s" = "closed" ]; then
+    echo "INCIDENT_CLOSE_SMOKE: PASS"
+  else
+    echo "INCIDENT_CLOSE_SMOKE: CHECK (status=$clo_s)"
+  fi
+else
+  echo "INCIDENT_CLOSE_SMOKE: CHECK (no incident_id)"
+fi
+
+# 109. Postmortem smoke (SEV1 incident).
+sev1_pm=$(curl -sS -m 15 -X POST "http://localhost:8000/alerts/alertmanager" \
+  -H 'Content-Type: application/json' \
+  -d "{\"receiver\":\"smoke\",\"status\":\"firing\",\"alerts\":[{\"status\":\"firing\",\"labels\":{\"alertname\":\"Smoke_SEV1_PM_$$\",\"severity\":\"critical\"},\"annotations\":{},\"startsAt\":\"2026-01-01T00:00:00Z\",\"endsAt\":\"0001-01-01T00:00:00Z\",\"fingerprint\":\"smoke-pm-fp-$$\"}]}" \
+  2>/dev/null || echo '{}')
+sev1_pm_inc=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d.get("results",[]); print(r[0].get("incident_id","") if r else "")' 2>/dev/null <<< "$sev1_pm" || echo '')
+if [ -n "$sev1_pm_inc" ] && [ "$sev1_pm_inc" != "None" ]; then
+  pm_r=$(curl -sS -m 5 -X POST "http://localhost:8000/operations/incidents/$sev1_pm_inc/postmortem" \
+    -H 'Content-Type: application/json' -d '{"summary":"smoke postmortem"}' 2>/dev/null || echo '{}')
+  pm_s=$(python3 -c 'import json,sys; d=json.load(sys.stdin); pm=d.get("postmortem",{}); print(pm.get("status",""))' 2>/dev/null <<< "$pm_r" || echo '')
+  if [ "$pm_s" = "draft" ]; then
+    echo "INCIDENT_POSTMORTEM_SMOKE: PASS"
+  else
+    echo "INCIDENT_POSTMORTEM_SMOKE: CHECK (status=$pm_s)"
+  fi
+else
+  echo "INCIDENT_POSTMORTEM_SMOKE: CHECK (no SEV1 incident)"
+fi
+
+# 110. Escalation dry-run smoke.
+esc_smoke=$(python3 -c 'import json,sys; d=json.load(sys.stdin); r=d.get("results",[]); esc=r[0].get("escalation",{}) if r else {}; print(esc.get("dry_run","") if esc else "")' 2>/dev/null <<< "$sev1_pm" || echo '')
+if [ "$esc_smoke" = "True" ]; then
+  echo "INCIDENT_ESCALATION_DRY_RUN_SMOKE: PASS"
+else
+  echo "INCIDENT_ESCALATION_DRY_RUN_SMOKE: CHECK (got: $esc_smoke)"
+fi
+
+# 111. Operations incidents endpoint smoke.
+ops_inc=$(curl -sS -m 5 "http://localhost:8000/operations/incidents" 2>/dev/null || echo '{}')
+if python3 -c 'import json,sys; d=json.load(sys.stdin); assert "incidents" in d' 2>/dev/null <<< "$ops_inc"; then
+  echo "INCIDENT_OPERATIONS_SMOKE: PASS"
+else
+  echo "INCIDENT_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 112. Safety carries incident response fields.
+safety_body=$(curl -sS -m 10 "http://localhost:8000/operations/safety" || echo '{}')
+if grep -q '"incident_response_enabled"' <<< "$safety_body" \
+    && grep -q '"real_incident_escalation_enabled"' <<< "$safety_body" \
+    && grep -q '"incident_auto_remediation_enabled"' <<< "$safety_body"; then
+  echo "INCIDENT_SAFETY_SMOKE: PASS"
+else
+  echo "INCIDENT_SAFETY_SMOKE: CHECK"
+fi
+
+# 113. Metrics carries incident counters.
+inc_metrics=$(curl -sS -m 5 "http://localhost:8000/metrics" || echo '')
+if echo "$inc_metrics" | grep -qE 'incident_alerts_received_total|incident_created_total|incident_escalation_dry_run_total'; then
+  echo "INCIDENT_METRICS_SMOKE: PASS"
+else
+  echo "INCIDENT_METRICS_SMOKE: CHECK"
+fi
+
+# 114. No real escalation: safety shows real_incident_escalation_enabled=false.
+if python3 -c 'import json,sys; assert json.load(sys.stdin).get("real_incident_escalation_enabled") == False' 2>/dev/null <<< "$safety_body"; then
+  echo "INCIDENT_NO_REAL_ESCALATION_SMOKE: PASS"
+else
+  echo "INCIDENT_NO_REAL_ESCALATION_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

@@ -2,7 +2,17 @@ from dataclasses import dataclass, field
 from typing import Any
 
 INCIDENT_SEVERITIES = ("sev1", "sev2", "sev3", "sev4")
-INCIDENT_STATUSES = ("open", "acknowledged", "resolved")
+# Stage 40: extended statuses
+INCIDENT_STATUSES = (
+    "open",
+    "acknowledged",
+    "investigating",
+    "mitigated",
+    "resolved",
+    "closed",
+    "reopened",
+    "suppressed",
+)
 
 
 def normalize_severity(value: str | None) -> str:
@@ -23,13 +33,7 @@ def normalize_status(value: str | None) -> str:
 
 @dataclass
 class Incident:
-    """In-memory representation of one ``incident_records`` row.
-
-    ``incident_id`` is the operator-facing UUID. ``task_id`` / ``workflow_id``
-    are nullable because operator-created incidents need not be tied to a
-    workflow. ``details`` is the JSONB payload (original event, failure
-    reason, retry counts).
-    """
+    """In-memory representation of one ``incident_records`` row."""
 
     incident_id: str
     severity: str
@@ -41,6 +45,9 @@ class Incident:
     details: dict[str, Any] = field(default_factory=dict)
     acknowledged_at: str | None = None
     resolved_at: str | None = None
+    closed_at: str | None = None
+    normalized_severity: str | None = None
+    postmortem_required: bool = False
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -50,12 +57,15 @@ class Incident:
             "task_id": self.task_id,
             "workflow_id": self.workflow_id,
             "severity": self.severity,
+            "normalized_severity": self.normalized_severity,
             "status": self.status,
             "source": self.source,
             "summary": self.summary,
             "details": dict(self.details),
+            "postmortem_required": self.postmortem_required,
             "acknowledged_at": self.acknowledged_at,
             "resolved_at": self.resolved_at,
+            "closed_at": self.closed_at,
             "created_at": self.created_at,
             "updated_at": self.updated_at,
         }

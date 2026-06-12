@@ -682,6 +682,53 @@ LLM_MODEL_DIRECT_SELECTION_REJECTED_TOTAL = Counter(
     ["agent_name", "capability"],
 )
 
+# Stage 40 -- Incident Response & External Alert Receiver metrics.
+INCIDENT_ALERTS_RECEIVED_TOTAL = Counter(
+    "incident_alerts_received_total",
+    "Alert payloads received by the alert receiver",
+    ["source", "source_type"],
+)
+INCIDENT_ALERTS_REJECTED_TOTAL = Counter(
+    "incident_alerts_rejected_total",
+    "Alert payloads rejected (bad auth, malformed, suppressed)",
+    ["reason"],
+)
+INCIDENT_CREATED_TOTAL = Counter(
+    "incident_created_total",
+    "New incidents created",
+    ["severity", "source"],
+)
+INCIDENT_DEDUPLICATED_TOTAL = Counter(
+    "incident_deduplicated_total",
+    "Alerts linked to existing incident via dedupe",
+    ["severity"],
+)
+INCIDENT_ACKNOWLEDGED_TOTAL = Counter(
+    "incident_acknowledged_total",
+    "Incident acknowledgements",
+    ["severity"],
+)
+INCIDENT_RESOLVED_TOTAL = Counter(
+    "incident_resolved_total",
+    "Incidents resolved",
+    ["severity"],
+)
+INCIDENT_CLOSED_TOTAL = Counter(
+    "incident_closed_total",
+    "Incidents closed",
+    ["severity"],
+)
+INCIDENT_ESCALATION_DRY_RUN_TOTAL = Counter(
+    "incident_escalation_dry_run_total",
+    "Escalation dry-run records written (no real escalation)",
+    ["severity", "dry_run"],
+)
+INCIDENT_POSTMORTEM_REQUIRED_TOTAL = Counter(
+    "incident_postmortem_required_total",
+    "Incidents flagged as requiring a postmortem",
+    ["severity"],
+)
+
 
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""

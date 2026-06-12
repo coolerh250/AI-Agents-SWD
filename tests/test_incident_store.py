@@ -28,7 +28,9 @@ def _task_id() -> str:
 
 def test_severity_and_status_constants_match_spec():
     assert INCIDENT_SEVERITIES == ("sev1", "sev2", "sev3", "sev4")
-    assert INCIDENT_STATUSES == ("open", "acknowledged", "resolved")
+    # Stage 40 extended statuses; verify all required values are present
+    for status in ("open", "acknowledged", "resolved", "closed", "investigating", "mitigated", "reopened"):
+        assert status in INCIDENT_STATUSES, f"missing status: {status}"
 
 
 def test_normalize_severity_coerces_unknown_to_sev3():
@@ -42,7 +44,8 @@ def test_normalize_status_coerces_unknown_to_open():
     assert normalize_status("ACKNOWLEDGED") == "acknowledged"
     assert normalize_status("") == "open"
     assert normalize_status(None) == "open"
-    assert normalize_status("closed") == "open"
+    # "closed" is now a valid status (Stage 40), so it should pass through
+    assert normalize_status("closed") == "closed"
 
 
 async def test_create_get_list_incident():

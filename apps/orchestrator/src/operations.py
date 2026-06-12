@@ -44,9 +44,36 @@ from progress import build_audit_timeline, build_progress, build_retry_timeline
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.audit.store import AuditStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
-from shared.sdk.incidents import IncidentStore
+from shared.sdk.incidents import (
+    AlertStore,
+    IncidentStore,
+    LifecycleStore,
+    PostmortemStore,
+)
+from shared.sdk.incidents.audit_events import (
+    DECISION_INCIDENT_ACKNOWLEDGED,
+    DECISION_INCIDENT_CLOSED,
+    DECISION_INCIDENT_POSTMORTEM_CREATED,
+    DECISION_INCIDENT_REOPENED,
+    DECISION_INCIDENT_RESOLVED,
+    EVENT_INCIDENT_ACKNOWLEDGED,
+    EVENT_INCIDENT_CLOSED,
+    EVENT_INCIDENT_POSTMORTEM_REQUIRED,
+    EVENT_INCIDENT_RESOLVED,
+    safe_incident_artifact_refs,
+)
+from shared.sdk.incidents.lifecycle import (
+    EVENT_INCIDENT_ACKNOWLEDGED as LC_ACKNOWLEDGED,
+    EVENT_INCIDENT_CLOSED as LC_CLOSED,
+    EVENT_INCIDENT_POSTMORTEM_REQUIRED as LC_PM_REQUIRED,
+    EVENT_INCIDENT_REOPENED as LC_REOPENED,
+    EVENT_INCIDENT_RESOLVED as LC_RESOLVED,
+)
 from shared.sdk.notifications.store import NotificationDeliveryStore
 from shared.sdk.observability.metrics import (
+    INCIDENT_ACKNOWLEDGED_TOTAL,
+    INCIDENT_CLOSED_TOTAL,
+    INCIDENT_RESOLVED_TOTAL,
     OPERATIONS_REQUEST_DURATION_SECONDS,
     OPERATIONS_REQUEST_FAILURES_TOTAL,
     OPERATIONS_REQUESTS_TOTAL,
@@ -511,6 +538,60 @@ async def _audit_summary() -> dict[str, Any]:
             "SELECT count(*) FROM audit_logs " "WHERE created_at >= now() - interval '24 hours'"
         ),
     }
+
+
+def _incident_receiver_authenticated() -> bool:
+    from alert_receiver import receiver_authenticated
+
+    return receiver_authenticated()
+
+
+async def _count_open_incidents() -> int:
+    try:
+        return int(
+            await _scalar(
+                "SELECT count(*) FROM incident_records WHERE status NOT IN ('resolved','closed')"
+            )
+        )
+    except Exception:
+        return -1
+
+
+async def _count_open_incidents_by_sev(normalized_severity: str) -> int:
+    try:
+        conn = await _connect()
+        try:
+            val = await conn.fetchval(
+                "SELECT count(*) FROM incident_records "
+                "WHERE normalized_severity = $1 AND status NOT IN ('resolved','closed')",
+                normalized_severity,
+            )
+        finally:
+            await conn.close()
+        return int(val or 0)
+    except Exception:
+        return -1
+
+
+async def _count_postmortem_required() -> int:
+    try:
+        return int(await PostmortemStore().count_required())
+    except Exception:
+        return -1
+
+
+async def _alert_receiver_last_event_at() -> str | None:
+    try:
+        return await AlertStore().last_received_at()
+    except Exception:
+        return None
+
+
+async def _alert_receiver_rejected_total() -> int:
+    try:
+        return await AlertStore().count_rejected()
+    except Exception:
+        return -1
 
 
 async def _production_safety() -> dict[str, Any]:
@@ -1704,6 +1785,18 @@ async def operations_safety() -> dict:
         "backup_gaps": backup_safety["backup_gaps"],
         "migration_down_scripts_complete": backup_safety["migration_down_scripts_complete"],
         "dr_runbook_present": backup_safety["dr_runbook_present"],
+        # Stage 40 -- Incident Response & External Alert Receiver safety snapshot.
+        "incident_response_enabled": True,
+        "external_alert_receiver_enabled": True,
+        "external_alert_receiver_authenticated": _incident_receiver_authenticated(),
+        "incident_escalation_dry_run": True,
+        "real_incident_escalation_enabled": False,
+        "incident_auto_remediation_enabled": False,
+        "incident_sev1_open_count": await _count_open_incidents_by_sev("SEV1_CRITICAL"),
+        "incident_open_count": await _count_open_incidents(),
+        "incident_postmortem_required_count": await _count_postmortem_required(),
+        "alert_receiver_last_event_at": await _alert_receiver_last_event_at(),
+        "alert_receiver_rejected_total": await _alert_receiver_rejected_total(),
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -1750,6 +1843,341 @@ async def operations_incidents(
         "resolved_count": resolved_count,
         "generated_at": _utcnow_iso(),
     }
+
+
+# ---------------------------------------------------------------------------
+# Stage 40 -- Incident Response lifecycle endpoints
+# ---------------------------------------------------------------------------
+
+
+async def _incident_audit_and_notify(
+    *,
+    incident_id: str,
+    severity: str,
+    decision_type: str,
+    result: str,
+    summary: str,
+    event_type: str | None = None,
+    event_message: str | None = None,
+) -> None:
+    from shared.sdk.http_clients.audit_http_client import AuditHttpClient
+    from shared.sdk.notifications.client import send_notification
+
+    audit = AuditHttpClient()
+    with contextlib.suppress(Exception):
+        await audit.record_event(
+            task_id=incident_id,
+            agent="operations",
+            decision_type=decision_type,
+            summary=summary,
+            result=result,
+            artifact_refs=safe_incident_artifact_refs(
+                incident_id=incident_id,
+                severity=severity,
+                production_executed=False,
+            ),
+            workflow_id="",
+        )
+    if event_type:
+        with contextlib.suppress(Exception):
+            await send_notification(incident_id, event_type, event_message or summary)
+
+
+@router.get("/incidents/{incident_id}")
+@_instrument("/operations/incidents/{incident_id}", "operations.incident_detail")
+async def operations_incident_detail(incident_id: str) -> dict:
+    store = IncidentStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    return {**incident.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.get("/incidents/{incident_id}/timeline")
+@_instrument("/operations/incidents/{incident_id}/timeline", "operations.incident_timeline")
+async def operations_incident_timeline(incident_id: str) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    events: list[dict] = []
+    with contextlib.suppress(Exception):
+        events = await lc_store.list_events(incident_id)
+    return {
+        "incident_id": incident_id,
+        "incident_summary": incident.summary,
+        "severity": incident.normalized_severity or incident.severity,
+        "status": incident.status,
+        "event_count": len(events),
+        "events": events,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/incidents/{incident_id}/alerts")
+@_instrument("/operations/incidents/{incident_id}/alerts", "operations.incident_alerts")
+async def operations_incident_alerts(incident_id: str) -> dict:
+    store = IncidentStore()
+    alert_store = AlertStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    alerts: list[dict] = []
+    with contextlib.suppress(Exception):
+        alerts = await alert_store.list_alerts_for_incident(incident_id)
+    return {
+        "incident_id": incident_id,
+        "alert_count": len(alerts),
+        "alerts": alerts,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.post("/incidents/{incident_id}/acknowledge")
+@_instrument("/operations/incidents/{incident_id}/acknowledge", "operations.incident_acknowledge")
+async def operations_incident_acknowledge(incident_id: str) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    prev_status = incident.status
+    try:
+        updated = await store.ack_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    severity = updated.normalized_severity or updated.severity
+    with contextlib.suppress(Exception):
+        await lc_store.record_event(
+            incident_id=incident_id,
+            event_type=LC_ACKNOWLEDGED,
+            previous_status=prev_status,
+            new_status="acknowledged",
+        )
+    INCIDENT_ACKNOWLEDGED_TOTAL.labels(severity=severity).inc()
+    await _incident_audit_and_notify(
+        incident_id=incident_id,
+        severity=severity,
+        decision_type=DECISION_INCIDENT_ACKNOWLEDGED,
+        result="acknowledged",
+        summary=f"Incident {incident_id} acknowledged",
+        event_type=EVENT_INCIDENT_ACKNOWLEDGED,
+    )
+    return {**updated.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.post("/incidents/{incident_id}/resolve")
+@_instrument("/operations/incidents/{incident_id}/resolve", "operations.incident_resolve")
+async def operations_incident_resolve(incident_id: str) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    prev_status = incident.status
+    try:
+        updated = await store.resolve_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    severity = updated.normalized_severity or updated.severity
+    with contextlib.suppress(Exception):
+        await lc_store.record_event(
+            incident_id=incident_id,
+            event_type=LC_RESOLVED,
+            previous_status=prev_status,
+            new_status="resolved",
+        )
+    INCIDENT_RESOLVED_TOTAL.labels(severity=severity).inc()
+    await _incident_audit_and_notify(
+        incident_id=incident_id,
+        severity=severity,
+        decision_type=DECISION_INCIDENT_RESOLVED,
+        result="resolved",
+        summary=f"Incident {incident_id} resolved",
+        event_type=EVENT_INCIDENT_RESOLVED,
+    )
+    return {**updated.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.post("/incidents/{incident_id}/close")
+@_instrument("/operations/incidents/{incident_id}/close", "operations.incident_close")
+async def operations_incident_close(incident_id: str, payload: dict | None = None) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    if incident.status not in ("resolved", "mitigated"):
+        reason = str((payload or {}).get("reason", "")).strip()
+        if not reason:
+            raise HTTPException(
+                status_code=409,
+                detail="incident must be resolved before closing, or provide an explicit reason",
+            )
+    prev_status = incident.status
+    try:
+        updated = await store.close_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    severity = updated.normalized_severity or updated.severity
+    with contextlib.suppress(Exception):
+        await lc_store.record_event(
+            incident_id=incident_id,
+            event_type=LC_CLOSED,
+            previous_status=prev_status,
+            new_status="closed",
+            reason=str((payload or {}).get("reason", "")),
+        )
+    INCIDENT_CLOSED_TOTAL.labels(severity=severity).inc()
+    await _incident_audit_and_notify(
+        incident_id=incident_id,
+        severity=severity,
+        decision_type=DECISION_INCIDENT_CLOSED,
+        result="closed",
+        summary=f"Incident {incident_id} closed",
+        event_type=EVENT_INCIDENT_CLOSED,
+    )
+    return {**updated.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.post("/incidents/{incident_id}/reopen")
+@_instrument("/operations/incidents/{incident_id}/reopen", "operations.incident_reopen")
+async def operations_incident_reopen(incident_id: str, payload: dict | None = None) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    prev_status = incident.status
+    try:
+        updated = await store.reopen_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if updated is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    severity = updated.normalized_severity or updated.severity
+    with contextlib.suppress(Exception):
+        await lc_store.record_event(
+            incident_id=incident_id,
+            event_type=LC_REOPENED,
+            previous_status=prev_status,
+            new_status="open",
+            reason=str((payload or {}).get("reason", "")),
+        )
+    with contextlib.suppress(Exception):
+        await _incident_audit_and_notify(
+            incident_id=incident_id,
+            severity=severity,
+            decision_type=DECISION_INCIDENT_REOPENED,
+            result="reopened",
+            summary=f"Incident {incident_id} reopened",
+        )
+    return {**updated.to_dict(), "generated_at": _utcnow_iso()}
+
+
+@router.post("/incidents/{incident_id}/postmortem")
+@_instrument("/operations/incidents/{incident_id}/postmortem", "operations.incident_postmortem")
+async def operations_incident_postmortem(incident_id: str, payload: dict | None = None) -> dict:
+    store = IncidentStore()
+    lc_store = LifecycleStore()
+    pm_store = PostmortemStore()
+    try:
+        incident = await store.get_incident(incident_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"incident store unavailable: {exc}") from exc
+    if incident is None:
+        raise HTTPException(status_code=404, detail="incident not found")
+    summary_text = str((payload or {}).get("summary", "")).strip() or None
+    owner = str((payload or {}).get("owner", "")).strip() or None
+    try:
+        postmortem = await pm_store.create_postmortem(
+            incident_id=incident_id,
+            summary=summary_text,
+            owner=owner,
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"postmortem store unavailable: {exc}") from exc
+    severity = incident.normalized_severity or incident.severity
+    with contextlib.suppress(Exception):
+        await lc_store.record_event(
+            incident_id=incident_id,
+            event_type=LC_PM_REQUIRED,
+            metadata={"postmortem_id": postmortem["postmortem_id"]},
+        )
+    with contextlib.suppress(Exception):
+        await _incident_audit_and_notify(
+            incident_id=incident_id,
+            severity=severity,
+            decision_type=DECISION_INCIDENT_POSTMORTEM_CREATED,
+            result="postmortem_draft_created",
+            summary=f"Postmortem draft created for incident {incident_id}",
+            event_type=EVENT_INCIDENT_POSTMORTEM_REQUIRED,
+        )
+    return {
+        "postmortem": postmortem,
+        "incident_id": incident_id,
+        "severity": severity,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/incidents/postmortems")
+@_instrument("/operations/incidents/postmortems", "operations.incident_postmortems_list")
+async def operations_postmortems_list(limit: int = 100) -> dict:
+    pm_store = PostmortemStore()
+    try:
+        postmortems = await pm_store.list_postmortems(limit=max(1, min(int(limit or 100), 500)))
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"postmortem store unavailable: {exc}") from exc
+    return {
+        "count": len(postmortems),
+        "postmortems": postmortems,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/incidents/postmortems/{postmortem_id}")
+@_instrument(
+    "/operations/incidents/postmortems/{postmortem_id}",
+    "operations.incident_postmortem_detail",
+)
+async def operations_postmortem_detail(postmortem_id: str) -> dict:
+    pm_store = PostmortemStore()
+    try:
+        pm = await pm_store.get_postmortem(postmortem_id)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"postmortem store unavailable: {exc}") from exc
+    if pm is None:
+        raise HTTPException(status_code=404, detail="postmortem not found")
+    return {**pm, "generated_at": _utcnow_iso()}
 
 
 # ---------------------------------------------------------------------------

@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException
 
+from alert_receiver import router as alert_receiver_router
 from approval_policy_api import router as approval_policy_router
 from incidents_api import (
     ack_incident_with_side_effects,
@@ -178,6 +179,8 @@ install_metrics_endpoint(app)
 # Stage 20: unified read-only operator view. Mounted on /operations/*.
 app.include_router(operations_router)
 app.include_router(approval_policy_router)
+# Stage 40: external alert receiver. Mounted on /alerts/*.
+app.include_router(alert_receiver_router)
 
 
 @app.get("/health")
