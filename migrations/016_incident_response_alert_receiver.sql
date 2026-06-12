@@ -33,11 +33,15 @@ CREATE TABLE IF NOT EXISTS incident_alerts (
     alert_id             UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     external_alert_id    TEXT,
     source               TEXT        NOT NULL,
-    source_type          TEXT        NOT NULL DEFAULT 'generic_webhook',
+    source_type          TEXT        NOT NULL DEFAULT 'generic_webhook'
+                             CONSTRAINT ck_incident_alerts_source_type
+                             CHECK (source_type IN ('alertmanager','generic_webhook','synthetic_test')),
     alert_name           TEXT        NOT NULL,
     severity             TEXT        NOT NULL,
     normalized_severity  TEXT        NOT NULL,
-    status               TEXT        NOT NULL DEFAULT 'received',
+    status               TEXT        NOT NULL DEFAULT 'received'
+                             CONSTRAINT ck_incident_alerts_status
+                             CHECK (status IN ('received','deduplicated','linked_to_incident','rejected','suppressed')),
     labels               JSONB       NOT NULL DEFAULT '{}'::jsonb,
     annotations          JSONB       NOT NULL DEFAULT '{}'::jsonb,
     raw_payload_hash     TEXT,
@@ -53,16 +57,6 @@ CREATE TABLE IF NOT EXISTS incident_alerts (
     metadata             JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
 
--- source_type check: alertmanager | generic_webhook | synthetic_test
-ALTER TABLE incident_alerts
-    ADD CONSTRAINT IF NOT EXISTS ck_incident_alerts_source_type
-    CHECK (source_type IN ('alertmanager','generic_webhook','synthetic_test'));
-
--- status check
-ALTER TABLE incident_alerts
-    ADD CONSTRAINT IF NOT EXISTS ck_incident_alerts_status
-    CHECK (status IN ('received','deduplicated','linked_to_incident','rejected','suppressed'));
-
 CREATE INDEX IF NOT EXISTS idx_incident_alerts_dedupe_key   ON incident_alerts (dedupe_key);
 CREATE INDEX IF NOT EXISTS idx_incident_alerts_fingerprint  ON incident_alerts (fingerprint);
 CREATE INDEX IF NOT EXISTS idx_incident_alerts_incident_id  ON incident_alerts (incident_id);
@@ -75,7 +69,20 @@ CREATE INDEX IF NOT EXISTS idx_incident_alerts_received_at  ON incident_alerts (
 CREATE TABLE IF NOT EXISTS incident_lifecycle_events (
     lifecycle_event_id UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     incident_id        UUID        NOT NULL,
-    event_type         TEXT        NOT NULL,
+    event_type         TEXT        NOT NULL
+                           CONSTRAINT ck_incident_lifecycle_event_type
+                           CHECK (event_type IN (
+                               'incident_created',
+                               'incident_acknowledged',
+                               'incident_escalated',
+                               'incident_resolved',
+                               'incident_closed',
+                               'incident_reopened',
+                               'incident_postmortem_required',
+                               'incident_postmortem_completed',
+                               'incident_linked_to_alert',
+                               'incident_runbook_attached'
+                           )),
     previous_status    TEXT,
     new_status         TEXT,
     actor_type         TEXT        NOT NULL DEFAULT 'operator',
@@ -84,21 +91,6 @@ CREATE TABLE IF NOT EXISTS incident_lifecycle_events (
     created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     metadata           JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
-
-ALTER TABLE incident_lifecycle_events
-    ADD CONSTRAINT IF NOT EXISTS ck_incident_lifecycle_event_type
-    CHECK (event_type IN (
-        'incident_created',
-        'incident_acknowledged',
-        'incident_escalated',
-        'incident_resolved',
-        'incident_closed',
-        'incident_reopened',
-        'incident_postmortem_required',
-        'incident_postmortem_completed',
-        'incident_linked_to_alert',
-        'incident_runbook_attached'
-    ));
 
 CREATE INDEX IF NOT EXISTS idx_incident_lifecycle_incident_created
     ON incident_lifecycle_events (incident_id, created_at);
@@ -145,7 +137,9 @@ ON CONFLICT (policy_name) DO NOTHING;
 CREATE TABLE IF NOT EXISTS incident_postmortems (
     postmortem_id      UUID        PRIMARY KEY DEFAULT uuid_generate_v4(),
     incident_id        UUID        NOT NULL,
-    status             TEXT        NOT NULL DEFAULT 'draft',
+    status             TEXT        NOT NULL DEFAULT 'draft'
+                           CONSTRAINT ck_incident_postmortems_status
+                           CHECK (status IN ('draft','in_review','completed','cancelled')),
     summary            TEXT,
     root_cause         TEXT,
     impact             TEXT,
@@ -159,10 +153,6 @@ CREATE TABLE IF NOT EXISTS incident_postmortems (
     updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
     metadata           JSONB       NOT NULL DEFAULT '{}'::jsonb
 );
-
-ALTER TABLE incident_postmortems
-    ADD CONSTRAINT IF NOT EXISTS ck_incident_postmortems_status
-    CHECK (status IN ('draft','in_review','completed','cancelled'));
 
 CREATE INDEX IF NOT EXISTS idx_incident_postmortems_incident_id
     ON incident_postmortems (incident_id);
