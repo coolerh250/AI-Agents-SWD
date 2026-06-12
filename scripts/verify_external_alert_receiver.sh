@@ -158,9 +158,10 @@ fi
 # ---------------------------------------------------------------------------
 # Scenario E -- redaction
 # ---------------------------------------------------------------------------
+RED_TS=$(date +%s)
 red_resp=$(curl -sS -m 15 -X POST "$BASE_URL/alerts/generic" \
   -H 'Content-Type: application/json' \
-  -d '{"source":"synthetic_test","alert_name":"VerifyRedaction","severity":"info","labels":{"token":"super-secret-token","name":"safe-label"},"annotations":{"password":"hunter2","info":"ok"}}' \
+  -d "{\"source\":\"synthetic_test\",\"alert_name\":\"VerifyRedaction_${RED_TS}\",\"severity\":\"info\",\"labels\":{\"token\":\"super-secret-token\",\"name\":\"safe-label\"},\"annotations\":{\"password\":\"hunter2\",\"info\":\"ok\"}}" \
   || echo '{}')
 
 red_inc=$(echo "$red_resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("incident_id",""))' 2>/dev/null || echo '')
