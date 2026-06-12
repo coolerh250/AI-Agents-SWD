@@ -2356,6 +2356,84 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Audit Integrity Remediation — HMAC Keyring & Direct POST Closure (Stage 39)
+
+Stage 39 closes the two audit-integrity carry-forward gaps recorded
+under Stages 34-36:
+
+* **HMAC key rotation / key map loader** -- a new
+  [`shared/sdk/audit_integrity/keyring.py`](shared/sdk/audit_integrity/keyring.py)
+  reads `AUDIT_HMAC_KEYRING_JSON` (multi-key, preferred) or
+  `AUDIT_HMAC_KEY` (legacy single-key fallback). The signer signs new
+  rows with the keyring's active key; the verifier looks up the
+  per-row `signing_key_id` so a row signed with an older key keeps
+  verifying after rotation. Keyring modes: `none` /
+  `legacy_single_key` / `multi_keyring` / `invalid`. A malformed
+  config refuses to sign so a wrong key never enters the chain. The
+  key value is never returned, logged, or persisted -- only the
+  opaque `signing_key_id` and metadata.
+* **audit-service `POST /audit/events` direct-write integrity gap** --
+  the handler now inserts `audit_logs` and `audit_integrity_records`
+  in the **same Postgres transaction**, holding
+  `pg_advisory_xact_lock(hashtext('audit_integrity_chain_v1'))` to
+  serialise the sequence assignment. On any integrity failure the
+  transaction rolls back and the service responds **`503`** -- no
+  orphan audit row ever lands.
+
+New verification modes (`AUDIT_VERIFY_SIGNATURE_MODE`):
+
+* `permissive` -- hash chain mandatory; key-missing downgrades the
+  run to `partial`. Default.
+* `strict` -- hash chain mandatory; signed rows must verify and the
+  key must be in the keyring; unsigned rows fail unless
+  `AUDIT_VERIFY_ALLOW_UNSIGNED_LEGACY=1`. Recommended for production.
+* `chain_only` -- hash chain only; HMAC ignored. Emergency
+  diagnostic.
+
+New endpoints + safety fields (orchestrator):
+
+* `GET /operations/audit/keyring` -- read-only view of the loaded
+  keyring + `audit_hmac_key_metadata` rows. Never returns key bytes.
+* `GET /operations/audit/integrity` -- now carries
+  `hmac_keyring_*`, `active_signing_key_id`, `signed_records`,
+  `unsigned_records`, `key_missing_records`,
+  `signature_failed_records`, `latest_verification_mode`,
+  `direct_post_integrity_enabled`,
+  `direct_post_missing_integrity_records`, and
+  `audit_integrity_writer_locking_enabled`.
+* `GET /operations/audit/receipt/{audit_log_id}` -- new
+  `signing_key_id`, `signature_status`, `signature_verification_status`
+  (`ok` / `key_missing` / `signature_failed` / `no_keyring` / `n/a`),
+  `key_available`, `keyring_mode`.
+* `POST /operations/audit/verify-chain?mode=<mode>` -- accept a
+  verification mode (also supports a JSON body).
+* `GET /operations/safety` -- new flags:
+  `audit_hmac_keyring_configured`, `audit_hmac_keyring_valid`,
+  `audit_hmac_keyring_mode`, `audit_hmac_active_signing_key_id`,
+  `audit_hmac_rotation_supported`,
+  `audit_direct_post_integrity_enabled`,
+  `audit_direct_post_integrity_gap_closed`,
+  `audit_integrity_concurrency_lock_enabled`,
+  `audit_integrity_strict_verify_ready`,
+  `audit_signature_key_missing_count`.
+
+New verify scripts: `verify_audit_hmac_key_rotation.sh`,
+`verify_audit_direct_post_integrity.sh`,
+`verify_audit_integrity_remediation.sh` (markers
+`AUDIT_HMAC_KEY_ROTATION_VERIFY: PASS`,
+`AUDIT_DIRECT_POST_INTEGRITY_VERIFY: PASS`,
+`AUDIT_INTEGRITY_REMEDIATION_VERIFY: PASS`). 12 new runtime smokes in
+`scripts/check_runtime_state.sh`.
+
+The full operator runbook lives in
+[`docs/operations/tamper-evident-audit.md`](docs/operations/tamper-evident-audit.md)
+under "Stage 39 -- HMAC keyring rotation + direct POST integrity
+closure".
+
+Stage 39 does **not** roll out a production secret store, real
+off-host backup target, Kubernetes baseline, or external alert
+receiver -- those remain carry-forward items.
+
 ## LLM Model Routing & Agent Model Policy (Stage 38)
 
 Stage 38 centralises every "which model do we use for this LLM call?"

@@ -242,34 +242,227 @@ and start a new sub-chain with the new key. The current verifier only
 holds one key in process; a future iteration will load the key map
 keyed by `signing_key_id` (out of scope for Stage 34).
 
-## Carry-forward limitations (recorded explicitly, Stage 35+ / Stage 36+)
+## Stage 39 -- HMAC keyring rotation + direct POST integrity closure
 
-These two items remain open after Stage 34, Stage 35, **and Stage 36**
-and **must not be silently dropped** from future work:
+Stage 39 closes the two carry-forward gaps recorded under Stages 34-36.
+The remediation is **additive**: existing `audit_logs`,
+`audit_integrity_records`, and `audit_chain_verification_runs` rows
+are untouched. Existing chain hashes / signatures keep verifying with
+the same logic.
 
-1. **HMAC key rotation / key map loader.** The signer reads a single
-   `AUDIT_HMAC_KEY` from env at process start. When an operator
-   rotates the key, rows signed with the old key cannot be verified
-   by the new key. The schema already records `signing_key_id` per
-   row so a future iteration can load a key map (e.g. from a Vault
-   path or a SecretProvider keyed by `signing_key_id`). Stage 35 did
-   NOT implement this; **Stage 36 did NOT implement this either**.
-   The operator-facing workaround is to keep running the verifier
-   with the OLD key on the OLD chain section and the NEW key on the
-   NEW section.
-2. **audit-service direct POST `/audit/events` immediate integrity
-   gap.** Audit rows that land via the direct POST handler bypass
-   the audit-worker and therefore do NOT pick up an integrity
-   record at write time. Today the recovery is the backfill script
-   (run after the fact). Future remediation options: (a) move the
-   audit-service handler to publish onto `stream.audit` instead of
-   writing directly; (b) call `AuditIntegrityStore.create_integrity_record_for_audit_log`
-   inline from the audit-service handler. Stage 35 did NOT implement
-   either; **Stage 36 did NOT implement either**. The runbook
-   recommends running the backfill on the cadence at which the
-   direct-POST endpoint is exercised, and the Stage 36 restore drill
-   re-walks the chain in the restored DB so an operator can confirm
-   the backfill has caught up.
+### HMAC keyring (`shared/sdk/audit_integrity/keyring.py`)
+
+The signer is now backed by an in-process keyring. Configuration is
+read from env at process start; the **key value is never logged or
+surfaced via any API**:
+
+| Env var                    | Effect                                                                 |
+|----------------------------|------------------------------------------------------------------------|
+| `AUDIT_HMAC_KEYRING_JSON`  | Multi-key JSON document (preferred). See shape below.                  |
+| `AUDIT_HMAC_ACTIVE_KEY_ID` | Override the `active_key_id` field of the keyring JSON.                |
+| `AUDIT_HMAC_KEY`           | Legacy single-key fallback. ID = `AUDIT_HMAC_KEY_ID` or `legacy-single-key`. |
+| (neither set)              | Mode = `none`. Chain stays unsigned; verification still passes.        |
+
+`AUDIT_HMAC_KEYRING_JSON` shape (dummy placeholder values shown — do
+not put real keys in source):
+
+```json
+{
+  "active_key_id": "audit-key-2026-06",
+  "keys": {
+    "audit-key-2026-05": "<base64-or-plain-secret-placeholder>",
+    "audit-key-2026-06": "<base64-or-plain-secret-placeholder>"
+  }
+}
+```
+
+Keyring modes:
+
+| Mode                | When                                                                         |
+|---------------------|------------------------------------------------------------------------------|
+| `none`              | Neither env var set. Chain is unsigned; chain verify passes.                 |
+| `legacy_single_key` | `AUDIT_HMAC_KEY` present, JSON absent.                                       |
+| `multi_keyring`     | Valid `AUDIT_HMAC_KEYRING_JSON` loaded.                                      |
+| `invalid`           | JSON malformed, `active_key_id` not in `keys`, or values empty. Signing is **refused** so the wrong key never enters the chain. |
+
+Per-row verification looks up the key by the row's recorded
+`signing_key_id`, **not** by the currently-active key. A row signed
+with `audit-key-2026-05` still verifies after the active key has
+rotated to `audit-key-2026-06`, provided the old key remains in the
+keyring.
+
+### Key-status metadata table
+
+Migration `015_audit_integrity_key_rotation.sql` adds
+`audit_hmac_key_metadata`:
+
+| Column              | Meaning                                                       |
+|---------------------|---------------------------------------------------------------|
+| `key_id`            | Opaque keyring identifier (never the key value).              |
+| `key_status`        | `active` / `inactive` / `retired` / `missing` / `invalid`.    |
+| `source`            | `legacy_env` / `keyring_env` / `secret_provider` / `unknown`. |
+| `first_seen_at`     | When this process first observed the key_id.                  |
+| `last_seen_at`      | Updated on each keyring upsert.                               |
+| `active_from` / `active_until` | Lifecycle bookkeeping per key_id.                  |
+
+`GET /operations/audit/keyring` upserts those rows opportunistically
+and returns the table verbatim — never the key bytes.
+
+### Verification modes (`AUDIT_VERIFY_SIGNATURE_MODE`)
+
+| Mode          | Behaviour                                                                       |
+|---------------|---------------------------------------------------------------------------------|
+| `permissive`  | Hash-chain must pass. Signed rows verify when the key is present; missing keys downgrade to `partial` + add a warning. Unsigned rows allowed. Default. |
+| `strict`      | Hash-chain must pass. Signed rows must verify and the key must be in the keyring. Unsigned rows fail unless `AUDIT_VERIFY_ALLOW_UNSIGNED_LEGACY=1`. Recommended for production. |
+| `chain_only`  | Hash-chain only — HMAC is ignored. Emergency diagnostic.                       |
+
+`POST /operations/audit/verify-chain` accepts an explicit `mode` via
+either the JSON body (`{"mode":"strict"}`) or a query parameter
+(`?mode=strict`).
+
+### Direct POST integrity closure
+
+`POST /audit/events` on the audit-service now inserts the `audit_logs`
+row and the matching `audit_integrity_records` row **inside the same
+Postgres transaction**:
+
+1. `async with conn.transaction():`
+2. `INSERT INTO audit_logs ... RETURNING ...`
+3. `SELECT pg_advisory_xact_lock(hashtext('audit_integrity_chain_v1'))`
+   to serialise the sequence assignment.
+4. `INSERT INTO audit_integrity_records ...` via
+   `create_integrity_record_in_txn`.
+5. publish `audit.recorded` on `stream.audit` (best-effort).
+6. respond `200` with `audit_integrity_created=true` and the
+   `audit_integrity_status` label.
+
+On any failure inside the transaction the whole txn rolls back, the
+audit-service responds **`503`**, and `audit_logs` is left untouched —
+no orphan row to backfill. The
+`audit_direct_post_integrity_failures_total` counter is incremented
+with the exception class so an operator can diagnose.
+
+### Concurrency / sequence lock
+
+`create_integrity_record_in_txn` is the single shared writer used by
+the audit-worker stream path, the direct POST path, and the backfill
+script. Each call acquires
+`pg_advisory_xact_lock(hashtext('audit_integrity_chain_v1'))` before
+reading the latest `sequence_number`, so two concurrent writers cannot
+allocate the same sequence. On a unique-constraint conflict the writer
+retries up to 5 times — the retry counter is exposed as
+`audit_integrity_concurrency_retries_total`.
+
+### Backfill — recovery only
+
+`backfill_audit_integrity.sh` now reports both `missing_before` and
+`missing_after`. With direct POST closure in place, the normal steady
+state should be `missing_before=0` and the script becomes a no-op.
+Recovery semantics are retained for unusual scenarios (e.g. a restored
+backup taken mid-transaction). The backfill never forges signatures
+for rows whose original key is unknown — it asks the signer to sign,
+and the signer reports `signing_key_not_configured` when the keyring
+is empty.
+
+### Operational key rotation procedure
+
+1. Add the new key to `AUDIT_HMAC_KEYRING_JSON.keys` while keeping the
+   old key entries in place.
+2. Restart the audit-service so the signer rebuilds its keyring.
+3. New rows sign with the new active key; historical rows still verify
+   because their `signing_key_id` points at the still-present old key.
+4. After enough verification runs in `strict` mode have passed on the
+   new active key, decommission the old key by dropping it from
+   `AUDIT_HMAC_KEYRING_JSON.keys`. The metadata table moves the old
+   `key_id` to `inactive` automatically.
+
+### Operations endpoints (Stage 39 additions)
+
+* `GET /operations/audit/integrity` — now includes
+  `hmac_keyring_configured`, `hmac_keyring_mode`, `hmac_keyring_valid`,
+  `active_signing_key_id`, `known_key_ids`, `signed_records`,
+  `unsigned_records`, `key_missing_records`, `signature_failed_records`,
+  `latest_verification_mode`, `direct_post_integrity_enabled`,
+  `direct_post_missing_integrity_records`,
+  `audit_integrity_writer_locking_enabled`.
+* `GET /operations/audit/keyring` — read-only keyring view. Returns
+  `mode`, `valid`, `active_key_id`, `known_key_ids`, `invalid_reason`,
+  the `audit_hmac_key_metadata` rows, and per-key signed-record counts.
+  **Never returns key bytes.**
+* `GET /operations/audit/receipt/{audit_log_id}` — now carries
+  `signing_key_id`, `signature_status`, `signature_verification_status`
+  (`ok` / `key_missing` / `signature_failed` / `no_keyring` / `n/a`),
+  `key_available`, `keyring_mode`.
+* `POST /operations/audit/verify-chain?mode=<mode>` — accept a
+  verification mode (JSON body also accepted).
+* `GET /operations/safety` — new flags:
+  `audit_hmac_keyring_configured`, `audit_hmac_keyring_valid`,
+  `audit_hmac_keyring_mode`, `audit_hmac_active_signing_key_id`,
+  `audit_hmac_rotation_supported`, `audit_direct_post_integrity_enabled`,
+  `audit_direct_post_integrity_gap_closed`,
+  `audit_integrity_concurrency_lock_enabled`,
+  `audit_integrity_strict_verify_ready`,
+  `audit_signature_key_missing_count`.
+
+### Metrics (Stage 39 additions)
+
+* `audit_hmac_keyring_load_total{mode,source}`
+* `audit_hmac_keyring_invalid_total{reason}`
+* `audit_signature_verified_total{mode,signing_key_id}`
+* `audit_signature_failed_total{mode,reason}`
+* `audit_signature_key_missing_total{mode}`
+* `audit_direct_post_integrity_created_total{status}`
+* `audit_direct_post_integrity_failures_total{reason}`
+* `audit_integrity_sequence_lock_wait_seconds` (histogram)
+* `audit_integrity_concurrency_retries_total{reason}`
+
+### Audit / notification vocabulary
+
+Decision types reserved for Stage 39: `audit_hmac_keyring_loaded`,
+`audit_hmac_keyring_invalid`, `audit_hmac_key_rotated`,
+`audit_signature_verified`, `audit_signature_key_missing`,
+`audit_direct_post_integrity_created`,
+`audit_direct_post_integrity_failed`,
+`audit_integrity_concurrency_verified`.
+
+Notification events: `audit.keyring_loaded`,
+`audit.keyring_invalid`, `audit.direct_post_integrity_created`,
+`audit.direct_post_integrity_failed`,
+`audit.signature_key_missing`. These stay under the `audit.*`
+namespace and remain in the Stage 32 default real-delivery denylist.
+
+### How to verify Stage 39
+
+```bash
+./scripts/verify_audit_hmac_key_rotation.sh
+./scripts/verify_audit_direct_post_integrity.sh
+./scripts/verify_audit_integrity_remediation.sh
+./scripts/check_runtime_state.sh | grep -E 'AUDIT_KEYRING|AUDIT_DIRECT_POST|AUDIT_HMAC_ROTATION|AUDIT_SIGNATURE_VERIFY|AUDIT_INTEGRITY_CONCURRENCY'
+```
+
+`verify_audit_integrity_remediation.sh` ends with
+`AUDIT_INTEGRITY_REMEDIATION_VERIFY: PASS` when every phase succeeded.
+
+## Carry-forward limitations (after Stage 39)
+
+The two original carry-forward items are **closed** by Stage 39:
+
+1. ~~HMAC key rotation / key map loader.~~ **Closed** by the
+   `AuditHmacKeyring` loader + per-row `signing_key_id` verification.
+2. ~~audit-service direct POST `/audit/events` immediate integrity gap.~~
+   **Closed** by the in-transaction integrity writer + `503`/rollback
+   on failure.
+
+The following items remain open and **must not be silently dropped**:
+
+* Backup / DR gaps: `encryption_no_key`, `storage_not_off_host`,
+  `schedule_dry_run_only`, `migration_down_gaps`.
+* Kubernetes / Helm / ArgoCD runtime baseline.
+* Incident response runbook / external alert receiver.
+* Real production secret store / real off-host backup target. Stage 39
+  uses environment variables; a production deployment must source the
+  keyring from a real secret store (Vault, KMS, etc.) and never via env
+  on the running pods.
 
 ## How to verify (end-to-end)
 

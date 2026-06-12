@@ -57,7 +57,9 @@ from shared.sdk.audit_integrity import (
     CHAIN_VERSION as AUDIT_CHAIN_VERSION,
     AuditChainVerifier,
     AuditIntegrityStore,
+    AuditSigner,
     VERIFICATION_STATUS_ERROR,
+    resolve_verify_mode,
 )
 from shared.sdk.code_workspace import CodeWorkspaceStore
 from shared.sdk.llm import LLMInteractionStore
@@ -1665,6 +1667,27 @@ async def operations_safety() -> dict:
             audit_integrity.get("latest_verification_status") == "failed"
             and audit_integrity.get("latest_verification_failure_reason")
         ),
+        # Stage 39 -- HMAC keyring + direct POST integrity closure.
+        # Booleans + counts + opaque key_id only; never carries key bytes.
+        "audit_hmac_keyring_configured": audit_integrity["hmac_keyring_configured"],
+        "audit_hmac_keyring_valid": audit_integrity["hmac_keyring_valid"],
+        "audit_hmac_keyring_mode": audit_integrity["hmac_keyring_mode"],
+        "audit_hmac_active_signing_key_id": audit_integrity["active_signing_key_id"],
+        "audit_hmac_rotation_supported": True,
+        "audit_direct_post_integrity_enabled": audit_integrity["direct_post_integrity_enabled"],
+        "audit_direct_post_integrity_gap_closed": (
+            audit_integrity["direct_post_integrity_enabled"]
+            and audit_integrity["direct_post_missing_integrity_records"] == 0
+        ),
+        "audit_integrity_concurrency_lock_enabled": audit_integrity[
+            "audit_integrity_writer_locking_enabled"
+        ],
+        "audit_integrity_strict_verify_ready": bool(
+            audit_integrity["hmac_keyring_valid"]
+            and audit_integrity["hmac_keyring_configured"]
+            and audit_integrity["signature_failed_records"] == 0
+        ),
+        "audit_signature_key_missing_count": audit_integrity["key_missing_records"],
         "real_github_inputs_present": bool(inputs["github_required_present"]),
         "real_github_test_enabled_pilot": real_test,
         "github_test_repo": github_test_repo,
@@ -2500,12 +2523,17 @@ async def operations_real_integrations_github() -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Stage 34 -- tamper-evident audit chain operations view.
+# Stage 34 + Stage 39 -- tamper-evident audit chain operations view.
+# Stage 39 -- Audit Integrity Remediation operations view
+#   (HMAC keyring + rotation, direct-POST integrity closure,
+#    advisory-lock-backed concurrent writer, verification modes).
 # ---------------------------------------------------------------------------
 
 
 async def _audit_integrity_summary() -> dict[str, Any]:
     store = AuditIntegrityStore()
+    keyring = store.signer.keyring
+    snapshot = keyring.snapshot()
     summary: dict[str, Any] = {
         "chain_version": AUDIT_CHAIN_VERSION,
         "total_audit_logs": 0,
@@ -2521,6 +2549,20 @@ async def _audit_integrity_summary() -> dict[str, Any]:
         "latest_verification_at": None,
         "latest_verification_failure_reason": None,
         "failed_verifications_count": 0,
+        # Stage 39 -- keyring + rotation + direct POST closure.
+        "hmac_keyring_configured": snapshot.configured,
+        "hmac_keyring_mode": snapshot.mode,
+        "hmac_keyring_valid": snapshot.valid,
+        "active_signing_key_id": snapshot.active_key_id,
+        "known_key_ids": list(snapshot.known_key_ids),
+        "signed_records": 0,
+        "unsigned_records": 0,
+        "key_missing_records": 0,
+        "signature_failed_records": 0,
+        "latest_verification_mode": None,
+        "direct_post_integrity_enabled": True,
+        "direct_post_missing_integrity_records": 0,
+        "audit_integrity_writer_locking_enabled": True,
     }
     try:
         summary["total_audit_logs"] = await store.count_audit_logs()
@@ -2529,6 +2571,10 @@ async def _audit_integrity_summary() -> dict[str, Any]:
             0,
             summary["total_audit_logs"] - summary["total_integrity_records"],
         )
+        # direct_post_missing tracks rows still lacking integrity. It is
+        # the same count as missing_integrity_records and is surfaced
+        # under both names so an operator can grep either form.
+        summary["direct_post_missing_integrity_records"] = summary["missing_integrity_records"]
         latest = await store.get_latest_integrity_record()
         if latest is not None:
             summary["latest_sequence_number"] = latest.sequence_number
@@ -2541,10 +2587,17 @@ async def _audit_integrity_summary() -> dict[str, Any]:
                 last_run.completed_at.isoformat() if last_run.completed_at else None
             )
             summary["latest_verification_failure_reason"] = last_run.failure_reason
+            meta = last_run.metadata or {}
+            summary["latest_verification_mode"] = meta.get("verification_mode")
+            summary["signed_records"] = int(meta.get("signed_records") or 0)
+            summary["unsigned_records"] = int(meta.get("unsigned_records") or 0)
+            summary["key_missing_records"] = int(meta.get("key_missing_records") or 0)
+            summary["signature_failed_records"] = int(meta.get("signature_failed_records") or 0)
         summary["failed_verifications_count"] = await store.count_failed_verifications()
         summary["audit_integrity_degraded"] = bool(
             summary["missing_integrity_records"] > 0
             or summary["latest_verification_status"] in ("failed", "error")
+            or not snapshot.valid
         )
     except Exception as exc:
         summary["audit_integrity_enabled"] = False
@@ -2560,10 +2613,63 @@ async def operations_audit_integrity() -> dict:
     return {**summary, "generated_at": _utcnow_iso()}
 
 
+@router.get("/audit/keyring")
+@_instrument("/operations/audit/keyring", "operations.audit_keyring_view")
+async def operations_audit_keyring() -> dict:
+    """Stage 39 -- read-only view of the HMAC keyring.
+
+    Never returns key bytes. Returns the keyring mode, the active
+    key_id, the list of known key_ids, the invalid_reason (when the
+    config is malformed), and the per-key metadata rows recorded in
+    ``audit_hmac_key_metadata``.
+    """
+    signer = AuditSigner()
+    snapshot = signer.keyring.snapshot()
+    store = AuditIntegrityStore(signer=signer)
+    metadata: list[dict[str, Any]] = []
+    signed_by_key: dict[str, int] = {}
+    try:
+        # Best-effort: keep the keyring metadata table up to date with
+        # what this process sees, so an operator's read of the table
+        # matches what the running service thinks.
+        await store.upsert_keyring_metadata(snapshot)
+        metadata = await store.list_key_metadata()
+        signed_by_key = await store.count_signed_records_by_key()
+    except Exception as exc:
+        return {
+            **snapshot.to_safe_dict(),
+            "metadata_rows": [],
+            "signed_records_by_key_id": {},
+            "error": f"{exc.__class__.__name__}: {exc}",
+            "generated_at": _utcnow_iso(),
+        }
+    return {
+        **snapshot.to_safe_dict(),
+        "metadata_rows": metadata,
+        "signed_records_by_key_id": signed_by_key,
+        "generated_at": _utcnow_iso(),
+    }
+
+
+class _VerifyChainRequest(BaseModel):
+    mode: str | None = Field(default=None)
+
+
 @router.post("/audit/verify-chain")
 @_instrument("/operations/audit/verify-chain", "operations.audit_verify_chain")
-async def operations_audit_verify_chain() -> dict:
-    verifier = AuditChainVerifier()
+async def operations_audit_verify_chain(
+    payload: _VerifyChainRequest | None = None,
+    mode: str | None = None,
+) -> dict:
+    """Stage 39 -- run a chain verification.
+
+    Accepts the verification mode either as a JSON body (``{"mode":...}``)
+    or as a query parameter (``?mode=strict``). Defaults to permissive
+    unless ``AUDIT_VERIFY_SIGNATURE_MODE`` is set.
+    """
+    requested = (payload.mode if payload else None) or mode
+    effective_mode = resolve_verify_mode(requested)
+    verifier = AuditChainVerifier(mode=effective_mode)
     store = AuditIntegrityStore()
     with start_span(
         "audit_integrity.verify_chain",
@@ -2571,6 +2677,7 @@ async def operations_audit_verify_chain() -> dict:
             "service.name": "orchestrator",
             "agent": "orchestrator",
             "chain_version": str(AUDIT_CHAIN_VERSION),
+            "mode": effective_mode,
         },
     ):
         try:
@@ -2579,6 +2686,7 @@ async def operations_audit_verify_chain() -> dict:
             return {
                 "status": VERIFICATION_STATUS_ERROR,
                 "chain_version": AUDIT_CHAIN_VERSION,
+                "mode": effective_mode,
                 "error": f"{exc.__class__.__name__}: {exc}",
                 "generated_at": _utcnow_iso(),
             }
@@ -2616,7 +2724,27 @@ async def operations_audit_receipt(audit_log_id: str) -> dict:
             detail=f"no integrity record for audit_log_id={audit_log_id}",
         )
     body = record.to_safe_dict(include_signature_preview=True)
+    # Stage 39 -- expose rotation-aware fields on the receipt. The
+    # keyring is read once per request; the key value is never surfaced.
+    snapshot = store.signer.keyring.snapshot()
+    body["signing_key_id"] = record.signing_key_id
+    body["signature_status"] = record.signature_status
+    body["key_available"] = bool(
+        record.signing_key_id and record.signing_key_id in snapshot.known_key_ids
+    )
+    if record.signature_status == "signed":
+        ok, outcome = store.signer.verify_with(
+            row_hash=record.row_hash,
+            signature=record.hmac_signature,
+            signing_key_id=record.signing_key_id,
+        )
+        body["signature_verification_status"] = (
+            "ok" if ok else outcome  # ok / key_missing / signature_failed / no_keyring
+        )
+    else:
+        body["signature_verification_status"] = "n/a"
     body["verification_status"] = "valid_locally"
+    body["keyring_mode"] = snapshot.mode
     body["generated_at"] = _utcnow_iso()
     return body
 

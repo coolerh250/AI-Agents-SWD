@@ -45,16 +45,23 @@ def test_summary_carries_audit_integrity_summary():
 
 
 def test_receipt_response_does_not_expose_full_signature_by_default():
-    """The receipt endpoint exposes hmac_signature_present + preview only."""
+    """The receipt endpoint exposes hmac_signature_present + preview only.
+
+    Stage 39 added rotation-aware verification on the receipt path; the
+    handler may now read ``record.hmac_signature`` server-side to call
+    ``signer.verify_with(...)``, but the *response body* still only
+    contains ``hmac_signature_present`` + ``hmac_signature_preview``
+    from ``to_safe_dict``.
+    """
     src = _read_operations()
-    # The helper is record.to_safe_dict() -- inspect models.py to make
-    # sure no full-signature key path is constructed elsewhere.
     models_src = (_REPO_ROOT / "shared" / "sdk" / "audit_integrity" / "models.py").read_text(
         encoding="utf-8"
     )
     assert "hmac_signature_present" in models_src
     assert "hmac_signature_preview" in models_src
-    # The orchestrator endpoint MUST go through to_safe_dict, not
-    # access the bare AuditIntegrityRecord.hmac_signature attribute.
+    # The orchestrator endpoint MUST go through to_safe_dict to build
+    # the response body.
     assert "record.to_safe_dict" in src
-    assert "record.hmac_signature" not in src
+    # The response must not assign the bare hmac_signature into the body.
+    assert 'body["hmac_signature"]' not in src
+    assert "'hmac_signature'" not in src

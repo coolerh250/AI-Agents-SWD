@@ -123,6 +123,7 @@ class _Fixture:
                                 "canonical_payload_hash": r["canonical_payload_hash"],
                                 "hmac_signature": r["hmac_signature"],
                                 "signature_status": r["signature_status"],
+                                "signing_key_id": r["signing_key_id"],
                                 "task_id": audit["task_id"],
                                 "agent": audit["agent"],
                                 "decision_type": audit["decision_type"],

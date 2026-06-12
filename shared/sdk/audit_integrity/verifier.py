@@ -1,17 +1,20 @@
 """Walk audit_logs + audit_integrity_records and verify the chain.
 
-Reads both tables, joins by ``audit_log_id``, walks them by ascending
-``sequence_number``, and for each row:
+Stage 39 adds:
 
-* re-builds the canonical payload from the audit_logs row,
-* re-computes ``canonical_payload_hash`` and ``row_hash``,
-* confirms the stored ``prev_hash`` matches the previous row's
-  ``row_hash``,
-* if a signature is present, re-verifies the HMAC with the configured
-  key (when configured).
+* per-row key lookup -- a row's signature is verified with the key
+  named by its ``signing_key_id``, not the currently-active key. This
+  is what makes HMAC key rotation safe.
+* verification modes -- ``permissive`` (default), ``strict``, and
+  ``chain_only``. ``strict`` fails the run when a signed row's key is
+  missing or unsigned-legacy rows appear; ``chain_only`` ignores
+  HMAC entirely.
+* keyring metadata in the verification run -- ``keyring_mode``,
+  ``active_key_id``, signed/unsigned/missing/failed counters, and the
+  effective verification mode.
 
-Stops at the first mismatch and returns a :class:`VerificationResult`
-with the failure coordinates. The verifier never auto-repairs.
+The verifier still never auto-repairs. Failure coordinates are
+captured on the result so an operator can locate the bad row.
 """
 
 from __future__ import annotations
@@ -25,18 +28,47 @@ import asyncpg
 
 from .canonical import build_canonical_payload
 from .hasher import compute_payload_hash, compute_row_hash
+from .keyring import KEYRING_MODE_NONE
 from .models import (
     CHAIN_VERSION,
+    SIGNATURE_STATUS_NOT_CONFIGURED,
     SIGNATURE_STATUS_SIGNED,
+    SIGNATURE_STATUS_UNSIGNED,
     VERIFICATION_STATUS_ERROR,
     VERIFICATION_STATUS_FAILED,
     VERIFICATION_STATUS_PARTIAL,
     VERIFICATION_STATUS_PASSED,
     AuditChainVerificationRun,
 )
-from .signer import AuditSigner
+from .signer import (
+    VERIFY_OUTCOME_KEY_MISSING,
+    VERIFY_OUTCOME_NO_KEYRING,
+    VERIFY_OUTCOME_SIGNATURE_FAILED,
+    AuditSigner,
+)
 
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
+
+VERIFY_MODE_PERMISSIVE = "permissive"
+VERIFY_MODE_STRICT = "strict"
+VERIFY_MODE_CHAIN_ONLY = "chain_only"
+
+_VALID_VERIFY_MODES = (
+    VERIFY_MODE_PERMISSIVE,
+    VERIFY_MODE_STRICT,
+    VERIFY_MODE_CHAIN_ONLY,
+)
+
+
+def resolve_verify_mode(requested: str | None) -> str:
+    """Map a caller-supplied mode (or env default) to a valid mode."""
+    candidate = (requested or "").strip().lower()
+    if candidate in _VALID_VERIFY_MODES:
+        return candidate
+    env_default = (os.environ.get("AUDIT_VERIFY_SIGNATURE_MODE", "") or "").strip().lower()
+    if env_default in _VALID_VERIFY_MODES:
+        return env_default
+    return VERIFY_MODE_PERMISSIVE
 
 
 @dataclass
@@ -60,6 +92,16 @@ class VerificationResult:
     started_at: datetime | None = None
     completed_at: datetime | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Stage 39 fields.
+    mode: str = VERIFY_MODE_PERMISSIVE
+    keyring_mode: str = KEYRING_MODE_NONE
+    active_signing_key_id: str | None = None
+    known_key_ids: list[str] = field(default_factory=list)
+    signed_records: int = 0
+    unsigned_records: int = 0
+    key_missing_records: int = 0
+    signature_failed_records: int = 0
+    warnings: list[str] = field(default_factory=list)
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -77,11 +119,18 @@ class VerificationResult:
             "integrity_records_count": self.integrity_records_count,
             "hmac_enabled": self.hmac_enabled,
             "signing_key_id": self.signing_key_id,
-            # expected/actual hashes intentionally excluded from the
-            # operator-facing dict by default; the caller can opt in.
             "started_at": self.started_at.isoformat() if self.started_at else None,
             "completed_at": (self.completed_at.isoformat() if self.completed_at else None),
             "metadata": self.metadata or {},
+            "mode": self.mode,
+            "keyring_mode": self.keyring_mode,
+            "active_signing_key_id": self.active_signing_key_id,
+            "known_key_ids": list(self.known_key_ids),
+            "signed_records": self.signed_records,
+            "unsigned_records": self.unsigned_records,
+            "key_missing_records": self.key_missing_records,
+            "signature_failed_records": self.signature_failed_records,
+            "warnings": list(self.warnings),
         }
 
 
@@ -93,18 +142,25 @@ class AuditChainVerifier:
         dsn: str | None = None,
         *,
         signer: AuditSigner | None = None,
+        mode: str | None = None,
     ) -> None:
         self.dsn = dsn or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
         self._signer = signer or AuditSigner()
+        self._mode = resolve_verify_mode(mode)
 
     @property
     def signer(self) -> AuditSigner:
         return self._signer
 
+    @property
+    def mode(self) -> str:
+        return self._mode
+
     async def _connect(self) -> asyncpg.Connection:
         return await asyncpg.connect(dsn=self.dsn, timeout=5)
 
     async def verify_chain(self, chain_version: int = CHAIN_VERSION) -> VerificationResult:
+        keyring = self._signer.keyring
         started = datetime.now(timezone.utc)
         result = VerificationResult(
             status=VERIFICATION_STATUS_PASSED,
@@ -115,6 +171,10 @@ class AuditChainVerifier:
             hmac_enabled=self._signer.configured,
             signing_key_id=self._signer.key_id,
             started_at=started,
+            mode=self._mode,
+            keyring_mode=keyring.mode,
+            active_signing_key_id=keyring.active_key_id,
+            known_key_ids=keyring.known_key_ids,
         )
 
         conn = await self._connect()
@@ -129,7 +189,7 @@ class AuditChainVerifier:
             rows = await conn.fetch(
                 "SELECT r.sequence_number, r.audit_log_id, r.prev_hash, "
                 "r.row_hash, r.canonical_payload_hash, r.hmac_signature, "
-                "r.signature_status, "
+                "r.signature_status, r.signing_key_id, "
                 "al.task_id, al.agent, al.decision_type, al.summary, "
                 "al.result, al.artifact_refs, al.created_at "
                 "FROM audit_integrity_records r "
@@ -213,19 +273,75 @@ class AuditChainVerifier:
                 result.actual_hash = row["prev_hash"] or ""
                 break
 
-            if (
-                row["signature_status"] == SIGNATURE_STATUS_SIGNED
-                and self._signer.configured
-                and not self._signer.verify(row["row_hash"], row["hmac_signature"])
-            ):
-                result.status = VERIFICATION_STATUS_FAILED
-                result.failed_records += 1
-                result.first_failure_sequence = seq
-                result.first_failure_audit_log_id = audit_log_id
-                result.failure_reason = "hmac_signature_invalid"
-                # Do not surface signature bytes themselves.
-                result.expected_hash = None
-                result.actual_hash = None
+            # Per-row signature verification (Stage 39 -- keyring aware).
+            sig_status = row["signature_status"]
+            row_failed = False
+            if self._mode == VERIFY_MODE_CHAIN_ONLY:
+                pass  # ignore HMAC entirely
+            elif sig_status == SIGNATURE_STATUS_SIGNED:
+                ok, outcome = self._signer.verify_with(
+                    row_hash=row["row_hash"],
+                    signature=row["hmac_signature"],
+                    signing_key_id=row["signing_key_id"],
+                )
+                if ok:
+                    result.signed_records += 1
+                else:
+                    if outcome == VERIFY_OUTCOME_KEY_MISSING:
+                        result.key_missing_records += 1
+                        if self._mode == VERIFY_MODE_STRICT:
+                            result.status = VERIFICATION_STATUS_FAILED
+                            result.failed_records += 1
+                            result.first_failure_sequence = seq
+                            result.first_failure_audit_log_id = audit_log_id
+                            result.failure_reason = "hmac_signing_key_missing"
+                            result.expected_hash = None
+                            result.actual_hash = None
+                            row_failed = True
+                        else:
+                            result.warnings.append(
+                                f"seq={seq} signing_key_id "
+                                f"'{row['signing_key_id']}' missing from keyring"
+                            )
+                    elif outcome == VERIFY_OUTCOME_NO_KEYRING:
+                        # signed row but no keyring is loaded
+                        result.key_missing_records += 1
+                        if self._mode == VERIFY_MODE_STRICT:
+                            result.status = VERIFICATION_STATUS_FAILED
+                            result.failed_records += 1
+                            result.first_failure_sequence = seq
+                            result.first_failure_audit_log_id = audit_log_id
+                            result.failure_reason = "hmac_keyring_not_configured"
+                            row_failed = True
+                        else:
+                            result.warnings.append(
+                                f"seq={seq} signed row found but no HMAC " f"keyring is configured"
+                            )
+                    elif outcome == VERIFY_OUTCOME_SIGNATURE_FAILED:
+                        result.signature_failed_records += 1
+                        result.status = VERIFICATION_STATUS_FAILED
+                        result.failed_records += 1
+                        result.first_failure_sequence = seq
+                        result.first_failure_audit_log_id = audit_log_id
+                        result.failure_reason = "hmac_signature_invalid"
+                        result.expected_hash = None
+                        result.actual_hash = None
+                        row_failed = True
+            elif sig_status == SIGNATURE_STATUS_NOT_CONFIGURED:
+                result.unsigned_records += 1
+                if self._mode == VERIFY_MODE_STRICT and not _allow_unsigned_legacy():
+                    result.status = VERIFICATION_STATUS_FAILED
+                    result.failed_records += 1
+                    result.first_failure_sequence = seq
+                    result.first_failure_audit_log_id = audit_log_id
+                    result.failure_reason = "unsigned_row_under_strict_mode"
+                    row_failed = True
+            elif sig_status == SIGNATURE_STATUS_UNSIGNED:
+                result.unsigned_records += 1
+            else:
+                result.warnings.append(f"seq={seq} unknown signature_status={sig_status!r}")
+
+            if row_failed:
                 break
 
             result.verified_records += 1
@@ -237,6 +353,18 @@ class AuditChainVerifier:
             result.status = VERIFICATION_STATUS_PARTIAL
             result.failure_reason = (
                 f"{result.missing_integrity_records} audit_logs row(s) " "lack an integrity record"
+            )
+
+        # Permissive mode: a row marked key_missing keeps the run PASS
+        # but is downgraded to partial when nothing else has gone wrong.
+        if (
+            result.status == VERIFICATION_STATUS_PASSED
+            and result.key_missing_records > 0
+            and self._mode == VERIFY_MODE_PERMISSIVE
+        ):
+            result.status = VERIFICATION_STATUS_PARTIAL
+            result.failure_reason = (
+                f"{result.key_missing_records} signed row(s) lack a known signing key"
             )
 
         result.completed_at = datetime.now(timezone.utc)
@@ -251,6 +379,13 @@ class AuditChainVerifier:
             "integrity_records_count": result.integrity_records_count,
             "hmac_enabled": result.hmac_enabled,
             "signing_key_id": result.signing_key_id,
+            "verification_mode": result.mode,
+            "keyring_mode": result.keyring_mode,
+            "active_signing_key_id": result.active_signing_key_id,
+            "signed_records": result.signed_records,
+            "unsigned_records": result.unsigned_records,
+            "key_missing_records": result.key_missing_records,
+            "signature_failed_records": result.signature_failed_records,
         }
         return AuditChainVerificationRun(
             verification_id="",  # filled by INSERT default
@@ -268,8 +403,21 @@ class AuditChainVerifier:
         )
 
 
+def _allow_unsigned_legacy() -> bool:
+    """Strict mode escape hatch for pre-existing unsigned rows."""
+    return (os.environ.get("AUDIT_VERIFY_ALLOW_UNSIGNED_LEGACY", "") or "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+
+
 __all__ = [
     "AuditChainVerifier",
     "VerificationResult",
     "VERIFICATION_STATUS_ERROR",
+    "VERIFY_MODE_PERMISSIVE",
+    "VERIFY_MODE_STRICT",
+    "VERIFY_MODE_CHAIN_ONLY",
+    "resolve_verify_mode",
 ]

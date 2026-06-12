@@ -5,13 +5,23 @@ import asyncpg
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from shared.sdk.audit_integrity import (
+    AuditSigner,
+    SIGNATURE_STATUS_NOT_CONFIGURED,
+    create_integrity_record_in_txn,
+)
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
-from shared.sdk.observability.metrics import install_metrics_endpoint
+from shared.sdk.observability.metrics import (
+    AUDIT_DIRECT_POST_INTEGRITY_CREATED_TOTAL,
+    AUDIT_DIRECT_POST_INTEGRITY_FAILURES_TOTAL,
+    install_metrics_endpoint,
+)
 from shared.sdk.observability.tracing import (
     instrument_asyncpg,
     instrument_fastapi,
     instrument_redis,
     setup_tracing,
+    start_span,
 )
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "postgresql://postgres@localhost:5432/aiagents")
@@ -23,6 +33,12 @@ instrument_redis()
 app = FastAPI(title="audit-service")
 instrument_fastapi(app, "audit-service")
 install_metrics_endpoint(app)
+
+# A module-level signer is fine -- the signer holds only the keyring
+# snapshot built at process start. Key rotation is operational (restart
+# the service after rotating the keyring env). We never expose the
+# signer or its keyring through the API.
+_SIGNER = AuditSigner()
 
 
 class AuditEventIn(BaseModel):
@@ -81,27 +97,110 @@ def health() -> dict:
     return {"service": "audit-service", "status": "ok"}
 
 
+@app.get("/audit/keyring/status")
+def keyring_status() -> dict:
+    """Operational read-only view of which keyring the service loaded.
+
+    Never returns key bytes. Used by smokes and operators to confirm
+    that the running service sees the keyring they expect.
+    """
+    snapshot = _SIGNER.keyring.snapshot().to_safe_dict()
+    return {
+        "service": "audit-service",
+        **snapshot,
+        "direct_post_integrity_enabled": True,
+    }
+
+
 @app.post("/audit/events")
 async def create_event(payload: AuditEventIn) -> dict:
+    """Insert an audit_logs row AND its integrity record atomically.
+
+    Stage 39: direct POST and the stream/worker path now share the
+    same integrity writer. On any integrity-write failure the whole
+    transaction is rolled back -- the caller must retry. We never
+    return 200 with a missing integrity record.
+    """
     conn = await _db_conn()
+    integrity_status_label = "unknown"
     try:
-        row = await conn.fetchrow(
-            "INSERT INTO audit_logs "
-            "(task_id, agent, decision_type, summary, result, artifact_refs) "
-            "VALUES ($1, $2, $3, $4, $5, $6::jsonb) "
-            f"RETURNING {_RETURNING}",
-            payload.task_id,
-            payload.agent,
-            payload.decision_type,
-            payload.summary,
-            payload.result,
-            json.dumps(payload.artifact_refs),
-        )
+        async with conn.transaction():
+            with start_span(
+                "audit_integrity.direct_post_create",
+                **{
+                    "service.name": "audit-service",
+                    "agent": "audit-service",
+                },
+            ):
+                row = await conn.fetchrow(
+                    "INSERT INTO audit_logs "
+                    "(task_id, agent, decision_type, summary, result, artifact_refs) "
+                    "VALUES ($1, $2, $3, $4, $5, $6::jsonb) "
+                    f"RETURNING {_RETURNING}",
+                    payload.task_id,
+                    payload.agent,
+                    payload.decision_type,
+                    payload.summary,
+                    payload.result,
+                    json.dumps(payload.artifact_refs),
+                )
+                result = _row_to_audit(row)
+                try:
+                    integrity = await create_integrity_record_in_txn(
+                        conn,
+                        audit_log_row={
+                            "audit_log_id": result["audit_id"],
+                            "task_id": result["task_id"],
+                            "agent": result["agent"],
+                            "decision_type": result["decision_type"],
+                            "summary": result["summary"],
+                            "result": result["result"],
+                            "artifact_refs": result["artifact_refs"],
+                            "created_at": row["created_at"],
+                        },
+                        signer=_SIGNER,
+                    )
+                except Exception as exc:
+                    AUDIT_DIRECT_POST_INTEGRITY_FAILURES_TOTAL.labels(
+                        reason=exc.__class__.__name__
+                    ).inc()
+                    # Transaction rolls back on the raise -- audit_logs row
+                    # is NOT persisted, so no orphan ever lands.
+                    raise HTTPException(
+                        status_code=503,
+                        detail=(
+                            "audit integrity write failed; transaction "
+                            f"rolled back: {exc.__class__.__name__}"
+                        ),
+                    ) from exc
+                if integrity is None:
+                    # An earlier write created this row's integrity. Treat
+                    # as success for idempotent re-tries.
+                    integrity_status_label = "idempotent_replay"
+                else:
+                    integrity_status_label = (
+                        "signing_key_not_configured"
+                        if integrity.signature_status == SIGNATURE_STATUS_NOT_CONFIGURED
+                        else integrity.signature_status
+                    )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        AUDIT_DIRECT_POST_INTEGRITY_FAILURES_TOTAL.labels(reason=exc.__class__.__name__).inc()
+        raise HTTPException(
+            status_code=503,
+            detail=f"audit write failed: {exc.__class__.__name__}",
+        ) from exc
     finally:
         await conn.close()
-    result = _row_to_audit(row)
+
+    AUDIT_DIRECT_POST_INTEGRITY_CREATED_TOTAL.labels(status=integrity_status_label).inc()
     await _publish(AUDIT_STREAM, {"event": "audit.recorded", **result})
-    return result
+    return {
+        **result,
+        "audit_integrity_status": integrity_status_label,
+        "audit_integrity_created": integrity_status_label != "idempotent_replay",
+    }
 
 
 @app.get("/audit/events/{task_id}")
@@ -128,11 +227,7 @@ async def list_events(
     decision_type: str | None = None,
     limit: int = 100,
 ) -> dict:
-    """Query audit_logs by any combination of filters.
-
-    Used by operators and ``verify_unified_audit.sh`` to confirm that
-    stream-based audit events landed in Postgres. Newest first.
-    """
+    """Query audit_logs by any combination of filters."""
     clauses: list[str] = []
     params: list = []
     if task_id:

@@ -1477,3 +1477,92 @@ model (or block). The router enforces hard rails:
 If every box is ticked, the platform's LLM call path is centralised
 behind the Model Router. **Nothing on this checklist authorizes a
 production deploy.**
+
+## 17s. Audit Integrity Remediation -- HMAC keyring + direct POST closure (Stage 39)
+
+Stage 39 closes the two audit-integrity carry-forward gaps from
+Stages 34-36:
+
+* HMAC key rotation / key map loader (was: single-key only).
+* audit-service `POST /audit/events` direct-write integrity gap
+  (was: backfill needed).
+
+Operator checklist (run on `10.0.1.31` only):
+
+* [ ] `pytest -q tests/test_audit_keyring_loader.py
+        tests/test_audit_hmac_key_rotation.py
+        tests/test_audit_signature_verification_modes.py
+        tests/test_audit_direct_post_integrity.py
+        tests/test_audit_integrity_concurrency.py
+        tests/test_audit_backfill_recovery_only.py
+        tests/test_operations_audit_keyring.py
+        tests/test_audit_keyring_metrics.py
+        tests/test_audit_keyring_no_secret_leak.py
+        tests/test_audit_direct_post_no_gap.py` -- all PASS, no
+      AUDIT_HMAC_KEY value printed.
+* [ ] `./scripts/verify_audit_hmac_key_rotation.sh` ends with
+      `AUDIT_HMAC_KEY_ROTATION_VERIFY: PASS`. The three sub-markers
+      (`A: AUDIT_HMAC_NO_KEY`, `B: AUDIT_HMAC_LEGACY_SINGLE_KEY`,
+      `C: AUDIT_HMAC_MULTI_KEY_ROTATION`) all PASS.
+* [ ] `./scripts/verify_audit_direct_post_integrity.sh` ends with
+      `AUDIT_DIRECT_POST_INTEGRITY_VERIFY: PASS`. The receipt for
+      the synthetic POST includes a row_hash and
+      `signature_verification_status`.
+* [ ] `./scripts/verify_audit_integrity_remediation.sh` ends with
+      `AUDIT_INTEGRITY_REMEDIATION_VERIFY: PASS`.
+* [ ] `./scripts/verify_tamper_evident_audit.sh` still ends with
+      `TAMPER_EVIDENT_AUDIT_VERIFY: PASS` (Stage 34 regression).
+* [ ] `GET /operations/audit/integrity` includes
+      `hmac_keyring_mode`, `hmac_keyring_valid`,
+      `active_signing_key_id`, `signed_records`,
+      `key_missing_records`, `direct_post_integrity_enabled`,
+      `direct_post_missing_integrity_records`, and
+      `audit_integrity_writer_locking_enabled`.
+      `missing_integrity_records == 0`.
+* [ ] `GET /operations/audit/keyring` returns `mode` +
+      `known_key_ids` + `metadata_rows`. **No `key_value` /
+      `key_bytes` field anywhere.**
+* [ ] `POST /operations/audit/verify-chain?mode=permissive` echoes
+      back `"mode": "permissive"` and `status` in
+      (`passed`, `partial`).
+* [ ] `POST /audit/events` on the audit-service returns
+      `audit_integrity_created=true` and an integrity row for that
+      `audit_id` is fetchable via
+      `GET /operations/audit/receipt/{audit_id}`.
+* [ ] `GET /operations/safety` includes Stage 39 fields:
+      `audit_hmac_keyring_configured`, `audit_hmac_keyring_valid`,
+      `audit_hmac_keyring_mode`,
+      `audit_hmac_active_signing_key_id`,
+      `audit_hmac_rotation_supported=true`,
+      `audit_direct_post_integrity_enabled=true`,
+      `audit_direct_post_integrity_gap_closed=true`,
+      `audit_integrity_concurrency_lock_enabled=true`,
+      `audit_integrity_strict_verify_ready` (boolean),
+      `audit_signature_key_missing_count`.
+* [ ] `GET /operations/safety` still pins
+      `agent_direct_model_selection_allowed=false`,
+      `llm_patch_generation_enabled=false`,
+      `llm_workspace_write_enabled=false`,
+      `production_deploy_enabled=false`. Stage 39 does not flip any
+      of these.
+* [ ] `./scripts/check_runtime_state.sh | grep -E
+        'AUDIT_KEYRING|AUDIT_DIRECT_POST|AUDIT_HMAC_ROTATION|AUDIT_SIGNATURE_VERIFY|AUDIT_INTEGRITY_CONCURRENCY'`
+      -- every line ends with `: PASS`.
+* [ ] `audit.keyring_*`, `audit.direct_post_integrity_*`, and
+      `audit.signature_key_missing` notification events remain
+      blocked by the Stage 32 default real-delivery denylist
+      (covered by `audit.*`). Real Discord delivery filter PASS.
+* [ ] No `AUDIT_HMAC_KEY` value appears in the audit-service log
+      stream, the operations responses, the audit rows, the
+      notification deliveries, or any Stage 39 script output.
+* [ ] Production safety counters
+      `deployment_records.production_executed_true=0` and
+      `workflow_states.production_executed_true=0` (unchanged).
+
+If every box is ticked, the audit integrity remediation is in
+place. Stages 33-36 carry-forward items 1 and 2 are closed; the
+remaining carry-forward items (backup readiness gaps, Kubernetes /
+Helm / Argo runtime baseline, incident response runbook, external
+alert receiver, real production secret store, real off-host backup
+target) are unchanged. **Nothing on this checklist authorizes a
+production deploy.**

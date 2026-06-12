@@ -51,5 +51,9 @@ def test_signer_repr_does_not_leak_key():
 
 
 def test_signer_default_key_id_when_key_present_no_explicit_id():
+    # Stage 39: legacy single-key fallback now names the key
+    # ``legacy-single-key`` (the keyring-aware default). The old
+    # ``default-test-key-id`` placeholder is still exposed by the
+    # constants module for explicit-key callers.
     signer = AuditSigner(env={"AUDIT_HMAC_KEY": "k"})
-    assert signer.key_id == "default-test-key-id"
+    assert signer.key_id == "legacy-single-key"

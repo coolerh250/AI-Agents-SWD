@@ -146,6 +146,11 @@ class _Fixture:
                     return out
                 return []
 
+            async def execute(self_inner, sql: str, *params):
+                # Accept the Stage 39 advisory lock SELECT + any other
+                # execute() calls (e.g. keyring metadata UPSERT).
+                return None
+
             async def close(self_inner):
                 return None
 

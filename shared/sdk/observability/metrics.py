@@ -281,6 +281,53 @@ AUDIT_TAMPER_DETECTED_TOTAL = Counter(
     ["reason"],
 )
 
+# Stage 39 -- audit integrity HMAC keyring + direct POST integrity closure.
+AUDIT_HMAC_KEYRING_LOAD_TOTAL = Counter(
+    "audit_hmac_keyring_load_total",
+    "Keyring load attempts (per mode + source)",
+    ["mode", "source"],
+)
+AUDIT_HMAC_KEYRING_INVALID_TOTAL = Counter(
+    "audit_hmac_keyring_invalid_total",
+    "Keyring loads that ended in mode=invalid (per reason)",
+    ["reason"],
+)
+AUDIT_SIGNATURE_VERIFIED_TOTAL = Counter(
+    "audit_signature_verified_total",
+    "HMAC signature verifications that succeeded (per signing_key_id + mode)",
+    ["mode", "signing_key_id"],
+)
+AUDIT_SIGNATURE_FAILED_TOTAL = Counter(
+    "audit_signature_failed_total",
+    "HMAC signature verifications that failed (per reason + mode)",
+    ["mode", "reason"],
+)
+AUDIT_SIGNATURE_KEY_MISSING_TOTAL = Counter(
+    "audit_signature_key_missing_total",
+    "Signed rows whose signing_key_id is no longer in the keyring (per mode)",
+    ["mode"],
+)
+AUDIT_DIRECT_POST_INTEGRITY_CREATED_TOTAL = Counter(
+    "audit_direct_post_integrity_created_total",
+    "Integrity records created via the audit-service direct POST path",
+    ["status"],
+)
+AUDIT_DIRECT_POST_INTEGRITY_FAILURES_TOTAL = Counter(
+    "audit_direct_post_integrity_failures_total",
+    "Direct POST integrity writes that failed and forced a transaction rollback",
+    ["reason"],
+)
+AUDIT_INTEGRITY_SEQUENCE_LOCK_WAIT_SECONDS = Histogram(
+    "audit_integrity_sequence_lock_wait_seconds",
+    "Seconds spent waiting for the audit_integrity advisory lock",
+    buckets=(0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5),
+)
+AUDIT_INTEGRITY_CONCURRENCY_RETRIES_TOTAL = Counter(
+    "audit_integrity_concurrency_retries_total",
+    "Sequence-conflict retries triggered while inserting an integrity record",
+    ["reason"],
+)
+
 # Stage 35 -- LLM cost governance + real-LLM plan-only pilot.
 LLM_BUDGET_PREFLIGHT_TOTAL = Counter(
     "llm_budget_preflight_total",

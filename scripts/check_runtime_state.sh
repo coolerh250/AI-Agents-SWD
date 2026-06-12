@@ -2841,5 +2841,113 @@ else
   echo "LLM_ROUTING_METRICS_SMOKE: CHECK"
 fi
 
+# -----------------------------------------------------------------------------
+# Stage 39 -- Audit Integrity Remediation (HMAC keyring + direct POST closure).
+# -----------------------------------------------------------------------------
+
+# 89. /operations/audit/integrity reports Stage 39 keyring fields.
+au_integ=$(curl -sS -m 5 "http://localhost:8000/operations/audit/integrity" || echo '{}')
+if echo "$au_integ" | grep -q '"hmac_keyring_mode"' && echo "$au_integ" | grep -q '"hmac_keyring_valid"'; then
+  echo "AUDIT_KEYRING_OPERATIONS_SMOKE: PASS"
+else
+  echo "AUDIT_KEYRING_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 90. /operations/audit/keyring returns mode + known_key_ids and never a key value.
+au_keyring=$(curl -sS -m 5 "http://localhost:8000/operations/audit/keyring" || echo '{}')
+if echo "$au_keyring" | grep -q '"mode"' && echo "$au_keyring" | grep -q '"known_key_ids"'; then
+  echo "AUDIT_KEYRING_NONE_SMOKE: PASS"
+else
+  echo "AUDIT_KEYRING_NONE_SMOKE: CHECK"
+fi
+
+# 91. Keyring mode value falls inside the documented vocabulary.
+au_keyring_mode=$(echo "$au_keyring" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("mode",""))' 2>/dev/null || echo '')
+case "$au_keyring_mode" in
+  none|legacy_single_key|multi_keyring|invalid)
+    echo "AUDIT_KEYRING_LEGACY_SMOKE: PASS (mode=$au_keyring_mode)"
+    ;;
+  *)
+    echo "AUDIT_KEYRING_LEGACY_SMOKE: CHECK (mode=$au_keyring_mode)"
+    ;;
+esac
+
+# 92. Multi-keyring view tolerant (mode reported even when none configured).
+if [ -n "$au_keyring_mode" ]; then
+  echo "AUDIT_KEYRING_MULTIKEY_SMOKE: PASS (mode=$au_keyring_mode)"
+else
+  echo "AUDIT_KEYRING_MULTIKEY_SMOKE: CHECK"
+fi
+
+# 93. Safety surface advertises HMAC rotation support.
+safety_body=$(curl -sS -m 5 "http://localhost:8000/operations/safety" || echo '{}')
+if grep -q '"audit_hmac_rotation_supported": *true' <<< "$safety_body"; then
+  echo "AUDIT_HMAC_ROTATION_SMOKE: PASS"
+else
+  echo "AUDIT_HMAC_ROTATION_SMOKE: CHECK"
+fi
+
+# 94. verify-chain accepts a verification mode and echoes it back.
+vc_perm=$(curl -sS -m 15 -X POST "http://localhost:8000/operations/audit/verify-chain?mode=permissive" || echo '{}')
+if grep -q '"mode": *"permissive"' <<< "$vc_perm"; then
+  echo "AUDIT_SIGNATURE_VERIFY_MODE_SMOKE: PASS"
+else
+  echo "AUDIT_SIGNATURE_VERIFY_MODE_SMOKE: CHECK"
+fi
+
+# 95. Direct POST to audit-service writes an integrity record in the same txn.
+dp_id=$(curl -sS -m 5 -X POST "http://localhost:8003/audit/events" \
+  -H 'Content-Type: application/json' \
+  -d '{"task_id":"runtime-smoke-stage39","agent":"smoke","decision_type":"smoke_direct_post","summary":"stage39 smoke","result":"ok","artifact_refs":{}}' \
+  2>/dev/null | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("audit_id",""))' 2>/dev/null || echo '')
+if [ -n "$dp_id" ]; then
+  rec=$(curl -sS -m 5 "http://localhost:8000/operations/audit/receipt/$dp_id" || echo '{}')
+  if echo "$rec" | grep -q '"row_hash"'; then
+    echo "AUDIT_DIRECT_POST_INTEGRITY_SMOKE: PASS"
+  else
+    echo "AUDIT_DIRECT_POST_INTEGRITY_SMOKE: CHECK"
+  fi
+else
+  echo "AUDIT_DIRECT_POST_INTEGRITY_SMOKE: CHECK"
+fi
+
+# 96. Missing integrity rows must remain 0 (direct POST gap closed).
+mi=$(echo "$au_integ" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("missing_integrity_records","x"))' 2>/dev/null || echo 'x')
+if [ "$mi" = "0" ]; then
+  echo "AUDIT_DIRECT_POST_NO_GAP_SMOKE: PASS"
+else
+  echo "AUDIT_DIRECT_POST_NO_GAP_SMOKE: CHECK (missing_integrity_records=$mi)"
+fi
+
+# 97. Concurrency lock flag visible in /operations/safety.
+if grep -q '"audit_integrity_concurrency_lock_enabled": *true' <<< "$safety_body"; then
+  echo "AUDIT_INTEGRITY_CONCURRENCY_SMOKE: PASS"
+else
+  echo "AUDIT_INTEGRITY_CONCURRENCY_SMOKE: CHECK"
+fi
+
+# 98. Stage 39 keyring fields land in the safety surface.
+if grep -q '"audit_hmac_keyring_configured"' <<< "$safety_body" \
+    && grep -q '"audit_direct_post_integrity_gap_closed"' <<< "$safety_body"; then
+  echo "AUDIT_KEYRING_SAFETY_SMOKE: PASS"
+else
+  echo "AUDIT_KEYRING_SAFETY_SMOKE: CHECK"
+fi
+
+# 99. /metrics carries Stage 39 audit-integrity counters.
+om_metrics_39=$(curl -sS -m 5 "http://localhost:8000/metrics" || echo '')
+if grep -qE 'audit_hmac_keyring_load_total|audit_direct_post_integrity_created_total|audit_integrity_sequence_lock_wait_seconds' <<< "$om_metrics_39"; then
+  echo "AUDIT_KEYRING_METRICS_SMOKE: PASS"
+else
+  echo "AUDIT_KEYRING_METRICS_SMOKE: CHECK"
+fi
+
+# 100. Keyring view never carries a key value (defensive grep).
+if grep -qiE '"(key_value|key_bytes|secret_value)"' <<< "$au_keyring"; then
+  echo "AUDIT_KEYRING_NO_SECRET_LEAK_SMOKE: CHECK"
+else
+  echo "AUDIT_KEYRING_NO_SECRET_LEAK_SMOKE: PASS"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"
