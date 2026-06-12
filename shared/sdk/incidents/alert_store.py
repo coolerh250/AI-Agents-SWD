@@ -88,6 +88,8 @@ class AlertStore:
         )
         raw_hash = payload_hash(raw_payload) if raw_payload is not None else None
         redacted = redact_payload(raw_payload) if raw_payload is not None else {}
+        safe_labels = redact_payload(dict(alert.labels))
+        safe_annotations = redact_payload(dict(alert.annotations))
         conn = await self._connect()
         try:
             row = await conn.fetchrow(
@@ -109,8 +111,8 @@ class AlertStore:
                 alert.severity,
                 alert.normalized_severity,
                 status,
-                json.dumps(alert.labels),
-                json.dumps(alert.annotations),
+                json.dumps(safe_labels),
+                json.dumps(safe_annotations),
                 raw_hash,
                 json.dumps(redacted),
                 alert.starts_at,
