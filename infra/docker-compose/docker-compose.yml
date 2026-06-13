@@ -230,6 +230,11 @@ services:
       - policy-engine
       - approval-engine
       - audit-service
+    volumes:
+      # Stage 41 -- mount host report dirs so the orchestrator can read
+      # regression summaries and DR drill reports written by verify scripts.
+      - ../../source/regression-reports:/app/source/regression-reports
+      - ../../source/dr-reports:/app/source/dr-reports
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s
