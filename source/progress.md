@@ -6,6 +6,172 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 40 — Incident Response Runbook & External Alert Receiver
+
+- **Execution time:** 2026-06-12 / 2026-06-13 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; primary commit `5cef61c`; 3 post-deploy
+  hotfixes on `e5a5fef`, `05f9b0b`, `a2d601c`, `0a47a03`.
+- **Modified / created files:**
+  - **New — migration:** `migrations/016_incident_response_alert_receiver.sql`
+    (4 tables: incident_alerts, incident_lifecycle_events,
+    incident_escalation_policies, incident_postmortems; extends
+    incident_records with 3 columns; seeds 5 dry-run escalation policies).
+  - **New — SDK modules (8):**
+    `shared/sdk/incidents/severity.py`,
+    `shared/sdk/incidents/normalizer.py`,
+    `shared/sdk/incidents/redaction.py`,
+    `shared/sdk/incidents/dedupe.py`,
+    `shared/sdk/incidents/alert_store.py`,
+    `shared/sdk/incidents/lifecycle.py`,
+    `shared/sdk/incidents/escalation.py`,
+    `shared/sdk/incidents/postmortem.py`,
+    `shared/sdk/incidents/audit_events.py`.
+  - **Updated — SDK:** `shared/sdk/incidents/__init__.py`,
+    `shared/sdk/incidents/models.py` (extended INCIDENT_STATUSES to 8),
+    `shared/sdk/incidents/store.py`
+    (create/close/reopen; normalized_severity / postmortem_required columns),
+    `shared/sdk/observability/metrics.py` (9 new Counters).
+  - **New — orchestrator:** `apps/orchestrator/src/alert_receiver.py`
+    (FastAPI router `/alerts/*`).
+  - **Updated — orchestrator:** `apps/orchestrator/src/main.py` (mount router),
+    `apps/orchestrator/src/operations.py` (incident operations API +
+    11 new safety fields).
+  - **New — docs (4):**
+    `docs/operations/incident-response-runbook.md`,
+    `docs/operations/incident-severity-policy.md`,
+    `docs/operations/alert-receiver.md`,
+    `docs/operations/postmortem-template.md`.
+  - **New — verify scripts (2):**
+    `scripts/verify_external_alert_receiver.sh`,
+    `scripts/verify_incident_response.sh`.
+  - **Updated — scripts:** `scripts/check_runtime_state.sh`
+    (+14 Stage 40 smokes, 101–114).
+  - **New — tests (16):**
+    test_incident_severity, test_alert_normalizer, test_alert_redaction,
+    test_incident_dedupe, test_incident_lifecycle,
+    test_incident_escalation_dry_run, test_alert_receiver_alertmanager,
+    test_alert_receiver_generic, test_alert_receiver_auth,
+    test_incident_operations, test_incident_postmortem,
+    test_incident_audit_notification, test_incident_metrics,
+    test_incident_safety, test_alert_receiver_alertmanager_integration,
+    test_incident_store_transitions.
+  - **Updated — tests:** `tests/test_incident_store.py`
+    (updated for extended INCIDENT_STATUSES).
+
+- **Deployment target:** `10.0.1.31` — non-production test server.
+  Docker Compose stack; orchestrator rebuilt and restarted.
+  Migration 016 applied to `aiagents` database (PostgreSQL 16.14).
+
+- **Test results:**
+
+  **Local (Windows dev machine)**
+  - `python -m pytest` → **1,369 passed, 115 skipped** (all Stage 40 tests pass).
+    Previously-failing `test_incident_store` tests updated for expanded
+    INCIDENT_STATUSES tuple.
+  - `ruff check` → 0 errors (6 unused-import fixes auto-applied).
+  - `black --check` → 0 reformatted.
+  - **Hotfixes found during deploy:**
+    1. `ALTER TABLE ADD CONSTRAINT IF NOT EXISTS` is not valid PostgreSQL syntax;
+       migration rewritten to use inline CONSTRAINT in CREATE TABLE.
+    2. asyncpg 0.31.0 returns JSONB columns as Python strings, not dicts;
+       all `_row_to_dict` helpers updated with `_parse_jsonb()`.
+    3. `alert.labels` / `alert.annotations` columns were stored unredacted;
+       `alert_store.create_alert` now calls `redact_payload()` on both.
+    4. Verify scenario E was deduplicating to a pre-fix run's incident;
+       script now uses `VerifyRedaction_$(date +%s)` to ensure unique alert.
+
+  **Remote (10.0.1.31)**
+  - `./scripts/verify_external_alert_receiver.sh` →
+    `EXTERNAL_ALERT_RECEIVER_VERIFY: PASS`.
+    Scenarios A–F all PASS (F: SKIP — local_test_unsigned mode, no auth).
+  - `./scripts/verify_incident_response.sh` →
+    `INCIDENT_RESPONSE_VERIFY: PASS`. Steps 1–10 all PASS.
+  - Stage 40 runtime smokes (101–114, run separately due to
+    Stage 30 LLM section hang):
+    `INCIDENT_ALERTMANAGER_RECEIVER_SMOKE: PASS`,
+    `INCIDENT_GENERIC_RECEIVER_SMOKE: PASS`,
+    `INCIDENT_ALERT_REDACTION_SMOKE: PASS`,
+    `INCIDENT_DEDUPE_SMOKE: PASS`,
+    `INCIDENT_CREATE_SMOKE: PASS`,
+    `INCIDENT_ACK_SMOKE: PASS`,
+    `INCIDENT_RESOLVE_SMOKE: PASS`,
+    `INCIDENT_CLOSE_SMOKE: PASS`,
+    `INCIDENT_POSTMORTEM_SMOKE: PASS`,
+    `INCIDENT_ESCALATION_DRY_RUN_SMOKE: PASS`,
+    `INCIDENT_OPERATIONS_SMOKE: PASS`,
+    `INCIDENT_SAFETY_SMOKE: PASS`,
+    `INCIDENT_METRICS_SMOKE: PASS`,
+    `INCIDENT_NO_REAL_ESCALATION_SMOKE: PASS`.
+  - Regression verify summary (19 scripts from prior stages):
+    - `VERIFY_NOTIFICATION_DELIVERY_DONE` (PASS).
+    - `VERIFY_UNIFIED_AUDIT_DONE` (PASS).
+    - `VERIFY_PLATFORM_OBSERVABILITY_DONE` (PASS).
+    - `VERIFY_REAL_DISCORD_DELIVERY_FILTER_DONE` (PASS).
+    - `CONTROLLED_CODE_GENERATION_VERIFY: PASS`.
+    - `LLM_MODEL_ROUTING_VERIFY: PASS`.
+    - `LLM_PROPOSAL_PROMOTION_VERIFY: PASS`.
+    - `QA_AUTO_FIX_LOOP_VERIFY: PASS`.
+    - `REAL_INTEGRATION_PILOT_VERIFY: PASS`.
+    - `REAL_LLM_PLAN_ONLY_PILOT_VERIFY: PASS`.
+    - `BACKUP_DRILL_VERIFY: PASS`.
+    - `BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS` (same 4 carry-forward:
+      `encryption_no_key`, `storage_not_off_host`, `schedule_dry_run_only`,
+      `migration_down_gaps`).
+    - `AUDIT_DIRECT_POST_INTEGRITY_VERIFY: PASS`.
+    - **Pre-existing failures (asyncpg not installed on host):**
+      `AUDIT_INTEGRITY_REMEDIATION_VERIFY: FAIL (key_rotation)`,
+      `TAMPER_EVIDENT_AUDIT_VERIFY: FAIL (backfill)`,
+      `FLEXIBLE_HUMAN_APPROVAL_POLICY_VERIFY: FAIL` (12/14),
+      `LLM_BUDGET_PREFLIGHT_ALLOW: FAIL`.
+      All 4 fail with `ModuleNotFoundError: No module named 'asyncpg'`
+      on the host; unchanged since Stage 39.
+
+- **Production-safety counters (remote):**
+  - `deployment_records.production_executed_true = 0`.
+  - `/operations/safety.result = safe`.
+  - `incident_response_enabled = true`.
+  - `real_incident_escalation_enabled = false`.
+  - `incident_auto_remediation_enabled = false`.
+  - `external_alert_receiver_enabled = true`.
+  - `external_alert_receiver_authenticated = false` (no
+    ALERT_RECEIVER_SHARED_SECRET set — local_test_unsigned mode).
+  - `incident_escalation_dry_run = true`.
+  - `production_executed_true_count = 0`.
+
+- **Issues & blockers:**
+  - `asyncpg` not installed on test server host — verify scripts that
+    import SDK modules directly (outside containers) fail with ImportError.
+    This is pre-existing from Stage 39 onwards; not a Stage 40 regression.
+    Workaround: run those scripts from within the container.
+  - `check_runtime_state.sh` hangs in the Stage 30 LLM section (real-LLM
+    timeout); Stage 40 smokes at lines 2953–3124 unreachable via full run.
+    Stage 40 section extracted and run independently — all 14 PASS.
+
+- **Observations (Claude Code does not decide production readiness):**
+  - Stage 40 closes the incident response runbook and external alert receiver
+    carry-forward item recorded under Stage 39. The remaining carry-forward
+    items are unchanged:
+    - **Backup / DR gaps:** `encryption_no_key`, `storage_not_off_host`,
+      `schedule_dry_run_only`, `migration_down_gaps`. Stage 40 does not
+      remediate them.
+    - **Pre-Stage-31 production-readiness items unchanged:**
+      K8s / Helm / ArgoCD substrate, real production secret store,
+      real off-host backup target.
+  - All escalation policies have `dry_run=true`. No real pager/Slack/OpsGenie
+    call was made. `production_executed=false` throughout.
+  - **Production deploy disabled.** Unchanged.
+
+- **Recommendation:** The incident response baseline (alert intake, lifecycle,
+  dry-run escalation, postmortem tracking) is now operational on the test
+  server. The next operator-decided stage may pick from the carry-forward list
+  above. Stage 40 does NOT authorise production deploy.
+
+- **Following Stages 22 -- 39, Claude Code does not decide
+  the next stage roadmap.** Operators choose from the
+  carry-forward list above.
+
+---
+
 ## Stage 1 — Environment, GitHub & Test Server Inventory
 
 - **Execution time:** 2026-05-21 17:59 (UTC+8, Asia/Taipei)
