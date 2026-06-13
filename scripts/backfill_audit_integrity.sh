@@ -16,6 +16,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# shellcheck source=scripts/lib/verify_env.sh
+source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+
 PY="${PYTHON:-python3}"
 DATABASE_URL="${DATABASE_URL:-postgresql://postgres@localhost:5432/aiagents}"
 

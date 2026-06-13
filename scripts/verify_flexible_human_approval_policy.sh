@@ -19,6 +19,9 @@
 # production_executed=false must hold throughout.
 set -uo pipefail
 
+# shellcheck source=scripts/lib/verify_env.sh
+source "$(cd "$(dirname "$0")" && pwd)/lib/verify_env.sh" 2>/dev/null || true
+
 ORCH="${ORCH_URL:-http://localhost:8000}"
 
 echo "### verify_flexible_human_approval_policy: $(date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -43,7 +46,7 @@ _post_code() {
 }
 
 _field() {
-  python3 -c "
+  "${PYTHON:-python3}" -c "
 import json, sys
 try:
     d = json.loads(sys.argv[1])
@@ -62,7 +65,7 @@ except Exception: print('')
 }
 
 # Future ISO timestamp (in 1 hour).
-expires_at=$(python3 -c "
+expires_at=$("${PYTHON:-python3}" -c "
 from datetime import datetime, timedelta, timezone
 print((datetime.now(timezone.utc) + timedelta(hours=1)).isoformat())
 ")
@@ -156,7 +159,7 @@ echo
 echo "=== Scenario E -- hard safety ==="
 # A delegated policy that "claims" to allow production_deploy still
 # cannot evaluate true -- the evaluator hard-blocks it.
-hard_check=$(python3 -c "
+hard_check=$("${PYTHON:-python3}" -c "
 import sys
 sys.path.insert(0, '.')
 from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action
@@ -177,7 +180,7 @@ print('OK' if (not res.allowed and res.hard_policy_block) else 'FAIL')
 ")
 [ "$hard_check" = "OK" ] && pass "HARD_SAFETY_BLOCKS_PRODUCTION_DEPLOY" || fail "HARD_SAFETY_BLOCKS_PRODUCTION_DEPLOY"
 
-denylist_check=$(python3 -c "
+denylist_check=$("${PYTHON:-python3}" -c "
 import sys
 sys.path.insert(0, '.')
 from shared.sdk.approval_policy import HumanApprovalPolicy, evaluate_action

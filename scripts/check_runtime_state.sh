@@ -4,6 +4,10 @@
 # Run from the repository root.
 set -euo pipefail
 
+# Stage 41: load venv python so bare python3 calls use the project .venv.
+# shellcheck source=scripts/lib/verify_env.sh
+source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+
 COMPOSE="docker compose -f infra/docker-compose/docker-compose.yml"
 
 echo "### runtime state check: $(date '+%Y-%m-%d %H:%M:%S %Z')"
@@ -3118,6 +3122,109 @@ if python3 -c 'import json,sys; assert json.load(sys.stdin).get("real_incident_e
   echo "INCIDENT_NO_REAL_ESCALATION_SMOKE: PASS"
 else
   echo "INCIDENT_NO_REAL_ESCALATION_SMOKE: CHECK"
+fi
+
+echo
+echo "=== Stage 41 verification environment hygiene smokes ==="
+
+# 115. verify_env.sh helper loads and sets VENV_PYTHON
+if [ -n "${VENV_PYTHON:-}" ] && [ -f "${VENV_PYTHON:-/nonexistent}" ]; then
+  echo "VERIFICATION_ENV_HELPER_SMOKE: PASS"
+else
+  echo "VERIFICATION_ENV_HELPER_SMOKE: CHECK (no .venv — run setup_verification_env.sh)"
+fi
+
+# 116. Dependency check script present + asyncpg importable
+if [ -f "scripts/verify_environment_dependencies.sh" ] \
+    && "${PYTHON:-python3}" -c "import asyncpg" >/dev/null 2>&1; then
+  echo "VERIFICATION_DEPENDENCIES_SMOKE: PASS"
+else
+  echo "VERIFICATION_DEPENDENCIES_SMOKE: CHECK (asyncpg not importable via ${PYTHON:-python3})"
+fi
+
+# 117. run_full_regression.sh present and executable
+if [ -x "scripts/run_full_regression.sh" ]; then
+  echo "VERIFICATION_RUNNER_SMOKE: PASS"
+else
+  echo "VERIFICATION_RUNNER_SMOKE: CHECK"
+fi
+
+# 118. Latest regression report present
+if [ -f "source/regression-reports/regression_latest_summary.json" ]; then
+  echo "VERIFICATION_REPORT_SMOKE: PASS"
+else
+  echo "VERIFICATION_REPORT_SMOKE: CHECK (no regression report yet — run run_full_regression.sh)"
+fi
+
+# 119. Classification: result_class field readable from latest summary
+if [ -f "source/regression-reports/regression_latest_summary.json" ]; then
+  rc=$(python3 -c 'import json,sys; print(json.load(sys.stdin).get("result_class",""))' \
+    2>/dev/null < source/regression-reports/regression_latest_summary.json || echo '')
+  if [ -n "$rc" ]; then
+    echo "VERIFICATION_CLASSIFICATION_SMOKE: PASS (result_class=$rc)"
+  else
+    echo "VERIFICATION_CLASSIFICATION_SMOKE: CHECK"
+  fi
+else
+  echo "VERIFICATION_CLASSIFICATION_SMOKE: CHECK (no summary yet)"
+fi
+
+# 120. asyncpg caveat closure: importable via resolved PYTHON, not just any python3
+if "${PYTHON:-python3}" -c "import asyncpg" >/dev/null 2>&1; then
+  echo "VERIFICATION_HOST_ASYNCPG_CAVEAT_CLOSED_SMOKE: PASS"
+else
+  echo "VERIFICATION_HOST_ASYNCPG_CAVEAT_CLOSED_SMOKE: FAIL (asyncpg not importable via \$PYTHON)"
+fi
+
+# 121. No bare python3 without verify_env in key scripts
+bare_ok=1
+for script in scripts/backfill_audit_integrity.sh scripts/simulate_audit_tamper_detection.sh \
+              scripts/verify_flexible_human_approval_policy.sh scripts/verify_llm_cost_governance.sh \
+              scripts/verify_tamper_evident_audit.sh; do
+  if [ -f "$script" ] && ! grep -q "verify_env.sh" "$script"; then
+    echo "  WARN: $script does not source verify_env.sh"
+    bare_ok=0
+  fi
+done
+if [ "$bare_ok" = "1" ]; then
+  echo "VERIFICATION_NO_BARE_PYTHON_SMOKE: PASS"
+else
+  echo "VERIFICATION_NO_BARE_PYTHON_SMOKE: CHECK"
+fi
+
+# 122. operations/safety carries verification fields
+v_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$v_safety" | grep -q '"verification_environment_ready"' \
+   && echo "$v_safety" | grep -q '"verification_runner_available"'; then
+  echo "VERIFICATION_OPERATIONS_SAFETY_SMOKE: PASS"
+else
+  echo "VERIFICATION_OPERATIONS_SAFETY_SMOKE: CHECK"
+fi
+
+# 123. DEFAULT_REAL_DELIVERY_DENYLIST contains verification.*
+if python3 -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST
+assert any('verification' in p for p in DEFAULT_REAL_DELIVERY_DENYLIST), 'verification.* not in denylist'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "VERIFICATION_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "VERIFICATION_NOTIFICATION_DENYLIST_SMOKE: CHECK"
+fi
+
+# 124. No secret patterns in regression reports
+report_clean=1
+for r in source/regression-reports/regression_*.json; do
+  [ -f "$r" ] || continue
+  if grep -qE '"(DISCORD_BOT_TOKEN|GITHUB_TOKEN|AUDIT_HMAC_KEY)":\s*"[^"]{8,}' "$r" 2>/dev/null; then
+    report_clean=0
+  fi
+done
+if [ "$report_clean" = "1" ]; then
+  echo "VERIFICATION_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "VERIFICATION_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
 echo

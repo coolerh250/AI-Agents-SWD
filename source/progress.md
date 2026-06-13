@@ -6,6 +6,136 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 41 — Verification Environment Hygiene & Regression Runner Hardening
+
+- **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; commit TBD after this entry.
+- **Step:** 39 (per external spec numbering)
+- **Modified / created files:**
+  - **New — helper:** `scripts/lib/verify_env.sh` (shared verification
+    environment helper; resolves .venv python, exports PYTHON, VENV_PYTHON,
+    REPO_ROOT; 11 helper functions; never auto-installs; does not print secrets).
+  - **New — setup:** `scripts/setup_verification_env.sh` (creates/updates
+    .venv, installs requirements.txt + orchestrator/requirements.txt, runs
+    dep check at end; idempotent).
+  - **New — dependency check:** `scripts/verify_environment_dependencies.sh`
+    (checks asyncpg/httpx/pydantic/redis/pytest/langgraph importable via venv;
+    checks curl/jq/docker/psql; checks shared.sdk.* importable; checks asyncpg
+    caveat closure; outputs VERIFICATION_ENVIRONMENT_DEPENDENCIES_VERIFY: PASS).
+  - **New — regression runner:** `scripts/run_full_regression.sh` (unified
+    entry point; --quick / --full / --continue-on-fail / --stop-on-fail /
+    --json-report; classifies results into 8 classes; writes JSON report to
+    source/regression-reports/; outputs FULL_REGRESSION_VERIFY: PASS or FAIL).
+  - **New — verify script:** `scripts/verify_regression_runner_hardening.sh`
+    (scenarios A-E: dep check, quick run, full run, ops safety fields,
+    no-secret-leak scan; outputs REGRESSION_RUNNER_HARDENING_VERIFY: PASS).
+  - **New — SDK module:** `shared/sdk/verification/` (3 files: __init__.py,
+    audit_events.py with 8 decision_type constants + 5 notification event names,
+    classifier.py with classify_regression_result() + is_allowed_result()).
+  - **New — docs:** `docs/operations/verification-regression-runner.md`
+    (purpose, 3 modes, dep manifest, setup, dep check, helper API, runner,
+    result classification, known gaps, PASS_WITH_GAPS, SKIPPED-PASS,
+    troubleshooting, production safety, secret prevention, limitations, ops API).
+  - **New — regression reports dir:** `source/regression-reports/` (created).
+  - **Updated — scripts (hardened with verify_env.sh source):**
+    - `scripts/backfill_audit_integrity.sh` (adds source verify_env.sh)
+    - `scripts/simulate_audit_tamper_detection.sh` (adds source verify_env.sh)
+    - `scripts/verify_tamper_evident_audit.sh` (adds source verify_env.sh)
+    - `scripts/verify_flexible_human_approval_policy.sh` (adds source +
+      replaces bare python3 with ${PYTHON:-python3} in SDK calls)
+    - `scripts/verify_llm_cost_governance.sh` (adds source + replaces bare
+      python3 with ${PYTHON:-python3} in all SDK-importing calls)
+    - `scripts/check_runtime_state.sh` (adds source verify_env.sh at top;
+      appends smokes 115-124: VERIFICATION_ENV_HELPER, VERIFICATION_DEPENDENCIES,
+      VERIFICATION_RUNNER, VERIFICATION_REPORT, VERIFICATION_CLASSIFICATION,
+      VERIFICATION_HOST_ASYNCPG_CAVEAT_CLOSED, VERIFICATION_NO_BARE_PYTHON,
+      VERIFICATION_OPERATIONS_SAFETY, VERIFICATION_NOTIFICATION_DENYLIST,
+      VERIFICATION_NO_SECRET_LEAK).
+  - **Updated — denylist:**
+    `shared/sdk/notifications/real_delivery_policy.py` (adds "verification.*"
+    to DEFAULT_REAL_DELIVERY_DENYLIST).
+  - **Updated — operations API:**
+    `apps/orchestrator/src/operations.py` (imports pathlib.Path; adds
+    _verification_environment_summary() helper + _REGRESSION_SUMMARY_PATH;
+    adds Stage 41 call in operations_safety(); adds 9 new safety fields:
+    verification_environment_ready, verification_runner_available,
+    latest_full_regression_status, latest_full_regression_at,
+    latest_full_regression_report_path, verification_dependency_failures,
+    verification_known_gaps, verification_environment_caveats,
+    verification_host_dependency_caveat_closed).
+  - **New — tests (9 files):**
+    - `tests/test_verify_env_helper.py` (11 tests: structure, exports,
+      functions present, no auto-install, no secret print)
+    - `tests/test_verification_dependency_check.py` (11 tests: script
+      structure, sources helper, checks asyncpg/tools/SDK, PASS/FAIL markers,
+      no auto-install, caveat closure)
+    - `tests/test_full_regression_report.py` (12 tests: required keys,
+      summary keys, script entry keys, no secrets, serializable, summary file)
+    - `tests/test_full_regression_classification.py` (11 tests: all 8 result
+      classes, allowed/disallowed logic, asyncpg env failure, backup gaps)
+    - `tests/test_verify_scripts_no_bare_python.py` (9 tests: SDK-dependent
+      scripts source helper, backfill/simulate/governance/policy use PYTHON var)
+    - `tests/test_verify_scripts_markers.py` (7 tests: Stage 41 scripts have
+      PASS/FAIL markers, run_full_regression markers, setup_env markers)
+    - `tests/test_operations_regression_status.py` (6 tests: no-file returns
+      unknown, pass report, gaps report, corrupted JSON, constants defined,
+      all 9 safety fields present)
+    - `tests/test_verification_no_secret_leak.py` (6 tests: sample report,
+      existing reports, verify_env.sh, summary, detection works, SDK no secrets)
+    - `tests/test_verification_notification_denylist.py` (5 tests: verification.*
+      in denylist, all 8 event names matched, blocked by classify_real_delivery,
+      not aliased to incident/backup patterns)
+    - `tests/test_verification_sdk.py` (10 tests: constants defined, event
+      names start with verification., classify pass/env_failure/skipped_pass,
+      is_allowed_result pass/env_failure/safety_failure)
+- **Deployment target:** local checks only; deploy on 10.0.1.31 TBD.
+- **Local test results:**
+  - pytest (Stage 41 new tests only): **104 passed**.
+  - Full suite: in progress at time of progress.md write.
+  - ruff: 0 errors (auto-fixed unused imports).
+  - black: not run yet (pending full suite result).
+- **Remote verification (10.0.1.31):** Not yet executed; will require:
+  1. `git pull` + `./scripts/setup_verification_env.sh`
+  2. `./scripts/verify_environment_dependencies.sh`
+  3. `./scripts/run_full_regression.sh --full --json-report`
+  4. `./scripts/verify_regression_runner_hardening.sh`
+  5. Smokes 115-124 via `check_runtime_state.sh`
+- **asyncpg host dependency caveat status:**
+  - **Root cause confirmed:** Scripts importing `shared.sdk.*` used bare
+    `python3` on host without venv. asyncpg is only in containers.
+  - **Fix applied:** Added `scripts/lib/verify_env.sh` which prepends
+    `.venv/bin` to PATH and exports `PYTHON`. All affected scripts now source
+    the helper. After `setup_verification_env.sh` creates the venv, all verify
+    scripts resolve to venv python automatically.
+  - **Caveat status:** CLOSED (pending remote `setup_verification_env.sh` run).
+- **Production safety counters:** Not checked yet (pending remote deploy).
+  - `production_executed=true count` must remain 0.
+  - `real_incident_escalation_enabled` must remain false.
+  - `incident_auto_remediation_enabled` must remain false.
+- **Known issues / observations (Claude Code only reports, does not decide):**
+  - `verify_llm_cost_governance.sh` has no `LLM_COST_GOVERNANCE_VERIFY: FAIL`
+    marker (uses inline step-FAIL + exit 1 pattern). Pre-existing issue,
+    excluded from Stage 41 FAIL-marker test.
+  - `verify_backup_production_readiness.sh` has no `_VERIFY:` markers at all.
+    Pre-existing issue; uses PASS_WITH_GAPS pattern internally.
+  - `check_runtime_state.sh` may hang at Stage 30 LLM section on some hosts.
+    Stage 41 smokes (115-124) can be extracted and run separately.
+  - `source/regression-reports/` is a new tracked directory. `.gitkeep` not
+    added; reports themselves should NOT be committed to repo.
+- **Remaining production blockers (carry-forward):**
+  - Backup / DR gaps: encryption_no_key, storage_not_off_host,
+    schedule_dry_run_only, migration_down_gaps.
+  - Kubernetes / Helm / ArgoCD runtime baseline — not completed.
+  - Real production secret store — not completed.
+  - Real off-host backup target — not completed.
+  - Real pager / OpsGenie / Slack escalation — not enabled.
+  - Real Discord / GitHub / LLM production enablement — not allowed.
+- **Next action:** Deploy on 10.0.1.31, run setup_verification_env.sh, run
+  full regression, verify smokes 115-124, check operations/safety new fields,
+  then commit + push.
+
+---
+
 ## Stage 40 — Incident Response Runbook & External Alert Receiver
 
 - **Execution time:** 2026-06-12 / 2026-06-13 (UTC+8, Asia/Taipei)

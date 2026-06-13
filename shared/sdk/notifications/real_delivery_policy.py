@@ -60,6 +60,9 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     # Stage 38 -- routing decisions land on ``llm.routing_*``; they
     # are already covered by the broader ``llm.*`` pattern above.
     # Listed here as documentation only.
+    # Stage 41 -- verification environment + regression runner events are
+    # operator-internal and must NEVER land on a real Discord channel.
+    "verification.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

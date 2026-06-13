@@ -34,6 +34,7 @@ import os
 import time
 from collections.abc import Awaitable, Callable
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -1667,6 +1668,10 @@ async def operations_safety() -> dict:
     # Stage 38 -- LLM Model Routing & Agent Model Policy safety snapshot.
     routing_safety = await _llm_routing_safety_summary()
 
+    # Stage 41 -- verification environment hygiene snapshot. Reads the
+    # latest regression summary file; booleans + paths only, no secrets.
+    verification_summary = _verification_environment_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1797,6 +1802,21 @@ async def operations_safety() -> dict:
         "incident_postmortem_required_count": await _count_postmortem_required(),
         "alert_receiver_last_event_at": await _alert_receiver_last_event_at(),
         "alert_receiver_rejected_total": await _alert_receiver_rejected_total(),
+        # Stage 41 -- verification environment hygiene.
+        # Booleans + paths only; no package names or secret values.
+        "verification_environment_ready": verification_summary["verification_environment_ready"],
+        "verification_runner_available": verification_summary["verification_runner_available"],
+        "latest_full_regression_status": verification_summary["latest_full_regression_status"],
+        "latest_full_regression_at": verification_summary["latest_full_regression_at"],
+        "latest_full_regression_report_path": verification_summary[
+            "latest_full_regression_report_path"
+        ],
+        "verification_dependency_failures": verification_summary["verification_dependency_failures"],
+        "verification_known_gaps": verification_summary["verification_known_gaps"],
+        "verification_environment_caveats": verification_summary["verification_environment_caveats"],
+        "verification_host_dependency_caveat_closed": verification_summary[
+            "verification_host_dependency_caveat_closed"
+        ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3494,6 +3514,56 @@ def _read_dr_report_latest() -> dict[str, Any] | None:
             return json.load(fh)
     except (OSError, ValueError):
         return None
+
+
+_REGRESSION_SUMMARY_PATH = Path("source/regression-reports/regression_latest_summary.json")
+
+
+def _verification_environment_summary() -> dict[str, Any]:
+    """Stage 41: read latest regression summary for /operations/safety."""
+
+    runner_available = Path("scripts/run_full_regression.sh").is_file()
+    if not _REGRESSION_SUMMARY_PATH.is_file():
+        return {
+            "verification_environment_ready": False,
+            "verification_runner_available": runner_available,
+            "latest_full_regression_status": "unknown",
+            "latest_full_regression_at": None,
+            "latest_full_regression_report_path": None,
+            "verification_dependency_failures": [],
+            "verification_known_gaps": [],
+            "verification_environment_caveats": [],
+            "verification_host_dependency_caveat_closed": False,
+        }
+    try:
+        with open(_REGRESSION_SUMMARY_PATH, "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        result_class = data.get("result_class", "unknown")
+        env_ready = bool(data.get("environment_ready", False))
+        caveat_closed = bool(data.get("host_dependency_caveat_closed", False))
+        return {
+            "verification_environment_ready": env_ready,
+            "verification_runner_available": runner_available,
+            "latest_full_regression_status": result_class,
+            "latest_full_regression_at": data.get("completed_at"),
+            "latest_full_regression_report_path": data.get("report_path"),
+            "verification_dependency_failures": data.get("dependency_failures", []),
+            "verification_known_gaps": data.get("known_gaps", []),
+            "verification_environment_caveats": data.get("caveats", []),
+            "verification_host_dependency_caveat_closed": caveat_closed,
+        }
+    except (OSError, ValueError, KeyError):
+        return {
+            "verification_environment_ready": False,
+            "verification_runner_available": runner_available,
+            "latest_full_regression_status": "error_reading_report",
+            "latest_full_regression_at": None,
+            "latest_full_regression_report_path": None,
+            "verification_dependency_failures": [],
+            "verification_known_gaps": [],
+            "verification_environment_caveats": [],
+            "verification_host_dependency_caveat_closed": False,
+        }
 
 
 def _list_dr_reports(limit: int = 25) -> list[dict[str, Any]]:

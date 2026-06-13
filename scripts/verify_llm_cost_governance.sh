@@ -12,6 +12,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# shellcheck source=scripts/lib/verify_env.sh
+source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+
 ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
 COMPOSE="docker compose -f infra/docker-compose/docker-compose.yml"
 
@@ -51,7 +54,7 @@ gen_resp=$(curl -sS -m 5 -X POST "$ORCH/operations/llm/budget/policies" \
 }
 JSON
 )" || echo '{}')
-gen_id=$(echo "$gen_resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
+gen_id=$(echo "$gen_resp" | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
 if [ -n "$gen_id" ]; then
   echo "LLM_BUDGET_POLICY_CREATE: PASS (id=${gen_id:0:8}…)"
 else
@@ -70,7 +73,7 @@ else
 fi
 
 step "4. Preflight allowed under generous policy (Python harness)"
-allow_out=$(python3 - <<'PY'
+allow_out=$("${PYTHON:-python3}" - <<'PY'
 import asyncio, sys
 sys.path.insert(0, '.')
 from shared.sdk.llm_budget import BudgetPolicyEvaluator
@@ -111,10 +114,10 @@ tiny_resp=$(curl -sS -m 5 -X POST "$ORCH/operations/llm/budget/policies" \
 }
 JSON
 )" || echo '{}')
-tiny_id=$(echo "$tiny_resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
+tiny_id=$(echo "$tiny_resp" | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
 echo "tiny_policy_id=${tiny_id:0:8}…"
 
-block_out=$(python3 - <<'PY'
+block_out=$("${PYTHON:-python3}" - <<'PY'
 import asyncio, sys
 sys.path.insert(0, '.')
 from shared.sdk.llm_budget import BudgetPolicyEvaluator
@@ -149,10 +152,10 @@ token_resp=$(curl -sS -m 5 -X POST "$ORCH/operations/llm/budget/policies" \
 }
 JSON
 )")
-token_id=$(echo "$token_resp" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
+token_id=$(echo "$token_resp" | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin).get("policy_id",""))' 2>/dev/null)
 echo "token_policy_id=${token_id:0:8}…"
 
-token_out=$(python3 - <<'PY'
+token_out=$("${PYTHON:-python3}" - <<'PY'
 import asyncio, sys
 sys.path.insert(0, '.')
 from shared.sdk.llm_budget import BudgetPolicyEvaluator
@@ -175,7 +178,7 @@ case "$token_out" in
 esac
 
 step "7. Unknown model uses conservative fallback (must not be free)"
-unknown_out=$(python3 - <<'PY'
+unknown_out=$("${PYTHON:-python3}" - <<'PY'
 import sys
 sys.path.insert(0, '.')
 from shared.sdk.llm_budget import LLMCostEstimator
@@ -220,7 +223,7 @@ fi
 
 step "9. /operations/llm/budget/events has rows"
 events=$(curl -sS -m 5 "$ORCH/operations/llm/budget/events?provider=external_openai&limit=10" || echo '{}')
-count=$(echo "$events" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("count",0))' 2>/dev/null || echo 0)
+count=$(echo "$events" | "${PYTHON:-python3}" -c 'import json,sys; print(json.load(sys.stdin).get("count",0))' 2>/dev/null || echo 0)
 if [ "$count" -ge 1 ]; then
   echo "LLM_BUDGET_EVENTS_LOG: PASS (count=$count)"
 else

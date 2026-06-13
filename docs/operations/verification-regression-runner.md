@@ -1,0 +1,252 @@
+# Verification & Regression Runner
+
+Stage 41 — Verification Environment Hygiene & Regression Runner Hardening.
+
+## Purpose
+
+Every verify script in `scripts/verify_*.sh` must run in a **predictable, reproducible, auditable** environment. Before Stage 41, scripts that imported `shared.sdk.*` (which depends on `asyncpg`) would fail on host machines without the project virtualenv, producing `ModuleNotFoundError` and requiring a manual caveat in regression results.
+
+This document describes the verification environment standard, how to set it up, and how to run and interpret the regression runner.
+
+---
+
+## Verification Environment Standard
+
+All regression / verify scripts must conform to one of three modes:
+
+### Mode A — Project Venv
+
+- Uses `.venv/bin/python3` (created by `setup_verification_env.sh`).
+- All SDK dependencies are installed from `requirements.txt` and `apps/orchestrator/requirements.txt`.
+- Scripts source `scripts/lib/verify_env.sh` which prepends `.venv/bin` to `PATH` and exports `$PYTHON`.
+- **When to use**: any script that imports `shared.sdk.*`, `asyncpg`, or other project packages.
+
+### Mode B — Container Exec
+
+- Uses `docker compose exec -T <service> python3 ...` to run Python inside a container.
+- Suitable for scripts that need live DB / internal network access.
+- No host Python dependency.
+
+### Mode C — Pure Shell
+
+- Uses only POSIX shell, `curl`, `jq`, `docker`, `psql` (via docker exec).
+- No Python at all.
+- **When to use**: scripts that only call HTTP endpoints or run psql queries.
+
+---
+
+## Dependency Manifest
+
+Project-level packages are declared in:
+
+- `requirements.txt` — top-level project dependencies (includes `asyncpg`, `httpx`, `pydantic`, `redis`, `pytest`, etc.)
+- `apps/orchestrator/requirements.txt` — orchestrator-specific packages
+
+These are the authoritative dependency sources. Never install global packages to fix verification failures.
+
+---
+
+## Setup
+
+```bash
+# First-time setup (or after requirements.txt changes)
+./scripts/setup_verification_env.sh
+```
+
+This script:
+1. Finds Python 3.10+ on the host.
+2. Creates `.venv` at the repo root (`python3 -m venv .venv`).
+3. Installs `requirements.txt` and `apps/orchestrator/requirements.txt` into the venv.
+4. Runs `verify_environment_dependencies.sh` to confirm everything is ready.
+5. Outputs `SETUP_VERIFICATION_ENV: PASS`.
+
+Safe to run multiple times (idempotent).
+
+---
+
+## Dependency Check
+
+```bash
+./scripts/verify_environment_dependencies.sh
+```
+
+Checks:
+- `.venv/bin/python3` exists and is usable.
+- `asyncpg`, `httpx`, `pydantic`, `redis`, `pytest`, `langgraph` importable.
+- `curl`, `jq`, `docker`, `docker compose` available.
+- `psql` via host or `docker compose exec postgres`.
+- `shared.sdk.audit_integrity`, `shared.sdk.approval_policy`, etc. importable.
+- Host asyncpg caveat closed (asyncpg only in venv, not on bare host python).
+
+Outputs `VERIFICATION_ENVIRONMENT_DEPENDENCIES_VERIFY: PASS` or `FAIL`.
+
+---
+
+## Shared Helper: `scripts/lib/verify_env.sh`
+
+Source at the top of any verify script that uses Python:
+
+```bash
+source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+```
+
+After sourcing:
+- `$REPO_ROOT` — absolute path to repo root.
+- `$VENV_PYTHON` — path to venv python3 (empty if no venv).
+- `$PYTHON` — resolved python3 to use (venv if available, else system).
+- `PATH` — `.venv/bin` prepended (bare `python3` resolves to venv).
+
+Helper functions:
+- `require_venv_python` — exits 1 with remediation message if no venv.
+- `require_command CMD` — exits 1 if command not in PATH.
+- `require_python_module MOD` — returns 0 if importable, 1 otherwise.
+- `run_python ARGS...` — runs `$PYTHON` with given args.
+- `run_in_service SVC CMD...` — runs `docker compose exec -T SVC CMD...`.
+- `fail_with_marker MARKER MSG` — prints FAIL marker and exits 1.
+- `skip_with_marker MARKER MSG` — prints SKIPPED-PASS.
+- `detect_host_dependency_leak` — warns if asyncpg is on system python.
+- `redact_env_values KEY...` — prints `KEY=***REDACTED***`.
+
+---
+
+## Regression Runner
+
+```bash
+# Full run with JSON report
+./scripts/run_full_regression.sh --full --json-report
+
+# Quick run (subset of scripts)
+./scripts/run_full_regression.sh --quick --json-report
+
+# Stop on first failure
+./scripts/run_full_regression.sh --full --stop-on-fail
+
+# Continue even on failures
+./scripts/run_full_regression.sh --full --continue-on-fail --json-report
+```
+
+Output markers:
+- `FULL_REGRESSION_VERIFY: PASS` — all scripts passed (or PASS_WITH_DOCUMENTED_GAPS + skipped_pass)
+- `FULL_REGRESSION_VERIFY: PASS_WITH_DOCUMENTED_GAPS` — backup readiness has documented gaps, all else pass
+- `FULL_REGRESSION_VERIFY: FAIL` — at least one disallowed failure
+
+Report files:
+- `source/regression-reports/regression_{timestamp}.json` — full report
+- `source/regression-reports/regression_latest.json` — copy of latest
+- `source/regression-reports/regression_latest_summary.json` — compact summary (read by `/operations/safety`)
+
+---
+
+## Result Classification
+
+| Class | Meaning | Allowed? |
+|-------|---------|----------|
+| `pass` | Script exited 0 with PASS marker | ✅ Yes |
+| `skipped_pass` | SKIPPED-PASS marker (e.g. no real LLM key) | ✅ Yes |
+| `pass_with_gaps` | PASS_WITH_GAPS for backup readiness script | ✅ Yes (documented) |
+| `pass_with_documented_gaps` | Overall run has only documented gaps | ✅ Yes |
+| `fail` | Script exited non-zero, no known marker | ❌ No |
+| `environment_failure` | `ModuleNotFoundError` or missing dependency | ❌ No |
+| `regression_failure` | Audit integrity or direct-POST integrity FAIL | ❌ No |
+| `safety_failure` | `production_executed != 0` | ❌ No (hard fail) |
+| `unknown_failure` | Exit non-zero with no recognized marker | ❌ No |
+
+---
+
+## Known Allowed Gaps
+
+Only `scripts/verify_backup_production_readiness.sh` may emit `PASS_WITH_GAPS`:
+
+| Gap | Reason |
+|-----|--------|
+| `encryption_no_key` | `BACKUP_ENCRYPTION_KEY` not configured |
+| `storage_not_off_host` | Backup storage is local-only |
+| `schedule_dry_run_only` | Cron schedule is dry-run only |
+| `migration_down_gaps` | Some migrations lack down scripts |
+
+These are production blockers but not regression failures.
+
+---
+
+## Interpreting PASS_WITH_GAPS
+
+A `PASS_WITH_DOCUMENTED_GAPS` overall result means:
+- All verify scripts PASS or SKIPPED-PASS.
+- `verify_backup_production_readiness.sh` returned `PASS_WITH_GAPS`.
+- The gaps are the documented backup readiness blockers.
+- This is the expected state until backup / DR gaps are resolved.
+
+---
+
+## Interpreting SKIPPED-PASS
+
+Some scripts conditionally skip when external credentials are absent:
+- `verify_real_llm_plan_only_pilot.sh` — skips if no `LLM_API_KEY`.
+- `verify_real_discord_delivery_filter.sh` — may SKIPPED-PASS if no real Discord env.
+- `verify_real_integration_pilot.sh` — SKIPPED-PASS if no real Discord + GitHub.
+
+SKIPPED-PASS is an allowed outcome. The skip reason is in the key_marker.
+
+---
+
+## Troubleshooting `environment_failure`
+
+If you see `ModuleNotFoundError: No module named 'asyncpg'`:
+
+1. Run `./scripts/setup_verification_env.sh`.
+2. Confirm `SETUP_VERIFICATION_ENV: PASS`.
+3. Re-run `./scripts/verify_environment_dependencies.sh`.
+4. Confirm `VERIFICATION_ENVIRONMENT_DEPENDENCIES_VERIFY: PASS`.
+5. Re-run the failing verify script.
+
+Do **not** install packages globally (`pip install asyncpg` without a venv).
+
+---
+
+## Production Safety Requirements
+
+The regression runner enforces:
+- `production_executed_true_count == 0`
+- `real_incident_escalation_enabled == false`
+- `incident_auto_remediation_enabled == false`
+- No real Discord delivery of `verification.*` events
+- No real LLM calls unless explicitly opt-in
+
+---
+
+## Preventing Secret Leaks
+
+- `verify_env.sh` never prints secret values — only `KEY=(not set)` or `KEY=***REDACTED***`.
+- Regression reports are scanned for token patterns in `verify_regression_runner_hardening.sh` Scenario E.
+- Do not commit `.env` files or generated backup artifacts.
+
+---
+
+## Current Limitations
+
+- `asyncpg` requires the project venv to be set up before running verify scripts. Run `./scripts/setup_verification_env.sh` once per host.
+- Some verify scripts (backup, audit) require running containers (`docker compose up -d`).
+- `check_runtime_state.sh` may hang at Stage 30 LLM section on some hosts; Stage 41 smokes (115-124) can be run separately.
+- Host asyncpg caveat is now closed (Stage 41). Previous regressions showing `ModuleNotFoundError` are resolved by venv setup.
+
+---
+
+## Operations API
+
+After a full regression run, `/operations/safety` exposes:
+
+```json
+{
+  "verification_environment_ready": true,
+  "verification_runner_available": true,
+  "latest_full_regression_status": "pass",
+  "latest_full_regression_at": "2026-06-13T12:05:00Z",
+  "latest_full_regression_report_path": "source/regression-reports/regression_20260613.json",
+  "verification_dependency_failures": [],
+  "verification_known_gaps": ["encryption_no_key", "storage_not_off_host"],
+  "verification_environment_caveats": [],
+  "verification_host_dependency_caveat_closed": true
+}
+```
+
+If no regression has been run: `"latest_full_regression_status": "unknown"`.
