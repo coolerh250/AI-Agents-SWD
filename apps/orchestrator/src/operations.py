@@ -1851,7 +1851,11 @@ async def operations_safety() -> dict:
             "audit_log_restore_last_audit_log_id"
         ],
         "audit_chain_integrity_restored": bool(
-            forensic_summary["audit_chain_integrity_restored"]
+            (
+                audit_integrity.get("latest_verification_status") == "passed"
+                and not audit_integrity.get("audit_integrity_degraded")
+            )
+            or forensic_summary["audit_chain_integrity_restored"]
             or log_restore_summary["audit_log_restore_integrity_restored"]
         ),
         "production_deploy_enabled": False,
@@ -3108,10 +3112,16 @@ async def _audit_integrity_summary() -> dict[str, Any]:
     summary["audit_log_restore_allowed"] = restore["audit_log_restore_allowed"]
     summary["audit_log_restore_approved"] = restore["audit_log_restore_approved"]
     summary["audit_log_restore_last_result"] = restore["audit_log_restore_last_result"]
-    # The chain is restored when either the integrity-repair path or the
-    # audit_log restore path has cleared the mismatch and the verifier passes.
+    # The chain is restored when it currently verifies cleanly -- the live
+    # verifier status is the source of truth (a later no-op restore/repair
+    # report must not flip this back to false). Either remediation path having
+    # completed also counts.
     summary["audit_chain_integrity_restored"] = bool(
-        forensic["audit_chain_integrity_restored"]
+        (
+            summary.get("latest_verification_status") == "passed"
+            and not summary.get("audit_integrity_degraded")
+        )
+        or forensic["audit_chain_integrity_restored"]
         or restore["audit_log_restore_integrity_restored"]
     )
     return summary
