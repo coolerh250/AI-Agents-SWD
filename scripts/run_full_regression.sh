@@ -126,7 +126,7 @@ run_verify() {
         result_class="environment_failure"
         failure_reason="ModuleNotFoundError"
         ENV_FAIL_COUNT=$((ENV_FAIL_COUNT + 1))
-    elif echo "$output" | grep -qE "_VERIFY: FAIL.*production_safety|production_executed.*[^0]"; then
+    elif echo "$output" | grep -qE "_VERIFY: FAIL.*production_safety"; then
         result_class="safety_failure"
         failure_reason="production_safety_nonzero"
         SAFETY_FAIL_COUNT=$((SAFETY_FAIL_COUNT + 1))

@@ -55,7 +55,7 @@ for cmd in curl jq docker; do
     else
         _fail "command: $cmd missing"
     fi
-fi
+done
 
 # ============================================================
 echo
