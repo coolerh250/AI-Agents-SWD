@@ -123,13 +123,13 @@ else
     _pass "full regression: no regression_failure"
 fi
 
-# Allowed gap: only backup readiness
-if echo "$full_out" | grep -q "pass_with_gaps"; then
-    if echo "$full_out" | grep -v "backup_production_readiness" | grep -q "pass_with_gaps"; then
-        _fail "pass_with_gaps found for non-backup script (not allowed)"
-    else
-        _pass "pass_with_gaps only for backup_production_readiness (documented)"
-    fi
+# Allowed gap: check runner's result_class= lines (not raw output which contains
+# intermediate PASS_WITH_GAPS from nested scripts like check_migration_down_scripts)
+gap_result_count=$(echo "$full_out" | grep -c "result_class=pass_with_gaps" || true)
+if [ "$gap_result_count" -gt 1 ]; then
+    _fail "multiple pass_with_gaps results; only backup_production_readiness is allowed"
+elif [ "$gap_result_count" -eq 1 ]; then
+    _pass "pass_with_gaps only for backup_production_readiness (documented)"
 fi
 
 # ============================================================

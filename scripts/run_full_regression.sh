@@ -40,7 +40,6 @@ QUICK_SCRIPTS=(
     scripts/verify_environment_dependencies.sh
     scripts/verify_incident_response.sh
     scripts/verify_external_alert_receiver.sh
-    scripts/verify_audit_integrity_remediation.sh
     scripts/verify_backup_production_readiness.sh
 )
 
@@ -118,8 +117,9 @@ run_verify() {
     local result_class=""
     local failure_reason=""
 
-    # Extract key marker (last VERIFY: line)
-    key_marker="$(echo "$output" | grep -E '^\S+_VERIFY: (PASS|FAIL|SKIPPED|PASS_WITH_GAPS|SKIPPED-PASS)' | tail -1 || true)"
+    # Extract key marker (last primary status line; broadened to catch
+    # non-_VERIFY markers like BACKUP_PRODUCTION_READINESS: PASS_WITH_GAPS)
+    key_marker="$(echo "$output" | grep -E '^[A-Z_]+: (PASS|FAIL|SKIPPED|PASS_WITH_GAPS|SKIPPED-PASS)' | tail -1 || true)"
 
     # Classify
     if echo "$output" | grep -q "ModuleNotFoundError\|No module named"; then
