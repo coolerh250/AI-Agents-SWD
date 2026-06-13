@@ -6,6 +6,122 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 44 — Audit-Touching Regression Serialization & Tamper Sim Isolation
+
+- **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code `6b97f51`, fixes `4549f29` + `975ab02`,
+  progress commit TBD.
+- **Step:** 42 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- **audit_read_only:** verify_audit_chain_forensics, verify_audit_hmac_key_rotation,
+  verify_audit_chain_repair_procedure (dry-run), detect_audit_tamper_residue.
+- **audit_writer / events:** verify_audit_integrity_remediation,
+  verify_audit_direct_post_integrity, verify_tamper_evident_audit, backfill.
+- **audit_tamper_simulation:** simulate_audit_tamper_detection.
+- **audit_restore_exception:** restore_audit_log_test_tamper_residue,
+  verify_audit_log_restore_exception.
+- **full_regression_orchestrator:** run_full_regression, check_runtime_state.
+- All now acquire (or inherit) the exclusive audit verification lock; the Step 41
+  race was possible because none did.
+
+### Lock helper result
+- `scripts/lib/audit_verification_lock.sh`: exclusive lock (flock primary —
+  confirmed available on 10.0.1.31 — mkdir fallback), 300s timeout, EXIT-trap
+  release, runner inheritance. Markers ACQUIRED/INHERITED/RELEASED/TIMEOUT.
+  Observed live: `ACQUIRED run_full_regression` → `INHERITED
+  simulate_audit_tamper_detection` (×N) → `RELEASED run_full_regression`.
+
+### Tamper simulation isolation result
+- `simulate_audit_tamper_detection.sh` acquires the lock, pre/post residue
+  checks, restore in `finally`. Live: `AUDIT_TAMPER_SIMULATION_LOCKED: PASS`,
+  `AUDIT_TAMPER_SIMULATION_RESTORE: PASS`, `AUDIT_TAMPER_SIMULATION_NO_RESIDUE: PASS`.
+
+### Residue detector result
+- `scripts/detect_audit_tamper_residue.sh`: `residue_count=0`,
+  `AUDIT_TAMPER_RESIDUE_DETECTOR: PASS`. Read-only, safe fields only, points to
+  the controlled restore exception, never auto-repairs.
+
+### Full regression lock result
+- `run_full_regression.sh --full` (run alone, serial): `audit_lock_used=true`,
+  `audit_touching_scripts_serialized=true`, `regression_fail=0`,
+  `audit_serialization_failure=0`, `audit_tamper_residue_failure=0`,
+  `audit_lock_timeout=0` → `FULL_REGRESSION_VERIFY: PASS_WITH_DOCUMENTED_GAPS`.
+- `verify_audit_touching_serialization.sh`: Scenarios A/B/C PASS; Scenario D/E
+  PASS after the lock-flag fix (see issues below).
+
+### Operations / safety result
+- `/operations/safety`: `audit_touching_regression_serialized=true`,
+  `audit_verification_lock_enabled=true`,
+  `audit_verification_lock_last_status=released`,
+  `audit_tamper_simulation_isolated=true`, `audit_tamper_residue_detected=false`,
+  `audit_tamper_residue_count=0`, `latest_full_regression_audit_lock_used=true`,
+  `latest_full_regression_audit_touching_serialized=true`,
+  `audit_chain_integrity_restored=true`,
+  `latest_full_regression_status=pass_with_documented_gaps`, `result=safe`.
+- New read-only endpoints: `/operations/audit/tamper-residue`,
+  `/operations/audit/verification-lock/latest`.
+
+### Regression result
+- Stage 44 tests: **52 passed** on 10.0.1.31 (9 test files; the flock-timeout
+  test runs there, skips on non-flock hosts). Local: 51 passed + 1 skip, ruff/
+  black clean.
+- check_runtime_state smokes 144-152 added (lock, residue detector, isolation,
+  restore lock, full-regression lock, classification, ops safety, denylist,
+  no-secret-leak).
+
+### Production safety status
+- `deployment production_executed=true count = 0`;
+  `workflow production_executed=true count = 0`.
+- `production_deploy_enabled=false`, `real_incident_escalation_enabled=false`,
+  `incident_auto_remediation_enabled=false`, `real_llm_enabled=false`,
+  `agent_direct_model_selection_allowed=false`,
+  `llm_patch_generation_enabled=false`, `llm_workspace_write_enabled=false`,
+  `audit_direct_post_integrity_gap_closed=true`,
+  `audit_hmac_rotation_supported=true`.
+
+### Code modified / created
+- **New:** `scripts/lib/audit_verification_lock.sh`,
+  `scripts/detect_audit_tamper_residue.sh`,
+  `scripts/verify_audit_touching_serialization.sh`,
+  `docs/operations/audit-touching-regression-serialization.md`, 9 test files.
+- **Hardened:** `simulate_audit_tamper_detection.sh` (lock + pre/post residue),
+  `restore_audit_log_test_tamper_residue.sh` +
+  `verify_audit_log_restore_exception.sh` (acquire lock; verify owns, children
+  inherit), `run_full_regression.sh` (Option A lock + inheritance + EXIT
+  release; pre/post detector; 3 new failure classes; report lock fields),
+  `check_runtime_state.sh` (smokes 144-152).
+- **Operations:** 2 endpoints + 8 safety fields. **Metrics:** 7 counters +
+  1 histogram. **audit_events.py:** 8 decision types + 4 `audit.*`/
+  `verification.*` events (denylisted).
+
+### Issues fixed during deployment
+1. A lock report JSON was accidentally committed; added `.gitignore` patterns
+   for `audit_verification_lock_latest.json` / `audit_tamper_residue_*.json` /
+   `audit_log_restore_*.json` and untracked it.
+2. The counters-init block reset `AUDIT_LOCK_USED`/`AUDIT_TOUCHING_SERIALIZED`
+   to false *after* the acquire block set them true; moved lock-state var init
+   before the acquire block. Confirmed `audit_lock_used=true` afterwards.
+
+### Remaining gaps / observations (Claude Code reports only; does not decide)
+- **Audit-touching regression race: CLOSED.** All audit-touching scripts
+  serialize under one exclusive lock; tamper sim isolated; residue detector
+  green pre/post full regression; `audit_touching_regression_serialized=true`.
+- **Observation:** the lock is host-level (single-host verification on 10.0.1.31);
+  a multi-host setup would need a shared/advisory-lock mechanism. The lock
+  serializes verification scripts only, not the always-on audit-worker writes
+  (harmless — the tamper sim restores by audit_log_id).
+- **Carry-forward:** audit chain mismatch CLOSED; host asyncpg caveat CLOSED;
+  incident runbook/alert receiver CLOSED; HMAC keyring rotation CLOSED; direct
+  POST integrity gap CLOSED; audit-touching regression race CLOSED. Backup/DR
+  gaps (encryption_no_key, storage_not_off_host, schedule_dry_run_only,
+  migration_down_gaps) OPEN. Kubernetes/Helm/ArgoCD baseline, real production
+  secret store, real off-host backup target, real pager/escalation — all OPEN.
+  Claude Code does not declare production readiness.
+
+---
+
 ## Stage 43 — Controlled Audit Log Restore Exception (Test-Tamper Residue)
 
 - **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
