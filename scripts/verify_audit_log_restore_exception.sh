@@ -19,6 +19,8 @@ cd "$(dirname "$0")/.."
 
 # shellcheck source=scripts/lib/verify_env.sh
 source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+# shellcheck source=scripts/lib/audit_verification_lock.sh
+source "$(dirname "$0")/lib/audit_verification_lock.sh" 2>/dev/null || true
 
 PY="${PYTHON:-python3}"
 FORENSIC="source/audit-forensics/audit_forensic_latest.json"
@@ -27,6 +29,16 @@ ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
 APPROVED="${AUDIT_LOG_RESTORE_APPROVED:-false}"
 
 echo "### verify_audit_log_restore_exception: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+
+# Stage 44 -- this verify drives the restore script + downstream audit
+# verifiers (which each run a tamper sim). Hold the exclusive audit lock for
+# the whole run and let children inherit it (no nested deadlock, no race).
+if ! acquire_audit_exclusive_lock "verify_audit_log_restore_exception"; then
+    echo "AUDIT_LOG_RESTORE_LOCK: TIMEOUT"
+    echo "AUDIT_LOG_RESTORE_EXCEPTION_VERIFY: FAIL"
+    exit 1
+fi
+export AUDIT_VERIFICATION_LOCK_HELD_BY_RUNNER=true
 echo "  approved_flag=${APPROVED}"
 
 checks=0

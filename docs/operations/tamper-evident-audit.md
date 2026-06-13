@@ -505,3 +505,10 @@ so the row re-matches its already-correct integrity record — no integrity
 record change, no cascade. It is dry-run by default and requires
 `AUDIT_LOG_RESTORE_APPROVED=true`. See
 [audit-log-restore-exception-policy.md](audit-log-restore-exception-policy.md).
+
+## Stage 44 -- serialization + tamper sim isolation
+
+The tamper simulation now runs under an exclusive audit verification lock and
+checks for residue before and after, so two simulations can never race and
+leave a `[TAMPER-SIMULATION]` residue (the Step 41 issue). See
+[audit-touching-regression-serialization.md](audit-touching-regression-serialization.md).

@@ -29,6 +29,8 @@ cd "$(dirname "$0")/.."
 
 # shellcheck source=scripts/lib/verify_env.sh
 source "$(dirname "$0")/lib/verify_env.sh"
+# shellcheck source=scripts/lib/audit_verification_lock.sh
+source "$(dirname "$0")/lib/audit_verification_lock.sh" 2>/dev/null || true
 
 echo "### run_full_regression: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 
@@ -56,6 +58,26 @@ while [ $# -gt 0 ]; do
 done
 
 echo "  mode=$MODE  stop_on_fail=$STOP_ON_FAIL  json_report=$JSON_REPORT"
+
+_runner_release_audit_lock() {
+    release_audit_lock "run_full_regression" 2>/dev/null || true
+    AUDIT_LOCK_RELEASED=true
+}
+
+# Stage 44 -- full mode runs audit-touching scripts; acquire the exclusive
+# audit lock once and let child scripts inherit it (Option A). quick mode does
+# not run audit-touching scripts, so it does not take the lock.
+if [ "$MODE" = "full" ] && command -v acquire_audit_exclusive_lock >/dev/null 2>&1; then
+    if ! acquire_audit_exclusive_lock "run_full_regression"; then
+        echo "FULL_REGRESSION_VERIFY: FAIL (audit_lock_timeout)"
+        exit 1
+    fi
+    export AUDIT_VERIFICATION_LOCK_HELD_BY_RUNNER=true
+    AUDIT_LOCK_USED=true
+    AUDIT_TOUCHING_SERIALIZED=true
+    AUDIT_LOCK_ACQUIRED_AT="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    trap '_runner_release_audit_lock' EXIT
+fi
 
 # ---- result classification --------------------------------------------------
 # Result classes:
@@ -90,6 +112,14 @@ REGRESSION_FAIL_COUNT=0
 SKIP_COUNT=0
 GAP_COUNT=0
 TOTAL=0
+# Stage 44 -- audit serialization failure classes.
+AUDIT_SERIALIZATION_FAIL_COUNT=0
+AUDIT_RESIDUE_FAIL_COUNT=0
+AUDIT_LOCK_TIMEOUT_COUNT=0
+AUDIT_LOCK_USED=false
+AUDIT_LOCK_ACQUIRED_AT=""
+AUDIT_LOCK_RELEASED=false
+AUDIT_TOUCHING_SERIALIZED=false
 
 declare -a SCRIPT_RESULTS=()
 
@@ -130,6 +160,15 @@ run_verify() {
         result_class="safety_failure"
         failure_reason="production_safety_nonzero"
         SAFETY_FAIL_COUNT=$((SAFETY_FAIL_COUNT + 1))
+    elif echo "$output" | grep -q "AUDIT_VERIFICATION_LOCK: TIMEOUT"; then
+        result_class="audit_lock_timeout"
+        failure_reason="audit_verification_lock_timeout"
+        AUDIT_LOCK_TIMEOUT_COUNT=$((AUDIT_LOCK_TIMEOUT_COUNT + 1))
+        AUDIT_SERIALIZATION_FAIL_COUNT=$((AUDIT_SERIALIZATION_FAIL_COUNT + 1))
+    elif echo "$output" | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: FAIL|AUDIT_TAMPER_SIMULATION_NO_RESIDUE: FAIL"; then
+        result_class="audit_tamper_residue_failure"
+        failure_reason="audit_tamper_residue_detected"
+        AUDIT_RESIDUE_FAIL_COUNT=$((AUDIT_RESIDUE_FAIL_COUNT + 1))
     elif echo "$output" | grep -qE "(AUDIT|TAMPER).*_VERIFY: FAIL|_VERIFY: FAIL.*(audit_integrity|tamper|direct_post)"; then
         result_class="regression_failure"
         failure_reason="audit_integrity_fail"
@@ -195,6 +234,18 @@ else
     fi
 fi
 
+# ---- step 0b: pre-run tamper residue detector (full mode) -------------------
+if [ "$MODE" = "full" ] && [ -f scripts/detect_audit_tamper_residue.sh ]; then
+    echo
+    echo "=== Step 0b: Pre-run audit tamper residue detector ==="
+    if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -q "AUDIT_TAMPER_RESIDUE_DETECTOR: FAIL"; then
+        echo "  pre-existing tamper residue detected"
+        AUDIT_RESIDUE_FAIL_COUNT=$((AUDIT_RESIDUE_FAIL_COUNT + 1))
+    else
+        echo "  pre-run: no tamper residue"
+    fi
+fi
+
 # ---- step 1: run scripts ----------------------------------------------------
 echo
 echo "=== Step 1: Run verify scripts (mode=$MODE) ==="
@@ -235,19 +286,39 @@ else
     run_verify scripts/verify_backup_production_readiness.sh yes
 fi
 
+# ---- step 1b: post-run tamper residue detector (full mode) ------------------
+if [ "$MODE" = "full" ] && [ -f scripts/detect_audit_tamper_residue.sh ]; then
+    echo
+    echo "=== Step 1b: Post-run audit tamper residue detector ==="
+    if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -q "AUDIT_TAMPER_RESIDUE_DETECTOR: FAIL"; then
+        echo "  POST-RUN tamper residue detected -- use controlled restore exception"
+        AUDIT_RESIDUE_FAIL_COUNT=$((AUDIT_RESIDUE_FAIL_COUNT + 1))
+    else
+        echo "  post-run: no tamper residue"
+    fi
+fi
+
 # ---- step 2: overall result -------------------------------------------------
 END_TIME="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
 
-DISALLOWED_FAIL=$((FAIL_COUNT + ENV_FAIL_COUNT + SAFETY_FAIL_COUNT + REGRESSION_FAIL_COUNT))
+# AUDIT_SERIALIZATION_FAIL_COUNT already mirrors AUDIT_LOCK_TIMEOUT_COUNT, so it
+# is not added again here.
+DISALLOWED_FAIL=$((FAIL_COUNT + ENV_FAIL_COUNT + SAFETY_FAIL_COUNT + REGRESSION_FAIL_COUNT + AUDIT_SERIALIZATION_FAIL_COUNT + AUDIT_RESIDUE_FAIL_COUNT))
 
 echo
 echo "=== Regression Summary ==="
 echo "  total=$TOTAL  pass=$PASS_COUNT  skipped_pass=$SKIP_COUNT  pass_with_gaps=$GAP_COUNT"
 echo "  fail=$FAIL_COUNT  env_fail=$ENV_FAIL_COUNT  safety_fail=$SAFETY_FAIL_COUNT  regression_fail=$REGRESSION_FAIL_COUNT"
+echo "  audit_serialization_failure=$AUDIT_SERIALIZATION_FAIL_COUNT  audit_tamper_residue_failure=$AUDIT_RESIDUE_FAIL_COUNT  audit_lock_timeout=$AUDIT_LOCK_TIMEOUT_COUNT"
+echo "  audit_lock_used=${AUDIT_LOCK_USED}  audit_touching_scripts_serialized=${AUDIT_TOUCHING_SERIALIZED}"
 echo "  environment_ready=${env_ok}"
 
-# Determine result class
-if [ "$SAFETY_FAIL_COUNT" -gt 0 ]; then
+# Determine result class (audit serialization / residue rank above generic).
+if [ "$AUDIT_RESIDUE_FAIL_COUNT" -gt 0 ]; then
+    RESULT_CLASS="audit_tamper_residue_failure"
+elif [ "$AUDIT_SERIALIZATION_FAIL_COUNT" -gt 0 ] || [ "$AUDIT_LOCK_TIMEOUT_COUNT" -gt 0 ]; then
+    RESULT_CLASS="audit_serialization_failure"
+elif [ "$SAFETY_FAIL_COUNT" -gt 0 ]; then
     RESULT_CLASS="safety_failure"
 elif [ "$REGRESSION_FAIL_COUNT" -gt 0 ]; then
     RESULT_CLASS="regression_failure"
@@ -296,6 +367,10 @@ if [ "$JSON_REPORT" = "1" ]; then
   "result_class": "${RESULT_CLASS}",
   "environment_ready": ${env_ok},
   "host_dependency_caveat_closed": ${HOST_CAVEAT_CLOSED},
+  "audit_lock_used": ${AUDIT_LOCK_USED},
+  "audit_lock_acquired_at": "${AUDIT_LOCK_ACQUIRED_AT}",
+  "audit_lock_released": ${AUDIT_LOCK_RELEASED},
+  "audit_touching_scripts_serialized": ${AUDIT_TOUCHING_SERIALIZED},
   "scripts": [${SCRIPTS_JSON}],
   "summary": {
     "total": ${TOTAL},
@@ -305,7 +380,10 @@ if [ "$JSON_REPORT" = "1" ]; then
     "fail": ${FAIL_COUNT},
     "environment_failure": ${ENV_FAIL_COUNT},
     "safety_failure": ${SAFETY_FAIL_COUNT},
-    "regression_failure": ${REGRESSION_FAIL_COUNT}
+    "regression_failure": ${REGRESSION_FAIL_COUNT},
+    "audit_serialization_failure": ${AUDIT_SERIALIZATION_FAIL_COUNT},
+    "audit_tamper_residue_failure": ${AUDIT_RESIDUE_FAIL_COUNT},
+    "audit_lock_timeout": ${AUDIT_LOCK_TIMEOUT_COUNT}
   },
   "dependency_failures": [],
   "known_gaps": [${GAPS_JSON}],
@@ -322,13 +400,20 @@ JSON
   "environment_ready": ${env_ok},
   "host_dependency_caveat_closed": ${HOST_CAVEAT_CLOSED},
   "report_path": "${REPORT_FILE}",
+  "audit_lock_used": ${AUDIT_LOCK_USED},
+  "audit_lock_acquired_at": "${AUDIT_LOCK_ACQUIRED_AT}",
+  "audit_lock_released": ${AUDIT_LOCK_RELEASED},
+  "audit_touching_scripts_serialized": ${AUDIT_TOUCHING_SERIALIZED},
   "dependency_failures": [],
   "known_gaps": [${GAPS_JSON}],
   "caveats": [],
   "summary": {
     "total": ${TOTAL},
     "pass": ${PASS_COUNT},
-    "fail": ${DISALLOWED_FAIL}
+    "fail": ${DISALLOWED_FAIL},
+    "audit_serialization_failure": ${AUDIT_SERIALIZATION_FAIL_COUNT},
+    "audit_tamper_residue_failure": ${AUDIT_RESIDUE_FAIL_COUNT},
+    "audit_lock_timeout": ${AUDIT_LOCK_TIMEOUT_COUNT}
   }
 }
 JSON

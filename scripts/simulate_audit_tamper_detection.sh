@@ -20,8 +20,28 @@ cd "$(dirname "$0")/.."
 
 # shellcheck source=scripts/lib/verify_env.sh
 source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+# shellcheck source=scripts/lib/audit_verification_lock.sh
+source "$(dirname "$0")/lib/audit_verification_lock.sh" 2>/dev/null || true
 
 PY="${PYTHON:-python3}"
+
+# Stage 44 -- serialize: a tamper simulation must never run concurrently with
+# another tamper sim, the restore exception, or the full regression. The lock
+# (or runner inheritance) guarantees this. Released via the helper's EXIT trap.
+if ! acquire_audit_exclusive_lock "simulate_audit_tamper_detection"; then
+    echo "AUDIT_TAMPER_SIMULATION_LOCKED: FAIL (lock timeout)"
+    echo "AUDIT_TAMPER_DETECTION_SMOKE: FAIL"
+    exit 1
+fi
+echo "AUDIT_TAMPER_SIMULATION_LOCKED: PASS"
+
+# Pre-check: refuse to start if a previous tamper sim already left residue.
+if ! assert_no_audit_tamper_residue; then
+    echo "AUDIT_TAMPER_SIMULATION_NO_RESIDUE: FAIL (pre-existing residue)"
+    echo "Use controlled audit_log restore exception procedure. Do not manually update DB."
+    echo "AUDIT_TAMPER_DETECTION_SMOKE: FAIL"
+    exit 1
+fi
 
 $PY <<'PY'
 import asyncio
@@ -148,3 +168,25 @@ async def main():
 
 asyncio.run(main())
 PY
+sim_rc=$?
+
+# Stage 44 -- restore + residue assertions (bash level, after the python
+# finally-block restore). The lock is released by the helper's EXIT trap.
+if [ "$sim_rc" -ne 0 ]; then
+    echo "AUDIT_TAMPER_SIMULATION_RESTORE: FAIL"
+    if ! assert_no_audit_tamper_residue; then
+        echo "AUDIT_TAMPER_SIMULATION_NO_RESIDUE: FAIL"
+        echo "Use controlled audit_log restore exception procedure. Do not manually update DB."
+    fi
+    exit 1
+fi
+echo "AUDIT_TAMPER_SIMULATION_RESTORE: PASS"
+
+# Post-check: the chain must carry no residue now that the sim restored.
+if assert_no_audit_tamper_residue; then
+    echo "AUDIT_TAMPER_SIMULATION_NO_RESIDUE: PASS"
+else
+    echo "AUDIT_TAMPER_SIMULATION_NO_RESIDUE: FAIL"
+    echo "Use controlled audit_log restore exception procedure. Do not manually update DB."
+    exit 1
+fi

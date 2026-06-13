@@ -811,6 +811,44 @@ AUDIT_LOG_RESTORE_RECORDS_MODIFIED_TOTAL = Counter(
 )
 
 
+# Stage 44 -- audit-touching regression serialization + tamper sim isolation.
+AUDIT_VERIFICATION_LOCK_ACQUIRED_TOTAL = Counter(
+    "audit_verification_lock_acquired_total",
+    "Audit verification lock acquisitions (per script + status)",
+    ["script_name", "status"],  # status: acquired | inherited
+)
+AUDIT_VERIFICATION_LOCK_TIMEOUT_TOTAL = Counter(
+    "audit_verification_lock_timeout_total",
+    "Audit verification lock acquisitions that timed out",
+    ["script_name"],
+)
+AUDIT_VERIFICATION_LOCK_WAIT_SECONDS = Histogram(
+    "audit_verification_lock_wait_seconds",
+    "Seconds spent waiting for the audit verification lock",
+    buckets=(0.01, 0.1, 0.5, 1, 5, 15, 30, 60, 120, 300),
+)
+AUDIT_TAMPER_SIMULATION_RUNS_TOTAL = Counter(
+    "audit_tamper_simulation_runs_total",
+    "Tamper simulation runs (per status)",
+    ["status"],  # completed | failed
+)
+AUDIT_TAMPER_SIMULATION_RESTORE_FAILURES_TOTAL = Counter(
+    "audit_tamper_simulation_restore_failures_total",
+    "Tamper simulations whose restore step failed (residue risk)",
+    ["status"],
+)
+AUDIT_TAMPER_RESIDUE_DETECTED_TOTAL = Counter(
+    "audit_tamper_residue_detected_total",
+    "Tamper residue detector runs that found residue (per status)",
+    ["status"],  # detected | absent
+)
+AUDIT_TOUCHING_REGRESSION_SERIALIZED_TOTAL = Counter(
+    "audit_touching_regression_serialized_total",
+    "Full regression runs that serialized audit-touching scripts under the lock",
+    ["status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

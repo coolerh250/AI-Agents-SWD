@@ -28,6 +28,8 @@ cd "$(dirname "$0")/.."
 
 # shellcheck source=scripts/lib/verify_env.sh
 source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+# shellcheck source=scripts/lib/audit_verification_lock.sh
+source "$(dirname "$0")/lib/audit_verification_lock.sh" 2>/dev/null || true
 
 PY="${PYTHON:-python3}"
 REPORT="source/audit-forensics/audit_forensic_latest.json"
@@ -35,6 +37,14 @@ APPROVED="${AUDIT_LOG_RESTORE_APPROVED:-false}"
 
 echo "### restore_audit_log_test_tamper_residue: $(date '+%Y-%m-%d %H:%M:%S %Z')"
 echo "  approved_flag=${APPROVED}"
+
+# Stage 44 -- the restore exception must never run concurrently with a tamper
+# simulation or the full regression. Acquire the exclusive audit lock first.
+if ! acquire_audit_exclusive_lock "restore_audit_log_test_tamper_residue"; then
+    echo "AUDIT_LOG_RESTORE_LOCK: TIMEOUT"
+    echo "AUDIT_LOG_RESTORE: REJECTED_UNSAFE"
+    exit 1
+fi
 
 if [ ! -f "$REPORT" ]; then
     echo "no forensic report at $REPORT -- run analyze_audit_chain_mismatch.py first"

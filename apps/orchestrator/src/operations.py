@@ -1680,6 +1680,9 @@ async def operations_safety() -> dict:
     # restore report file; booleans + opaque ids only, no secrets.
     log_restore_summary = _audit_log_restore_summary()
 
+    # Stage 44 -- audit-touching regression serialization + tamper isolation.
+    serialization_summary = _audit_serialization_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1858,6 +1861,25 @@ async def operations_safety() -> dict:
             or forensic_summary["audit_chain_integrity_restored"]
             or log_restore_summary["audit_log_restore_integrity_restored"]
         ),
+        # Stage 44 -- audit-touching regression serialization + tamper isolation.
+        "audit_touching_regression_serialized": serialization_summary[
+            "audit_touching_regression_serialized"
+        ],
+        "audit_verification_lock_enabled": serialization_summary["audit_verification_lock_enabled"],
+        "audit_verification_lock_last_status": serialization_summary[
+            "audit_verification_lock_last_status"
+        ],
+        "audit_tamper_simulation_isolated": serialization_summary[
+            "audit_tamper_simulation_isolated"
+        ],
+        "audit_tamper_residue_detected": serialization_summary["audit_tamper_residue_detected"],
+        "audit_tamper_residue_count": serialization_summary["audit_tamper_residue_count"],
+        "latest_full_regression_audit_lock_used": serialization_summary[
+            "latest_full_regression_audit_lock_used"
+        ],
+        "latest_full_regression_audit_touching_serialized": serialization_summary[
+            "latest_full_regression_audit_touching_serialized"
+        ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3331,6 +3353,31 @@ async def operations_audit_log_restore_reports(limit: int = 25) -> dict:
     }
 
 
+@router.get("/audit/tamper-residue")
+@_instrument("/operations/audit/tamper-residue", "operations.audit_tamper_residue")
+async def operations_audit_tamper_residue() -> dict:
+    report = _read_json_file(_AUDIT_TAMPER_RESIDUE_LATEST)
+    if report is None:
+        return {"status": "unknown", "available": False, "generated_at": _utcnow_iso()}
+    # Expose count + safe identifiers only (the detector already redacts).
+    return {
+        "available": True,
+        "residue_count": report.get("residue_count"),
+        "residues": report.get("residues", []),
+        "created_at": report.get("created_at"),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/audit/verification-lock/latest")
+@_instrument("/operations/audit/verification-lock/latest", "operations.audit_verification_lock")
+async def operations_audit_verification_lock_latest() -> dict:
+    report = _read_json_file(_AUDIT_VERIFICATION_LOCK_LATEST)
+    if report is None:
+        return {"status": "unknown", "available": False, "generated_at": _utcnow_iso()}
+    return {**report, "available": True, "generated_at": _utcnow_iso()}
+
+
 # ---------------------------------------------------------------------------
 # Stage 35 -- LLM cost governance + real-LLM plan-only pilot operations view.
 # ---------------------------------------------------------------------------
@@ -3903,6 +3950,54 @@ def _list_audit_log_restore_reports(limit: int = 25) -> list[dict[str, Any]]:
         )
     out.sort(key=lambda x: x[0], reverse=True)
     return [d for _, d in out[: max(1, min(int(limit or 25), 200))]]
+
+
+# Stage 44 -- audit-touching regression serialization + tamper sim isolation.
+_AUDIT_VERIFICATION_LOCK_LATEST = Path(_AUDIT_FORENSICS_DIR) / "audit_verification_lock_latest.json"
+_AUDIT_TAMPER_RESIDUE_LATEST = Path(_AUDIT_FORENSICS_DIR) / "audit_tamper_residue_latest.json"
+
+
+def _audit_serialization_summary() -> dict[str, Any]:
+    """Stage 44: read lock + residue + regression reports (read-only).
+
+    Booleans + counts only. Absent reports -> unknown / None, never a false
+    "safe". The residue count is authoritative for tamper isolation health.
+    """
+    lock = _read_json_file(_AUDIT_VERIFICATION_LOCK_LATEST)
+    residue = _read_json_file(_AUDIT_TAMPER_RESIDUE_LATEST)
+    regression = _read_json_file(_REGRESSION_SUMMARY_PATH)
+
+    summary: dict[str, Any] = {
+        "audit_verification_lock_enabled": lock is not None,
+        "audit_verification_lock_last_status": None,
+        "audit_tamper_residue_detected": None,
+        "audit_tamper_residue_count": None,
+        "audit_tamper_simulation_isolated": None,
+        "audit_touching_regression_serialized": None,
+        "latest_full_regression_audit_lock_used": None,
+        "latest_full_regression_audit_touching_serialized": None,
+    }
+    if lock is not None:
+        summary["audit_verification_lock_last_status"] = lock.get("status")
+        summary["audit_verification_lock_enabled"] = bool(lock.get("enabled", True))
+    if residue is not None:
+        count = residue.get("residue_count")
+        summary["audit_tamper_residue_count"] = count
+        summary["audit_tamper_residue_detected"] = bool(count) if count is not None else None
+        # Isolation holds when the lock is enabled and no residue remains.
+        if count is not None:
+            summary["audit_tamper_simulation_isolated"] = (
+                count == 0 and summary["audit_verification_lock_enabled"]
+            )
+    if regression is not None:
+        summary["latest_full_regression_audit_lock_used"] = regression.get("audit_lock_used")
+        summary["latest_full_regression_audit_touching_serialized"] = regression.get(
+            "audit_touching_scripts_serialized"
+        )
+        summary["audit_touching_regression_serialized"] = bool(
+            regression.get("audit_touching_scripts_serialized")
+        )
+    return summary
 
 
 def _list_dr_reports(limit: int = 25) -> list[dict[str, Any]]:

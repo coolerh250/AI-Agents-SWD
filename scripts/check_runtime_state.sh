@@ -3427,5 +3427,94 @@ else
   echo "AUDIT_LOG_RESTORE_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 44 -- audit-touching regression serialization smokes (144-152).
+# ---------------------------------------------------------------------------
+
+# 144. audit verification lock helper acquire/release
+if bash -c "source scripts/lib/audit_verification_lock.sh; \
+  acquire_audit_exclusive_lock smoke; release_audit_lock smoke" 2>&1 \
+  | grep -q "AUDIT_VERIFICATION_LOCK: RELEASED"; then
+  echo "AUDIT_VERIFICATION_LOCK_SMOKE: PASS"
+else
+  echo "AUDIT_VERIFICATION_LOCK_SMOKE: CHECK"
+fi
+
+# 145. tamper residue detector
+sr_out=$(bash scripts/detect_audit_tamper_residue.sh 2>&1 || true)
+if echo "$sr_out" | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: (PASS|SKIP)"; then
+  echo "AUDIT_TAMPER_RESIDUE_DETECTOR_SMOKE: PASS"
+else
+  echo "AUDIT_TAMPER_RESIDUE_DETECTOR_SMOKE: FAIL"
+fi
+
+# 146. tamper simulation isolation -- script wired with lock + markers
+if grep -q "AUDIT_TAMPER_SIMULATION_LOCKED" scripts/simulate_audit_tamper_detection.sh \
+   && grep -q "acquire_audit_exclusive_lock" scripts/simulate_audit_tamper_detection.sh; then
+  echo "AUDIT_TAMPER_SIMULATION_ISOLATION_SMOKE: PASS"
+else
+  echo "AUDIT_TAMPER_SIMULATION_ISOLATION_SMOKE: FAIL"
+fi
+
+# 147. restore exception scripts acquire the lock
+if grep -q "acquire_audit_exclusive_lock" scripts/restore_audit_log_test_tamper_residue.sh \
+   && grep -q "acquire_audit_exclusive_lock" scripts/verify_audit_log_restore_exception.sh; then
+  echo "AUDIT_RESTORE_EXCEPTION_LOCK_SMOKE: PASS"
+else
+  echo "AUDIT_RESTORE_EXCEPTION_LOCK_SMOKE: FAIL"
+fi
+
+# 148. full regression wired to acquire the lock in full mode
+if grep -q "AUDIT_VERIFICATION_LOCK_HELD_BY_RUNNER=true" scripts/run_full_regression.sh; then
+  echo "FULL_REGRESSION_AUDIT_LOCK_SMOKE: PASS"
+else
+  echo "FULL_REGRESSION_AUDIT_LOCK_SMOKE: FAIL"
+fi
+
+# 149. runner classification has the audit serialization classes
+if grep -q "audit_tamper_residue_failure" scripts/run_full_regression.sh \
+   && grep -q "audit_lock_timeout" scripts/run_full_regression.sh; then
+  echo "AUDIT_SERIALIZATION_CLASSIFICATION_SMOKE: PASS"
+else
+  echo "AUDIT_SERIALIZATION_CLASSIFICATION_SMOKE: FAIL"
+fi
+
+# 150. operations/safety carries serialization fields
+ser_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$ser_safety" | grep -q '"audit_touching_regression_serialized"' \
+   && echo "$ser_safety" | grep -q '"audit_verification_lock_enabled"'; then
+  echo "AUDIT_SERIALIZATION_OPERATIONS_SAFETY_SMOKE: PASS"
+else
+  echo "AUDIT_SERIALIZATION_OPERATIONS_SAFETY_SMOKE: CHECK"
+fi
+
+# 151. Stage 44 notification events denylisted (audit.* / verification.*)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.audit_integrity.audit_events import STAGE_44_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in STAGE_44_NOTIFICATION_EVENTS)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_SERIALIZATION_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "AUDIT_SERIALIZATION_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 152. no secret patterns in lock / residue reports
+ser_clean=1
+for r in source/audit-forensics/audit_verification_lock_latest.json \
+         source/audit-forensics/audit_tamper_residue_*.json; do
+  [ -f "$r" ] || continue
+  if grep -qE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AUDIT_HMAC_KEY|xox[baprs]-' "$r" 2>/dev/null; then
+    ser_clean=0
+  fi
+done
+if [ "$ser_clean" = "1" ]; then
+  echo "AUDIT_SERIALIZATION_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "AUDIT_SERIALIZATION_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"
