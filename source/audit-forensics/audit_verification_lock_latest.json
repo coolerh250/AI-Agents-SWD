@@ -1,8 +1,0 @@
-{
-  "lock_key": "aiagents_audit_verification_exclusive_v1",
-  "status": "released",
-  "holder": "who",
-  "timeout_seconds": 300,
-  "enabled": true,
-  "recorded_at": "2026-06-13T15:14:10Z"
-}

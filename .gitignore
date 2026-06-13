@@ -85,3 +85,7 @@ source/audit-forensics/audit_forensic_*.json
 source/audit-forensics/audit_forensic_latest.json
 source/audit-forensics/audit_repair_*.json
 source/audit-forensics/audit_repair_latest.json
+source/audit-forensics/audit_log_restore_*.json
+# Stage 44 runtime artifacts (lock + residue reports) -- regeneratable.
+source/audit-forensics/audit_verification_lock_latest.json
+source/audit-forensics/audit_tamper_residue_*.json
