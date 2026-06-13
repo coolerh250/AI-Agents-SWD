@@ -6,6 +6,101 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 43 — Controlled Audit Log Restore Exception (Test-Tamper Residue)
+
+- **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code `83667c9`, fixes `367ca1a` + `ada7728`,
+  progress commit TBD.
+- **Step:** 41 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Pre-restore validation (read-only; PASS)
+- first_failed_sequence: **265288**; affected audit_log_id:
+  **d714f03d-fa46-458b-9f3f-5f7418c923ff**.
+- root_cause: **test_tamper_not_restored**; repair_allowed: true;
+  repair_risk: low; production_executed: **false**.
+- summary contained ` [TAMPER-SIMULATION]`; removing it reproduces the stored
+  canonical hash (`ccf1193d75…`); missing_integrity_records=0; prev/next chain
+  linkage intact; signature_status=signing_key_not_configured (no signature block).
+
+### Restore action (operator-approved)
+- **Phase 2 dry-run** (no flag): `AUDIT_LOG_RESTORE_EXCEPTION_VERIFY:
+  PASS_APPROVAL_REQUIRED`; DB fingerprint unchanged.
+- **Phase 3 approved** (`AUDIT_LOG_RESTORE_APPROVED=true`):
+  `AUDIT_LOG_RESTORE: COMPLETED` — `audit_logs_modified_count=1`,
+  `audit_integrity_records_modified_count=0`, tamper marker removed,
+  `hash_match_after=true`, `verifier_after_restore=passed`.
+- **DB changed:** yes — exactly ONE `audit_logs.summary`; ZERO
+  `audit_integrity_records`; no cascade. Restore event appended to chain tail.
+- **Concurrency observation:** running the approved restore-exception verify
+  *concurrently* with the full regression caused two tamper-simulations to race
+  and left a **second** residue at seq **279094** (same class). It was cleared
+  with a second isolated approved restore (`COMPLETED`, 1 row, 0 integrity).
+  Lesson recorded: audit-touching verifies/regressions must run **serially**.
+
+### Verification after restore (run serially)
+- `verify_tamper_evident_audit.sh`: **PASS**
+- `verify_audit_integrity_remediation.sh`: **PASS**
+- `verify_audit_direct_post_integrity.sh`: **PASS**
+- `POST /operations/audit/verify-chain`: **status=passed, failed_records=0**
+- fresh forensic scan: **first_failed_sequence=None, failed_records_count=0**
+- `run_full_regression.sh --full --json-report`:
+  **FULL_REGRESSION_VERIFY: PASS_WITH_DOCUMENTED_GAPS**
+  (`total=24 pass=20 skipped_pass=3 pass_with_gaps=1 fail=0 env_fail=0
+  safety_fail=0 regression_fail=0`). The serial run's internal tamper-sims
+  self-restored, leaving the chain clean.
+
+### Production safety status (final)
+- `deployment production_executed=true count = 0`;
+  `workflow production_executed=true count = 0`.
+- `/operations/safety`: `result=safe`, `audit_chain_latest_status=passed`,
+  `audit_chain_integrity_restored=true`, `audit_chain_first_failed_sequence=null`,
+  `audit_chain_root_cause_classified=true`,
+  `audit_log_restore_last_status=completed`,
+  `latest_full_regression_status=pass_with_documented_gaps`,
+  `production_deploy_enabled=false`, `verification_environment_ready=true`,
+  `incident_response_enabled=true`, `real_incident_escalation_enabled=false`,
+  `incident_auto_remediation_enabled=false`,
+  `audit_direct_post_integrity_gap_closed=true`,
+  `audit_hmac_rotation_supported=true`,
+  `agent_direct_model_selection_allowed=false`,
+  `llm_patch_generation_enabled=false`, `llm_workspace_write_enabled=false`,
+  `real_llm_enabled=false`.
+
+### Code modified / created
+- **SDK:** `shared/sdk/audit_integrity/log_restore.py` (new — precheck + apply,
+  dry-run default, summary-only, advisory lock, in-txn re-confirm + rollback,
+  appends restore event to chain); `audit_events.py` (+9 Stage 43 decision
+  types, +4 `audit.*` notification events); `__init__.py` exports.
+- **Scripts:** `restore_audit_log_test_tamper_residue.sh` (dry-run default,
+  `AUDIT_LOG_RESTORE_APPROVED` gate, self-healing latest pointer),
+  `verify_audit_log_restore_exception.sh` (scenarios A–D, clean-chain aware);
+  `check_runtime_state.sh` (+smokes 136–143); `run_full_regression.sh` (+1).
+- **Operations:** `apps/orchestrator/src/operations.py` — endpoints
+  `/audit/log-restore/latest|reports`; `/audit/integrity` log-restore fields;
+  6 `audit_log_restore_*` safety fields; `audit_chain_integrity_restored`
+  derived from the live verifier status.
+- **Metrics:** `shared/sdk/observability/metrics.py` (+7 `audit_log_restore_*`).
+- **Tests:** 9 files (39 tests; apply tests use synthetic chains, never the
+  real row). **Docs:** `docs/operations/audit-log-restore-exception-policy.md`
+  + tamper-evident note.
+
+### Remaining gaps / observations (Claude Code reports only; does not decide)
+- **Audit chain mismatch: CLOSED.** Verifier passes, full regression
+  PASS_WITH_DOCUMENTED_GAPS, `audit_chain_integrity_restored=true`.
+- **Observation:** the tamper-simulation smoke can leave a residue if it races
+  another writer; the restore exception cleanly handles such residue, but
+  audit-touching scripts should run serially.
+- **Carry-forward:** Host asyncpg caveat CLOSED; incident runbook/alert receiver
+  CLOSED; HMAC keyring rotation CLOSED; direct POST integrity gap CLOSED; audit
+  chain mismatch CLOSED. Backup/DR gaps (encryption_no_key, storage_not_off_host,
+  schedule_dry_run_only, migration_down_gaps) OPEN. Kubernetes/Helm/ArgoCD
+  baseline, real production secret store, real off-host backup target, real
+  pager/escalation — all OPEN/not done. Claude Code does not declare production
+  readiness.
+
+---
+
 ## Stage 42 — Audit Chain Forensics & Integrity Repair Procedure
 
 - **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
