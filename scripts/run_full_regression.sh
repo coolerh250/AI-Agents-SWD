@@ -130,14 +130,14 @@ run_verify() {
         result_class="safety_failure"
         failure_reason="production_safety_nonzero"
         SAFETY_FAIL_COUNT=$((SAFETY_FAIL_COUNT + 1))
-    elif echo "$output" | grep -qE "_VERIFY: FAIL.*audit_integrity|_VERIFY: FAIL.*tamper|_VERIFY: FAIL.*direct_post"; then
+    elif echo "$output" | grep -qE "(AUDIT|TAMPER).*_VERIFY: FAIL|_VERIFY: FAIL.*(audit_integrity|tamper|direct_post)"; then
         result_class="regression_failure"
         failure_reason="audit_integrity_fail"
         REGRESSION_FAIL_COUNT=$((REGRESSION_FAIL_COUNT + 1))
     elif echo "$output" | grep -qE "SKIPPED-PASS|SKIPPED: PASS|SKIP.*PASS"; then
         result_class="skipped_pass"
         SKIP_COUNT=$((SKIP_COUNT + 1))
-    elif echo "$output" | grep -q "PASS_WITH_GAPS"; then
+    elif echo "$key_marker" | grep -q "PASS_WITH_GAPS"; then
         if [ "$allowed_gap" = "yes" ]; then
             result_class="pass_with_gaps"
             GAP_COUNT=$((GAP_COUNT + 1))

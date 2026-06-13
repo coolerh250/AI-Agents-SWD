@@ -14,6 +14,9 @@ set -uo pipefail
 
 cd "$(dirname "$0")/.."
 
+# shellcheck source=scripts/lib/verify_env.sh
+source "$(dirname "$0")/lib/verify_env.sh" 2>/dev/null || true
+
 ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
 COMPOSE="docker compose -f infra/docker-compose/docker-compose.yml"
 
