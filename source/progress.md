@@ -6,6 +6,122 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 42 — Audit Chain Forensics & Integrity Repair Procedure
+
+- **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code commit `5eb1078`, progress commit TBD.
+- **Step:** 40 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result (read-only first, no data changes)
+- **first_failed_sequence:** 265288.
+- **failed records:** 1 (the verifier halts on first mismatch;
+  `failed_verifications_count` counts failed *runs*, now 70).
+- **failing record:** `decision_type=github_real_test_blocked`, `task_id=smoke`,
+  `result=blocked`, `production_executed=false`, summary ends with
+  ` [TAMPER-SIMULATION]`.
+- **failure type:** `canonical_payload_hash_mismatch` (chain prev/next linkage
+  via stored row_hash is intact; only the payload→hash binding diverges).
+
+### Forensic report
+- **path:** `source/audit-forensics/audit_forensic_{timestamp}.json` +
+  `audit_forensic_latest.json` (redacted; gitignored).
+- **tool:** `scripts/analyze_audit_chain_mismatch.py` →
+  `shared/sdk/audit_integrity/forensics.py` (full-chain scan, per-record hash
+  recompute, root cause classification). Read-only.
+
+### Root cause classification
+- **classification:** `test_tamper_not_restored`.
+- **confidence:** high.
+- **proof:** stripping ` [TAMPER-SIMULATION]` from the summary and recomputing
+  reproduces the stored `canonical_payload_hash` (`ccf1193d7532...`) **exactly**
+  → the integrity record is correct; the audit_log is the tampered artifact left
+  by an incomplete `simulate_audit_tamper_detection.sh` restore step.
+- **synthetic/test data:** yes. **production_executed involved:** no.
+
+### Repair allowed / status / DB changed
+- **repair_allowed:** true (allowed case #1, provably synthetic, non-production).
+- **repair_risk:** low.
+- **AUDIT_CHAIN_REPAIR_APPROVED flag:** NOT set by operator → repair gated.
+- **repair status:** `approval_required` (dry-run only).
+- **DB changed:** NO. `audit_logs_modified=false`,
+  `audit_integrity_records_modified=false`. Integrity fingerprint identical
+  before/after the gated repair attempt.
+- Controlled repair tool (`scripts/repair_audit_chain_integrity.sh` →
+  `shared/sdk/audit_integrity/repair.py`) modifies `audit_integrity_records`
+  ONLY, defaults to dry-run, cascades `prev_hash`, holds the chain advisory
+  lock, and re-verifies in-transaction with rollback on failure.
+
+### Full regression status
+- `FULL_REGRESSION_VERIFY: FAIL` — **documented known blocker only**:
+  `total=23 pass=16 skipped_pass=3 pass_with_gaps=1 fail=0 env_fail=0
+  safety_fail=0 regression_fail=3`.
+- The 3 `regression_failure` scripts are the audit-chain trio
+  (`verify_audit_integrity_remediation.sh`, `verify_audit_direct_post_integrity.sh`,
+  `verify_tamper_evident_audit.sh`) — all blocked by seq 265288.
+- Both new Stage 42 verify scripts PASS:
+  `AUDIT_CHAIN_FORENSICS_VERIFY: PASS`,
+  `AUDIT_CHAIN_REPAIR_PROCEDURE_VERIFY: PASS`.
+- No `environment_failure`, no `safety_failure`. Stage 42 tests: 55 passed on
+  10.0.1.31 (47 Stage 42 + operations). Local: ruff/black clean.
+- Smokes 125–135 all PASS (`AUDIT_CHAIN_FORENSICS_SMOKE` …
+  `AUDIT_CHAIN_REPAIR_NO_SECRET_LEAK_SMOKE`).
+
+### Production safety status
+- `deployment production_executed=true count = 0`;
+  `workflow production_executed=true count = 0`.
+- `/operations/safety`: `result=safe`, `production_deploy_enabled=false`,
+  `real_incident_escalation_enabled=false`,
+  `incident_auto_remediation_enabled=false`, `real_llm_enabled=false`,
+  `agent_direct_model_selection_allowed=false`,
+  `llm_patch_generation_enabled=false`, `llm_workspace_write_enabled=false`,
+  `audit_direct_post_integrity_gap_closed=true`,
+  `audit_hmac_rotation_supported=true`.
+- New `audit_chain_*` fields: `forensics_available=true`,
+  `first_failed_sequence=265288`, `root_cause_classified=true`,
+  `repair_required=true`, `repair_allowed=true`,
+  `repair_last_status=approval_required`, `integrity_restored=false`.
+
+### Code modified / created
+- **SDK:** `shared/sdk/audit_integrity/forensics.py` (new),
+  `repair.py` (new), `audit_events.py` (+9 decision types, +6 `audit.*` events),
+  `__init__.py` (exports).
+- **Scripts:** `analyze_audit_chain_mismatch.py`,
+  `export_audit_forensic_snapshot.sh`, `repair_audit_chain_integrity.sh`,
+  `verify_audit_chain_forensics.sh`, `verify_audit_chain_repair_procedure.sh`
+  (new); `check_runtime_state.sh` (+smokes 125–135),
+  `run_full_regression.sh` (+2 verify scripts).
+- **Operations:** `apps/orchestrator/src/operations.py` — 4 read-only endpoints
+  (`/audit/forensics/latest|reports`, `/audit/repair/latest|reports`), forensic
+  fields on `/audit/integrity`, 8 `audit_chain_*` fields on `/operations/safety`.
+- **Metrics:** `shared/sdk/observability/metrics.py` (+8 `audit_chain_*` counters).
+- **Infra:** `docker-compose.yml` mounts `source/audit-forensics` into orchestrator.
+- **Tests:** 10 files (47 Stage 42 tests). **Fixtures:** `tests/audit_chain_fixtures.py`.
+- **Docs:** `docs/operations/audit-chain-forensics.md`,
+  `audit-chain-repair-policy.md` (new); `tamper-evident-audit.md` (+note).
+- **.gitignore:** forensic reports + snapshots + repair reports excluded.
+
+### Remaining gaps / observations (Claude Code reports only; does not decide)
+- **Audit chain mismatch: OPEN with complete forensic report.** Root cause
+  proven (`test_tamper_not_restored`); repair is proven-safe and one command
+  away if the operator approves:
+  `AUDIT_CHAIN_REPAIR_APPROVED=true ./scripts/repair_audit_chain_integrity.sh`.
+  Not executed this stage (no operator approval flag).
+- **Observation:** the integrity record is correct; the audit_log is the
+  tampered artifact. The forensically cleanest fix would restore the audit_log
+  summary (1 row, no cascade), but the spec forbids `UPDATE audit_logs`; the
+  spec's integrity-record repair instead re-binds the chain to the current
+  payload and cascades `prev_hash` (~10,283 records on the real tail). Both
+  paths left to operator judgement.
+- **Carry-forward (unchanged):** Host asyncpg caveat CLOSED; incident
+  runbook/alert receiver CLOSED; HMAC keyring rotation CLOSED; direct POST
+  integrity gap CLOSED. Backup/DR gaps (encryption_no_key, storage_not_off_host,
+  schedule_dry_run_only, migration_down_gaps) OPEN. Kubernetes/Helm/ArgoCD
+  baseline, real production secret store, real off-host backup target, real
+  pager/escalation — all OPEN/not done.
+
+---
+
 ## Stage 41 — Verification Environment Hygiene & Regression Runner Hardening
 
 - **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)
