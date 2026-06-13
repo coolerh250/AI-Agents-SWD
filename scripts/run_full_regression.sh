@@ -59,6 +59,13 @@ done
 
 echo "  mode=$MODE  stop_on_fail=$STOP_ON_FAIL  json_report=$JSON_REPORT"
 
+# Stage 44 -- lock-state vars (initialized here, BEFORE acquire, so the later
+# counters block cannot reset them).
+AUDIT_LOCK_USED=false
+AUDIT_LOCK_ACQUIRED_AT=""
+AUDIT_LOCK_RELEASED=false
+AUDIT_TOUCHING_SERIALIZED=false
+
 _runner_release_audit_lock() {
     release_audit_lock "run_full_regression" 2>/dev/null || true
     AUDIT_LOCK_RELEASED=true
@@ -112,14 +119,12 @@ REGRESSION_FAIL_COUNT=0
 SKIP_COUNT=0
 GAP_COUNT=0
 TOTAL=0
-# Stage 44 -- audit serialization failure classes.
+# Stage 44 -- audit serialization failure classes. (Lock-state vars are
+# initialized + set earlier, before the lock is acquired, so they are NOT
+# reset here.)
 AUDIT_SERIALIZATION_FAIL_COUNT=0
 AUDIT_RESIDUE_FAIL_COUNT=0
 AUDIT_LOCK_TIMEOUT_COUNT=0
-AUDIT_LOCK_USED=false
-AUDIT_LOCK_ACQUIRED_AT=""
-AUDIT_LOCK_RELEASED=false
-AUDIT_TOUCHING_SERIALIZED=false
 
 declare -a SCRIPT_RESULTS=()
 
