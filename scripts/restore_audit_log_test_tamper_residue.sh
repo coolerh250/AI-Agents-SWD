@@ -107,7 +107,30 @@ async def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     serialised = json.dumps(result, indent=2, ensure_ascii=False)
     (out_dir / f"{restore_id}.json").write_text(serialised, encoding="utf-8")
-    (out_dir / "audit_log_restore_latest.json").write_text(serialised, encoding="utf-8")
+
+    # audit_log_restore_latest.json must reflect the last *actual* restore apply
+    # (completed / failed), not a later dry-run / approval-required / clean-chain
+    # rejection. If a completed/failed report exists, point latest at the newest
+    # one; otherwise latest is the current (no-op) result. Self-healing.
+    def _status_of(p):
+        try:
+            return json.loads(p.read_text(encoding="utf-8")).get("status")
+        except (OSError, ValueError):
+            return None
+
+    real = sorted(
+        [
+            p
+            for p in out_dir.glob("audit_log_restore_2*.json")
+            if _status_of(p) in ("completed", "failed")
+        ],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
+    latest_src = real[0] if real else (out_dir / f"{restore_id}.json")
+    (out_dir / "audit_log_restore_latest.json").write_text(
+        latest_src.read_text(encoding="utf-8"), encoding="utf-8"
+    )
 
     print(f"restore_id={restore_id}")
     print(f"affected_audit_log_id={result['affected_audit_log_id']}")
