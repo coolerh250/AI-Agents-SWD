@@ -773,6 +773,44 @@ AUDIT_CHAIN_REPAIR_RECORDS_CHANGED_TOTAL = Counter(
 )
 
 
+# Stage 43 -- controlled audit_log restore exception (test-tamper residue).
+AUDIT_LOG_RESTORE_PRECHECK_TOTAL = Counter(
+    "audit_log_restore_precheck_total",
+    "Audit log restore prechecks executed (per status + root_cause)",
+    ["status", "root_cause"],
+)
+AUDIT_LOG_RESTORE_DRY_RUN_TOTAL = Counter(
+    "audit_log_restore_dry_run_total",
+    "Audit log restore dry-runs executed (per root_cause)",
+    ["root_cause"],
+)
+AUDIT_LOG_RESTORE_APPROVAL_REQUIRED_TOTAL = Counter(
+    "audit_log_restore_approval_required_total",
+    "Audit log restore attempts gated awaiting operator approval",
+    ["root_cause"],
+)
+AUDIT_LOG_RESTORE_RUNS_TOTAL = Counter(
+    "audit_log_restore_runs_total",
+    "Audit log restore apply runs (per status + approved)",
+    ["status", "approved"],
+)
+AUDIT_LOG_RESTORE_FAILURES_TOTAL = Counter(
+    "audit_log_restore_failures_total",
+    "Audit log restore applies that failed and rolled back (per reason)",
+    ["reason"],
+)
+AUDIT_LOG_RESTORE_VERIFIED_TOTAL = Counter(
+    "audit_log_restore_verified_total",
+    "Audit log restores whose post-restore verifier passed",
+    ["root_cause"],
+)
+AUDIT_LOG_RESTORE_RECORDS_MODIFIED_TOTAL = Counter(
+    "audit_log_restore_records_modified_total",
+    "audit_logs rows modified by a restore (must be exactly one per run)",
+    ["status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

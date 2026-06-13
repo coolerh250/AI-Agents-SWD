@@ -79,6 +79,16 @@ from .models import (
     VERIFICATION_STATUS_PARTIAL,
     VERIFICATION_STATUS_PASSED,
 )
+from .log_restore import (
+    AuditLogRestorer,
+    RESTORE_STATUS_APPROVAL_REQUIRED,
+    RESTORE_STATUS_COMPLETED,
+    RESTORE_STATUS_DRY_RUN,
+    RESTORE_STATUS_FAILED,
+    RESTORE_STATUS_REJECTED_UNSAFE,
+    RESTORE_TYPE_TEST_TAMPER_RESIDUE,
+    RestorePrecheck,
+)
 from .repair import (
     AuditChainRepairer,
     REPAIR_STATUS_APPROVAL_REQUIRED,
@@ -147,6 +157,14 @@ __all__ = [
     "VERIFY_OUTCOME_SIGNATURE_FAILED",
     "AuditChainForensicAnalyzer",
     "AuditChainRepairer",
+    "AuditLogRestorer",
+    "RestorePrecheck",
+    "RESTORE_STATUS_APPROVAL_REQUIRED",
+    "RESTORE_STATUS_COMPLETED",
+    "RESTORE_STATUS_DRY_RUN",
+    "RESTORE_STATUS_FAILED",
+    "RESTORE_STATUS_REJECTED_UNSAFE",
+    "RESTORE_TYPE_TEST_TAMPER_RESIDUE",
     "AuditChainVerificationRun",
     "AuditChainVerifier",
     "AuditHmacKeyring",

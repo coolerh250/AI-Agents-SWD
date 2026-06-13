@@ -1676,6 +1676,10 @@ async def operations_safety() -> dict:
     # forensic/repair report files; booleans + opaque ids only, no secrets.
     forensic_summary = _audit_forensic_summary()
 
+    # Stage 43 -- audit_log restore exception snapshot. Reads the latest
+    # restore report file; booleans + opaque ids only, no secrets.
+    log_restore_summary = _audit_log_restore_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1834,7 +1838,22 @@ async def operations_safety() -> dict:
         "audit_chain_repair_required": forensic_summary["audit_chain_repair_required"],
         "audit_chain_repair_allowed": forensic_summary["audit_chain_repair_allowed"],
         "audit_chain_repair_last_status": forensic_summary["audit_chain_repair_last_status"],
-        "audit_chain_integrity_restored": forensic_summary["audit_chain_integrity_restored"],
+        # Stage 43 -- controlled audit_log restore exception. The chain is
+        # considered restored when either path (integrity repair OR audit_log
+        # restore) cleared the mismatch and the verifier passed.
+        "audit_log_restore_exception_available": log_restore_summary[
+            "audit_log_restore_exception_available"
+        ],
+        "audit_log_restore_required": log_restore_summary["audit_log_restore_required"],
+        "audit_log_restore_allowed": log_restore_summary["audit_log_restore_allowed"],
+        "audit_log_restore_last_status": log_restore_summary["audit_log_restore_last_status"],
+        "audit_log_restore_last_audit_log_id": log_restore_summary[
+            "audit_log_restore_last_audit_log_id"
+        ],
+        "audit_chain_integrity_restored": bool(
+            forensic_summary["audit_chain_integrity_restored"]
+            or log_restore_summary["audit_log_restore_integrity_restored"]
+        ),
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3079,6 +3098,22 @@ async def _audit_integrity_summary() -> dict[str, Any]:
     summary["repair_required"] = forensic["audit_chain_repair_required"]
     summary["repair_allowed"] = forensic["audit_chain_repair_allowed"]
     summary["repair_risk"] = forensic["audit_chain_repair_risk"]
+
+    # Stage 43 -- merge audit_log restore exception findings.
+    restore = _audit_log_restore_summary()
+    summary["latest_log_restore_status"] = restore["audit_log_restore_last_status"]
+    summary["latest_log_restore_id"] = restore["latest_log_restore_id"]
+    summary["latest_log_restore_type"] = restore["latest_log_restore_type"]
+    summary["audit_log_restore_required"] = restore["audit_log_restore_required"]
+    summary["audit_log_restore_allowed"] = restore["audit_log_restore_allowed"]
+    summary["audit_log_restore_approved"] = restore["audit_log_restore_approved"]
+    summary["audit_log_restore_last_result"] = restore["audit_log_restore_last_result"]
+    # The chain is restored when either the integrity-repair path or the
+    # audit_log restore path has cleared the mismatch and the verifier passes.
+    summary["audit_chain_integrity_restored"] = bool(
+        forensic["audit_chain_integrity_restored"]
+        or restore["audit_log_restore_integrity_restored"]
+    )
     return summary
 
 
@@ -3264,6 +3299,24 @@ async def operations_audit_repair_latest() -> dict:
 async def operations_audit_repair_reports(limit: int = 25) -> dict:
     return {
         "reports": _list_audit_repair_reports(limit=limit),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/audit/log-restore/latest")
+@_instrument("/operations/audit/log-restore/latest", "operations.audit_log_restore_latest")
+async def operations_audit_log_restore_latest() -> dict:
+    report = _read_json_file(_AUDIT_LOG_RESTORE_LATEST)
+    if report is None:
+        return {"status": "unknown", "available": False, "generated_at": _utcnow_iso()}
+    return {**report, "available": True, "generated_at": _utcnow_iso()}
+
+
+@router.get("/audit/log-restore/reports")
+@_instrument("/operations/audit/log-restore/reports", "operations.audit_log_restore_reports")
+async def operations_audit_log_restore_reports(limit: int = 25) -> dict:
+    return {
+        "reports": _list_audit_log_restore_reports(limit=limit),
         "generated_at": _utcnow_iso(),
     }
 
@@ -3759,6 +3812,82 @@ def _list_audit_repair_reports(limit: int = 25) -> list[dict[str, Any]]:
                     "approved": data.get("approved"),
                     "audit_logs_modified": data.get("audit_logs_modified"),
                     "changed_records_count": data.get("changed_records_count"),
+                },
+            )
+        )
+    out.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in out[: max(1, min(int(limit or 25), 200))]]
+
+
+# Stage 43 -- controlled audit_log restore exception (test-tamper residue).
+_AUDIT_LOG_RESTORE_LATEST = Path(_AUDIT_FORENSICS_DIR) / "audit_log_restore_latest.json"
+
+
+def _audit_log_restore_summary() -> dict[str, Any]:
+    """Stage 43: read latest audit_log restore report (read-only).
+
+    Booleans + opaque ids only. Absent report -> unknown / None (never
+    pretends the chain is restored).
+    """
+    restore = _read_json_file(_AUDIT_LOG_RESTORE_LATEST)
+    summary: dict[str, Any] = {
+        "audit_log_restore_exception_available": restore is not None,
+        "audit_log_restore_required": None,
+        "audit_log_restore_allowed": None,
+        "audit_log_restore_approved": None,
+        "audit_log_restore_last_status": None,
+        "audit_log_restore_last_result": None,
+        "audit_log_restore_last_audit_log_id": None,
+        "latest_log_restore_id": None,
+        "latest_log_restore_type": None,
+        "audit_log_restore_integrity_restored": False,
+    }
+    if restore is not None:
+        status = restore.get("status")
+        precheck = restore.get("precheck") or {}
+        verifier = restore.get("verifier_after_restore") or {}
+        restored = bool(status == "completed" and verifier.get("status") in ("passed", "partial"))
+        summary.update(
+            audit_log_restore_required=bool(precheck.get("before_contains_tamper_marker")),
+            audit_log_restore_allowed=bool(precheck.get("ok")),
+            audit_log_restore_approved=bool(restore.get("approved")),
+            audit_log_restore_last_status=status,
+            audit_log_restore_last_result=status,
+            audit_log_restore_last_audit_log_id=restore.get("affected_audit_log_id"),
+            latest_log_restore_id=restore.get("restore_id"),
+            latest_log_restore_type=restore.get("restore_type"),
+            audit_log_restore_integrity_restored=restored,
+        )
+    return summary
+
+
+def _list_audit_log_restore_reports(limit: int = 25) -> list[dict[str, Any]]:
+    base = Path(_AUDIT_FORENSICS_DIR)
+    if not base.is_dir():
+        return []
+    out: list[tuple[float, dict[str, Any]]] = []
+    for p in base.glob("audit_log_restore_*.json"):
+        if p.name == "audit_log_restore_latest.json":
+            continue
+        data = _read_json_file(p)
+        if data is None:
+            continue
+        out.append(
+            (
+                p.stat().st_mtime,
+                {
+                    "restore_id": data.get("restore_id"),
+                    "created_at": data.get("created_at"),
+                    "status": data.get("status"),
+                    "restore_type": data.get("restore_type"),
+                    "affected_audit_log_id": data.get("affected_audit_log_id"),
+                    "affected_sequence_number": data.get("affected_sequence_number"),
+                    "dry_run": data.get("dry_run"),
+                    "approved": data.get("approved"),
+                    "audit_logs_modified_count": data.get("audit_logs_modified_count"),
+                    "audit_integrity_records_modified_count": data.get(
+                        "audit_integrity_records_modified_count"
+                    ),
                 },
             )
         )

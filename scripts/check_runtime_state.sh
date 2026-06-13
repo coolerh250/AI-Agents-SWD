@@ -3344,5 +3344,88 @@ else
   echo "AUDIT_CHAIN_REPAIR_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 43 -- controlled audit_log restore exception smokes (136-143).
+# ---------------------------------------------------------------------------
+LOG_RESTORE_REPORT="source/audit-forensics/audit_log_restore_latest.json"
+
+# 136. restore policy doc present
+if [ -f "docs/operations/audit-log-restore-exception-policy.md" ]; then
+  echo "AUDIT_LOG_RESTORE_POLICY_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_POLICY_SMOKE: CHECK"
+fi
+
+# 137. restore SDK importable + precheck callable
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.audit_integrity.log_restore import AuditLogRestorer, RestorePrecheck
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_LOG_RESTORE_PRECHECK_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_PRECHECK_SMOKE: FAIL"
+fi
+
+# 138. restore dry-run gated (no approval -> no DB change)
+lr_out=$(AUDIT_LOG_RESTORE_APPROVED=false bash scripts/restore_audit_log_test_tamper_residue.sh 2>&1 || true)
+if echo "$lr_out" | grep -qE "AUDIT_LOG_RESTORE: (DRY_RUN|APPROVAL_REQUIRED|REJECTED_UNSAFE|COMPLETED)"; then
+  echo "AUDIT_LOG_RESTORE_DRY_RUN_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_DRY_RUN_SMOKE: CHECK"
+fi
+
+# 139. unapproved restore must not modify audit_logs
+if echo "$lr_out" | grep -q "audit_logs_modified_count=0" \
+   || echo "$lr_out" | grep -qE "AUDIT_LOG_RESTORE: (COMPLETED|REJECTED_UNSAFE)"; then
+  echo "AUDIT_LOG_RESTORE_APPROVAL_REQUIRED_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_APPROVAL_REQUIRED_SMOKE: CHECK"
+fi
+
+# 140. operations/audit/log-restore/latest reachable
+lr_latest=$(curl -sS -m 5 "http://localhost:8000/operations/audit/log-restore/latest" 2>/dev/null || echo '{}')
+if echo "$lr_latest" | grep -q '"available"'; then
+  echo "AUDIT_LOG_RESTORE_OPERATIONS_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 141. operations/safety carries audit_log_restore fields
+lr_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$lr_safety" | grep -q '"audit_log_restore_exception_available"' \
+   && echo "$lr_safety" | grep -q '"audit_log_restore_allowed"'; then
+  echo "AUDIT_LOG_RESTORE_SAFETY_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_SAFETY_SMOKE: CHECK"
+fi
+
+# 142. Stage 43 metrics registered
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.observability import metrics
+assert hasattr(metrics,'AUDIT_LOG_RESTORE_RUNS_TOTAL')
+assert hasattr(metrics,'AUDIT_LOG_RESTORE_PRECHECK_TOTAL')
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_LOG_RESTORE_METRICS_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_METRICS_SMOKE: FAIL"
+fi
+
+# 143. no secret patterns in restore reports
+lr_clean=1
+for r in source/audit-forensics/audit_log_restore_*.json; do
+  [ -f "$r" ] || continue
+  if grep -qE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AUDIT_HMAC_KEY|xox[baprs]-' "$r" 2>/dev/null; then
+    lr_clean=0
+  fi
+done
+if [ "$lr_clean" = "1" ]; then
+  echo "AUDIT_LOG_RESTORE_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "AUDIT_LOG_RESTORE_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

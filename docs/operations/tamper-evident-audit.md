@@ -495,3 +495,13 @@ appends a `[TAMPER-SIMULATION]` marker to the latest row, confirms the
 verifier detects it, then restores the row in a `finally`. If that restore
 does not complete (process killed), the marker is left in place and surfaces
 later as a `test_tamper_not_restored` forensic finding.
+
+## Stage 43 -- audit_log restore exception (test-tamper residue)
+
+For the specific case of a `test_tamper_not_restored` residue (a synthetic
+row left with a `[TAMPER-SIMULATION]` marker by an incomplete tamper-sim), the
+Stage 43 controlled restore removes the marker from the one `audit_logs.summary`
+so the row re-matches its already-correct integrity record — no integrity
+record change, no cascade. It is dry-run by default and requires
+`AUDIT_LOG_RESTORE_APPROVED=true`. See
+[audit-log-restore-exception-policy.md](audit-log-restore-exception-policy.md).

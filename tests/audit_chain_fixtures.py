@@ -98,10 +98,13 @@ class InMemoryChain:
 
     def joined_rows(self, *, min_seq: int | None = None) -> list[_Row]:
         rows: list[_Row] = []
+        by_id = {str(k): v for k, v in self.audit_logs.items()}
         for r in sorted(self.integrity, key=lambda x: x["sequence_number"]):
             if min_seq is not None and r["sequence_number"] < min_seq:
                 continue
-            audit = self.audit_logs[r["audit_log_id"]]
+            audit = by_id.get(str(r["audit_log_id"]))
+            if audit is None:
+                continue
             rows.append(
                 _Row(
                     {
@@ -127,8 +130,100 @@ class InMemoryChain:
             )
         return rows
 
+    def insert_audit_log(
+        self,
+        *,
+        agent: str,
+        decision_type: str,
+        summary: str,
+        result: str,
+        task_id: str,
+        artifact_refs: Any,
+    ) -> _Row:
+        audit_id = uuid4()
+        created = datetime(2026, 6, 13, tzinfo=timezone.utc)
+        audit = {
+            "id": audit_id,
+            "task_id": task_id,
+            "agent": agent,
+            "decision_type": decision_type,
+            "summary": summary,
+            "result": result,
+            "artifact_refs": artifact_refs,
+            "created_at": created,
+        }
+        self.audit_logs[audit_id] = audit
+        return _Row(
+            {
+                "id": audit_id,
+                "task_id": task_id,
+                "agent": agent,
+                "decision_type": decision_type,
+                "summary": summary,
+                "result": result,
+                "artifact_refs": artifact_refs,
+                "created_at": created,
+            }
+        )
+
+    def insert_integrity(self, params: tuple) -> _Row:
+        (
+            audit_log_id,
+            chain_version,
+            sequence_number,
+            prev_hash,
+            row_hash,
+            canonical_hash,
+            signature,
+            key_id,
+            sig_status,
+            integrity_status,
+        ) = params
+        rec = {
+            "integrity_id": uuid4(),
+            "audit_log_id": audit_log_id,
+            "chain_version": chain_version,
+            "sequence_number": sequence_number,
+            "prev_hash": prev_hash,
+            "row_hash": row_hash,
+            "canonical_payload_hash": canonical_hash,
+            "hmac_signature": signature,
+            "signing_key_id": key_id,
+            "signature_status": sig_status,
+            "integrity_status": integrity_status,
+            "created_at": datetime(2026, 6, 13, tzinfo=timezone.utc),
+        }
+        self.integrity.append(rec)
+        return _Row(rec)
+
+    def synthetic_tamper_audit_id(self):
+        """Return the audit_log_id whose summary carries a tamper marker."""
+        by_id = {str(k): v for k, v in self.audit_logs.items()}
+        for r in self.integrity:
+            audit = by_id.get(str(r["audit_log_id"]))
+            if audit and (audit["summary"] or "").endswith(TAMPER_MARKER):
+                return str(r["audit_log_id"])
+        return None
+
     def make_conn(self) -> "_FakeConn":
         return _FakeConn(self)
+
+
+def forensic_report_for(failed) -> dict:
+    """Build a forensic-report dict (as analyze_audit_chain_mismatch.py would)."""
+    from shared.sdk.audit_integrity.forensics import classify_chain_root_cause
+
+    classification = classify_chain_root_cause(failed)
+    return {
+        "report_id": "audit_forensic_test",
+        "first_failed_sequence": failed[0].sequence_number if failed else None,
+        "failed_records_count": len(failed),
+        "failed_records": [r.to_dict() for r in failed],
+        "root_cause_classification": classification["root_cause_classification"],
+        "repair_allowed": classification["repair_allowed"],
+        "repair_risk": classification["repair_risk"],
+        "production_executed": classification["production_executed_involved"],
+    }
 
 
 class _FakeTxn:
@@ -153,12 +248,20 @@ class _FakeConn:
         if "MAX(sequence_number)" in sql:
             seqs = [r["sequence_number"] for r in self.chain.integrity]
             return max(seqs) if seqs else None
-        if "row_hash FROM audit_integrity_records" in sql and "sequence_number = $2" in sql:
-            seq = params[1]
+        if "prev_hash FROM audit_integrity_records" in sql and "sequence_number = $2" in sql:
             try:
-                return self.chain._by_seq(int(seq))["row_hash"]
+                return self.chain._by_seq(int(params[1]))["prev_hash"]
             except StopIteration:
                 return None
+        if "row_hash FROM audit_integrity_records" in sql and "sequence_number = $2" in sql:
+            try:
+                return self.chain._by_seq(int(params[1]))["row_hash"]
+            except StopIteration:
+                return None
+        if "COUNT(*) FROM audit_logs al" in sql and "LEFT JOIN" in sql:
+            # missing integrity records
+            covered = {r["audit_log_id"] for r in self.chain.integrity}
+            return sum(1 for aid in self.chain.audit_logs if aid not in covered)
         if "COUNT(*) FROM audit_logs" in sql:
             return len(self.chain.audit_logs)
         if "COUNT(*) FROM audit_integrity_records" in sql:
@@ -171,12 +274,48 @@ class _FakeConn:
         return self.chain.joined_rows()
 
     async def fetchrow(self, sql: str, *params):
+        # precheck / apply join by a single sequence_number
+        if "JOIN audit_logs al" in sql and "r.sequence_number = $2" in sql:
+            for row in self.chain.joined_rows():
+                if row["sequence_number"] == int(params[1]):
+                    return row
+            return None
+        # apply re-read by audit_log_id
+        if "JOIN audit_logs al" in sql and "r.audit_log_id = $1" in sql:
+            for row in self.chain.joined_rows():
+                if str(row["audit_log_id"]) == str(params[0]):
+                    return row
+            return None
+        # INSERT a new audit_logs row (restore event)
+        if sql.strip().upper().startswith("INSERT INTO AUDIT_LOGS"):
+            return self.chain.insert_audit_log(
+                agent=params[0],
+                decision_type=params[1],
+                summary=params[2],
+                result=params[3],
+                task_id=params[4],
+                artifact_refs=params[5],
+            )
+        # create_integrity_record_in_txn: existence check
+        if "SELECT 1 FROM audit_integrity_records WHERE audit_log_id = $1" in sql:
+            return None
+        # create_integrity_record_in_txn: latest record
+        if "sequence_number, row_hash" in sql and "ORDER BY sequence_number DESC" in sql:
+            if not self.chain.integrity:
+                return None
+            latest = max(self.chain.integrity, key=lambda r: r["sequence_number"])
+            return _Row(
+                {"sequence_number": latest["sequence_number"], "row_hash": latest["row_hash"]}
+            )
+        # create_integrity_record_in_txn: INSERT integrity record
+        if sql.strip().upper().startswith("INSERT INTO AUDIT_INTEGRITY_RECORDS"):
+            return self.chain.insert_integrity(params)
         return None
 
     async def execute(self, sql: str, *params):
         self.executed.append((sql, params))
-        if sql.strip().upper().startswith("UPDATE AUDIT_INTEGRITY_RECORDS"):
-            # UPDATE ... SET canonical=$1, row=$2, prev=$3, status=$4 WHERE integrity_id=$5
+        up = sql.strip().upper()
+        if up.startswith("UPDATE AUDIT_INTEGRITY_RECORDS"):
             new_canonical, new_row, new_prev, status, integrity_id = params
             for r in self.chain.integrity:
                 if r["integrity_id"] == integrity_id:
@@ -185,12 +324,29 @@ class _FakeConn:
                     r["prev_hash"] = new_prev
                     r["integrity_status"] = status
                     break
+            return "UPDATE 1"
+        if up.startswith("UPDATE AUDIT_LOGS SET SUMMARY"):
+            # UPDATE audit_logs SET summary=$1 WHERE id=$2 AND summary=$3
+            new_summary, audit_id, expected = params[0], params[1], params[2]
+            n = 0
+            for aid, audit in self.chain.audit_logs.items():
+                if str(aid) == str(audit_id) and audit["summary"] == expected:
+                    audit["summary"] = new_summary
+                    n += 1
+            return f"UPDATE {n}"
         return "OK"
 
     async def close(self):
         return None
 
-    def update_count(self) -> int:
+    def audit_log_update_count(self) -> int:
+        return sum(
+            1
+            for sql, _ in self.executed
+            if sql.strip().upper().startswith("UPDATE AUDIT_LOGS")
+        )
+
+    def integrity_update_count(self) -> int:
         return sum(
             1
             for sql, _ in self.executed
