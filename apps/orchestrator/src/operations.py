@@ -1672,6 +1672,10 @@ async def operations_safety() -> dict:
     # latest regression summary file; booleans + paths only, no secrets.
     verification_summary = _verification_environment_summary()
 
+    # Stage 42 -- audit chain forensics + repair snapshot. Reads the latest
+    # forensic/repair report files; booleans + opaque ids only, no secrets.
+    forensic_summary = _audit_forensic_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1811,12 +1815,26 @@ async def operations_safety() -> dict:
         "latest_full_regression_report_path": verification_summary[
             "latest_full_regression_report_path"
         ],
-        "verification_dependency_failures": verification_summary["verification_dependency_failures"],
+        "verification_dependency_failures": verification_summary[
+            "verification_dependency_failures"
+        ],
         "verification_known_gaps": verification_summary["verification_known_gaps"],
-        "verification_environment_caveats": verification_summary["verification_environment_caveats"],
+        "verification_environment_caveats": verification_summary[
+            "verification_environment_caveats"
+        ],
         "verification_host_dependency_caveat_closed": verification_summary[
             "verification_host_dependency_caveat_closed"
         ],
+        # Stage 42 -- audit chain forensics + controlled repair.
+        # Booleans + opaque ids only; never carries payload or key bytes.
+        "audit_chain_forensics_available": forensic_summary["audit_chain_forensics_available"],
+        "audit_chain_first_failed_sequence": forensic_summary["audit_chain_first_failed_sequence"],
+        "audit_chain_failed_verifications_count": audit_integrity["failed_verifications_count"],
+        "audit_chain_root_cause_classified": forensic_summary["audit_chain_root_cause_classified"],
+        "audit_chain_repair_required": forensic_summary["audit_chain_repair_required"],
+        "audit_chain_repair_allowed": forensic_summary["audit_chain_repair_allowed"],
+        "audit_chain_repair_last_status": forensic_summary["audit_chain_repair_last_status"],
+        "audit_chain_integrity_restored": forensic_summary["audit_chain_integrity_restored"],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3051,6 +3069,16 @@ async def _audit_integrity_summary() -> dict[str, Any]:
         summary["audit_integrity_enabled"] = False
         summary["audit_integrity_degraded"] = True
         summary["error"] = f"{exc.__class__.__name__}: {exc}"
+
+    # Stage 42 -- merge forensic + repair findings (read-only file reads).
+    forensic = _audit_forensic_summary()
+    summary["first_failed_sequence"] = forensic["audit_chain_first_failed_sequence"]
+    summary["latest_forensic_report_id"] = forensic["latest_forensic_report_id"]
+    summary["latest_forensic_root_cause"] = forensic["latest_forensic_root_cause"]
+    summary["latest_repair_status"] = forensic["audit_chain_repair_last_status"]
+    summary["repair_required"] = forensic["audit_chain_repair_required"]
+    summary["repair_allowed"] = forensic["audit_chain_repair_allowed"]
+    summary["repair_risk"] = forensic["audit_chain_repair_risk"]
     return summary
 
 
@@ -3195,6 +3223,49 @@ async def operations_audit_receipt(audit_log_id: str) -> dict:
     body["keyring_mode"] = snapshot.mode
     body["generated_at"] = _utcnow_iso()
     return body
+
+
+# ---------------------------------------------------------------------------
+# Stage 42 -- audit chain forensics + controlled repair (read-only views).
+# These endpoints NEVER run a forensic scan or a repair; they read the
+# latest redacted report files written by the offline scripts.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/audit/forensics/latest")
+@_instrument("/operations/audit/forensics/latest", "operations.audit_forensics_latest")
+async def operations_audit_forensics_latest() -> dict:
+    report = _read_json_file(_AUDIT_FORENSIC_LATEST)
+    if report is None:
+        return {"status": "unknown", "available": False, "generated_at": _utcnow_iso()}
+    return {**report, "available": True, "generated_at": _utcnow_iso()}
+
+
+@router.get("/audit/forensics/reports")
+@_instrument("/operations/audit/forensics/reports", "operations.audit_forensics_reports")
+async def operations_audit_forensics_reports(limit: int = 25) -> dict:
+    return {
+        "reports": _list_audit_forensic_reports(limit=limit),
+        "generated_at": _utcnow_iso(),
+    }
+
+
+@router.get("/audit/repair/latest")
+@_instrument("/operations/audit/repair/latest", "operations.audit_repair_latest")
+async def operations_audit_repair_latest() -> dict:
+    report = _read_json_file(_AUDIT_REPAIR_LATEST)
+    if report is None:
+        return {"status": "unknown", "available": False, "generated_at": _utcnow_iso()}
+    return {**report, "available": True, "generated_at": _utcnow_iso()}
+
+
+@router.get("/audit/repair/reports")
+@_instrument("/operations/audit/repair/reports", "operations.audit_repair_reports")
+async def operations_audit_repair_reports(limit: int = 25) -> dict:
+    return {
+        "reports": _list_audit_repair_reports(limit=limit),
+        "generated_at": _utcnow_iso(),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -3564,6 +3635,135 @@ def _verification_environment_summary() -> dict[str, Any]:
             "verification_environment_caveats": [],
             "verification_host_dependency_caveat_closed": False,
         }
+
+
+_AUDIT_FORENSICS_DIR = os.environ.get("AUDIT_FORENSICS_DIR", "source/audit-forensics")
+_AUDIT_FORENSIC_LATEST = Path(_AUDIT_FORENSICS_DIR) / "audit_forensic_latest.json"
+_AUDIT_REPAIR_LATEST = Path(_AUDIT_FORENSICS_DIR) / "audit_repair_latest.json"
+
+
+def _read_json_file(path: Path) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    try:
+        with open(path, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _audit_forensic_summary() -> dict[str, Any]:
+    """Stage 42: read latest forensic + repair reports (read-only).
+
+    Returns booleans + opaque ids only. When no report exists the fields
+    report ``unknown`` / ``None`` rather than pretending the chain is safe.
+    """
+    forensic = _read_json_file(_AUDIT_FORENSIC_LATEST)
+    repair = _read_json_file(_AUDIT_REPAIR_LATEST)
+
+    summary: dict[str, Any] = {
+        "audit_chain_forensics_available": forensic is not None,
+        "audit_chain_first_failed_sequence": None,
+        "audit_chain_failed_records_count": None,
+        "latest_forensic_report_id": None,
+        "latest_forensic_root_cause": None,
+        "audit_chain_root_cause_classified": False,
+        "audit_chain_repair_required": None,
+        "audit_chain_repair_allowed": None,
+        "audit_chain_repair_risk": None,
+        "audit_chain_repair_last_status": None,
+        "latest_repair_report_id": None,
+        "audit_chain_integrity_restored": False,
+    }
+
+    if forensic is not None:
+        first_failed = forensic.get("first_failed_sequence")
+        root_cause = forensic.get("root_cause_classification")
+        summary.update(
+            audit_chain_first_failed_sequence=first_failed,
+            audit_chain_failed_records_count=forensic.get("failed_records_count"),
+            latest_forensic_report_id=forensic.get("report_id"),
+            latest_forensic_root_cause=root_cause,
+            # "classified" means a forensic verdict exists -- including the
+            # explicit "unknown" verdict (which forces repair_allowed=false).
+            audit_chain_root_cause_classified=bool(
+                forensic.get("root_cause_classification") is not None
+                or forensic.get("failed_records_count") == 0
+            ),
+            audit_chain_repair_required=bool(forensic.get("failed_records_count")),
+            audit_chain_repair_allowed=bool(forensic.get("repair_allowed")),
+            audit_chain_repair_risk=forensic.get("repair_risk"),
+        )
+
+    if repair is not None:
+        status = repair.get("status")
+        verification = repair.get("verification_after_repair") or {}
+        summary.update(
+            audit_chain_repair_last_status=status,
+            latest_repair_report_id=repair.get("repair_id"),
+            audit_chain_integrity_restored=bool(
+                status == "completed" and verification.get("passed") is True
+            ),
+        )
+    return summary
+
+
+def _list_audit_forensic_reports(limit: int = 25) -> list[dict[str, Any]]:
+    base = Path(_AUDIT_FORENSICS_DIR)
+    if not base.is_dir():
+        return []
+    out: list[tuple[float, dict[str, Any]]] = []
+    for p in base.glob("audit_forensic_*.json"):
+        if p.name == "audit_forensic_latest.json":
+            continue
+        data = _read_json_file(p)
+        if data is None:
+            continue
+        out.append(
+            (
+                p.stat().st_mtime,
+                {
+                    "report_id": data.get("report_id"),
+                    "created_at": data.get("created_at"),
+                    "root_cause_classification": data.get("root_cause_classification"),
+                    "first_failed_sequence": data.get("first_failed_sequence"),
+                    "failed_records_count": data.get("failed_records_count"),
+                    "repair_allowed": data.get("repair_allowed"),
+                },
+            )
+        )
+    out.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in out[: max(1, min(int(limit or 25), 200))]]
+
+
+def _list_audit_repair_reports(limit: int = 25) -> list[dict[str, Any]]:
+    base = Path(_AUDIT_FORENSICS_DIR)
+    if not base.is_dir():
+        return []
+    out: list[tuple[float, dict[str, Any]]] = []
+    for p in base.glob("audit_repair_*.json"):
+        if p.name == "audit_repair_latest.json":
+            continue
+        data = _read_json_file(p)
+        if data is None:
+            continue
+        out.append(
+            (
+                p.stat().st_mtime,
+                {
+                    "repair_id": data.get("repair_id"),
+                    "started_at": data.get("started_at"),
+                    "status": data.get("status"),
+                    "root_cause": data.get("root_cause"),
+                    "dry_run": data.get("dry_run"),
+                    "approved": data.get("approved"),
+                    "audit_logs_modified": data.get("audit_logs_modified"),
+                    "changed_records_count": data.get("changed_records_count"),
+                },
+            )
+        )
+    out.sort(key=lambda x: x[0], reverse=True)
+    return [d for _, d in out[: max(1, min(int(limit or 25), 200))]]
 
 
 def _list_dr_reports(limit: int = 25) -> list[dict[str, Any]]:

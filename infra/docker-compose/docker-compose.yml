@@ -235,6 +235,8 @@ services:
       # regression summaries and DR drill reports written by verify scripts.
       - ../../source/regression-reports:/app/source/regression-reports
       - ../../source/dr-reports:/app/source/dr-reports
+      # Stage 42 -- mount audit forensic + repair reports (read-only views).
+      - ../../source/audit-forensics:/app/source/audit-forensics
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

@@ -215,6 +215,8 @@ else
     run_verify scripts/verify_audit_hmac_key_rotation.sh
     run_verify scripts/verify_audit_direct_post_integrity.sh
     run_verify scripts/verify_tamper_evident_audit.sh
+    run_verify scripts/verify_audit_chain_forensics.sh
+    run_verify scripts/verify_audit_chain_repair_procedure.sh
     run_verify scripts/verify_llm_model_routing.sh
     run_verify scripts/verify_llm_cost_governance.sh
     run_verify scripts/verify_real_llm_plan_only_pilot.sh

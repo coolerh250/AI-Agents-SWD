@@ -3227,5 +3227,122 @@ else
   echo "VERIFICATION_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 42 -- audit chain forensics + controlled repair smokes (125-135).
+# ---------------------------------------------------------------------------
+PYBIN="${PYTHON:-python3}"
+FORENSIC_REPORT="source/audit-forensics/audit_forensic_latest.json"
+REPAIR_REPORT="source/audit-forensics/audit_repair_latest.json"
+
+# 125. forensic analyzer SDK importable + classifier callable
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.audit_integrity.forensics import classify_chain_root_cause, analyse_record
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_CHAIN_FORENSICS_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_FORENSICS_SMOKE: FAIL"
+fi
+
+# 126. forensic report exists (run analyzer if missing)
+if [ ! -f "$FORENSIC_REPORT" ]; then
+  "$PYBIN" scripts/analyze_audit_chain_mismatch.py >/dev/null 2>&1 || true
+fi
+if [ -f "$FORENSIC_REPORT" ]; then
+  echo "AUDIT_CHAIN_FORENSIC_REPORT_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_FORENSIC_REPORT_SMOKE: CHECK (no forensic report)"
+fi
+
+# 127. root cause classification present (or chain clean)
+if [ -f "$FORENSIC_REPORT" ] && "$PYBIN" -c "
+import json; d=json.load(open('$FORENSIC_REPORT'))
+failed=d.get('failed_records_count') or 0
+exit(0 if (failed==0 or d.get('root_cause_classification')) else 1)
+" >/dev/null 2>&1; then
+  echo "AUDIT_CHAIN_ROOT_CAUSE_CLASSIFICATION_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_ROOT_CAUSE_CLASSIFICATION_SMOKE: CHECK"
+fi
+
+# 128. repair policy doc present
+if [ -f "docs/operations/audit-chain-repair-policy.md" ]; then
+  echo "AUDIT_CHAIN_REPAIR_POLICY_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_POLICY_SMOKE: CHECK"
+fi
+
+# 129. repair dry-run gated (no approval -> no DB change)
+dry_out=$(AUDIT_CHAIN_REPAIR_APPROVED=false bash scripts/repair_audit_chain_integrity.sh 2>&1 || true)
+if echo "$dry_out" | grep -qE "AUDIT_CHAIN_REPAIR: (DRY_RUN|APPROVAL_REQUIRED|SKIPPED_UNSAFE)"; then
+  echo "AUDIT_CHAIN_REPAIR_DRY_RUN_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_DRY_RUN_SMOKE: CHECK"
+fi
+
+# 130. unsafe / unapproved repair never modifies audit_logs
+if echo "$dry_out" | grep -q "audit_logs_modified=True"; then
+  echo "AUDIT_CHAIN_REPAIR_UNSAFE_SKIP_SMOKE: FAIL (audit_logs modified)"
+else
+  echo "AUDIT_CHAIN_REPAIR_UNSAFE_SKIP_SMOKE: PASS"
+fi
+
+# 131. operations/audit/forensics/latest + repair/latest reachable
+ac_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+ac_forensic=$(curl -sS -m 5 "http://localhost:8000/operations/audit/forensics/latest" 2>/dev/null || echo '{}')
+if echo "$ac_forensic" | grep -q '"available"'; then
+  echo "AUDIT_CHAIN_REPAIR_OPERATIONS_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_OPERATIONS_SMOKE: CHECK"
+fi
+
+# 132. operations/safety carries audit_chain_* fields
+if echo "$ac_safety" | grep -q '"audit_chain_forensics_available"' \
+   && echo "$ac_safety" | grep -q '"audit_chain_repair_allowed"'; then
+  echo "AUDIT_CHAIN_REPAIR_SAFETY_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_SAFETY_SMOKE: CHECK"
+fi
+
+# 133. Stage 42 audit decision types defined
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.audit_integrity.audit_events import STAGE_42_DECISION_TYPES
+assert len(STAGE_42_DECISION_TYPES)==9
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_CHAIN_REPAIR_AUDIT_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_AUDIT_SMOKE: FAIL"
+fi
+
+# 134. Stage 42 metrics registered
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.observability import metrics
+assert hasattr(metrics,'AUDIT_CHAIN_REPAIR_RUNS_TOTAL')
+assert hasattr(metrics,'AUDIT_CHAIN_FORENSICS_RUNS_TOTAL')
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AUDIT_CHAIN_REPAIR_METRICS_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_METRICS_SMOKE: FAIL"
+fi
+
+# 135. No secret patterns in forensic / repair reports
+ac_clean=1
+for r in source/audit-forensics/audit_forensic_*.json source/audit-forensics/audit_repair_*.json; do
+  [ -f "$r" ] || continue
+  if grep -qE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}|AUDIT_HMAC_KEY|xox[baprs]-' "$r" 2>/dev/null; then
+    ac_clean=0
+  fi
+done
+if [ "$ac_clean" = "1" ]; then
+  echo "AUDIT_CHAIN_REPAIR_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "AUDIT_CHAIN_REPAIR_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

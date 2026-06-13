@@ -730,6 +730,49 @@ INCIDENT_POSTMORTEM_REQUIRED_TOTAL = Counter(
 )
 
 
+# Stage 42 -- audit chain forensics + controlled integrity repair metrics.
+AUDIT_CHAIN_FORENSICS_RUNS_TOTAL = Counter(
+    "audit_chain_forensics_runs_total",
+    "Forensic analyzer runs executed (per root_cause + status)",
+    ["root_cause", "status"],
+)
+AUDIT_CHAIN_FORENSICS_FAILURES_TOTAL = Counter(
+    "audit_chain_forensics_failures_total",
+    "Forensic analyzer runs that errored (per reason)",
+    ["reason"],
+)
+AUDIT_CHAIN_FAILED_RECORDS_TOTAL = Counter(
+    "audit_chain_failed_records_total",
+    "Failed integrity records observed by the forensic analyzer (per root_cause)",
+    ["root_cause"],
+)
+AUDIT_CHAIN_REPAIR_DRY_RUN_TOTAL = Counter(
+    "audit_chain_repair_dry_run_total",
+    "Audit chain repair dry-runs executed (per root_cause + repair_allowed)",
+    ["root_cause", "repair_allowed"],
+)
+AUDIT_CHAIN_REPAIR_SKIPPED_UNSAFE_TOTAL = Counter(
+    "audit_chain_repair_skipped_unsafe_total",
+    "Audit chain repairs skipped as unsafe / unapproved (per status)",
+    ["status"],
+)
+AUDIT_CHAIN_REPAIR_RUNS_TOTAL = Counter(
+    "audit_chain_repair_runs_total",
+    "Audit chain repair apply runs (per root_cause + status)",
+    ["root_cause", "status"],
+)
+AUDIT_CHAIN_REPAIR_FAILURES_TOTAL = Counter(
+    "audit_chain_repair_failures_total",
+    "Audit chain repair applies that failed verification and rolled back",
+    ["reason"],
+)
+AUDIT_CHAIN_REPAIR_RECORDS_CHANGED_TOTAL = Counter(
+    "audit_chain_repair_records_changed_total",
+    "Integrity records changed by a completed repair (per root_cause)",
+    ["root_cause"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

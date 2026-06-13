@@ -75,3 +75,13 @@ Thumbs.db
 # code lands in the repo only after a human reviewer ports it manually.
 .workspaces/
 .workspaces/**
+
+# ===== Stage 42 audit chain forensic artifacts =====
+# Forensic *reports* (source/audit-forensics/*.json) are redacted and may
+# be committed. Forensic *snapshots* contain (redacted) full payload rows
+# and repair reports may reference row content — keep both out of git.
+source/audit-forensics/snapshots/
+source/audit-forensics/audit_forensic_*.json
+source/audit-forensics/audit_forensic_latest.json
+source/audit-forensics/audit_repair_*.json
+source/audit-forensics/audit_repair_latest.json

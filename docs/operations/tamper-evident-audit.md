@@ -478,3 +478,20 @@ The following items remain open and **must not be silently dropped**:
 `TAMPER_EVIDENT_AUDIT_VERIFY: PASS` when every phase succeeded,
 including production-safety counters at 0/0 and no secret leak in any
 operations response.
+
+## Stage 42 -- forensics + controlled repair
+
+When the verifier reports a persistent mismatch, the Stage 42 forensic
+analyzer classifies the root cause and (when provably safe and explicitly
+approved) a controlled repair can re-bind `audit_integrity_records` to the
+current `audit_logs` content. The repair modifies integrity records only,
+never `audit_logs`, defaults to dry-run, and re-verifies inside a transaction
+with rollback on failure. See
+[audit-chain-forensics.md](audit-chain-forensics.md) and
+[audit-chain-repair-policy.md](audit-chain-repair-policy.md).
+
+Note on the tamper-detection smoke: `simulate_audit_tamper_detection.sh`
+appends a `[TAMPER-SIMULATION]` marker to the latest row, confirms the
+verifier detects it, then restores the row in a `finally`. If that restore
+does not complete (process killed), the marker is left in place and surfaces
+later as a `test_tamper_not_restored` forensic finding.
