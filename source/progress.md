@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 45 — Project Planner & Task Graph Orchestration
 
 - **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; code commit TBD, progress commit TBD.
+- **Git branch / commit:** `main`; code `fbf7b95`, progress commit follows.
 - **Step:** 43 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -75,8 +75,15 @@ issues & blockers, and next-step suggestions.
   6 planning spans. Artifact refs carry opaque ids + counts only.
 
 ### Regression result
-- Local: 65 Stage 45 tests PASS; ruff + black + mypy clean. Remote validation:
-  see commit / report below.
+- Local: 65 Stage 45 tests PASS; ruff + black + mypy clean.
+- Remote 10.0.1.31: migration 017 applied (10 tables); orchestrator +
+  requirement-agent + project-planner-agent rebuilt. 65 project tests PASS.
+  `verify_project_planner_task_graph.sh`: 28/28 PASS
+  (`PROJECT_PLANNER_TASK_GRAPH_VERIFY: PASS`). check_runtime_state smokes
+  153-164 all PASS. Full regression `pass_with_documented_gaps` — total 24,
+  pass 20, fail 0, audit_serialization_failure 0, audit_tamper_residue_failure 0,
+  audit_lock_timeout 0; known_gaps = backup readiness only (encryption_no_key,
+  storage_not_off_host, schedule_dry_run_only, migration_down_gaps).
 
 ### Production safety result
 - production_executed counts remain 0; planning-only flags all correct;
