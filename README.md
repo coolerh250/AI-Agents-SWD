@@ -2356,6 +2356,19 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Project Planner & Task Graph (Stage 45)
+
+Moves the platform from a linear workflow pipeline toward a project-delivery
+platform. A software request becomes a project plan: brief, user stories,
+acceptance criteria, milestones, and a validated work-item task graph with
+dependencies and suggested agent roles. Planning-only — no LLM, no GitHub write,
+no deploy, no work-item dispatch. See
+[`docs/product/project-planner-agent.md`](docs/product/project-planner-agent.md),
+[`docs/product/project-task-graph.md`](docs/product/project-task-graph.md),
+[`docs/product/mini-project-delivery-path.md`](docs/product/mini-project-delivery-path.md),
+and
+[`docs/operations/project-planning-operations.md`](docs/operations/project-planning-operations.md).
+
 ## Audit Integrity Remediation — HMAC Keyring & Direct POST Closure (Stage 39)
 
 Stage 39 closes the two audit-integrity carry-forward gaps recorded

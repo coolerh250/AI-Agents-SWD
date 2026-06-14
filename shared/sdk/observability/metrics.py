@@ -849,6 +849,51 @@ AUDIT_TOUCHING_REGRESSION_SERIALIZED_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 45 -- Project Planner & Task Graph Orchestration.
+# ---------------------------------------------------------------------------
+PROJECT_PLANNING_RUNS_TOTAL = Counter(
+    "project_planning_runs_total",
+    "Project planning runs",
+    ["project_type", "status"],
+)
+PROJECT_PLANNING_FAILURES_TOTAL = Counter(
+    "project_planning_failures_total",
+    "Project planning runs that failed",
+    ["project_type"],
+)
+PROJECT_TASK_GRAPH_NODES_TOTAL = Counter(
+    "project_task_graph_nodes_total",
+    "Work-item nodes created across project graphs",
+    ["project_type"],
+)
+PROJECT_TASK_GRAPH_EDGES_TOTAL = Counter(
+    "project_task_graph_edges_total",
+    "Dependency edges created across project graphs",
+    ["project_type"],
+)
+PROJECT_TASK_GRAPH_VALIDATION_FAILURES_TOTAL = Counter(
+    "project_task_graph_validation_failures_total",
+    "Task graph validations that did not return valid",
+    ["validation_status"],
+)
+PROJECT_WORK_ITEMS_CREATED_TOTAL = Counter(
+    "project_work_items_created_total",
+    "Work items persisted",
+    ["project_type"],
+)
+PROJECT_ACCEPTANCE_CRITERIA_CREATED_TOTAL = Counter(
+    "project_acceptance_criteria_created_total",
+    "Acceptance criteria persisted",
+    ["project_type"],
+)
+PROJECT_DELIVERY_READINESS_CHECKS_TOTAL = Counter(
+    "project_delivery_readiness_checks_total",
+    "Delivery-readiness evaluations",
+    ["status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

@@ -1683,6 +1683,9 @@ async def operations_safety() -> dict:
     # Stage 44 -- audit-touching regression serialization + tamper isolation.
     serialization_summary = _audit_serialization_summary()
 
+    # Stage 45 -- project planner & task graph snapshot.
+    project_planning_summary = await _project_planning_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1880,6 +1883,26 @@ async def operations_safety() -> dict:
         "latest_full_regression_audit_touching_serialized": serialization_summary[
             "latest_full_regression_audit_touching_serialized"
         ],
+        # Stage 45 -- project planner & task graph. Booleans + opaque ids +
+        # counts only; planning-only, never carries secrets or chain-of-thought.
+        "project_planner_enabled": project_planning_summary["project_planner_enabled"],
+        "project_planner_planning_only": project_planning_summary["project_planner_planning_only"],
+        "project_task_graph_enabled": project_planning_summary["project_task_graph_enabled"],
+        "project_work_item_dispatch_enabled": project_planning_summary[
+            "project_work_item_dispatch_enabled"
+        ],
+        "project_planner_real_llm_enabled": project_planning_summary[
+            "project_planner_real_llm_enabled"
+        ],
+        "project_planner_production_execution_enabled": False,
+        "latest_project_planning_status": project_planning_summary[
+            "latest_project_planning_status"
+        ],
+        "latest_project_id": project_planning_summary["latest_project_id"],
+        "latest_project_graph_validation_status": project_planning_summary[
+            "latest_project_graph_validation_status"
+        ],
+        "project_delivery_pilot_ready": False,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3997,6 +4020,51 @@ def _audit_serialization_summary() -> dict[str, Any]:
         summary["audit_touching_regression_serialized"] = bool(
             regression.get("audit_touching_scripts_serialized")
         )
+    return summary
+
+
+# Stage 45 -- project planner & task graph safety snapshot.
+def _project_planning_flag(name: str, default: bool) -> bool:
+    raw = str(os.environ.get(name, "true" if default else "false")).strip().lower()
+    return raw not in ("false", "0", "no", "")
+
+
+async def _project_planning_safety_summary() -> dict[str, Any]:
+    """Stage 45: project planner posture (flags + latest project snapshot).
+
+    Booleans + opaque ids + status strings only. A failing store NEVER fails
+    the safety view -- the latest-project fields degrade to None.
+    """
+    summary: dict[str, Any] = {
+        "project_planner_enabled": _project_planning_flag("ENABLE_PROJECT_PLANNER", True),
+        "project_planner_planning_only": _project_planning_flag(
+            "PROJECT_PLANNER_PLANNING_ONLY", True
+        ),
+        "project_task_graph_enabled": True,
+        "project_work_item_dispatch_enabled": _project_planning_flag(
+            "ENABLE_PROJECT_WORK_ITEM_DISPATCH", False
+        ),
+        "project_planner_real_llm_enabled": _project_planning_flag(
+            "ENABLE_PROJECT_PLANNER_REAL_LLM", False
+        ),
+        "latest_project_planning_status": None,
+        "latest_project_id": None,
+        "latest_project_graph_validation_status": None,
+    }
+    try:
+        from shared.sdk.project_planning import ProjectPlanningStore
+
+        store = ProjectPlanningStore()
+        projects = await store.list_projects(limit=1)
+        if projects:
+            latest = projects[0]
+            summary["latest_project_id"] = latest["id"]
+            summary["latest_project_planning_status"] = latest["status"]
+            snapshot = await store.get_latest_graph_snapshot(latest["id"])
+            if snapshot is not None:
+                summary["latest_project_graph_validation_status"] = snapshot["validation_status"]
+    except Exception:
+        pass
     return summary
 
 

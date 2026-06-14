@@ -221,6 +221,12 @@ services:
       # response or log.
       AUDIT_HMAC_KEY: ${AUDIT_HMAC_KEY:-}
       AUDIT_HMAC_KEY_ID: ${AUDIT_HMAC_KEY_ID:-}
+      # Stage 45 -- project planner / task graph feature flags. Planning-only;
+      # work-item dispatch + real LLM stay OFF.
+      ENABLE_PROJECT_PLANNER: ${ENABLE_PROJECT_PLANNER:-true}
+      PROJECT_PLANNER_PLANNING_ONLY: ${PROJECT_PLANNER_PLANNING_ONLY:-true}
+      ENABLE_PROJECT_WORK_ITEM_DISPATCH: ${ENABLE_PROJECT_WORK_ITEM_DISPATCH:-false}
+      ENABLE_PROJECT_PLANNER_REAL_LLM: ${ENABLE_PROJECT_PLANNER_REAL_LLM:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -332,6 +338,9 @@ services:
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: requirement-agent
+      # Stage 45 -- route project-scale requests to the project-planner-agent.
+      ENABLE_PROJECT_PLANNER: ${ENABLE_PROJECT_PLANNER:-true}
+      PROJECT_PLANNER_PLANNING_ONLY: ${PROJECT_PLANNER_PLANNING_ONLY:-true}
     ports:
       - "127.0.0.1:8011:8011"
     depends_on:
@@ -418,6 +427,33 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8014/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  project-planner-agent:
+    build:
+      context: ../..
+      dockerfile: agents/project-planner-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: project-planner-agent
+      ENABLE_PROJECT_WORK_ITEM_DISPATCH: "false"
+      ENABLE_PROJECT_PLANNER_REAL_LLM: "false"
+      PROJECT_PLANNER_TEMPLATE_MODE: "true"
+    ports:
+      - "127.0.0.1:8016:8016"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8016/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

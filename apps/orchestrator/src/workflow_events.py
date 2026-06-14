@@ -34,6 +34,8 @@ WORKFLOW_EVENT_STREAMS = [
     "stream.qa",
     "stream.deployments",
     "stream.devops",
+    # Stage 45 -- project planner completion events.
+    "stream.project_events",
 ]
 WORKFLOW_EVENT_GROUP = "orchestrator-workflow-group"
 WORKFLOW_EVENT_CONSUMER = "orchestrator-1"
@@ -49,8 +51,23 @@ _AGENT_BY_EVENT = {
     "qa.blocked_for_human_review": "qa-agent",
     "development.auto_fix_completed": "development-agent-autofix",
     "development.auto_fix_failed": "development-agent-autofix",
+    # Stage 45 -- project planner completion events.
+    "project.planning_completed": "project-planner-agent",
+    "project.planning_failed": "project-planner-agent",
+    "project.clarification_required": "project-planner-agent",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
+
+# Stage 45 -- project planning events flip the workflow to a project stage
+# (planning-only) instead of advancing the legacy agent pipeline.
+_PROJECT_PLANNING_COMPLETED_EVENT = "project.planning_completed"
+_PROJECT_PLANNING_FAILED_EVENT = "project.planning_failed"
+_PROJECT_CLARIFICATION_EVENT = "project.clarification_required"
+_PROJECT_EVENTS = (
+    _PROJECT_PLANNING_COMPLETED_EVENT,
+    _PROJECT_PLANNING_FAILED_EVENT,
+    _PROJECT_CLARIFICATION_EVENT,
+)
 
 #: Stage 29 — QA decision events that flip the workflow stage to a
 #: distinct gate state instead of advancing the pipeline.
@@ -113,6 +130,11 @@ class WorkflowEventConsumer:
             else {}
         )
         progress = dict(execution_result.get("agent_progress", {}))
+        # Stage 45: project planning events set a project stage and do NOT
+        # advance the legacy agent pipeline. planning-only -- never auto-
+        # proceeds to development.
+        if event in _PROJECT_EVENTS:
+            return await self._advance_project(workflow, event, payload, state, execution_result)
         # Stage 29: only the "<agent>.completed" events mark an agent as
         # completed. QA auto-fix / blocked events represent a gating
         # decision, not a successful agent run.
@@ -223,6 +245,67 @@ class WorkflowEventConsumer:
                 await send_notification(
                     task_id, "workflow.completed", f"workflow {task_id} completed"
                 )
+        return updated
+
+    async def _advance_project(
+        self,
+        workflow: dict,
+        event: str,
+        payload: dict,
+        state: dict,
+        execution_result: dict,
+    ) -> dict | None:
+        """Stage 45 -- apply a project planning event (planning-only).
+
+        Sets the workflow stage to project_planned / planning_failed and
+        records the project_id / graph_snapshot_id. Never advances to
+        development; a completed workflow is never moved backwards.
+        """
+        task_id = workflow["task_id"]
+        if workflow["stage"] == "completed":
+            return None
+        if event == _PROJECT_PLANNING_COMPLETED_EVENT:
+            validation_status = str(payload.get("validation_status") or "valid")
+            if validation_status == "invalid":
+                stage = "planning_failed"
+                status = "planning_failed"
+            else:
+                stage = "project_planned"
+                status = "project_planned"
+        elif event == _PROJECT_PLANNING_FAILED_EVENT:
+            stage = "planning_failed"
+            status = "planning_failed"
+        else:  # clarification required
+            stage = "project_clarification_required"
+            status = "project_clarification_required"
+
+        execution_result["status"] = status
+        execution_result["production_executed"] = False
+        execution_result["planning_only"] = True
+        project_block = {
+            "project_id": str(payload.get("project_id") or ""),
+            "graph_snapshot_id": str(payload.get("graph_snapshot_id") or ""),
+            "validation_status": str(payload.get("validation_status") or ""),
+            "work_items_count": int(payload.get("work_items_count") or 0),
+        }
+        execution_result["project_planning"] = project_block
+        state["stage"] = stage
+        state["execution_result"] = execution_result
+        updated = await self.store.update_workflow_state(
+            task_id,
+            stage=stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        with contextlib.suppress(Exception):
+            await send_notification(
+                task_id,
+                event,
+                f"workflow {task_id} {status} (project={project_block['project_id']})",
+            )
         return updated
 
     async def _record_ignored_event(self, task_id: str, event: str, stage: str) -> None:

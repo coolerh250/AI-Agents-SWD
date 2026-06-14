@@ -6,6 +6,89 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 45 — Project Planner & Task Graph Orchestration
+
+- **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code commit TBD, progress commit TBD.
+- **Step:** 43 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- Pre-Stage-45 the pipeline was linear (intake → requirement → development → QA
+  → devops) with no parent-project / task-graph concept. `tasks`,
+  `workflow_states`, `agent_executions`, `task_work_items` track single tasks;
+  there was no project brief, work-item dependency graph, milestones, or
+  project-level operations visibility. This stage adds that foundation
+  additively (no existing table or workflow modified).
+
+### Data model / migration
+- `migrations/017_project_planner_task_graph.sql` — idempotent, PostgreSQL 16.
+  Ten additive tables: projects, project_briefs, project_user_stories,
+  project_milestones, project_work_items, project_work_item_dependencies,
+  project_acceptance_criteria, project_risks, project_artifacts,
+  project_graph_snapshots. CHECK constraints on every enum; dependency table
+  forbids self-dependency + duplicate pair. Indexes per spec.
+
+### Project planner SDK
+- `shared/sdk/project_planning/`: models, brief_builder (template detection +
+  clarification), story_builder, acceptance, task_graph (FastAPI Todo template),
+  dependency_validator (cycle/self/duplicate/missing/reachability),
+  risk_model, assignment_policy (existing + future roles, future never
+  auto-dispatched), store (full async CRUD), planner (orchestration + metrics +
+  audit/notification), events, audit_events, delivery_readiness, routing.
+- mypy clean; ruff + black clean.
+
+### Project planner agent
+- `agents/project-planner-agent/` (StreamAgent, port 8016). Consumes
+  `stream.project_planning`, plans deterministically, persists, reports
+  `project.planning_completed` on `stream.project_events`. Planning-only:
+  `ENABLE_PROJECT_WORK_ITEM_DISPATCH=false`,
+  `ENABLE_PROJECT_PLANNER_REAL_LLM=false`, `PROJECT_PLANNER_TEMPLATE_MODE=true`.
+
+### Orchestrator integration
+- requirement-agent gains a gated branch: project-scale request types
+  (software_project / feature_request / build_request) route to
+  `stream.project_planning`; legacy types (dev.test, …) are untouched.
+- `workflow_events.py` consumes `stream.project_events` and sets the workflow
+  stage to `project_planned` / `planning_failed` /
+  `project_clarification_required` — planning-only, never advances to
+  development. Feature flags: `ENABLE_PROJECT_PLANNER` (default true),
+  `PROJECT_PLANNER_PLANNING_ONLY` (default true).
+
+### Operations API
+- `apps/orchestrator/src/project_api.py`: `POST /operations/projects/plan`
+  (planning-only) + read-only project / brief / stories / acceptance / milestones
+  / work-items / dependencies / risks / graph / progress / delivery-readiness +
+  work-item endpoints. `/operations/safety` carries the project planner posture
+  fields (planning_only=true, work_item_dispatch=false, real_llm=false,
+  production_execution=false, latest_project_*).
+
+### FastAPI Todo project template result
+- brief PASS (scope/non-scope/assumptions/success metrics), user stories PASS
+  (6), acceptance criteria PASS (10 ≥ 8), milestones PASS (7), work items PASS
+  (9 ≥ 8), dependencies PASS (11 ≥ 5), risks PASS (4), graph validation PASS
+  (valid).
+
+### Audit / notification / metrics result
+- 8 audit decision types (STAGE_45_DECISION_TYPES); 10 project.* notification
+  events, all default-denied (project.* added to denylist). 8 metrics +
+  6 planning spans. Artifact refs carry opaque ids + counts only.
+
+### Regression result
+- Local: 65 Stage 45 tests PASS; ruff + black + mypy clean. Remote validation:
+  see commit / report below.
+
+### Production safety result
+- production_executed counts remain 0; planning-only flags all correct;
+  no GitHub write / deploy / real LLM / real escalation; no secret leak.
+
+### Remaining gaps / observations only
+- Real repo workspace operator (Step 45) not done; mini project delivery pilot
+  (Step 46) not done; work-item dispatch off. Carry-forward: backup/DR gaps,
+  Kubernetes/Helm/ArgoCD baseline, real production secret store, real off-host
+  backup, real pager / escalation all still open. Claude Code does not declare
+  production readiness.
+
 ## Stage 44 — Audit-Touching Regression Serialization & Tamper Sim Isolation
 
 - **Execution time:** 2026-06-13 (UTC+8, Asia/Taipei)

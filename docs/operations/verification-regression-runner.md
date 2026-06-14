@@ -250,3 +250,16 @@ After a full regression run, `/operations/safety` exposes:
 ```
 
 If no regression has been run: `"latest_full_regression_status": "unknown"`.
+
+## Stage 45 — Project planner verify (additive)
+
+`scripts/verify_project_planner_task_graph.sh` is a standalone verifier (like
+`verify_audit_touching_serialization.sh`): its Scenario F runs
+`run_full_regression.sh --full` itself, so it is **not** part of the runner's
+own verify list (that would recurse). Run it directly in the regression
+sequence. Marker: `PROJECT_PLANNER_TASK_GRAPH_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 153–164 cover the project planner / task graph
+surfaces (template, brief, graph build, dependency validation, acceptance,
+assignment policy, operations API, planning-only safety, denylist, audit
+integrity, no-secret-leak).

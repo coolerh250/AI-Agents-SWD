@@ -28,8 +28,15 @@ No LLM call is made anywhere. The classification rules live in
 
 from __future__ import annotations
 
+import contextlib
+
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.notifications.client import send_notification
+from shared.sdk.project_planning.events import (
+    EVENT_REQUIREMENT_PROJECT_PLANNING_REQUESTED,
+    STREAM_PROJECT_PLANNING,
+)
+from shared.sdk.project_planning.routing import should_route_to_project_planner
 from shared.sdk.observability.metrics import (
     AGENT_DISCUSSIONS_TOTAL,
     CLARIFICATION_REQUESTS_TOTAL,
@@ -241,6 +248,63 @@ class RequirementAgent(StreamAgent):
                 },
                 "event_type": "task.needs_clarification",
                 "message": (f"task {task_id} needs clarification: {open_questions[0]}"),
+            }
+
+        # 4b) Stage 45 project-planning route ----------------------------
+        # Project-scale requests (software_project / feature_request /
+        # build_request) are routed to the project-planner-agent instead of
+        # the legacy development-agent. The legacy pipeline (dev.test, etc.)
+        # is untouched. Planning-only: the planner never dispatches dev work.
+        skip_planning = bool(request.get("skip_project_planning"))
+        if should_route_to_project_planner(
+            request_type=request_type,
+            request_text=description,
+            skip_project_planning=skip_planning,
+        ):
+            planning_message = {
+                "event": EVENT_REQUIREMENT_PROJECT_PLANNING_REQUESTED,
+                **self.correlation_ids(payload),
+                "task_id": task_id,
+                "workflow_id": workflow_id or "",
+                "request": payload.get("request", {}),
+                "requirement_summary": title,
+                "project_type": request_type,
+                "produced_by": self.name,
+            }
+            with start_span(
+                "agent.publish_next",
+                **{
+                    "service.name": self.name,
+                    "agent": self.name,
+                    "stream": STREAM_PROJECT_PLANNING,
+                    "task_id": task_id,
+                    "workflow_id": workflow_id or "",
+                    "event_type": EVENT_REQUIREMENT_PROJECT_PLANNING_REQUESTED,
+                },
+            ):
+                await self.bus.publish_event(STREAM_PROJECT_PLANNING, planning_message)
+            with contextlib.suppress(Exception):
+                await send_notification(
+                    task_id,
+                    "task.project_planning_requested",
+                    f"task {task_id} routed to project planner (type={request_type})",
+                )
+            return {
+                "task_id": task_id,
+                "decision_type": "task_project_planning_requested",
+                "summary": (
+                    f"requirement-agent routed {task_id} to project planner "
+                    f"(type={request_type})"
+                ),
+                "result": "requirement.project_planning_requested",
+                "artifact_refs": {
+                    "execution_mode": classification.execution_mode,
+                    "work_item_id": work_item.work_item_id,
+                    "routed_to": "project-planner-agent",
+                    "production_executed": False,
+                },
+                "event_type": "task.project_planning_requested",
+                "message": (f"task {task_id} routed to project planner"),
             }
 
         # 5) ready_for_development path ----------------------------------

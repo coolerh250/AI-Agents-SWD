@@ -3516,5 +3516,159 @@ else
   echo "AUDIT_SERIALIZATION_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 45 -- project planner & task graph smokes (153-164).
+# ---------------------------------------------------------------------------
+
+# 153. project-planner-agent service health
+pp_health=$(curl -sS -m 5 "http://localhost:8016/health" 2>/dev/null || echo '{}')
+if echo "$pp_health" | grep -q '"status":"ok"'; then
+  echo "PROJECT_PLANNER_SERVICE_SMOKE: PASS"
+else
+  echo "PROJECT_PLANNER_SERVICE_SMOKE: CHECK"
+fi
+
+# 154. FastAPI Todo template detection (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import detect_template, TEMPLATE_FASTAPI_TODO
+assert detect_template('Create a FastAPI Todo Service') == TEMPLATE_FASTAPI_TODO
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_PLANNER_TEMPLATE_SMOKE: PASS"
+else
+  echo "PROJECT_PLANNER_TEMPLATE_SMOKE: FAIL"
+fi
+
+# 155. project brief build (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief
+b = build_brief('Create a FastAPI Todo Service with CRUD, SQLite, pytest, README')
+assert not b.requires_clarification and b.scope and b.non_scope
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_BRIEF_CREATE_SMOKE: PASS"
+else
+  echo "PROJECT_BRIEF_CREATE_SMOKE: FAIL"
+fi
+
+# 156. task graph build minimums (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_task_graph
+g = build_task_graph(build_brief('FastAPI Todo CRUD with SQLite'), project_type='fastapi_todo_service')
+assert len(g.work_items) >= 8 and len(g.dependencies) >= 5 and len(g.acceptance_criteria) >= 8
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_TASK_GRAPH_CREATE_SMOKE: PASS"
+else
+  echo "PROJECT_TASK_GRAPH_CREATE_SMOKE: FAIL"
+fi
+
+# 157. dependency validation rejects cycle / valid graph valid (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_task_graph, validate_dependencies
+g = build_task_graph(build_brief('FastAPI Todo CRUD with SQLite'), project_type='fastapi_todo_service')
+assert validate_dependencies(g).status == 'valid'
+from shared.sdk.project_planning.models import TaskGraph, ProjectWorkItem, WorkItemDependency
+c = TaskGraph(project_type='t', template='t',
+  work_items=[ProjectWorkItem(work_item_key=k, title=k) for k in 'ABC'],
+  dependencies=[WorkItemDependency(work_item_key=a, depends_on_work_item_key=b) for a,b in [('A','B'),('B','C'),('C','A')]])
+assert validate_dependencies(c).status == 'invalid'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_DEPENDENCY_VALIDATION_SMOKE: PASS"
+else
+  echo "PROJECT_DEPENDENCY_VALIDATION_SMOKE: FAIL"
+fi
+
+# 158. acceptance criteria builder (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_acceptance_criteria, TEMPLATE_FASTAPI_TODO
+ac = build_acceptance_criteria(build_brief('FastAPI Todo CRUD'), template=TEMPLATE_FASTAPI_TODO)
+assert len(ac) >= 8
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_ACCEPTANCE_CRITERIA_SMOKE: PASS"
+else
+  echo "PROJECT_ACCEPTANCE_CRITERIA_SMOKE: FAIL"
+fi
+
+# 159. work item assignment policy maps + future roles safe (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import assign_agent_role, resolve_dispatch_policy
+assert assign_agent_role('qa') == 'qa-agent'
+assert resolve_dispatch_policy('architecture','low') == 'planning_only'
+assert resolve_dispatch_policy('backend','high') == 'approval_required'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_WORK_ITEM_ASSIGNMENT_SMOKE: PASS"
+else
+  echo "PROJECT_WORK_ITEM_ASSIGNMENT_SMOKE: FAIL"
+fi
+
+# 160. operations API project endpoints present
+pp_projects=$(curl -sS -m 5 "http://localhost:8000/operations/projects" 2>/dev/null || echo '{}')
+if echo "$pp_projects" | grep -q '"projects"'; then
+  echo "PROJECT_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "PROJECT_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 161. planning-only safety fields on /operations/safety
+pp_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$pp_safety" | grep -q '"project_planner_planning_only":true' \
+   && echo "$pp_safety" | grep -q '"project_work_item_dispatch_enabled":false' \
+   && echo "$pp_safety" | grep -q '"project_planner_real_llm_enabled":false'; then
+  echo "PROJECT_PLANNING_ONLY_SAFETY_SMOKE: PASS"
+else
+  echo "PROJECT_PLANNING_ONLY_SAFETY_SMOKE: CHECK"
+fi
+
+# 162. project.* notification events denylisted
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning.events import PROJECT_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in PROJECT_NOTIFICATION_EVENTS)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "PROJECT_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 163. project audit integrity -- decision types defined + artifact refs safe
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning.audit_events import STAGE_45_DECISION_TYPES, safe_project_artifact_refs
+assert 'project_planning_completed' in STAGE_45_DECISION_TYPES
+r = safe_project_artifact_refs(project_id='p1')
+assert r['production_executed'] is False
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_AUDIT_INTEGRITY_SMOKE: PASS"
+else
+  echo "PROJECT_AUDIT_INTEGRITY_SMOKE: FAIL"
+fi
+
+# 164. no secret patterns echoed by the deterministic template
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_task_graph
+g = build_task_graph(build_brief('FastAPI Todo with GITHUB_TOKEN=abc123 note'), project_type='fastapi_todo_service')
+blob = str([w.model_dump() for w in g.work_items]) + str([a.model_dump() for a in g.acceptance_criteria])
+assert 'abc123'.upper() not in blob.upper()
+print('OK')
+" >/dev/null 2>&1; then
+  echo "PROJECT_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "PROJECT_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"
