@@ -36,6 +36,8 @@ WORKFLOW_EVENT_STREAMS = [
     "stream.devops",
     # Stage 45 -- project planner completion events.
     "stream.project_events",
+    # Stage 46 -- design review completion events.
+    "stream.design_review_events",
 ]
 WORKFLOW_EVENT_GROUP = "orchestrator-workflow-group"
 WORKFLOW_EVENT_CONSUMER = "orchestrator-1"
@@ -55,8 +57,28 @@ _AGENT_BY_EVENT = {
     "project.planning_completed": "project-planner-agent",
     "project.planning_failed": "project-planner-agent",
     "project.clarification_required": "project-planner-agent",
+    # Stage 46 -- design review completion events.
+    "design_review.completed": "design-review-agent",
+    "design_review.blocked": "design-review-agent",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
+
+# Stage 46 -- design review events flip the workflow to a review stage
+# (review-only) instead of advancing to development.
+_DESIGN_REVIEW_COMPLETED_EVENT = "design_review.completed"
+_DESIGN_REVIEW_BLOCKED_EVENT = "design_review.blocked"
+_DESIGN_REVIEW_EVENTS = (_DESIGN_REVIEW_COMPLETED_EVENT, _DESIGN_REVIEW_BLOCKED_EVENT)
+
+
+def _design_review_enabled() -> bool:
+    import os
+
+    return str(os.environ.get("ENABLE_DESIGN_REVIEW", "true")).strip().lower() not in (
+        "false",
+        "0",
+        "no",
+    )
+
 
 # Stage 45 -- project planning events flip the workflow to a project stage
 # (planning-only) instead of advancing the legacy agent pipeline.
@@ -135,6 +157,10 @@ class WorkflowEventConsumer:
         # proceeds to development.
         if event in _PROJECT_EVENTS:
             return await self._advance_project(workflow, event, payload, state, execution_result)
+        if event in _DESIGN_REVIEW_EVENTS:
+            return await self._advance_design_review(
+                workflow, event, payload, state, execution_result
+            )
         # Stage 29: only the "<agent>.completed" events mark an agent as
         # completed. QA auto-fix / blocked events represent a gating
         # decision, not a successful agent run.
@@ -305,6 +331,73 @@ class WorkflowEventConsumer:
                 task_id,
                 event,
                 f"workflow {task_id} {status} (project={project_block['project_id']})",
+            )
+        # Stage 46 -- on a successful plan, request a design review (review-only).
+        if stage == "project_planned" and project_block["project_id"] and _design_review_enabled():
+            with contextlib.suppress(Exception):
+                await self.bus.publish_event(
+                    "stream.design_review",
+                    {
+                        "event": "project.design_review_requested",
+                        "task_id": task_id,
+                        "workflow_id": str(payload.get("workflow_id", "")),
+                        "project_id": project_block["project_id"],
+                        "graph_snapshot_id": project_block["graph_snapshot_id"],
+                        "review_type": "full_pre_execution",
+                        "requested_by_agent": "orchestrator",
+                        "production_executed": False,
+                    },
+                )
+        return updated
+
+    async def _advance_design_review(
+        self,
+        workflow: dict,
+        event: str,
+        payload: dict,
+        state: dict,
+        execution_result: dict,
+    ) -> dict | None:
+        """Stage 46 -- apply a design review event (review-only).
+
+        Sets the workflow stage to design_reviewed / design_reviewed_with_findings
+        / design_review_blocked. Never advances to development this stage.
+        """
+        task_id = workflow["task_id"]
+        if workflow["stage"] == "completed":
+            return None
+        decision = str(payload.get("decision") or "planning_only")
+        if event == _DESIGN_REVIEW_BLOCKED_EVENT or decision in ("no_go", "needs_clarification"):
+            stage = "design_review_blocked"
+        elif decision == "go_with_findings":
+            stage = "design_reviewed_with_findings"
+        else:  # go or planning_only
+            stage = "design_reviewed"
+        execution_result["status"] = stage
+        execution_result["production_executed"] = False
+        execution_result["planning_only"] = True
+        execution_result["design_review"] = {
+            "project_id": str(payload.get("project_id") or ""),
+            "review_session_id": str(payload.get("review_session_id") or ""),
+            "decision": decision,
+            "findings_count": int(payload.get("findings_count") or 0),
+            "blocking_findings_count": int(payload.get("blocking_findings_count") or 0),
+            "gates_count": int(payload.get("gates_count") or 0),
+        }
+        state["stage"] = stage
+        state["execution_result"] = execution_result
+        updated = await self.store.update_workflow_state(
+            task_id,
+            stage=stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        with contextlib.suppress(Exception):
+            await send_notification(
+                task_id, event, f"workflow {task_id} {stage} (decision={decision})"
             )
         return updated
 

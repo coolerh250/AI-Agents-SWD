@@ -1686,6 +1686,9 @@ async def operations_safety() -> dict:
     # Stage 45 -- project planner & task graph snapshot.
     project_planning_summary = await _project_planning_safety_summary()
 
+    # Stage 46 -- agent discussion & design review snapshot.
+    design_review_summary = await _design_review_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1903,6 +1906,33 @@ async def operations_safety() -> dict:
             "latest_project_graph_validation_status"
         ],
         "project_delivery_pilot_ready": False,
+        # Stage 46 -- agent discussion & design review. Review-only; booleans +
+        # opaque ids + status strings only, never secrets or chain-of-thought.
+        "design_review_enabled": design_review_summary["design_review_enabled"],
+        "design_review_planning_only": design_review_summary["design_review_planning_only"],
+        "design_review_real_llm_enabled": design_review_summary["design_review_real_llm_enabled"],
+        "design_review_work_item_dispatch_enabled": design_review_summary[
+            "design_review_work_item_dispatch_enabled"
+        ],
+        "agent_discussion_enabled": design_review_summary["agent_discussion_enabled"],
+        "agent_discussion_chain_of_thought_persistence_enabled": design_review_summary[
+            "agent_discussion_chain_of_thought_persistence_enabled"
+        ],
+        "latest_design_review_status": design_review_summary["latest_design_review_status"],
+        "latest_design_review_decision": design_review_summary["latest_design_review_decision"],
+        "latest_design_review_project_id": design_review_summary["latest_design_review_project_id"],
+        "latest_design_review_findings_count": design_review_summary[
+            "latest_design_review_findings_count"
+        ],
+        "latest_design_review_blocking_findings_count": design_review_summary[
+            "latest_design_review_blocking_findings_count"
+        ],
+        "latest_project_review_gates_status": design_review_summary[
+            "latest_project_review_gates_status"
+        ],
+        "project_pre_execution_gate_passed": design_review_summary[
+            "project_pre_execution_gate_passed"
+        ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -4063,6 +4093,74 @@ async def _project_planning_safety_summary() -> dict[str, Any]:
             snapshot = await store.get_latest_graph_snapshot(latest["id"])
             if snapshot is not None:
                 summary["latest_project_graph_validation_status"] = snapshot["validation_status"]
+    except Exception:
+        pass
+    return summary
+
+
+# Stage 46 -- agent discussion & design review safety snapshot.
+async def _design_review_safety_summary() -> dict[str, Any]:
+    """Stage 46: design-review posture (flags + latest review snapshot).
+
+    Booleans + opaque ids + status strings only. A failing store NEVER fails
+    the safety view -- the latest-review fields degrade to None.
+    """
+    summary: dict[str, Any] = {
+        "design_review_enabled": _project_planning_flag("ENABLE_DESIGN_REVIEW", True),
+        "design_review_planning_only": _project_planning_flag("DESIGN_REVIEW_PLANNING_ONLY", True),
+        "design_review_real_llm_enabled": _project_planning_flag(
+            "ENABLE_DESIGN_REVIEW_REAL_LLM", False
+        ),
+        "design_review_work_item_dispatch_enabled": _project_planning_flag(
+            "ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH", False
+        ),
+        "agent_discussion_enabled": _project_planning_flag("ENABLE_DESIGN_REVIEW", True),
+        "agent_discussion_chain_of_thought_persistence_enabled": False,
+        "latest_design_review_status": None,
+        "latest_design_review_decision": None,
+        "latest_design_review_project_id": None,
+        "latest_design_review_findings_count": None,
+        "latest_design_review_blocking_findings_count": None,
+        "latest_project_review_gates_status": None,
+        "project_pre_execution_gate_passed": None,
+    }
+    try:
+        from shared.sdk.design_review import DesignReviewStore
+        from shared.sdk.project_planning import ProjectPlanningStore
+
+        projects = await ProjectPlanningStore().list_projects(limit=1)
+        if projects:
+            project_id = projects[0]["id"]
+            review_store = DesignReviewStore()
+            review = await review_store.get_latest_review(project_id)
+            gates = await review_store.list_gates(project_id)
+            if review is not None:
+                summary["latest_design_review_project_id"] = project_id
+                summary["latest_design_review_status"] = review["status"]
+                summary["latest_design_review_decision"] = review["decision"]
+                findings = await review_store.list_findings(review["id"])
+                summary["latest_design_review_findings_count"] = len(findings)
+                summary["latest_design_review_blocking_findings_count"] = len(
+                    [
+                        f
+                        for f in findings
+                        if f["severity"] in ("high", "critical") and f["status"] == "open"
+                    ]
+                )
+            if gates:
+                statuses = {g["status"] for g in gates}
+                if "blocked" in statuses or "failed" in statuses:
+                    summary["latest_project_review_gates_status"] = "blocked"
+                elif "passed_with_findings" in statuses:
+                    summary["latest_project_review_gates_status"] = "passed_with_findings"
+                else:
+                    summary["latest_project_review_gates_status"] = "passed"
+                pre = next((g for g in gates if g["gate_type"] == "pre_execution_gate"), None)
+                if pre is not None:
+                    summary["project_pre_execution_gate_passed"] = pre["status"] in (
+                        "passed",
+                        "passed_with_findings",
+                    )
     except Exception:
         pass
     return summary

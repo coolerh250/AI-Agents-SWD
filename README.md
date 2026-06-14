@@ -2356,6 +2356,18 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Agent Discussion & Design Review Protocol (Stage 46)
+
+On top of the Stage 45 project graph, the platform runs a structured multi-role
+design review (requirement / architecture / implementation / QA / security /
+delivery + acceptance coverage), evaluates review gates, and records a go/no-go
+decision — all review-only, deterministic, with no chain-of-thought persistence.
+No real LLM, no repo write, no PR, no deploy, no work-item dispatch. See
+[`docs/product/agent-discussion-design-review.md`](docs/product/agent-discussion-design-review.md),
+[`docs/product/design-review-gates.md`](docs/product/design-review-gates.md),
+and
+[`docs/operations/design-review-operations.md`](docs/operations/design-review-operations.md).
+
 ## Project Planner & Task Graph (Stage 45)
 
 Moves the platform from a linear workflow pipeline toward a project-delivery

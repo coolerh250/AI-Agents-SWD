@@ -6,6 +6,98 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 46 — Agent Discussion & Design Review Protocol
+
+- **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code commit TBD, progress commit TBD.
+- **Step:** 44 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- Stage 45 delivered the project/task-graph foundation (projects, briefs,
+  stories, acceptance criteria, milestones, work items, dependencies, risks,
+  artifacts, graph snapshots) but no structured multi-role design review. The
+  Stage 27 `agent_discussions` table is a per-task append-only log, not a
+  governable review. This stage adds structured discussion + design review
+  tables additively (no existing table or workflow modified).
+
+### Data model / migration
+- `migrations/018_agent_discussion_design_review.sql` — idempotent, PostgreSQL
+  16. Eight additive tables: agent_discussion_sessions, _participants,
+  _contributions, design_review_sessions, design_review_findings,
+  design_review_decisions, project_review_gates, agent_discussion_artifacts.
+  CHECK constraints on every enum; `project_review_gates` unique
+  (project_id, gate_type); contribution summary non-empty. Deliberately NO
+  chain_of_thought / raw_prompt columns and NO transcript table.
+
+### Agent discussion SDK
+- `shared/sdk/agent_discussion/`: models, participant_policy, session_builder,
+  contribution_templates (deterministic, no LLM, no CoT), store, events,
+  audit_events, safety.
+
+### Design review SDK
+- `shared/sdk/design_review/`: models (incl. ReviewContext), six reviewers
+  (requirement / architecture / implementation / qa / security / delivery),
+  acceptance_coverage, gate_evaluator (gates + go/no-go), review_builder,
+  report_builder, runner (orchestration + metrics + audit/notification), store,
+  events, audit_events. mypy clean; ruff + black clean.
+
+### Design-review-agent result
+- `agents/design-review-agent/` (StreamAgent, port 8017). Consumes
+  `stream.design_review`, runs deterministic review, persists, reports
+  `design_review.completed` / `design_review.blocked` on
+  `stream.design_review_events`. Review-only: TEMPLATE_MODE=true,
+  REAL_LLM=false, PLANNING_ONLY=true, WORK_ITEM_DISPATCH=false.
+
+### Orchestrator integration
+- On `project.planning_completed` (valid graph) the orchestrator requests a
+  design review on `stream.design_review` (gated by `ENABLE_DESIGN_REVIEW`).
+  `workflow_events.py` consumes `stream.design_review_events` and sets the stage
+  to `design_reviewed` / `design_reviewed_with_findings` /
+  `design_review_blocked` — review-only, never advances to development. Legacy +
+  project planner paths untouched.
+
+### Operations API
+- `apps/orchestrator/src/design_review_api.py`: POST
+  `/operations/projects/{id}/design-review` (review-only) + read-only discussion
+  / design-review / findings / decisions / review-gates / go-no-go-summary /
+  acceptance-coverage endpoints. `/operations/safety` carries the design-review
+  posture fields (planning_only=true, real_llm=false, dispatch=false,
+  chain_of_thought_persistence=false, latest_design_review_*).
+
+### FastAPI Todo design review result
+- 8 participants, 10 contributions, 7 gates, 3 findings, 0 blocking, no
+  critical; decision `planning_only`. Gates: requirement/architecture/
+  implementation/qa/delivery `passed`; security + pre-execution
+  `passed_with_findings`. Acceptance coverage 80% (8/10 mapped). Invalid graph →
+  `no_go` (blocked).
+
+### Planning-only / no-CoT safety result
+- production_executed remains 0; review-only flags all correct; no real LLM,
+  GitHub write, deploy, dispatch, or real external messaging. No chain-of-thought
+  / raw-prompt columns or persistence; contributions store summaries only.
+
+### Audit / notification / metrics result
+- 3 discussion + 6 design-review audit decision types; 3 discussion + 6
+  design-review notification events, all default-denied (`discussion.*` and
+  `design_review.*` added to denylist; `project.*`/`audit.*`/`verification.*`
+  still denied). 8 metrics + 10 spans.
+
+### Regression result
+- Local: 65 Stage 46 tests PASS; 130 with Stage 45; ruff + black + mypy clean.
+  Remote validation: see commit / report below.
+
+### Production safety result
+- deployment_prod_true=0, workflow_prod_true=0; planning-only/review-only flags
+  correct; no secret leak.
+
+### Remaining gaps / observations only
+- Real repo workspace operator (Step 45) not done; mini project delivery pilot
+  (Step 46) not done; delivery package / acceptance gate (Step 47) not done;
+  work-item dispatch off. Carry-forward: backup/DR gaps, Kubernetes/Helm/ArgoCD
+  baseline, real production secret store, real off-host backup, real pager /
+  escalation all still open. Claude Code does not declare production readiness.
+
 ## Stage 45 — Project Planner & Task Graph Orchestration
 
 - **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)

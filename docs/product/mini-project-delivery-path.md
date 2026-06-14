@@ -5,22 +5,27 @@ project delivery pilot. Each step builds on the previous one.
 
 | Step | Title | Status | What it adds |
 |---|---|---|---|
-| 43 | Project Planner & Task Graph | **done (this stage)** | brief, user stories, acceptance criteria, milestones, work-item graph, dependency validation, planning-only orchestration + operations visibility |
-| 44 | Agent Discussion & Design Review Protocol | planned | structured multi-agent discussion + design review on a project graph before any code |
+| 43 | Project Planner & Task Graph | **closed** | brief, user stories, acceptance criteria, milestones, work-item graph, dependency validation, planning-only orchestration + operations visibility |
+| 44 | Agent Discussion & Design Review Protocol | **done (this stage)** | structured multi-role discussion + design review + gates + go/no-go on a project graph, review-only, before any code |
 | 45 | Real Repo Workspace Operator v1 | planned | a controlled, sandboxed workspace operator that can materialise work-item outputs into files (still human-reviewed, no production write) |
 | 46 | Mini Project Delivery Pilot | planned | drive a small project (FastAPI Todo) end-to-end through the graph in dev/test only |
 | 47 | Delivery Package & Acceptance Gate | planned | assemble a delivery package and gate it on the acceptance criteria before it is considered delivery-ready |
 
-## Current foundation (Step 43)
+## Current foundation (Steps 43–44)
 
 * Projects, briefs, user stories, acceptance criteria, milestones, work items,
-  dependencies, risks, artifacts, graph snapshots.
-* Deterministic FastAPI Todo template.
-* Dependency graph validation (cycle / self / duplicate / missing node).
+  dependencies, risks, artifacts, graph snapshots (Step 43).
+* Deterministic FastAPI Todo template + dependency graph validation (Step 43).
 * Planning-only orchestration: project-scale requests route to the
-  project-planner-agent; the workflow stops at `project_planned`.
+  project-planner-agent; the workflow stops at `project_planned` (Step 43).
+* Multi-role design review: discussion sessions, deterministic role
+  contributions (no chain-of-thought), six reviewers, acceptance coverage,
+  seven review gates, and a go/no-go decision; review-only — the workflow stops
+  at `design_reviewed` / `design_reviewed_with_findings` / `design_review_blocked`
+  (Step 44).
 * Operations API for project / work item / dependency / graph / acceptance /
-  delivery-readiness visibility.
+  delivery-readiness + discussion / design-review / findings / gates /
+  go-no-go / acceptance-coverage visibility.
 
 ## Still out of scope (carry-forward)
 

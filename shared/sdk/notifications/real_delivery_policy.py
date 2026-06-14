@@ -66,6 +66,10 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     # Stage 45 -- project planner / task graph events are operator-internal
     # and must NEVER land on a real Discord channel by default.
     "project.*",
+    # Stage 46 -- agent discussion + design review events are operator-internal
+    # and must NEVER land on a real Discord channel by default.
+    "discussion.*",
+    "design_review.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

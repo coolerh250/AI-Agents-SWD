@@ -227,6 +227,12 @@ services:
       PROJECT_PLANNER_PLANNING_ONLY: ${PROJECT_PLANNER_PLANNING_ONLY:-true}
       ENABLE_PROJECT_WORK_ITEM_DISPATCH: ${ENABLE_PROJECT_WORK_ITEM_DISPATCH:-false}
       ENABLE_PROJECT_PLANNER_REAL_LLM: ${ENABLE_PROJECT_PLANNER_REAL_LLM:-false}
+      # Stage 46 -- agent discussion & design review. Review-only; work-item
+      # dispatch + real LLM stay OFF.
+      ENABLE_DESIGN_REVIEW: ${ENABLE_DESIGN_REVIEW:-true}
+      DESIGN_REVIEW_PLANNING_ONLY: ${DESIGN_REVIEW_PLANNING_ONLY:-true}
+      ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH: ${ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH:-false}
+      ENABLE_DESIGN_REVIEW_REAL_LLM: ${ENABLE_DESIGN_REVIEW_REAL_LLM:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -454,6 +460,34 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8016/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  design-review-agent:
+    build:
+      context: ../..
+      dockerfile: agents/design-review-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: design-review-agent
+      DESIGN_REVIEW_TEMPLATE_MODE: "true"
+      ENABLE_DESIGN_REVIEW_REAL_LLM: "false"
+      DESIGN_REVIEW_PLANNING_ONLY: "true"
+      ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH: "false"
+    ports:
+      - "127.0.0.1:8017:8017"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8017/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

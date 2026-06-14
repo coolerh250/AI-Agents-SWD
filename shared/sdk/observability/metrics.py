@@ -894,6 +894,51 @@ PROJECT_DELIVERY_READINESS_CHECKS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 46 -- Agent Discussion & Design Review Protocol.
+# ---------------------------------------------------------------------------
+AGENT_DISCUSSION_SESSIONS_TOTAL = Counter(
+    "agent_discussion_sessions_total",
+    "Agent discussion sessions",
+    ["status"],
+)
+AGENT_DISCUSSION_CONTRIBUTIONS_TOTAL = Counter(
+    "agent_discussion_contributions_total",
+    "Agent discussion contributions recorded",
+    ["review_type"],
+)
+DESIGN_REVIEW_SESSIONS_TOTAL = Counter(
+    "design_review_sessions_total",
+    "Design review sessions",
+    ["review_type", "status"],
+)
+DESIGN_REVIEW_FINDINGS_TOTAL = Counter(
+    "design_review_findings_total",
+    "Design review findings",
+    ["severity"],
+)
+DESIGN_REVIEW_BLOCKING_FINDINGS_TOTAL = Counter(
+    "design_review_blocking_findings_total",
+    "Design review blocking (high/critical) findings",
+    ["severity"],
+)
+DESIGN_REVIEW_GATES_EVALUATED_TOTAL = Counter(
+    "design_review_gates_evaluated_total",
+    "Design review gates evaluated",
+    ["status"],
+)
+DESIGN_REVIEW_GO_NO_GO_TOTAL = Counter(
+    "design_review_go_no_go_total",
+    "Design review go/no-go decisions",
+    ["decision"],
+)
+ACCEPTANCE_COVERAGE_CHECKS_TOTAL = Counter(
+    "acceptance_coverage_checks_total",
+    "Acceptance coverage evaluations",
+    ["status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

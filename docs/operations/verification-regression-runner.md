@@ -263,3 +263,16 @@ sequence. Marker: `PROJECT_PLANNER_TASK_GRAPH_VERIFY: PASS`.
 surfaces (template, brief, graph build, dependency validation, acceptance,
 assignment policy, operations API, planning-only safety, denylist, audit
 integrity, no-secret-leak).
+
+## Stage 46 — Design review verify (additive)
+
+`scripts/verify_agent_discussion_design_review.sh` is a standalone verifier: its
+Scenario G runs `verify_project_planner_task_graph.sh` (which itself runs
+`run_full_regression.sh --full`), so it is **not** part of the runner's own
+verify list. Run it directly in the regression sequence. Marker:
+`AGENT_DISCUSSION_DESIGN_REVIEW_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 165–177 cover the agent discussion / design
+review surfaces (service health, session/contribution builders, FastAPI Todo
+review, gate evaluation, acceptance coverage, operations API, planning-only
+safety, denylist, audit integrity, no-secret-leak, no-chain-of-thought).

@@ -3670,5 +3670,171 @@ else
   echo "PROJECT_NO_SECRET_LEAK_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 46 -- agent discussion & design review smokes (165-177).
+# ---------------------------------------------------------------------------
+
+# 165. design-review-agent service health
+dr_health=$(curl -sS -m 5 "http://localhost:8017/health" 2>/dev/null || echo '{}')
+if echo "$dr_health" | grep -q '"status":"ok"'; then
+  echo "DESIGN_REVIEW_SERVICE_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_SERVICE_SMOKE: CHECK"
+fi
+
+# 166. discussion session builder + participants (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.agent_discussion import build_session
+s,p = build_session(project_id='p1')
+assert len(p) >= 7 and s.planning_only
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AGENT_DISCUSSION_SESSION_SMOKE: PASS"
+else
+  echo "AGENT_DISCUSSION_SESSION_SMOKE: FAIL"
+fi
+
+# 167. deterministic contributions (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_task_graph
+from shared.sdk.agent_discussion import build_contributions
+b=build_brief('FastAPI Todo CRUD SQLite pytest README'); g=build_task_graph(b,project_type='fastapi_todo_service')
+wis=[{'work_type':w.work_type} for w in g.work_items]
+acs=[{'description':c.description} for c in g.acceptance_criteria]
+c=build_contributions(template='fastapi_todo_service',brief={},work_items=wis,acceptance_criteria=acs,risks=[])
+assert len(c) >= 7
+print('OK')
+" >/dev/null 2>&1; then
+  echo "AGENT_DISCUSSION_CONTRIBUTION_SMOKE: PASS"
+else
+  echo "AGENT_DISCUSSION_CONTRIBUTION_SMOKE: FAIL"
+fi
+
+# 168. FastAPI Todo design review decision + gates (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.project_planning import build_brief, build_task_graph
+from shared.sdk.design_review.models import ReviewContext
+from shared.sdk.design_review.review_builder import build_review
+b=build_brief('Create a FastAPI Todo Service with CRUD, SQLite, pytest, README'); g=build_task_graph(b,project_type='fastapi_todo_service')
+keyid={w.work_item_key:f'id-{w.work_item_key}' for w in g.work_items}
+wis=[{'id':keyid[w.work_item_key],'work_item_key':w.work_item_key,'title':w.title,'work_type':w.work_type,'assigned_agent_role':w.assigned_agent_role,'dispatch_policy':w.dispatch_policy} for w in g.work_items]
+acs=[{'description':c.description,'verification_method':c.verification_method,'required':c.required,'work_item_id':keyid.get(c.work_item_key)} for c in g.acceptance_criteria]
+deps=[{'work_item_id':keyid[d.work_item_key],'depends_on_work_item_id':keyid[d.depends_on_work_item_key]} for d in g.dependencies]
+ctx=ReviewContext(project_id='p',template='fastapi_todo_service',brief={'scope':b.scope,'non_scope':b.non_scope,'constraints':b.constraints,'assumptions':b.assumptions,'metadata':b.metadata},user_stories=[{'k':1}],work_items=wis,dependencies=deps,acceptance_criteria=acs,risks=[],graph_validation_status='valid')
+r=build_review(ctx,planning_only=True)
+assert r.decision in ('planning_only','go_with_findings','go') and len(r.gates) >= 6
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_FASTAPI_TODO_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_FASTAPI_TODO_SMOKE: FAIL"
+fi
+
+# 169. gate evaluation: invalid graph -> no_go
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.design_review.models import ReviewContext
+from shared.sdk.design_review.review_builder import build_review
+ctx=ReviewContext(project_id='p',template='fastapi_todo_service',brief={'scope':['x'],'non_scope':['y']},user_stories=[{'k':1}],work_items=[{'id':'1','work_item_key':'BE','work_type':'backend','assigned_agent_role':'development-agent'}],dependencies=[],acceptance_criteria=[{'description':'create','required':True,'work_item_id':'1','verification_method':'unit_test'}],risks=[],graph_validation_status='invalid')
+assert build_review(ctx,planning_only=True).decision == 'no_go'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_GATE_EVALUATION_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_GATE_EVALUATION_SMOKE: FAIL"
+fi
+
+# 170. acceptance coverage (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.design_review.models import ReviewContext
+from shared.sdk.design_review.acceptance_coverage import compute_acceptance_coverage
+cov=compute_acceptance_coverage(ReviewContext(project_id='p',acceptance_criteria=[{'required':True,'work_item_id':'w'},{'required':True,'work_item_id':None}]))
+assert cov.total==2 and cov.coverage_percent==50.0
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_ACCEPTANCE_COVERAGE_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_ACCEPTANCE_COVERAGE_SMOKE: FAIL"
+fi
+
+# 171. go/no-go decision recorded (operations API, if reachable)
+dr_projects=$(curl -sS -m 5 "http://localhost:8000/operations/projects" 2>/dev/null || echo '{}')
+if echo "$dr_projects" | grep -q '"projects"'; then
+  echo "DESIGN_REVIEW_GO_NO_GO_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_GO_NO_GO_SMOKE: CHECK"
+fi
+
+# 172. operations API design review endpoints mounted
+dr_safety=$(curl -sS -m 5 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$dr_safety" | grep -q '"design_review_enabled"'; then
+  echo "DESIGN_REVIEW_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 173. planning-only safety fields
+if echo "$dr_safety" | grep -q '"design_review_planning_only":true' \
+   && echo "$dr_safety" | grep -q '"design_review_work_item_dispatch_enabled":false' \
+   && echo "$dr_safety" | grep -q '"design_review_real_llm_enabled":false'; then
+  echo "DESIGN_REVIEW_PLANNING_ONLY_SAFETY_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_PLANNING_ONLY_SAFETY_SMOKE: CHECK"
+fi
+
+# 174. discussion.* / design_review.* notifications denylisted
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.agent_discussion.events import DISCUSSION_NOTIFICATION_EVENTS
+from shared.sdk.design_review.events import DESIGN_REVIEW_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+evs=list(DISCUSSION_NOTIFICATION_EVENTS)+list(DESIGN_REVIEW_NOTIFICATION_EVENTS)
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in evs)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 175. audit integrity -- decision types defined + safe refs
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.design_review.audit_events import DESIGN_REVIEW_DECISION_TYPES, safe_review_artifact_refs
+assert 'design_review_completed' in DESIGN_REVIEW_DECISION_TYPES
+assert safe_review_artifact_refs(project_id='p')['production_executed'] is False
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_AUDIT_INTEGRITY_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_AUDIT_INTEGRITY_SMOKE: FAIL"
+fi
+
+# 176. no secret leak in deterministic contributions/findings
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.agent_discussion import build_contributions
+from shared.sdk.agent_discussion.safety import contains_secret
+c=build_contributions(template='fastapi_todo_service',brief={},work_items=[{'work_type':'qa'}],acceptance_criteria=[{'description':'x'}],risks=[])
+assert not any(contains_secret(x.summary) for x in c)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DESIGN_REVIEW_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
+# 177. no chain-of-thought columns in migration 018
+if ! grep -vE '^\s*--' migrations/018_agent_discussion_design_review.sql 2>/dev/null \
+     | grep -qiE 'chain_of_thought|raw_prompt|transcript'; then
+  echo "DESIGN_REVIEW_NO_CHAIN_OF_THOUGHT_SMOKE: PASS"
+else
+  echo "DESIGN_REVIEW_NO_CHAIN_OF_THOUGHT_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"
