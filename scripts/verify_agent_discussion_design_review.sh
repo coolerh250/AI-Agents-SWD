@@ -157,7 +157,11 @@ else
   grep -q "PROJECT_PLANNER_TASK_GRAPH_VERIFY: PASS" /tmp/adr_planner.log \
     && _pass "project planner verify PASS" || _skip "project planner verify inconclusive"
 fi
-if grep -qE "FULL_REGRESSION_VERIFY: (PASS|PASS_WITH_DOCUMENTED_GAPS)" /tmp/adr_planner.log; then
+# verify_project_planner_task_graph.sh runs the full regression internally and
+# emits a "[PASS] full regression ..." line on its own stdout (the
+# FULL_REGRESSION_VERIFY marker itself lands in its private /tmp/ppv_full.log).
+if grep -qE "\[PASS\] full regression" /tmp/adr_planner.log \
+   || grep -qE "FULL_REGRESSION_VERIFY: (PASS|PASS_WITH_DOCUMENTED_GAPS)" /tmp/adr_planner.log; then
   _pass "full regression PASS / PASS_WITH_DOCUMENTED_GAPS"
 else
   _fail "full regression not green (see /tmp/adr_planner.log)"
