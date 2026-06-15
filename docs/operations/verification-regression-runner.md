@@ -310,3 +310,21 @@ Marker: `MINI_PROJECT_DELIVERY_PILOT_VERIFY: PASS`.
 acceptance evaluation, QA evidence, safety evidence, mini delivery report,
 artifacts, operations API, controlled-only safety, denylist, audit integrity,
 no-secret-leak, no-chain-of-thought, no-GitHub-write, no-deploy).
+
+## Stage 49 — Delivery package & acceptance gate verify (additive)
+
+`scripts/verify_delivery_package_acceptance_gate.sh` is a standalone verifier:
+its Scenario I reuses `verify_mini_project_delivery_pilot.sh` (which transitively
+runs the workspace / design-review / planner verifies and
+`run_full_regression.sh --full`), so it is **not** part of the runner's own
+verify list. Run it directly in the regression sequence. Scenario H waits for
+audit/notification convergence (bounded verify-chain loop, 60s client timeout)
+before reading the chain. Marker:
+`DELIVERY_PACKAGE_ACCEPTANCE_GATE_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 211–229 cover the delivery package surfaces
+(service health, package build, sections, artifacts, acceptance gate run +
+checks, operator-acceptance pending, handoff summaries, readiness snapshot,
+operations API, controlled-only safety, operator-actions-disabled, denylist,
+audit integrity, no-secret-leak, no-chain-of-thought, no-GitHub-write,
+no-deploy, ready-for-admin-console).

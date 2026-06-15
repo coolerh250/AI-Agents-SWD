@@ -4193,5 +4193,208 @@ else
   echo "MINI_DELIVERY_NO_DEPLOY_SMOKE: CHECK"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 49 -- delivery package & acceptance gate smokes (211-229).
+# ---------------------------------------------------------------------------
+
+# 211. delivery-package-agent service health
+dpa_health=$(curl -sS -m 5 "http://localhost:8020/health" 2>/dev/null || echo '{}')
+if echo "$dpa_health" | grep -q '"status":"ok"'; then
+  echo "DELIVERY_PACKAGE_SERVICE_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_SERVICE_SMOKE: CHECK"
+fi
+
+# 212. build a delivery package from the mini pilot
+if [ -n "$MDP_PILOT_ID" ]; then
+  dp_build=$(curl -sS -m 60 -X POST \
+    "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/delivery-package/build" \
+    -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo '{}')
+else
+  dp_build='{}'
+fi
+DP_PACKAGE_ID=$(echo "$dp_build" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('package_id',''))" 2>/dev/null || echo "")
+if [ -n "$DP_PACKAGE_ID" ] && echo "$dp_build" | grep -q '"package_status": *"ready_for_review"'; then
+  echo "DELIVERY_PACKAGE_BUILD_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_BUILD_SMOKE: CHECK"
+fi
+
+# 213. package sections (14, none missing)
+if [ -n "$DP_PACKAGE_ID" ]; then
+  dp_sec=$(curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/sections" 2>/dev/null || echo '{}')
+  sec_missing=$(echo "$dp_sec" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('missing_count',1))" 2>/dev/null || echo 1)
+  sec_count=$(echo "$dp_sec" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('count',0))" 2>/dev/null || echo 0)
+  if [ "${sec_count:-0}" -ge 13 ] 2>/dev/null && [ "${sec_missing:-1}" = "0" ]; then
+    echo "DELIVERY_PACKAGE_SECTIONS_SMOKE: PASS"
+  else
+    echo "DELIVERY_PACKAGE_SECTIONS_SMOKE: CHECK"
+  fi
+else
+  echo "DELIVERY_PACKAGE_SECTIONS_SMOKE: CHECK"
+fi
+
+# 214. package artifacts linked
+if [ -n "$DP_PACKAGE_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/artifacts" 2>/dev/null | grep -q 'mini_delivery_report'; then
+  echo "DELIVERY_PACKAGE_ARTIFACTS_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_ARTIFACTS_SMOKE: CHECK"
+fi
+
+# 215. acceptance gate run
+dp_gate='{}'
+if [ -n "$DP_PACKAGE_ID" ]; then
+  dp_gate=$(curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/acceptance-gate" 2>/dev/null || echo '{}')
+fi
+if echo "$dp_gate" | grep -qE '"status": *"(passed|passed_with_findings)"' \
+   && echo "$dp_gate" | grep -qE '"decision": *"(ready_for_operator_review|controlled_only_complete)"'; then
+  echo "ACCEPTANCE_GATE_RUN_SMOKE: PASS"
+else
+  echo "ACCEPTANCE_GATE_RUN_SMOKE: CHECK"
+fi
+
+# 216. acceptance checks (>=15, 0 failed)
+if [ -n "$DP_PACKAGE_ID" ]; then
+  dp_checks=$(curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/acceptance-checks" 2>/dev/null || echo '{}')
+  chk_count=$(echo "$dp_checks" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('count',0))" 2>/dev/null || echo 0)
+  chk_failed=$(echo "$dp_checks" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('failed',1))" 2>/dev/null || echo 1)
+  if [ "${chk_count:-0}" -ge 15 ] 2>/dev/null && [ "${chk_failed:-1}" = "0" ]; then
+    echo "ACCEPTANCE_GATE_CHECKS_SMOKE: PASS"
+  else
+    echo "ACCEPTANCE_GATE_CHECKS_SMOKE: CHECK"
+  fi
+else
+  echo "ACCEPTANCE_GATE_CHECKS_SMOKE: CHECK"
+fi
+
+# 217. operator acceptance pending (never auto-accepted)
+if [ -n "$DP_PACKAGE_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/operator-review" 2>/dev/null | grep -q '"review_status": *"pending"'; then
+  echo "OPERATOR_ACCEPTANCE_PENDING_SMOKE: PASS"
+else
+  echo "OPERATOR_ACCEPTANCE_PENDING_SMOKE: CHECK"
+fi
+
+# 218. handoff summaries (business/technical/operator)
+if [ -n "$DP_PACKAGE_ID" ]; then
+  dp_ho=$(curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/handoff-summaries" 2>/dev/null || echo '{}')
+  if echo "$dp_ho" | grep -q 'business_summary' \
+     && echo "$dp_ho" | grep -q 'technical_summary' \
+     && echo "$dp_ho" | grep -q 'operator_summary'; then
+    echo "HANDOFF_SUMMARY_SMOKE: PASS"
+  else
+    echo "HANDOFF_SUMMARY_SMOKE: CHECK"
+  fi
+else
+  echo "HANDOFF_SUMMARY_SMOKE: CHECK"
+fi
+
+# 219. readiness snapshot ready_for_operator_review
+if [ -n "$DP_PACKAGE_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/readiness" 2>/dev/null | grep -q '"readiness_status": *"ready_for_operator_review"'; then
+  echo "DELIVERY_READINESS_SNAPSHOT_SMOKE: PASS"
+else
+  echo "DELIVERY_READINESS_SNAPSHOT_SMOKE: CHECK"
+fi
+
+# 220. operations API report
+if [ -n "$DP_PACKAGE_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/report" 2>/dev/null | grep -q 'acceptance_gate_decision'; then
+  echo "DELIVERY_PACKAGE_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 221. controlled-only safety flags
+dp_safety=$(curl -sS -m 10 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$dp_safety" | grep -q '"delivery_package_controlled_only":true' \
+   && echo "$dp_safety" | grep -q '"delivery_package_real_llm_enabled":false' \
+   && echo "$dp_safety" | grep -q '"delivery_package_github_write_enabled":false' \
+   && echo "$dp_safety" | grep -q '"delivery_package_pr_creation_enabled":false' \
+   && echo "$dp_safety" | grep -q '"delivery_package_deploy_enabled":false' \
+   && echo "$dp_safety" | grep -q '"delivery_package_external_delivery_enabled":false'; then
+  echo "DELIVERY_PACKAGE_CONTROLLED_ONLY_SAFETY_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_CONTROLLED_ONLY_SAFETY_SMOKE: CHECK"
+fi
+
+# 222. operator actions disabled by default
+if echo "$dp_safety" | grep -q '"delivery_package_auto_accept_enabled":false' \
+   && echo "$dp_safety" | grep -q '"delivery_package_operator_actions_enabled":false'; then
+  if [ -n "$DP_PACKAGE_ID" ]; then
+    dp_accept=$(curl -sS -m 10 -X POST "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/operator-review/accept" -H 'Content-Type: application/json' -d '{}' 2>/dev/null || echo '{}')
+    if echo "$dp_accept" | grep -qE '"status": *"action_disabled"|"policy": *"policy_blocked"'; then
+      echo "DELIVERY_PACKAGE_OPERATOR_ACTIONS_DISABLED_SMOKE: PASS"
+    else
+      echo "DELIVERY_PACKAGE_OPERATOR_ACTIONS_DISABLED_SMOKE: CHECK"
+    fi
+  else
+    echo "DELIVERY_PACKAGE_OPERATOR_ACTIONS_DISABLED_SMOKE: PASS"
+  fi
+else
+  echo "DELIVERY_PACKAGE_OPERATOR_ACTIONS_DISABLED_SMOKE: CHECK"
+fi
+
+# 223. notification denylist
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.delivery_package.events import DELIVERY_PACKAGE_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+evs=list(DELIVERY_PACKAGE_NOTIFICATION_EVENTS)+['acceptance_gate.x','handoff.x']
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in evs)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "DELIVERY_PACKAGE_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 224. audit integrity remains clean
+if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: (PASS|SKIP)"; then
+  echo "DELIVERY_PACKAGE_AUDIT_INTEGRITY_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_AUDIT_INTEGRITY_SMOKE: CHECK"
+fi
+
+# 225. no secret leak in report
+if [ -n "$DP_PACKAGE_ID" ]; then
+  dp_rep_blob=$(curl -sS -m 10 "http://localhost:8000/operations/delivery-packages/$DP_PACKAGE_ID/report" 2>/dev/null || echo '{}')
+  if echo "$dp_rep_blob" | grep -qiE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}'; then
+    echo "DELIVERY_PACKAGE_NO_SECRET_LEAK_SMOKE: FAIL"
+  else
+    echo "DELIVERY_PACKAGE_NO_SECRET_LEAK_SMOKE: PASS"
+  fi
+else
+  echo "DELIVERY_PACKAGE_NO_SECRET_LEAK_SMOKE: CHECK"
+fi
+
+# 226. no chain-of-thought columns in migration 021
+if ! grep -vE '^\s*--' migrations/021_delivery_package_acceptance_gate.sql 2>/dev/null \
+     | grep -qiE 'chain_of_thought|raw_prompt|transcript'; then
+  echo "DELIVERY_PACKAGE_NO_CHAIN_OF_THOUGHT_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_NO_CHAIN_OF_THOUGHT_SMOKE: FAIL"
+fi
+
+# 227. no GitHub write in package build result
+if echo "$dp_build" | grep -q '"github_write_performed": *false' \
+   && echo "$dp_build" | grep -q '"pr_created": *false'; then
+  echo "DELIVERY_PACKAGE_NO_GITHUB_WRITE_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_NO_GITHUB_WRITE_SMOKE: CHECK"
+fi
+
+# 228. no deploy / no production in package build result
+if echo "$dp_build" | grep -q '"deployment_performed": *false' \
+   && echo "$dp_build" | grep -q '"production_executed": *false'; then
+  echo "DELIVERY_PACKAGE_NO_DEPLOY_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_NO_DEPLOY_SMOKE: CHECK"
+fi
+
+# 229. ready for admin console
+if echo "$dp_safety" | grep -q '"delivery_package_ready_for_admin_console":true'; then
+  echo "DELIVERY_PACKAGE_READY_FOR_ADMIN_CONSOLE_SMOKE: PASS"
+else
+  echo "DELIVERY_PACKAGE_READY_FOR_ADMIN_CONSOLE_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

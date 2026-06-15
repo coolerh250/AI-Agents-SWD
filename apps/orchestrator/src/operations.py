@@ -1695,6 +1695,9 @@ async def operations_safety() -> dict:
     # Stage 48 -- mini project delivery pilot snapshot.
     mini_delivery_summary = await _mini_delivery_safety_summary()
 
+    # Stage 49 -- delivery package & acceptance gate snapshot.
+    delivery_package_summary = await _delivery_package_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2015,6 +2018,59 @@ async def operations_safety() -> dict:
         ],
         "mini_delivery_pilot_ready_for_delivery_package": mini_delivery_summary[
             "mini_delivery_pilot_ready_for_delivery_package"
+        ],
+        # Stage 49 -- delivery package & acceptance gate. Controlled-only;
+        # booleans + opaque ids + status strings only, never secrets / CoT.
+        "delivery_package_enabled": delivery_package_summary["delivery_package_enabled"],
+        "delivery_package_controlled_only": delivery_package_summary[
+            "delivery_package_controlled_only"
+        ],
+        "delivery_package_real_llm_enabled": delivery_package_summary[
+            "delivery_package_real_llm_enabled"
+        ],
+        "delivery_package_github_write_enabled": delivery_package_summary[
+            "delivery_package_github_write_enabled"
+        ],
+        "delivery_package_pr_creation_enabled": delivery_package_summary[
+            "delivery_package_pr_creation_enabled"
+        ],
+        "delivery_package_deploy_enabled": delivery_package_summary[
+            "delivery_package_deploy_enabled"
+        ],
+        "delivery_package_external_delivery_enabled": delivery_package_summary[
+            "delivery_package_external_delivery_enabled"
+        ],
+        "delivery_package_auto_accept_enabled": delivery_package_summary[
+            "delivery_package_auto_accept_enabled"
+        ],
+        "delivery_package_operator_actions_enabled": delivery_package_summary[
+            "delivery_package_operator_actions_enabled"
+        ],
+        "latest_delivery_package_status": delivery_package_summary[
+            "latest_delivery_package_status"
+        ],
+        "latest_delivery_package_id": delivery_package_summary["latest_delivery_package_id"],
+        "latest_acceptance_gate_status": delivery_package_summary["latest_acceptance_gate_status"],
+        "latest_acceptance_gate_decision": delivery_package_summary[
+            "latest_acceptance_gate_decision"
+        ],
+        "latest_acceptance_gate_blocking_findings_count": delivery_package_summary[
+            "latest_acceptance_gate_blocking_findings_count"
+        ],
+        "latest_delivery_readiness_status": delivery_package_summary[
+            "latest_delivery_readiness_status"
+        ],
+        "latest_human_acceptance_status": delivery_package_summary[
+            "latest_human_acceptance_status"
+        ],
+        "latest_delivery_package_sections_ready_count": delivery_package_summary[
+            "latest_delivery_package_sections_ready_count"
+        ],
+        "latest_delivery_package_sections_missing_count": delivery_package_summary[
+            "latest_delivery_package_sections_missing_count"
+        ],
+        "delivery_package_ready_for_admin_console": delivery_package_summary[
+            "delivery_package_ready_for_admin_console"
         ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
@@ -4358,6 +4414,67 @@ async def _mini_delivery_safety_summary() -> dict[str, Any]:
                 and acc["failed"] == 0
                 and (qa or {}).get("status") in ("passed", "passed_with_findings")
                 and (safety or {}).get("status") in ("safe", "safe_with_findings")
+            )
+    except Exception:
+        pass
+    return summary
+
+
+# Stage 49 -- delivery package & acceptance gate safety snapshot.
+async def _delivery_package_safety_summary() -> dict[str, Any]:
+    """Stage 49: delivery package posture (flags + latest package snapshot).
+
+    Booleans + opaque ids + status strings only. A failing store NEVER fails
+    the safety view -- the latest-package fields degrade to None.
+    """
+    from shared.sdk.delivery_package.safety import delivery_package_safety_flags
+
+    flags = delivery_package_safety_flags()
+    summary: dict[str, Any] = {
+        **flags,
+        "latest_delivery_package_status": None,
+        "latest_delivery_package_id": None,
+        "latest_acceptance_gate_status": None,
+        "latest_acceptance_gate_decision": None,
+        "latest_acceptance_gate_blocking_findings_count": None,
+        "latest_delivery_readiness_status": None,
+        "latest_human_acceptance_status": None,
+        "latest_delivery_package_sections_ready_count": None,
+        "latest_delivery_package_sections_missing_count": None,
+        "delivery_package_ready_for_admin_console": False,
+    }
+    try:
+        from shared.sdk.delivery_package import DeliveryPackageStore
+
+        store = DeliveryPackageStore()
+        package = await store.get_latest_package()
+        if package is not None:
+            pkg_id = package["id"]
+            summary["latest_delivery_package_id"] = pkg_id
+            summary["latest_delivery_package_status"] = package["status"]
+            summary["latest_human_acceptance_status"] = package["human_acceptance_status"]
+            gate = await store.get_acceptance_gate(pkg_id)
+            if gate is not None:
+                summary["latest_acceptance_gate_status"] = gate["status"]
+                summary["latest_acceptance_gate_decision"] = gate["decision"]
+                summary["latest_acceptance_gate_blocking_findings_count"] = gate[
+                    "blocking_findings_count"
+                ]
+            readiness = await store.get_readiness_snapshot(pkg_id)
+            if readiness is not None:
+                summary["latest_delivery_readiness_status"] = readiness["readiness_status"]
+            sections = await store.get_package_sections(pkg_id)
+            ready = sum(1 for s in sections if s["status"] == "ready")
+            missing = sum(1 for s in sections if s["status"] == "missing")
+            summary["latest_delivery_package_sections_ready_count"] = ready
+            summary["latest_delivery_package_sections_missing_count"] = missing
+            summary["delivery_package_ready_for_admin_console"] = bool(
+                package["status"] == "ready_for_review"
+                and (gate or {}).get("status") in ("passed", "passed_with_findings")
+                and (gate or {}).get("decision")
+                in ("ready_for_operator_review", "controlled_only_complete")
+                and package["human_acceptance_status"] == "pending"
+                and (readiness or {}).get("readiness_status") == "ready_for_operator_review"
             )
     except Exception:
         pass

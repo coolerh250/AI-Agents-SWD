@@ -79,6 +79,11 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     "delivery_pilot.*",
     "acceptance.*",
     "qa_evidence.*",
+    # Stage 49 -- delivery package / acceptance gate / handoff events are
+    # operator-internal and must NEVER land on a real Discord channel by default.
+    "delivery_package.*",
+    "acceptance_gate.*",
+    "handoff.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

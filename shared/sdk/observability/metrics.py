@@ -1039,6 +1039,61 @@ MINI_DELIVERY_REPORTS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 49 -- Delivery Package & Acceptance Gate.
+# ---------------------------------------------------------------------------
+DELIVERY_PACKAGE_BUILDS_TOTAL = Counter(
+    "delivery_package_builds_total",
+    "Delivery package builds",
+    ["package_type", "status"],
+)
+DELIVERY_PACKAGE_BUILD_FAILURES_TOTAL = Counter(
+    "delivery_package_build_failures_total",
+    "Delivery package builds that failed/blocked",
+    ["package_type"],
+)
+DELIVERY_PACKAGE_SECTIONS_TOTAL = Counter(
+    "delivery_package_sections_total",
+    "Delivery package sections created",
+    ["status"],
+)
+ACCEPTANCE_GATE_RUNS_TOTAL = Counter(
+    "acceptance_gate_runs_total",
+    "Acceptance gate runs",
+    ["status", "decision"],
+)
+ACCEPTANCE_GATE_CHECKS_TOTAL = Counter(
+    "acceptance_gate_checks_total",
+    "Acceptance gate checks evaluated",
+    ["check_type", "status"],
+)
+ACCEPTANCE_GATE_FAILURES_TOTAL = Counter(
+    "acceptance_gate_failures_total",
+    "Acceptance gate runs that blocked/failed",
+    ["decision"],
+)
+DELIVERY_PACKAGE_READY_FOR_REVIEW_TOTAL = Counter(
+    "delivery_package_ready_for_review_total",
+    "Delivery packages marked ready_for_review",
+    ["package_type"],
+)
+HANDOFF_SUMMARIES_CREATED_TOTAL = Counter(
+    "handoff_summaries_created_total",
+    "Handoff summaries created",
+    ["summary_type"],
+)
+DELIVERY_READINESS_SNAPSHOTS_TOTAL = Counter(
+    "delivery_readiness_snapshots_total",
+    "Delivery readiness snapshots created",
+    ["readiness_status"],
+)
+OPERATOR_ACCEPTANCE_REVIEWS_TOTAL = Counter(
+    "operator_acceptance_reviews_total",
+    "Operator acceptance review placeholders created",
+    ["review_status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

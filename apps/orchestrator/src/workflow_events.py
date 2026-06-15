@@ -42,6 +42,8 @@ WORKFLOW_EVENT_STREAMS = [
     "stream.workspace_events",
     # Stage 48 -- mini delivery pilot completion events.
     "stream.delivery_pilot_events",
+    # Stage 49 -- delivery package completion events.
+    "stream.delivery_package_events",
 ]
 WORKFLOW_EVENT_GROUP = "orchestrator-workflow-group"
 WORKFLOW_EVENT_CONSUMER = "orchestrator-1"
@@ -70,6 +72,9 @@ _AGENT_BY_EVENT = {
     # Stage 48 -- mini delivery pilot completion events.
     "delivery_pilot.completed": "mini-delivery-pilot-agent",
     "delivery_pilot.failed": "mini-delivery-pilot-agent",
+    # Stage 49 -- delivery package completion events.
+    "delivery_package.ready_for_review": "delivery-package-agent",
+    "delivery_package.build_failed": "delivery-package-agent",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
 
@@ -119,6 +124,17 @@ def _workspace_operator_enabled() -> bool:
 _DELIVERY_PILOT_COMPLETED_EVENT = "delivery_pilot.completed"
 _DELIVERY_PILOT_FAILED_EVENT = "delivery_pilot.failed"
 _DELIVERY_PILOT_EVENTS = (_DELIVERY_PILOT_COMPLETED_EVENT, _DELIVERY_PILOT_FAILED_EVENT)
+
+
+# Stage 49 -- delivery package events flip the workflow to a delivery package
+# stage (controlled-only). Never advances to production, PR, or deploy.
+_DELIVERY_PACKAGE_READY_EVENT = "delivery_package.ready_for_review"
+_DELIVERY_PACKAGE_FAILED_EVENT = "delivery_package.build_failed"
+_DELIVERY_PACKAGE_EVENTS = (_DELIVERY_PACKAGE_READY_EVENT, _DELIVERY_PACKAGE_FAILED_EVENT)
+
+
+def _delivery_package_enabled() -> bool:
+    return _env_flag("ENABLE_DELIVERY_PACKAGE", True)
 
 
 # Stage 45 -- project planning events flip the workflow to a project stage
@@ -206,6 +222,10 @@ class WorkflowEventConsumer:
             return await self._advance_workspace(workflow, event, payload, state, execution_result)
         if event in _DELIVERY_PILOT_EVENTS:
             return await self._advance_delivery_pilot(
+                workflow, event, payload, state, execution_result
+            )
+        if event in _DELIVERY_PACKAGE_EVENTS:
+            return await self._advance_delivery_package(
                 workflow, event, payload, state, execution_result
             )
         # Stage 29: only the "<agent>.completed" events mark an agent as
@@ -570,6 +590,80 @@ class WorkflowEventConsumer:
             "pr_created": False,
             "deployment_performed": False,
             "real_llm_used": False,
+        }
+        state["stage"] = stage
+        state["execution_result"] = execution_result
+        updated = await self.store.update_workflow_state(
+            task_id,
+            stage=stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        with contextlib.suppress(Exception):
+            await send_notification(task_id, event, f"workflow {task_id} {stage}")
+        # Stage 49 -- on a completed pilot, request a controlled delivery package
+        # build (controlled-only). Never creates a PR / deploy / external delivery.
+        pilot_id = str(payload.get("pilot_id") or "")
+        if stage == "mini_delivery_pilot_completed" and pilot_id and _delivery_package_enabled():
+            with contextlib.suppress(Exception):
+                await self.bus.publish_event(
+                    "stream.delivery_package",
+                    {
+                        "event": "project.delivery_package_requested",
+                        "task_id": task_id,
+                        "workflow_id": str(payload.get("workflow_id", "")),
+                        "pilot_id": pilot_id,
+                        "project_id": str(payload.get("project_id") or ""),
+                        "package_type": "mini_project_delivery",
+                        "requested_by_agent": "orchestrator",
+                        "controlled_only": True,
+                        "production_executed": False,
+                    },
+                )
+        return updated
+
+    async def _advance_delivery_package(
+        self,
+        workflow: dict,
+        event: str,
+        payload: dict,
+        state: dict,
+        execution_result: dict,
+    ) -> dict | None:
+        """Stage 49 -- apply a delivery package event (controlled-only).
+
+        Sets the workflow stage to delivery_package_ready_for_review /
+        delivery_package_failed. Never auto-accepts, never advances to PR /
+        deploy / external delivery.
+        """
+        task_id = workflow["task_id"]
+        if workflow["stage"] == "completed":
+            return None
+        package_status = str(payload.get("package_status") or "")
+        if event == _DELIVERY_PACKAGE_FAILED_EVENT or package_status in ("failed", "blocked"):
+            stage = "delivery_package_failed"
+        else:
+            stage = "delivery_package_ready_for_review"
+        execution_result["status"] = stage
+        execution_result["production_executed"] = False
+        execution_result["controlled_only"] = True
+        execution_result["delivery_package"] = {
+            "package_id": str(payload.get("package_id") or ""),
+            "project_id": str(payload.get("project_id") or ""),
+            "pilot_id": str(payload.get("pilot_id") or ""),
+            "package_status": package_status,
+            "acceptance_gate_status": str(payload.get("acceptance_gate_status") or ""),
+            "acceptance_gate_decision": str(payload.get("acceptance_gate_decision") or ""),
+            "human_acceptance_status": str(payload.get("human_acceptance_status") or "pending"),
+            "readiness_status": str(payload.get("readiness_status") or ""),
+            "github_write_performed": False,
+            "pr_created": False,
+            "deployment_performed": False,
+            "real_llm_used": False,
+            "external_delivery_performed": False,
         }
         state["stage"] = stage
         state["execution_result"] = execution_result

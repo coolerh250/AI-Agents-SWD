@@ -2356,6 +2356,26 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Delivery Package & Acceptance Gate (Stage 49)
+
+On top of the Stage 48 mini delivery pilot, the platform assembles a completed
+pilot into a formal, human-reviewable **Delivery Package**: 14 sections, linked
+source artifacts (refs + hashes only), an operator-readable acceptance
+checklist, an 18-check **Acceptance Gate**, business / technical / operator
+handoff summaries, a delivery readiness snapshot, and a pending operator-review
+placeholder. The gate resolves to `ready_for_operator_review` —
+`human_acceptance_status` stays `pending` and operator accept / reject /
+request-changes endpoints are **disabled by default**. Controlled-only — no real
+PR, no merge, no deploy, no real LLM, no external delivery, no auto-accept;
+`production_executed` stays `false`. `delivery_package.*` / `acceptance_gate.*` /
+`handoff.*` notifications are default-denied. See
+[`docs/product/delivery-package-acceptance-gate.md`](docs/product/delivery-package-acceptance-gate.md),
+[`docs/product/fastapi-todo-delivery-package.md`](docs/product/fastapi-todo-delivery-package.md),
+[`docs/product/operator-acceptance-review.md`](docs/product/operator-acceptance-review.md),
+[`docs/product/delivery-readiness-model.md`](docs/product/delivery-readiness-model.md),
+and
+[`docs/operations/delivery-package-operations.md`](docs/operations/delivery-package-operations.md).
+
 ## Mini Project Delivery Pilot (Stage 48)
 
 The first verifiable controlled end-to-end delivery path: one pilot run chains

@@ -255,6 +255,19 @@ services:
       ENABLE_MINI_DELIVERY_PR_CREATION: ${ENABLE_MINI_DELIVERY_PR_CREATION:-false}
       ENABLE_MINI_DELIVERY_DEPLOY: ${ENABLE_MINI_DELIVERY_DEPLOY:-false}
       ENABLE_MINI_DELIVERY_EXTERNAL_DELIVERY: ${ENABLE_MINI_DELIVERY_EXTERNAL_DELIVERY:-false}
+      # Stage 49 -- delivery package & acceptance gate. Controlled-only; real LLM /
+      # GitHub write / PR / deploy / external delivery / auto-accept / operator
+      # actions all stay OFF.
+      ENABLE_DELIVERY_PACKAGE: ${ENABLE_DELIVERY_PACKAGE:-true}
+      DELIVERY_PACKAGE_CONTROLLED_ONLY: ${DELIVERY_PACKAGE_CONTROLLED_ONLY:-true}
+      DELIVERY_PACKAGE_TEMPLATE_MODE: ${DELIVERY_PACKAGE_TEMPLATE_MODE:-true}
+      ENABLE_DELIVERY_PACKAGE_REAL_LLM: ${ENABLE_DELIVERY_PACKAGE_REAL_LLM:-false}
+      ENABLE_DELIVERY_PACKAGE_GITHUB_WRITE: ${ENABLE_DELIVERY_PACKAGE_GITHUB_WRITE:-false}
+      ENABLE_DELIVERY_PACKAGE_PR_CREATION: ${ENABLE_DELIVERY_PACKAGE_PR_CREATION:-false}
+      ENABLE_DELIVERY_PACKAGE_DEPLOY: ${ENABLE_DELIVERY_PACKAGE_DEPLOY:-false}
+      ENABLE_DELIVERY_PACKAGE_EXTERNAL_DELIVERY: ${ENABLE_DELIVERY_PACKAGE_EXTERNAL_DELIVERY:-false}
+      ENABLE_DELIVERY_PACKAGE_AUTO_ACCEPT: ${ENABLE_DELIVERY_PACKAGE_AUTO_ACCEPT:-false}
+      ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS: ${ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -581,6 +594,42 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8019/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  delivery-package-agent:
+    build:
+      context: ../..
+      dockerfile: agents/delivery-package-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: delivery-package-agent
+      # Stage 49 -- controlled-only. No real LLM, no GitHub, no PR, no deploy,
+      # no external delivery, no auto human acceptance, no operator actions.
+      DELIVERY_PACKAGE_TEMPLATE_MODE: "true"
+      DELIVERY_PACKAGE_CONTROLLED_ONLY: "true"
+      ENABLE_DELIVERY_PACKAGE: "true"
+      ENABLE_DELIVERY_PACKAGE_REAL_LLM: "false"
+      ENABLE_DELIVERY_PACKAGE_GITHUB_WRITE: "false"
+      ENABLE_DELIVERY_PACKAGE_PR_CREATION: "false"
+      ENABLE_DELIVERY_PACKAGE_DEPLOY: "false"
+      ENABLE_DELIVERY_PACKAGE_EXTERNAL_DELIVERY: "false"
+      ENABLE_DELIVERY_PACKAGE_AUTO_ACCEPT: "false"
+      ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS: "false"
+    ports:
+      - "127.0.0.1:8020:8020"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8020/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -6,6 +6,112 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 49 — Delivery Package & Acceptance Gate
+
+- **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; commit follows after local + remote validation.
+- **Step:** 47 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- Stages 45/46/47/48 provide planner, design review, controlled workspace
+  operator, and the mini delivery pilot (which already produces acceptance / QA /
+  safety evidence + a mini delivery report). No formal, human-reviewable delivery
+  package or acceptance gate existed. This stage adds that additively — no Stage
+  43/44/45/46/legacy path modified.
+
+### Data model / migration
+- `migrations/021_delivery_package_acceptance_gate.sql` — idempotent, PostgreSQL
+  16. Eight tables: delivery_packages, delivery_package_sections,
+  delivery_package_artifacts, acceptance_gate_runs, acceptance_gate_check_results,
+  operator_acceptance_reviews, handoff_summaries, delivery_readiness_snapshots.
+  CHECK constraints on every enum; unique (package_id, section_key) and
+  (gate_run_id, check_key); workspace FK references `code_workspaces(workspace_id)`.
+  `human_acceptance_status` defaults `pending`; every real-write flag defaults
+  false. No chain_of_thought / raw_prompt / transcript columns.
+
+### Delivery package SDK result
+- `shared/sdk/delivery_package/` (14 modules): models (Pydantic strict),
+  package_builder (orchestration; reuses persisted pilot evidence, never re-runs
+  generation/tests), section_builder (14 sections), acceptance_gate (18 checks,
+  never auto-accepts), checklist_builder, readiness_snapshot, handoff_builder
+  (business/technical/operator), artifact_collector (refs + hashes only),
+  export_metadata (no external delivery), report_builder, store (asyncpg),
+  events, audit_events, safety. mypy/ruff/black clean.
+
+### Delivery-package-agent result
+- `agents/delivery-package-agent/` (StreamAgent, port 8020): consumes
+  `stream.delivery_package`, builds the package, emits
+  `delivery_package.ready_for_review` / `.build_failed` to
+  `stream.delivery_package_events`. Controlled-only by default.
+
+### Orchestrator integration result
+- `workflow_events.py`: consumes `stream.delivery_package_events` → stages
+  `delivery_package_ready_for_review` / `delivery_package_failed`; a completed
+  mini pilot additionally requests a controlled package build. Never advances to
+  production / PR / deploy. `main.py` mounts `delivery_package_router`.
+
+### Operations API result
+- `apps/orchestrator/src/delivery_package_api.py`: build (controlled write) +
+  package / gate / readiness / handoff / operator-review reads; operator
+  accept/reject/request-changes scaffolded but disabled by default
+  (`action_disabled` / `policy_blocked`). 21 Stage 49 safety fields added to
+  `/operations/safety`.
+
+### FastAPI Todo delivery package result
+- Local fakes pipeline: package `ready_for_review`, 14/14 sections ready (0
+  missing), ≥7 artifacts linked, gate `passed_with_findings` /
+  `ready_for_operator_review`, blocking_findings=0, failed_checks=0, human
+  acceptance `pending`, 3 handoff summaries, readiness
+  `ready_for_operator_review`.
+
+### Acceptance gate result
+- 18 checks; blocking on failed tests / acceptance / safety / governance;
+  `human_acceptance_pending` is a non-blocking warning. Never returns
+  `decision=accepted`.
+
+### Operator review pending result
+- A pending `operator_acceptance_reviews` row is created on every build; operator
+  action endpoints disabled by default; human acceptance never auto-set.
+
+### Handoff summary / readiness snapshot result
+- Business / technical / operator summaries; readiness snapshot with
+  per-dimension ready flags + `human_acceptance_pending=true`.
+
+### Controlled-only safety result
+- `delivery_package_controlled_only=true`; real_llm / github_write / pr_creation
+  / deploy / external_delivery / auto_accept / operator_actions all false;
+  `production_executed=false` everywhere; `delivery_package_ready_for_admin_console`
+  gated on the full controlled-only posture.
+
+### No GitHub / no PR / no deploy result
+- Build performs no GitHub write, no PR, no branch push, no deploy, no real LLM,
+  no external delivery; gate governance checks assert all of these `passed`.
+
+### Audit / notification / metrics result
+- 8 audit decision types; 9 notification events; `delivery_package.*` /
+  `acceptance_gate.*` / `handoff.*` added to the default real-delivery denylist
+  (all prior denylist patterns preserved). 10 Stage 49 metrics + delivery package
+  build spans.
+
+### Regression result (local)
+- 51 delivery package tests (20 files) pass; mini delivery + orchestrator import
+  checks green; ruff / black / mypy clean. Remote regression results recorded
+  after deployment to 10.0.1.31.
+
+### Production safety result
+- production_executed_true_count target 0; deployment_prod_true / workflow_prod_true
+  target 0 (confirmed on remote).
+
+### Remaining gaps / observations only
+- Admin Console v0 (Step 48), backup / DR gap closure (Step 49 in the product
+  roadmap), Admin Console v1 operator actions (Step 50) remain open. Work-item
+  dispatch still closed. Backup/DR, Kubernetes/Helm/ArgoCD, real secret store,
+  real off-host backup, real pager remain carry-forward. Claude Code reports
+  observations only; it does not declare production readiness.
+
+---
+
 ## Stage 48 — Mini Project Delivery Pilot
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)

@@ -1,0 +1,52 @@
+"""Stage 49 -- delivery package Redis stream + notification events.
+
+All ``delivery_package.*`` / ``acceptance_gate.*`` / ``handoff.*`` notification
+events are operator-internal and on the default real-delivery denylist (added
+in Stage 49). They MUST NEVER reach a real Discord / Slack / Telegram channel.
+"""
+
+from __future__ import annotations
+
+STREAM_DELIVERY_PACKAGE = "stream.delivery_package"
+STREAM_DELIVERY_PACKAGE_EVENTS = "stream.delivery_package_events"
+
+EVENT_DELIVERY_PACKAGE_BUILD_STARTED = "delivery_package.build_started"
+EVENT_DELIVERY_PACKAGE_SECTIONS_CREATED = "delivery_package.sections_created"
+EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_STARTED = "delivery_package.acceptance_gate_started"
+EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_COMPLETED = "delivery_package.acceptance_gate_completed"
+EVENT_DELIVERY_PACKAGE_READY_FOR_REVIEW = "delivery_package.ready_for_review"
+EVENT_DELIVERY_PACKAGE_BUILD_FAILED = "delivery_package.build_failed"
+EVENT_ACCEPTANCE_GATE_CHECK_COMPLETED = "acceptance_gate.check_completed"
+EVENT_ACCEPTANCE_GATE_READY_FOR_OPERATOR_REVIEW = "acceptance_gate.ready_for_operator_review"
+EVENT_HANDOFF_SUMMARY_CREATED = "handoff.summary_created"
+
+# Internal pipeline event published by the orchestrator router.
+EVENT_PROJECT_DELIVERY_PACKAGE_REQUESTED = "project.delivery_package_requested"
+
+DELIVERY_PACKAGE_NOTIFICATION_EVENTS: tuple[str, ...] = (
+    EVENT_DELIVERY_PACKAGE_BUILD_STARTED,
+    EVENT_DELIVERY_PACKAGE_SECTIONS_CREATED,
+    EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_STARTED,
+    EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_COMPLETED,
+    EVENT_DELIVERY_PACKAGE_READY_FOR_REVIEW,
+    EVENT_DELIVERY_PACKAGE_BUILD_FAILED,
+    EVENT_ACCEPTANCE_GATE_CHECK_COMPLETED,
+    EVENT_ACCEPTANCE_GATE_READY_FOR_OPERATOR_REVIEW,
+    EVENT_HANDOFF_SUMMARY_CREATED,
+)
+
+__all__ = [
+    "STREAM_DELIVERY_PACKAGE",
+    "STREAM_DELIVERY_PACKAGE_EVENTS",
+    "EVENT_DELIVERY_PACKAGE_BUILD_STARTED",
+    "EVENT_DELIVERY_PACKAGE_SECTIONS_CREATED",
+    "EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_STARTED",
+    "EVENT_DELIVERY_PACKAGE_ACCEPTANCE_GATE_COMPLETED",
+    "EVENT_DELIVERY_PACKAGE_READY_FOR_REVIEW",
+    "EVENT_DELIVERY_PACKAGE_BUILD_FAILED",
+    "EVENT_ACCEPTANCE_GATE_CHECK_COMPLETED",
+    "EVENT_ACCEPTANCE_GATE_READY_FOR_OPERATOR_REVIEW",
+    "EVENT_HANDOFF_SUMMARY_CREATED",
+    "EVENT_PROJECT_DELIVERY_PACKAGE_REQUESTED",
+    "DELIVERY_PACKAGE_NOTIFICATION_EVENTS",
+]
