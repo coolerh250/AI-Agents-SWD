@@ -167,7 +167,7 @@ if [ -n "$WORKSPACE_ID" ]; then
   links=$(curl -sS -m 10 "$ORCH/operations/projects/$PROJECT_ID/work-item-execution-links" 2>/dev/null || echo '{}')
   [ "$(_field "$links" count)" -ge 1 ] 2>/dev/null && _pass "work item execution links exist" || _fail "no work item links"
   rep=$(curl -sS -m 10 "$ORCH/operations/workspaces/$WORKSPACE_ID/report" 2>/dev/null || echo '{}')
-  echo "$rep" | grep -q '"production_executed": false' && _pass "report production_executed=false" || _fail "report production flag"
+  [ "$(_field "$rep" production_executed)" = "False" ] && _pass "report production_executed=false" || _fail "report production flag"
 else
   _skip "no workspace_id -- diff/artifacts skipped"
 fi
