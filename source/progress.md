@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 50 — Admin Console v0 Read-only Visibility
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; commit follows after local + remote validation.
+- **Git branch / commit:** `main`; code `bdff058`, verify fix `47180ed`, progress commit follows.
 - **Step:** 48 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -65,9 +65,29 @@ issues & blockers, and next-step suggestions.
   errors). Frontend (npm available locally): typecheck + build (60 modules) +
   16 vitest tests pass.
 
-### Production safety result
-- production_executed target 0; admin console read-only / no write API / no
-  operator actions; human acceptance pending (confirmed on remote below).
+### Regression result (remote 10.0.1.31, commit 47180ed)
+- npm is **not** installed on the remote, so `/admin` serves the committed
+  zero-build static fallback and the verify uses the deterministic static-source
+  checks (documented, npm-optional) — backend regression unaffected.
+- Orchestrator rebuilt (Dockerfile now copies the static UI) + healthy; `/admin`
+  serves "Admin Console v0"; the six aggregate endpoints respond.
+- `verify_admin_console_v0.sh`: **ADMIN_CONSOLE_V0_VERIFY: PASS (34/34 checks)**,
+  including Scenario G which chains `verify_delivery_package_acceptance_gate.sh`
+  → mini pilot / workspace / design / planner verifies → `run_full_regression.sh
+  --full` (PASS / PASS_WITH_DOCUMENTED_GAPS). One earlier FALSE-POSITIVE (the
+  read-only grep scanned the guard test's deny-list) was fixed by excluding
+  `__tests__`; the guard test still enforces the invariant — no strictness
+  reduction.
+
+### Production safety result (remote)
+- deployment_prod_true=0; workflow_prod_true=0; production_executed_true_count=0.
+- `/operations/safety`: admin_console_enabled=true, admin_console_read_only=true,
+  admin_console_operator_actions_enabled=false, admin_console_write_api_enabled=false,
+  admin_console_secret_redaction_enabled=true,
+  delivery_package_operator_actions_enabled=false,
+  latest_human_acceptance_status=pending,
+  latest_delivery_readiness_status=ready_for_operator_review,
+  delivery_package_ready_for_admin_console=true.
 
 ### Remaining gaps / observations only
 - Backup / DR gap closure (Step 49) and Admin Console v1 operator actions
