@@ -2356,6 +2356,28 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Admin Console v0 — Read-only Visibility (Stage 50)
+
+The first browser UI: a **read-only** project-delivery management console served
+by the orchestrator at **`/admin`**. It surfaces platform safety, projects,
+task graph, design review, workspace execution, mini delivery pilot, delivery
+package + acceptance gate, human acceptance (pending), regression status, backup
+readiness gaps, incidents, and LLM / cost governance — backed by six read-only
+aggregate endpoints under `/operations/admin-console/*`. It does **not** replace
+Grafana (which stays for metrics / tracing / infra). Strictly read-only: GET-only
+API client, no operator actions, no write API, no deploy / PR / approval; secret
+and chain-of-thought redaction on every rendered value;
+`admin_console_read_only=true`, `admin_console_write_api_enabled=false`,
+`admin_console_operator_actions_enabled=false`. Served via a committed zero-build
+static fallback (so `/admin` responds without a Node toolchain) or an optional
+React + Vite + TypeScript bundle. See
+[`docs/product/admin-console-v0.md`](docs/product/admin-console-v0.md),
+[`docs/product/admin-console-information-architecture.md`](docs/product/admin-console-information-architecture.md),
+[`docs/product/admin-console-read-only-safety.md`](docs/product/admin-console-read-only-safety.md),
+[`docs/product/admin-console-page-map.md`](docs/product/admin-console-page-map.md),
+and
+[`docs/operations/admin-console-operations.md`](docs/operations/admin-console-operations.md).
+
 ## Delivery Package & Acceptance Gate (Stage 49)
 
 On top of the Stage 48 mini delivery pilot, the platform assembles a completed

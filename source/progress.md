@@ -6,6 +6,77 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 50 — Admin Console v0 Read-only Visibility
+
+- **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; commit follows after local + remote validation.
+- **Step:** 48 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- The platform exposed many `/operations/*` read endpoints + Grafana for
+  metrics/tracing, but no browser UI for business workflow / project delivery /
+  governance status. No frontend toolchain existed. This stage adds a read-only
+  Admin Console additively — no existing endpoint or Grafana changed.
+
+### Admin console app result
+- `apps/admin-console/` React + Vite + TypeScript app: typed GET-only API
+  client, 12 pages (Executive Overview, Projects, Project Detail, Task Graph,
+  Design Review, Workspace Execution, Mini Delivery Pilot, Delivery Package,
+  Safety Center, Regression, Cost/LLM, Incidents), shared components, redaction
+  + status utils. Plus a committed **zero-build static fallback**
+  (`static/index.html`) served when no Vite bundle is built.
+
+### API client result
+- `src/api/client.ts` exposes `apiGet` only (no post/put/patch/delete);
+  `SUPPORTED_METHODS=["GET"]`. Read-only guard test scans the whole source tree
+  and asserts no mutating method / operator action / localStorage write.
+
+### Page result
+- All 12 pages render against mock data; loading / error / empty states handled;
+  human acceptance always shown `pending`; operator actions absent/disabled.
+
+### Static serving / docker result
+- Served at `/admin` via orchestrator `StaticFiles` mount (prefers
+  `admin_console_static/dist`, falls back to committed static). Orchestrator
+  Dockerfile copies `apps/admin-console/static/` into the image. No new docker
+  service, no Node runtime required at runtime.
+
+### Read-only safety result
+- `/operations/safety` adds `admin_console_enabled`, `admin_console_read_only`
+  (true), `admin_console_operator_actions_enabled` (false),
+  `admin_console_write_api_enabled` (false),
+  `admin_console_secret_redaction_enabled` (true).
+
+### Redaction result
+- `src/utils/safety.ts` + the static page deep-redact secret-like keys
+  (token/secret/password/api_key/hmac/private_key/webhook) and strip
+  chain_of_thought/raw_prompt/transcript keys. Backend responses carry no
+  secrets/CoT (asserted).
+
+### Operations / aggregate API result
+- `apps/orchestrator/src/admin_console_api.py`: 6 read-only GET endpoints
+  (overview, projects, projects/{id}, latest-delivery-state, safety-summary,
+  regression-summary). Router exposes only GET/HEAD; no writes (tripwire test).
+
+### Regression result (local)
+- Backend: 13 admin console tests pass; ruff/black/mypy clean
+  (admin_console_api.py mypy-clean; operations.py unchanged 18 pre-existing
+  errors). Frontend (npm available locally): typecheck + build (60 modules) +
+  16 vitest tests pass.
+
+### Production safety result
+- production_executed target 0; admin console read-only / no write API / no
+  operator actions; human acceptance pending (confirmed on remote below).
+
+### Remaining gaps / observations only
+- Backup / DR gap closure (Step 49) and Admin Console v1 operator actions
+  (Step 50) remain open; Kubernetes/Helm/ArgoCD, real secret store, real
+  off-host backup, real pager remain carry-forward. Claude Code reports
+  observations only.
+
+---
+
 ## Stage 49 — Delivery Package & Acceptance Gate
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)

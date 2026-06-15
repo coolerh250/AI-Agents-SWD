@@ -2072,6 +2072,14 @@ async def operations_safety() -> dict:
         "delivery_package_ready_for_admin_console": delivery_package_summary[
             "delivery_package_ready_for_admin_console"
         ],
+        # Stage 50 -- Admin Console v0 read-only visibility. Constant booleans:
+        # the console performs no operator action and calls no write API.
+        "admin_console_enabled": os.environ.get("ENABLE_ADMIN_CONSOLE", "true").strip().lower()
+        != "false",
+        "admin_console_read_only": True,
+        "admin_console_operator_actions_enabled": False,
+        "admin_console_write_api_enabled": False,
+        "admin_console_secret_redaction_enabled": True,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (

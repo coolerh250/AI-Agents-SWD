@@ -9,8 +9,8 @@ project delivery pilot. Each step builds on the previous one.
 | 44 | Agent Discussion & Design Review Protocol | **closed** | structured multi-role discussion + design review + gates + go/no-go on a project graph, review-only, before any code |
 | 45 | Real Repo Workspace Operator v1 | **closed** | a controlled, allowlisted workspace operator that generates a FastAPI Todo project, runs pytest + static checks, and produces diff / artifacts / work-item execution links — no repo write, no PR, no deploy, no real LLM |
 | 46 | Mini Project Delivery Pilot | **closed** | chains plan → design review → controlled workspace → test/static evidence → acceptance evaluation → QA summary → safety summary → mini delivery pilot report, controlled-only |
-| 47 | Delivery Package & Acceptance Gate | **done (this stage)** | assemble a formal delivery package (14 sections + artifacts), gate it (18 acceptance checks), produce handoff summaries + readiness snapshot + operator-review placeholder; `ready_for_operator_review`, human acceptance pending, controlled-only |
-| 48 | Admin Console v0 (read-only) | planned | read-only operator visibility over projects / reviews / workspaces / pilots / delivery packages |
+| 47 | Delivery Package & Acceptance Gate | **closed** | assemble a formal delivery package (14 sections + artifacts), gate it (18 acceptance checks), produce handoff summaries + readiness snapshot + operator-review placeholder; `ready_for_operator_review`, human acceptance pending, controlled-only |
+| 48 | Admin Console v0 (read-only) | **done (this stage)** | read-only browser UI (`/admin`) + 6 aggregate `/operations/admin-console/*` endpoints over projects / reviews / workspaces / pilots / delivery packages / safety / regression / incidents / LLM; no write API, no operator actions, secret/CoT redaction |
 | 49 | Backup / DR Gap Closure | planned | close the documented backup / DR readiness gaps before production delivery |
 | 50 | Admin Console v1 (operator actions) | planned | enable real operator accept / reject / request-changes with policy + approval + audit |
 
@@ -50,10 +50,17 @@ project delivery pilot. Each step builds on the previous one.
   action endpoints are disabled by default; controlled-only — no PR, no deploy,
   no real LLM, no external delivery, `production_executed=false` (Step 47).
 
+* Admin Console v0: a read-only browser UI served at `/admin` (zero-build static
+  fallback + optional React/Vite bundle) backed by six read-only aggregate
+  `/operations/admin-console/*` endpoints, surfacing platform safety, projects,
+  task graph, design review, workspace execution, mini delivery pilot, delivery
+  package + acceptance gate, human acceptance (pending), regression, backup gaps,
+  incidents, and LLM/cost. No write API, no operator actions, secret /
+  chain-of-thought redaction; `production_executed=false` (Step 48).
+
 ## Still out of scope (carry-forward)
 
-* Admin Console v0 read-only visibility (Step 48); backup / DR gap closure
-  (Step 49); Admin Console v1 operator actions (Step 50).
+* Backup / DR gap closure (Step 49); Admin Console v1 operator actions (Step 50).
 * Work-item dispatch to a real implementing agent.
 * Real LLM, real GitHub production write, real deploy, real escalation.
 * Backup / DR readiness gaps, Kubernetes / Helm / ArgoCD baseline, real

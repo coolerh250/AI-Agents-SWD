@@ -1,0 +1,36 @@
+:root {
+  --bg: #0f1419;
+  --card: #1b232b;
+  --fg: #e6edf3;
+  --muted: #8b949e;
+  --line: #30363d;
+}
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--fg); }
+a { color: #58a6ff; }
+header { padding: 14px 20px; border-bottom: 1px solid var(--line); display: flex; align-items: center; gap: 12px; }
+header h1 { font-size: 16px; margin: 0; }
+.ro { font-size: 11px; color: var(--bg); background: var(--muted); border-radius: 10px; padding: 2px 8px; }
+nav { display: flex; flex-wrap: wrap; gap: 6px; padding: 10px 20px; border-bottom: 1px solid var(--line); }
+nav a { text-decoration: none; background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 6px 10px; font-size: 13px; }
+nav a.active { border-color: #388bfd; }
+main { padding: 20px; }
+h2 { font-size: 15px; margin: 0 0 12px; }
+h3 { font-size: 13px; color: var(--muted); margin: 20px 0 8px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 14px; }
+.card .k { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+.card .v { font-size: 20px; margin-top: 6px; word-break: break-word; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+th { color: var(--muted); font-weight: 600; }
+.badge { display: inline-block; border-radius: 10px; padding: 2px 8px; font-size: 12px; }
+.b-ok { background: rgba(46, 160, 67, 0.2); color: #56d364; }
+.b-warn { background: rgba(210, 153, 34, 0.2); color: #e3b341; }
+.b-bad { background: rgba(248, 81, 73, 0.2); color: #ff7b72; }
+.b-neutral { background: rgba(139, 148, 158, 0.2); color: #adbac7; }
+.empty { color: var(--muted); padding: 24px; text-align: center; border: 1px dashed var(--line); border-radius: 8px; }
+.error { color: #ff7b72; padding: 24px; text-align: center; border: 1px dashed #5a2a2a; border-radius: 8px; }
+.note { color: var(--muted); font-size: 12px; margin-top: 12px; }
+pre { background: #0d1117; border: 1px solid var(--line); border-radius: 6px; padding: 12px; overflow: auto; font-size: 12px; }
+.safety-badge { font-size: 12px; color: var(--muted); }

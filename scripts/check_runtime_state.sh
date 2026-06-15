@@ -4396,5 +4396,109 @@ else
   echo "DELIVERY_PACKAGE_READY_FOR_ADMIN_CONSOLE_SMOKE: CHECK"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 50 -- Admin Console v0 read-only visibility smokes (230-242).
+# ---------------------------------------------------------------------------
+
+# 230. admin console served at /admin (static fallback or built bundle)
+ac_admin=$(curl -sS -m 5 "http://localhost:8000/admin/" 2>/dev/null || echo "")
+if echo "$ac_admin" | grep -qi "Admin Console v0"; then
+  echo "ADMIN_CONSOLE_SERVICE_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_SERVICE_SMOKE: CHECK"
+fi
+
+# 231. admin console app source present (build inputs exist)
+if [ -f apps/admin-console/package.json ] && [ -f apps/admin-console/src/main.tsx ] \
+   && [ -f apps/admin-console/static/index.html ]; then
+  echo "ADMIN_CONSOLE_BUILD_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_BUILD_SMOKE: CHECK"
+fi
+
+# 232. static serve returns the read-only console HTML
+if echo "$ac_admin" | grep -qi "READ-ONLY"; then
+  echo "ADMIN_CONSOLE_STATIC_SERVE_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_STATIC_SERVE_SMOKE: CHECK"
+fi
+
+# 233. overview aggregate API
+ac_overview=$(curl -sS -m 10 "http://localhost:8000/operations/admin-console/overview" 2>/dev/null || echo '{}')
+if echo "$ac_overview" | grep -q 'active_projects_count'; then
+  echo "ADMIN_CONSOLE_OVERVIEW_API_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_OVERVIEW_API_SMOKE: CHECK"
+fi
+
+# 234. projects view aggregate API
+if curl -sS -m 10 "http://localhost:8000/operations/admin-console/projects" 2>/dev/null | grep -q '"projects"'; then
+  echo "ADMIN_CONSOLE_PROJECTS_VIEW_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_PROJECTS_VIEW_SMOKE: CHECK"
+fi
+
+# 235. delivery package view aggregate API
+if curl -sS -m 10 "http://localhost:8000/operations/admin-console/latest-delivery-state" 2>/dev/null | grep -q 'human_acceptance_status'; then
+  echo "ADMIN_CONSOLE_DELIVERY_PACKAGE_VIEW_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_DELIVERY_PACKAGE_VIEW_SMOKE: CHECK"
+fi
+
+# 236. safety view aggregate API
+ac_safety=$(curl -sS -m 10 "http://localhost:8000/operations/admin-console/safety-summary" 2>/dev/null || echo '{}')
+if echo "$ac_safety" | grep -q 'admin_console_read_only'; then
+  echo "ADMIN_CONSOLE_SAFETY_VIEW_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_SAFETY_VIEW_SMOKE: CHECK"
+fi
+
+# 237. regression view aggregate API
+if curl -sS -m 10 "http://localhost:8000/operations/admin-console/regression-summary" 2>/dev/null | grep -q 'latest_full_regression_status'; then
+  echo "ADMIN_CONSOLE_REGRESSION_VIEW_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_REGRESSION_VIEW_SMOKE: CHECK"
+fi
+
+# 238. read-only guard: safety reports read-only + no write API
+main_safety=$(curl -sS -m 10 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$main_safety" | grep -q '"admin_console_read_only":true' \
+   && echo "$main_safety" | grep -q '"admin_console_write_api_enabled":false' \
+   && echo "$main_safety" | grep -q '"admin_console_operator_actions_enabled":false'; then
+  echo "ADMIN_CONSOLE_READ_ONLY_GUARD_SMOKE: PASS"
+else
+  echo "ADMIN_CONSOLE_READ_ONLY_GUARD_SMOKE: CHECK"
+fi
+
+# 239. no secret leak in served console or aggregate responses
+if echo "$ac_admin$ac_overview$ac_safety" | grep -qiE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}'; then
+  echo "ADMIN_CONSOLE_NO_SECRET_LEAK_SMOKE: FAIL"
+else
+  echo "ADMIN_CONSOLE_NO_SECRET_LEAK_SMOKE: PASS"
+fi
+
+# 240. no chain-of-thought content in aggregate responses
+if echo "$ac_overview$ac_safety" | grep -qiE 'chain_of_thought|raw_prompt|transcript'; then
+  echo "ADMIN_CONSOLE_NO_CHAIN_OF_THOUGHT_SMOKE: FAIL"
+else
+  echo "ADMIN_CONSOLE_NO_CHAIN_OF_THOUGHT_SMOKE: PASS"
+fi
+
+# 241. no operator action calls in the frontend source
+if grep -rqiE '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run' \
+     apps/admin-console/src apps/admin-console/static 2>/dev/null; then
+  echo "ADMIN_CONSOLE_NO_OPERATOR_ACTION_SMOKE: FAIL"
+else
+  echo "ADMIN_CONSOLE_NO_OPERATOR_ACTION_SMOKE: PASS"
+fi
+
+# 242. no write HTTP methods in the frontend source
+if grep -rqiE "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" \
+     apps/admin-console/src apps/admin-console/static 2>/dev/null; then
+  echo "ADMIN_CONSOLE_NO_WRITE_API_SMOKE: FAIL"
+else
+  echo "ADMIN_CONSOLE_NO_WRITE_API_SMOKE: PASS"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

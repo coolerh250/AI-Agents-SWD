@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Admin Console v0 — read-only</title>
+  <style>
+    :root { --bg:#0f1419; --card:#1b232b; --fg:#e6edf3; --muted:#8b949e; --ok:#2ea043; --warn:#d29922; --bad:#f85149; --line:#30363d; }
+    * { box-sizing: border-box; }
+    body { margin:0; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; background:var(--bg); color:var(--fg); }
+    header { padding:14px 20px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+    header h1 { font-size:16px; margin:0; }
+    .ro { font-size:11px; color:var(--bg); background:var(--muted); border-radius:10px; padding:2px 8px; }
+    nav { display:flex; flex-wrap:wrap; gap:6px; padding:10px 20px; border-bottom:1px solid var(--line); }
+    nav button { background:var(--card); color:var(--fg); border:1px solid var(--line); border-radius:6px; padding:6px 10px; cursor:pointer; font-size:13px; }
+    nav button.active { border-color:#388bfd; }
+    main { padding:20px; }
+    .grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(240px,1fr)); gap:12px; }
+    .card { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:14px; }
+    .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+    .card .v { font-size:20px; margin-top:6px; word-break:break-word; }
+    table { width:100%; border-collapse:collapse; font-size:13px; }
+    th, td { text-align:left; padding:8px 10px; border-bottom:1px solid var(--line); vertical-align:top; }
+    th { color:var(--muted); font-weight:600; }
+    .badge { display:inline-block; border-radius:10px; padding:2px 8px; font-size:12px; }
+    .b-ok { background:rgba(46,160,67,.2); color:#56d364; }
+    .b-warn { background:rgba(210,153,34,.2); color:#e3b341; }
+    .b-bad { background:rgba(248,81,73,.2); color:#ff7b72; }
+    .b-neutral { background:rgba(139,148,158,.2); color:#adbac7; }
+    .empty, .error { color:var(--muted); padding:24px; text-align:center; border:1px dashed var(--line); border-radius:8px; }
+    .error { color:#ff7b72; border-color:#5a2a2a; }
+    h2 { font-size:15px; margin:0 0 12px; }
+    pre { background:#0d1117; border:1px solid var(--line); border-radius:6px; padding:12px; overflow:auto; font-size:12px; }
+    .note { color:var(--muted); font-size:12px; margin-top:8px; }
+    .disabled-action { opacity:.5; cursor:not-allowed; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Admin Console v0</h1>
+    <span class="ro" title="Operator actions are disabled in Admin Console v0.">READ-ONLY</span>
+    <span id="safety-pill"></span>
+  </header>
+  <nav id="nav"></nav>
+  <main id="main"><div class="empty">Loading…</div></main>
+
+  <script>
+  // ---- read-only API client: GET only. No POST/PUT/PATCH/DELETE anywhere. ----
+  const API_BASE = (window.OPERATIONS_API_BASE_URL || "").replace(/\/$/, "");
+  async function apiGet(path) {
+    const res = await fetch(API_BASE + path, { method: "GET", headers: { "Accept": "application/json" } });
+    if (res.status === 404) { const e = new Error("not_available"); e.code = 404; throw e; }
+    if (!res.ok) throw new Error("http_" + res.status);
+    return res.json();
+  }
+
+  // ---- secret / chain-of-thought redaction ----
+  const SECRET_KEYS = ["token","secret","password","api_key","apikey","hmac","private_key","webhook"];
+  const FORBIDDEN_KEYS = ["chain_of_thought","raw_prompt","transcript"];
+  function redact(value) {
+    if (Array.isArray(value)) return value.map(redact);
+    if (value && typeof value === "object") {
+      const out = {};
+      for (const [k, v] of Object.entries(value)) {
+        const lk = k.toLowerCase();
+        if (FORBIDDEN_KEYS.some(f => lk.includes(f))) continue;
+        if (SECRET_KEYS.some(s => lk.includes(s))) { out[k] = "***REDACTED***"; continue; }
+        out[k] = redact(v);
+      }
+      return out;
+    }
+    return value;
+  }
+  window.__adminConsole = { redact, SECRET_KEYS, FORBIDDEN_KEYS };
+
+  function badge(text) {
+    const t = String(text == null ? "—" : text);
+    let cls = "b-neutral";
+    if (/(passed|safe|completed|ok|true)/i.test(t)) cls = "b-ok";
+    if (/(pending|passed_with_findings|warning|with_documented_gaps|needs_changes|draft)/i.test(t)) cls = "b-warn";
+    if (/(ready_for_review|ready_for_operator_review)/i.test(t)) cls = "b-ok";
+    if (/(failed|blocked|unsafe|error|rejected)/i.test(t)) cls = "b-bad";
+    return `<span class="badge ${cls}">${esc(t)}</span>`;
+  }
+  function esc(s) { return String(s == null ? "" : s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;"}[c])); }
+  function card(k, v) { return `<div class="card"><div class="k">${esc(k)}</div><div class="v">${v}</div></div>`; }
+  function kvTable(obj) {
+    const o = redact(obj || {});
+    const rows = Object.entries(o).map(([k,v]) =>
+      `<tr><th>${esc(k)}</th><td>${typeof v === "object" ? `<pre>${esc(JSON.stringify(v,null,2))}</pre>` : badge(v)}</td></tr>`).join("");
+    return `<table>${rows}</table>`;
+  }
+  function emptyState(msg) { return `<div class="empty">${esc(msg || "No data available")}</div>`; }
+  function errorState(e) {
+    if (e && e.code === 404) return `<div class="empty">Not available in this environment</div>`;
+    return `<div class="error">Unable to load data (${esc(e && e.message || "error")})</div>`;
+  }
+
+  // ---- pages (all read-only) ----
+  const PAGES = [
+    { id:"overview", label:"Executive Overview", render: renderOverview },
+    { id:"projects", label:"Projects", render: renderProjects },
+    { id:"delivery", label:"Delivery Package", render: renderDelivery },
+    { id:"safety", label:"Safety Center", render: renderSafety },
+    { id:"regression", label:"Regression", render: renderRegression },
+    { id:"cost", label:"Cost / LLM", render: renderCost },
+    { id:"incidents", label:"Incidents", render: renderIncidents },
+  ];
+
+  async function renderOverview(el) {
+    const d = await apiGet("/operations/admin-console/overview");
+    el.innerHTML = `<h2>Executive Overview</h2><div class="grid">
+      ${card("Active projects", esc(d.active_projects_count))}
+      ${card("Delivery packages", esc(d.delivery_packages_count))}
+      ${card("Ready for review", esc(d.ready_for_review_packages_count))}
+      ${card("Latest pilot", badge(d.latest_mini_delivery_pilot_status))}
+      ${card("Latest package", badge(d.latest_delivery_package_status))}
+      ${card("Acceptance gate", badge(d.latest_acceptance_gate_decision))}
+      ${card("Human acceptance", badge(d.latest_human_acceptance_status))}
+      ${card("Safety", badge(d.safety_result))}
+      ${card("Production executed", badge(d.production_executed_true_count))}
+      ${card("Full regression", badge(d.latest_full_regression_status))}
+      ${card("Ready for admin console", badge(d.delivery_package_ready_for_admin_console))}
+      ${card("Backup gaps", esc((d.backup_readiness_gaps||[]).join(", ") || "none"))}
+    </div>
+    <p class="note">Operator actions are disabled in Admin Console v0.</p>`;
+  }
+  async function renderProjects(el) {
+    const d = await apiGet("/operations/admin-console/projects");
+    if (!d.projects || !d.projects.length) return void (el.innerHTML = "<h2>Projects</h2>" + emptyState("No projects yet"));
+    const rows = d.projects.map(p => `<tr>
+      <td>${esc(p.title)}</td><td>${badge(p.status)}</td><td>${badge(p.risk_level)}</td>
+      <td>${badge(p.autonomy_level)}</td><td>${badge(p.latest_pilot_status)}</td>
+      <td>${badge(p.latest_delivery_package_status)}</td><td>${badge(p.readiness_status)}</td>
+      <td>${badge(p.human_acceptance_status)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Projects</h2><table><tr><th>Title</th><th>Status</th><th>Risk</th><th>Autonomy</th><th>Pilot</th><th>Package</th><th>Readiness</th><th>Human acceptance</th></tr>${rows}</table>`;
+  }
+  async function renderDelivery(el) {
+    const d = await apiGet("/operations/admin-console/latest-delivery-state");
+    if (!d.latest_delivery_package) return void (el.innerHTML = "<h2>Delivery Package / Acceptance Gate</h2>" + emptyState("No delivery package yet"));
+    el.innerHTML = `<h2>Delivery Package / Acceptance Gate</h2>
+      <div class="grid">
+        ${card("Package status", badge(d.latest_delivery_package.status))}
+        ${card("Gate status", badge((d.acceptance_gate||{}).status))}
+        ${card("Gate decision", badge((d.acceptance_gate||{}).decision))}
+        ${card("Human acceptance", badge(d.human_acceptance_status))}
+        ${card("Readiness", badge((d.readiness_snapshot||{}).readiness_status))}
+      </div>
+      <p class="note">Accept / reject / request-changes are a future Admin Console v1 feature and are disabled here.</p>
+      <h2 style="margin-top:20px">Acceptance gate</h2>${kvTable(d.acceptance_gate)}`;
+  }
+  async function renderSafety(el) {
+    const d = await apiGet("/operations/admin-console/safety-summary");
+    el.innerHTML = `<h2>Safety Center</h2>${kvTable(d)}`;
+  }
+  async function renderRegression(el) {
+    const d = await apiGet("/operations/admin-console/regression-summary");
+    el.innerHTML = `<h2>Regression / Verification</h2>${kvTable(d)}`;
+  }
+  async function renderCost(el) {
+    const d = await apiGet("/operations/admin-console/overview");
+    const llm = d.llm_summary || {};
+    if (!llm.total_interactions && !llm.total_proposals) return void (el.innerHTML = "<h2>Cost / LLM Governance</h2>" + emptyState("No usage data available"));
+    el.innerHTML = `<h2>Cost / LLM Governance</h2>${kvTable(llm)}`;
+  }
+  async function renderIncidents(el) {
+    const d = await apiGet("/operations/admin-console/overview");
+    const inc = d.incidents_summary || {};
+    el.innerHTML = `<h2>Incidents</h2>${kvTable(inc)}`;
+  }
+
+  async function refreshSafetyPill() {
+    try {
+      const d = await apiGet("/operations/admin-console/safety-summary");
+      document.getElementById("safety-pill").innerHTML = "Safety: " + badge(d.result);
+    } catch (_e) { /* ignore */ }
+  }
+
+  function buildNav(active) {
+    document.getElementById("nav").innerHTML = PAGES.map(p =>
+      `<button data-page="${p.id}" class="${p.id===active?"active":""}">${esc(p.label)}</button>`).join("");
+    document.querySelectorAll("nav button").forEach(b =>
+      b.addEventListener("click", () => show(b.getAttribute("data-page"))));
+  }
+  async function show(id) {
+    const page = PAGES.find(p => p.id === id) || PAGES[0];
+    buildNav(page.id);
+    const el = document.getElementById("main");
+    el.innerHTML = `<div class="empty">Loading…</div>`;
+    try { await page.render(el); } catch (e) { el.innerHTML = `<h2>${esc(page.label)}</h2>` + errorState(e); }
+  }
+  refreshSafetyPill();
+  show("overview");
+  </script>
+</body>
+</html>

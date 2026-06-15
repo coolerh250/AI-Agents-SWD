@@ -14,6 +14,7 @@ from incidents_api import (
 )
 from operations import router as operations_router
 from progress import build_audit_timeline, build_progress, build_retry_timeline
+from admin_console_api import router as admin_console_router
 from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
@@ -193,7 +194,23 @@ app.include_router(workspace_router)
 app.include_router(mini_delivery_router)
 # Stage 49: delivery package & acceptance gate operations API.
 app.include_router(delivery_package_router)
+# Stage 50: Admin Console v0 read-only aggregate operations API.
+app.include_router(admin_console_router)
 app.include_router(approval_policy_router)
+
+# Stage 50: serve the read-only Admin Console v0 static UI at /admin. Prefers a
+# built Vite bundle (admin_console_static/dist) when present, else the committed
+# zero-build static fallback (admin_console_static). Read-only: the page only
+# calls /operations/* GET endpoints.
+import os as _os  # noqa: E402
+
+from fastapi.staticfiles import StaticFiles  # noqa: E402
+
+_ADMIN_DIST = "admin_console_static/dist"
+_ADMIN_FALLBACK = "admin_console_static"
+_admin_dir = _ADMIN_DIST if _os.path.isdir(_ADMIN_DIST) else _ADMIN_FALLBACK
+if _os.path.isdir(_admin_dir):
+    app.mount("/admin", StaticFiles(directory=_admin_dir, html=True), name="admin-console")
 # Stage 40: external alert receiver. Mounted on /alerts/*.
 app.include_router(alert_receiver_router)
 

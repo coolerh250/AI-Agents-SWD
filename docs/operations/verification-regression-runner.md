@@ -328,3 +328,20 @@ checks, operator-acceptance pending, handoff summaries, readiness snapshot,
 operations API, controlled-only safety, operator-actions-disabled, denylist,
 audit integrity, no-secret-leak, no-chain-of-thought, no-GitHub-write,
 no-deploy, ready-for-admin-console).
+
+## Stage 50 — Admin Console v0 verify (additive)
+
+`scripts/verify_admin_console_v0.sh` is a standalone verifier: its Scenario G
+reuses `verify_delivery_package_acceptance_gate.sh` (which transitively runs the
+mini pilot / workspace / design / planner verifies and
+`run_full_regression.sh --full`), so it is **not** part of the runner's own
+verify list. Run it directly. npm is **optional**: Scenarios A/E run the
+frontend typecheck/build/test when npm is present, else fall back to
+deterministic source-level checks (the served zero-build `/admin` fallback keeps
+the runtime checks meaningful). A missing Node toolchain must NOT fail the
+backend regression. Marker: `ADMIN_CONSOLE_V0_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 230–242 cover the admin console surfaces
+(`/admin` serve, build inputs, static serve, the six aggregate endpoints,
+read-only guard, no-secret-leak, no-chain-of-thought, no-operator-action,
+no-write-API).
