@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 46 — Agent Discussion & Design Review Protocol
 
 - **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; code commit TBD, progress commit TBD.
+- **Git branch / commit:** `main`; code `ac63a07`, verify fix `8660a24`, progress commit follows.
 - **Step:** 44 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -85,7 +85,14 @@ issues & blockers, and next-step suggestions.
 
 ### Regression result
 - Local: 65 Stage 46 tests PASS; 130 with Stage 45; ruff + black + mypy clean.
-  Remote validation: see commit / report below.
+- Remote 10.0.1.31: migration 018 applied (8 tables); orchestrator +
+  design-review-agent rebuilt. 65 Stage 46 tests PASS. Live design review:
+  8 participants, 10 contributions, 7 gates, 3 findings, 0 blocking, decision
+  planning_only, status passed_with_findings. `verify_agent_discussion_design_review.sh`
+  PASS (`AGENT_DISCUSSION_DESIGN_REVIEW_VERIFY: PASS`). Full regression
+  `pass_with_documented_gaps` — total 24, pass 20, fail 0,
+  audit_serialization_failure 0, audit_tamper_residue_failure 0,
+  audit_lock_timeout 0; known_gaps = backup readiness only.
 
 ### Production safety result
 - deployment_prod_true=0, workflow_prod_true=0; planning-only/review-only flags
