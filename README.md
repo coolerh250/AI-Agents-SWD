@@ -2356,6 +2356,22 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Mini Project Delivery Pilot (Stage 48)
+
+The first verifiable controlled end-to-end delivery path: one pilot run chains
+project planning → design review → controlled workspace execution → test/static
+evidence → evidence-based acceptance evaluation → QA summary → safety summary →
+a mini delivery pilot report, recording pilot-level steps, evidence, and
+artifact links. Controlled-only — no real PR, no merge, no deploy, no real LLM,
+no external delivery; `production_executed` stays `false`. `delivery_pilot.*` /
+`acceptance.*` / `qa_evidence.*` notifications are default-denied. See
+[`docs/product/mini-project-delivery-pilot.md`](docs/product/mini-project-delivery-pilot.md),
+[`docs/product/fastapi-todo-mini-pilot.md`](docs/product/fastapi-todo-mini-pilot.md),
+[`docs/product/acceptance-evidence-evaluation.md`](docs/product/acceptance-evidence-evaluation.md),
+[`docs/product/qa-safety-evidence.md`](docs/product/qa-safety-evidence.md),
+and
+[`docs/operations/mini-delivery-pilot-operations.md`](docs/operations/mini-delivery-pilot-operations.md).
+
 ## Real Repo Workspace Operator v1 (Stage 47)
 
 On top of the Stage 45 graph + Stage 46 design review, the platform can run a

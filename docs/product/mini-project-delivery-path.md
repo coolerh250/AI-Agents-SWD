@@ -7,9 +7,10 @@ project delivery pilot. Each step builds on the previous one.
 |---|---|---|---|
 | 43 | Project Planner & Task Graph | **closed** | brief, user stories, acceptance criteria, milestones, work-item graph, dependency validation, planning-only orchestration + operations visibility |
 | 44 | Agent Discussion & Design Review Protocol | **closed** | structured multi-role discussion + design review + gates + go/no-go on a project graph, review-only, before any code |
-| 45 | Real Repo Workspace Operator v1 | **done (this stage)** | a controlled, allowlisted workspace operator that generates a FastAPI Todo project, runs pytest + static checks, and produces diff / artifacts / work-item execution links — no repo write, no PR, no deploy, no real LLM |
-| 46 | Mini Project Delivery Pilot | planned | drive a small project (FastAPI Todo) end-to-end through the graph in dev/test only |
+| 45 | Real Repo Workspace Operator v1 | **closed** | a controlled, allowlisted workspace operator that generates a FastAPI Todo project, runs pytest + static checks, and produces diff / artifacts / work-item execution links — no repo write, no PR, no deploy, no real LLM |
+| 46 | Mini Project Delivery Pilot | **done (this stage)** | chains plan → design review → controlled workspace → test/static evidence → acceptance evaluation → QA summary → safety summary → mini delivery pilot report, controlled-only |
 | 47 | Delivery Package & Acceptance Gate | planned | assemble a delivery package and gate it on the acceptance criteria before it is considered delivery-ready |
+| 48 | Admin Console v0 (read-only) | planned | read-only operator visibility over projects / reviews / workspaces / pilots |
 
 ## Current foundation (Steps 43–44)
 
@@ -33,10 +34,15 @@ project delivery pilot. Each step builds on the previous one.
   controlled-only — the workflow stops at `workspace_tests_passed` /
   `workspace_tests_failed` / `workspace_execution_failed` and never deploys or
   opens a PR (Step 45).
+* Mini project delivery pilot: one controlled run chains plan → design review →
+  workspace execution → test/static evidence → evidence-based acceptance
+  evaluation → QA summary → safety summary → a mini delivery pilot report, with
+  pilot-level steps, evidence, and artifact links; controlled-only — no PR, no
+  deploy, no real LLM, `production_executed=false` (Step 46).
 
 ## Still out of scope (carry-forward)
 
-* Mini project delivery pilot (Step 46).
+* Delivery package & acceptance gate (Step 47); Admin Console v0 (Step 48).
 * Work-item dispatch to a real implementing agent.
 * Real LLM, real GitHub production write, real deploy, real escalation.
 * Backup / DR readiness gaps, Kubernetes / Helm / ArgoCD baseline, real

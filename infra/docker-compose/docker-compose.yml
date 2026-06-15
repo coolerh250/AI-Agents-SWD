@@ -245,6 +245,16 @@ services:
       ENABLE_WORKSPACE_OPERATOR_WORK_ITEM_DISPATCH: ${ENABLE_WORKSPACE_OPERATOR_WORK_ITEM_DISPATCH:-false}
       WORKSPACE_OPERATOR_ROOT: ${WORKSPACE_OPERATOR_ROOT:-/tmp/aiagents-workspaces}
       WORKSPACE_OPERATOR_ALLOWED_ROOTS: ${WORKSPACE_OPERATOR_ALLOWED_ROOTS:-/tmp/aiagents-workspaces}
+      # Stage 48 -- mini project delivery pilot. Controlled-only; real LLM /
+      # GitHub write / PR / deploy / external delivery all stay OFF.
+      ENABLE_MINI_DELIVERY_PILOT: ${ENABLE_MINI_DELIVERY_PILOT:-true}
+      MINI_DELIVERY_PILOT_CONTROLLED_ONLY: ${MINI_DELIVERY_PILOT_CONTROLLED_ONLY:-true}
+      MINI_DELIVERY_PILOT_TEMPLATE_MODE: ${MINI_DELIVERY_PILOT_TEMPLATE_MODE:-true}
+      ENABLE_MINI_DELIVERY_REAL_LLM: ${ENABLE_MINI_DELIVERY_REAL_LLM:-false}
+      ENABLE_MINI_DELIVERY_GITHUB_WRITE: ${ENABLE_MINI_DELIVERY_GITHUB_WRITE:-false}
+      ENABLE_MINI_DELIVERY_PR_CREATION: ${ENABLE_MINI_DELIVERY_PR_CREATION:-false}
+      ENABLE_MINI_DELIVERY_DEPLOY: ${ENABLE_MINI_DELIVERY_DEPLOY:-false}
+      ENABLE_MINI_DELIVERY_EXTERNAL_DELIVERY: ${ENABLE_MINI_DELIVERY_EXTERNAL_DELIVERY:-false}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -535,6 +545,42 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8018/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  mini-delivery-pilot-agent:
+    build:
+      context: ../..
+      dockerfile: agents/mini-delivery-pilot-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: mini-delivery-pilot-agent
+      # Stage 48 -- controlled-only. No real LLM, no GitHub, no PR, no deploy.
+      MINI_DELIVERY_PILOT_TEMPLATE_MODE: "true"
+      MINI_DELIVERY_PILOT_CONTROLLED_ONLY: "true"
+      ENABLE_MINI_DELIVERY_PILOT: "true"
+      ENABLE_MINI_DELIVERY_REAL_LLM: "false"
+      ENABLE_MINI_DELIVERY_GITHUB_WRITE: "false"
+      ENABLE_MINI_DELIVERY_PR_CREATION: "false"
+      ENABLE_MINI_DELIVERY_DEPLOY: "false"
+      ENABLE_MINI_DELIVERY_EXTERNAL_DELIVERY: "false"
+      # the pilot runs the controlled workspace execution in-process.
+      WORKSPACE_OPERATOR_ALLOWED_ROOTS: /tmp/aiagents-workspaces
+      WORKSPACE_OPERATOR_ROOT: /tmp/aiagents-workspaces
+    ports:
+      - "127.0.0.1:8019:8019"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8019/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

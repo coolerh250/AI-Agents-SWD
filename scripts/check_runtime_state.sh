@@ -4027,5 +4027,171 @@ else
   echo "WORKSPACE_NO_REPO_WRITE_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 48 -- mini project delivery pilot smokes (193-210).
+# ---------------------------------------------------------------------------
+
+# 193. mini-delivery-pilot-agent service health
+mdp_health=$(curl -sS -m 5 "http://localhost:8019/health" 2>/dev/null || echo '{}')
+if echo "$mdp_health" | grep -q '"status":"ok"'; then
+  echo "MINI_DELIVERY_PILOT_SERVICE_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_PILOT_SERVICE_SMOKE: CHECK"
+fi
+
+# 194. run a controlled mini delivery pilot via operations API
+mdp_run=$(curl -sS -m 180 -X POST "http://localhost:8000/operations/mini-delivery-pilots/run" \
+  -H 'Content-Type: application/json' \
+  -d '{"request_text":"Create a FastAPI Todo Service with CRUD, SQLite, pytest, README, and API examples."}' \
+  2>/dev/null || echo '{}')
+MDP_PILOT_ID=$(echo "$mdp_run" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('pilot_id',''))" 2>/dev/null || echo "")
+MDP_PROJECT_ID=$(echo "$mdp_run" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('project_id',''))" 2>/dev/null || echo "")
+if [ -n "$MDP_PILOT_ID" ]; then
+  echo "MINI_DELIVERY_PILOT_RUN_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_PILOT_RUN_SMOKE: CHECK"
+fi
+
+# 195. project plan linked
+if [ -n "$MDP_PROJECT_ID" ]; then
+  echo "MINI_DELIVERY_PROJECT_PLAN_LINK_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_PROJECT_PLAN_LINK_SMOKE: CHECK"
+fi
+
+# 196. design review linked
+mdp_dr=$(echo "$mdp_run" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('design_review_session_id',''))" 2>/dev/null || echo "")
+if [ -n "$mdp_dr" ]; then
+  echo "MINI_DELIVERY_DESIGN_REVIEW_LINK_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_DESIGN_REVIEW_LINK_SMOKE: CHECK"
+fi
+
+# 197. workspace linked
+mdp_ws=$(echo "$mdp_run" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('workspace_id',''))" 2>/dev/null || echo "")
+if [ -n "$mdp_ws" ]; then
+  echo "MINI_DELIVERY_WORKSPACE_LINK_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_WORKSPACE_LINK_SMOKE: CHECK"
+fi
+
+# 198. acceptance evaluation
+if [ -n "$MDP_PILOT_ID" ]; then
+  mdp_acc=$(curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/acceptance-evaluations" 2>/dev/null || echo '{}')
+  acc_total=$(echo "$mdp_acc" | "$PYBIN" -c "import sys,json;print(json.load(sys.stdin).get('summary',{}).get('total',0))" 2>/dev/null || echo 0)
+  if [ "${acc_total:-0}" -ge 8 ] 2>/dev/null; then
+    echo "MINI_DELIVERY_ACCEPTANCE_EVALUATION_SMOKE: PASS"
+  else
+    echo "MINI_DELIVERY_ACCEPTANCE_EVALUATION_SMOKE: CHECK"
+  fi
+else
+  echo "MINI_DELIVERY_ACCEPTANCE_EVALUATION_SMOKE: CHECK"
+fi
+
+# 199. QA evidence
+if [ -n "$MDP_PILOT_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/qa-report" 2>/dev/null | grep -qE '"status": *"(passed|passed_with_findings)"'; then
+  echo "MINI_DELIVERY_QA_EVIDENCE_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_QA_EVIDENCE_SMOKE: CHECK"
+fi
+
+# 200. safety evidence
+if [ -n "$MDP_PILOT_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/safety-report" 2>/dev/null | grep -q '"status": *"safe"'; then
+  echo "MINI_DELIVERY_SAFETY_EVIDENCE_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_SAFETY_EVIDENCE_SMOKE: CHECK"
+fi
+
+# 201. mini delivery report
+if [ -n "$MDP_PILOT_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/report" 2>/dev/null | grep -q 'executive_summary'; then
+  echo "MINI_DELIVERY_REPORT_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_REPORT_SMOKE: CHECK"
+fi
+
+# 202. pilot artifacts
+if [ -n "$MDP_PILOT_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/artifacts" 2>/dev/null | grep -q 'mini_delivery_report_ref'; then
+  echo "MINI_DELIVERY_ARTIFACTS_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_ARTIFACTS_SMOKE: CHECK"
+fi
+
+# 203. operations API timeline
+if [ -n "$MDP_PILOT_ID" ] && curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/timeline" 2>/dev/null | grep -q 'step_count'; then
+  echo "MINI_DELIVERY_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 204. controlled-only safety flags
+mdp_safety=$(curl -sS -m 10 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$mdp_safety" | grep -q '"mini_delivery_pilot_controlled_only":true' \
+   && echo "$mdp_safety" | grep -q '"mini_delivery_real_llm_enabled":false' \
+   && echo "$mdp_safety" | grep -q '"mini_delivery_github_write_enabled":false' \
+   && echo "$mdp_safety" | grep -q '"mini_delivery_pr_creation_enabled":false' \
+   && echo "$mdp_safety" | grep -q '"mini_delivery_deploy_enabled":false'; then
+  echo "MINI_DELIVERY_CONTROLLED_ONLY_SAFETY_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_CONTROLLED_ONLY_SAFETY_SMOKE: CHECK"
+fi
+
+# 205. notification denylist
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.mini_delivery_pilot.events import DELIVERY_PILOT_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+evs=list(DELIVERY_PILOT_NOTIFICATION_EVENTS)+['acceptance.x','qa_evidence.x']
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in evs)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "MINI_DELIVERY_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 206. audit integrity remains clean
+if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: (PASS|SKIP)"; then
+  echo "MINI_DELIVERY_AUDIT_INTEGRITY_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_AUDIT_INTEGRITY_SMOKE: CHECK"
+fi
+
+# 207. no secret leak in report
+if [ -n "$MDP_PILOT_ID" ]; then
+  rep_blob=$(curl -sS -m 10 "http://localhost:8000/operations/mini-delivery-pilots/$MDP_PILOT_ID/report" 2>/dev/null || echo '{}')
+  if echo "$rep_blob" | grep -qiE 'ghp_[A-Za-z0-9]{20,}|sk-[A-Za-z0-9]{20,}'; then
+    echo "MINI_DELIVERY_NO_SECRET_LEAK_SMOKE: FAIL"
+  else
+    echo "MINI_DELIVERY_NO_SECRET_LEAK_SMOKE: PASS"
+  fi
+else
+  echo "MINI_DELIVERY_NO_SECRET_LEAK_SMOKE: CHECK"
+fi
+
+# 208. no chain-of-thought columns in migration 020 (allow the safety flag)
+if ! grep -vE '^\s*--' migrations/020_mini_project_delivery_pilot.sql 2>/dev/null \
+     | sed 's/chain_of_thought_persisted//g' \
+     | grep -qiE 'chain_of_thought|raw_prompt|transcript'; then
+  echo "MINI_DELIVERY_NO_CHAIN_OF_THOUGHT_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_NO_CHAIN_OF_THOUGHT_SMOKE: FAIL"
+fi
+
+# 209. no GitHub write performed in pilot result
+if echo "$mdp_run" | grep -q '"github_write_performed": *false' \
+   && echo "$mdp_run" | grep -q '"pr_created": *false'; then
+  echo "MINI_DELIVERY_NO_GITHUB_WRITE_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_NO_GITHUB_WRITE_SMOKE: CHECK"
+fi
+
+# 210. no deploy performed in pilot result
+if echo "$mdp_run" | grep -q '"deployment_performed": *false' \
+   && echo "$mdp_run" | grep -q '"production_executed": *false'; then
+  echo "MINI_DELIVERY_NO_DEPLOY_SMOKE: PASS"
+else
+  echo "MINI_DELIVERY_NO_DEPLOY_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

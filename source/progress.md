@@ -6,6 +6,105 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 48 — Mini Project Delivery Pilot
+
+- **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code commit this stage, remote-validation + progress commit follow.
+- **Step:** 46 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- Stages 45/46/47 provide planner, design review, and controlled workspace
+  operator as separate stage-specific paths + verifies. No single end-to-end
+  controlled delivery pilot existed that chains them and produces pilot-level
+  acceptance / QA / safety evidence + a delivery report. This stage adds that
+  orchestration additively (no Stage 43/44/45/legacy path modified). One small
+  additive prerequisite: `ProjectPlanningStore.list_acceptance_criteria` now
+  also returns the criterion `id` (needed for the acceptance FK).
+
+### Data model / migration
+- `migrations/020_mini_project_delivery_pilot.sql` — idempotent, PostgreSQL 16.
+  Seven tables: mini_delivery_pilots, mini_delivery_pilot_steps,
+  acceptance_evaluations, qa_evidence_reports, safety_evidence_reports,
+  mini_delivery_reports, pilot_artifacts. CHECK constraints on every enum;
+  `acceptance_evaluations` unique (pilot_id, acceptance_criterion_id);
+  workspace FKs reference `code_workspaces(workspace_id)`. No chain_of_thought /
+  raw_prompt / transcript content columns (the `chain_of_thought_persisted`
+  boolean is a governance assertion flag, always false).
+
+### Mini delivery SDK result
+- `shared/sdk/mini_delivery_pilot/`: models (Pydantic strict), pilot_runner
+  (chains plan_project + run_design_review + run_workspace_execution, builds
+  evidence), step_tracker, acceptance_evaluator (evidence-based; pending when
+  evidence unavailable, never auto-waived), qa_evidence_builder,
+  safety_evidence_builder (blocks on any high-risk flag), report_builder,
+  artifact_linker, store, events, audit_events, safety. mypy clean; ruff + black
+  clean.
+
+### Mini-delivery-pilot-agent result
+- `agents/mini-delivery-pilot-agent/` (StreamAgent, port 8019). Consumes
+  `stream.delivery_pilot`, runs the controlled pilot, reports
+  `delivery_pilot.completed` / `delivery_pilot.failed` on
+  `stream.delivery_pilot_events`. Controlled-only: TEMPLATE_MODE,
+  CONTROLLED_ONLY, REAL_LLM/GITHUB_WRITE/PR_CREATION/DEPLOY/EXTERNAL_DELIVERY all
+  false.
+
+### Orchestrator integration
+- `workflow_events.py` consumes `stream.delivery_pilot_events` and sets stage
+  `mini_delivery_pilot_completed` / `mini_delivery_pilot_failed` — controlled-
+  only, never advances to production / PR / deploy. Stage 43/44/45/legacy paths
+  untouched.
+
+### Operations API + FastAPI Todo mini pilot result
+- `apps/orchestrator/src/mini_delivery_api.py`: POST
+  `/operations/mini-delivery-pilots/run` (controlled-only) + read-only pilots /
+  steps / acceptance-evaluations / qa-report / safety-report / report /
+  artifacts / timeline / per-project endpoints. `/operations/safety` carries 17
+  mini-delivery fields. FastAPI Todo pilot chains plan → design review →
+  workspace (12 files, pytest passed) → acceptance (10 satisfied, 0 failed) →
+  QA passed → safety safe → report ready.
+
+### Acceptance evaluation result
+- Evidence-based mapping: CRUD/persistence/pytest → test_run; README →
+  generated_file; no-deploy/no-secret → static_check. Target ≥8 satisfied,
+  0 failed; pending only when evidence genuinely unavailable.
+
+### QA / safety evidence result
+- QA passed (pytest passed + compileall passed); safety safe
+  (production_executed_count=0, github/pr/deploy/real_llm/external/repo-root/
+  secret/CoT all false).
+
+### Controlled-only / audit / notification / metrics result
+- No real PR, GitHub write, merge, branch push, deploy, real LLM, or external
+  delivery; production_executed false everywhere. 8 audit decision types; 11
+  notification events default-denied (`delivery_pilot.*` / `acceptance.*` /
+  `qa_evidence.*` added to denylist; all prior denials retained). 9 metrics + 8
+  spans. No chain-of-thought persisted; reports carry summaries + refs only.
+
+### Regression result (local)
+- 47 mini-delivery tests pass; cross-stage store suites (design review /
+  workspace / project planning) pass; ruff + black + mypy clean. 18 test files
+  cover models, runner (e2e), step tracker, acceptance evaluator, QA/safety
+  builders, report builder, artifact linker, store, agent, orchestrator
+  integration, operations API, audit/notification, safety, no secret leak, no
+  chain-of-thought, no GitHub write, no deploy.
+
+### Regression result (remote 10.0.1.31)
+- _Pending remote deploy + migration 020 + verify + full regression; recorded in
+  the follow-up progress commit._
+
+### Production safety result
+- Local: controlled-only flags correct; production_executed false; no secret
+  leak. Remote counters recorded in the follow-up commit.
+
+### Remaining gaps / observations only
+- Mini project delivery pilot (Step 46) delivered this stage (controlled-only).
+  Delivery package & acceptance gate (Step 47) and Admin Console v0 (Step 48)
+  not done; work-item dispatch still off. Carry-forward unchanged: backup/DR
+  gaps, Kubernetes/Helm/ArgoCD baseline, real production secret store, real
+  off-host backup, real pager / escalation. Claude Code does not declare
+  production readiness.
+
 ## Stage 47 — Real Repo Workspace Operator v1
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)

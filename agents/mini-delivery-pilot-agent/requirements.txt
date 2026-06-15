@@ -1,0 +1,18 @@
+fastapi
+uvicorn
+pydantic
+httpx
+redis
+asyncpg
+prometheus_client
+# Stage 48 -- the pilot runs the controlled workspace execution in-process, so
+# the generated FastAPI Todo pytest suite must be runnable in this container.
+pytest
+ruff
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-instrumentation-fastapi
+opentelemetry-instrumentation-httpx
+opentelemetry-instrumentation-redis
+opentelemetry-instrumentation-asyncpg

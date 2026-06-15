@@ -74,6 +74,11 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     # and must NEVER land on a real Discord channel by default.
     "workspace.*",
     "codegen.*",
+    # Stage 48 -- mini delivery pilot events are operator-internal and must
+    # NEVER land on a real Discord channel by default.
+    "delivery_pilot.*",
+    "acceptance.*",
+    "qa_evidence.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

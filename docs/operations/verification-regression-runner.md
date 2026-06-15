@@ -293,3 +293,20 @@ Stage 44 eventual-consistency false failure. Marker:
 manifest, pytest/static-check runners, diff summary, artifacts, work-item
 links, operations API, controlled-only safety, denylist, audit integrity,
 no-secret-leak, no-repo-write).
+
+## Stage 48 — Mini delivery pilot verify (additive)
+
+`scripts/verify_mini_project_delivery_pilot.sh` is a standalone verifier: its
+Scenario H reuses `verify_real_repo_workspace_operator.sh` (which transitively
+runs `verify_agent_discussion_design_review.sh` →
+`verify_project_planner_task_graph.sh` → `run_full_regression.sh --full`), so
+it is **not** part of the runner's own verify list. Run it directly in the
+regression sequence. Scenario G waits for audit/notification convergence
+(bounded verify-chain loop, 60s client timeout) before reading the chain.
+Marker: `MINI_PROJECT_DELIVERY_PILOT_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 193–210 cover the mini delivery pilot surfaces
+(service health, controlled pilot run, project/design-review/workspace links,
+acceptance evaluation, QA evidence, safety evidence, mini delivery report,
+artifacts, operations API, controlled-only safety, denylist, audit integrity,
+no-secret-leak, no-chain-of-thought, no-GitHub-write, no-deploy).

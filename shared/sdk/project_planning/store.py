@@ -622,7 +622,7 @@ class ProjectPlanningStore:
         conn = await self._connect()
         try:
             rows = await conn.fetch(
-                "SELECT criterion_key, description, verification_method, status, "
+                "SELECT id, criterion_key, description, verification_method, status, "
                 " required, work_item_id FROM project_acceptance_criteria "
                 "WHERE project_id = $1::uuid "
                 "AND ($2::uuid IS NULL OR work_item_id = $2::uuid) "
@@ -634,6 +634,7 @@ class ProjectPlanningStore:
             await conn.close()
         return [
             {
+                "id": str(r["id"]),
                 "criterion_key": r["criterion_key"],
                 "description": r["description"],
                 "verification_method": r["verification_method"],

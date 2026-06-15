@@ -153,6 +153,7 @@ class FakeProjectStore:
         work_item_ids = work_item_ids or {}
         self.acceptance[project_id] = [
             {
+                "id": self._id(),
                 "criterion_key": c.criterion_key,
                 "description": c.description,
                 "verification_method": c.verification_method,

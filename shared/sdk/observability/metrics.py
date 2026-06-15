@@ -989,6 +989,56 @@ WORKSPACE_SAFETY_BLOCKS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 48 -- Mini Project Delivery Pilot.
+# ---------------------------------------------------------------------------
+MINI_DELIVERY_PILOT_RUNS_TOTAL = Counter(
+    "mini_delivery_pilot_runs_total",
+    "Mini delivery pilot runs",
+    ["pilot_type", "status"],
+)
+MINI_DELIVERY_PILOT_FAILURES_TOTAL = Counter(
+    "mini_delivery_pilot_failures_total",
+    "Mini delivery pilot runs that failed/blocked",
+    ["pilot_type"],
+)
+MINI_DELIVERY_PILOT_STEPS_TOTAL = Counter(
+    "mini_delivery_pilot_steps_total",
+    "Mini delivery pilot steps recorded",
+    ["step_type", "status"],
+)
+MINI_DELIVERY_ACCEPTANCE_CRITERIA_TOTAL = Counter(
+    "mini_delivery_acceptance_criteria_total",
+    "Acceptance criteria evaluated across pilots",
+    ["pilot_type"],
+)
+MINI_DELIVERY_ACCEPTANCE_SATISFIED_TOTAL = Counter(
+    "mini_delivery_acceptance_satisfied_total",
+    "Acceptance criteria evaluated satisfied",
+    ["pilot_type"],
+)
+MINI_DELIVERY_ACCEPTANCE_FAILED_TOTAL = Counter(
+    "mini_delivery_acceptance_failed_total",
+    "Acceptance criteria evaluated failed",
+    ["pilot_type"],
+)
+MINI_DELIVERY_QA_REPORTS_TOTAL = Counter(
+    "mini_delivery_qa_reports_total",
+    "QA evidence reports produced",
+    ["status"],
+)
+MINI_DELIVERY_SAFETY_REPORTS_TOTAL = Counter(
+    "mini_delivery_safety_reports_total",
+    "Safety evidence reports produced",
+    ["status"],
+)
+MINI_DELIVERY_REPORTS_TOTAL = Counter(
+    "mini_delivery_reports_total",
+    "Mini delivery pilot reports produced",
+    ["status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

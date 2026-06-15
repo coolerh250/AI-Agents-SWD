@@ -1692,6 +1692,9 @@ async def operations_safety() -> dict:
     # Stage 47 -- real repo workspace operator snapshot.
     workspace_operator_summary = await _workspace_operator_safety_summary()
 
+    # Stage 48 -- mini project delivery pilot snapshot.
+    mini_delivery_summary = await _mini_delivery_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1972,6 +1975,46 @@ async def operations_safety() -> dict:
         ],
         "workspace_generation_pilot_ready": workspace_operator_summary[
             "workspace_generation_pilot_ready"
+        ],
+        # Stage 48 -- mini project delivery pilot. Controlled-only; booleans +
+        # opaque ids + status strings only, never secrets or chain-of-thought.
+        "mini_delivery_pilot_enabled": mini_delivery_summary["mini_delivery_pilot_enabled"],
+        "mini_delivery_pilot_controlled_only": mini_delivery_summary[
+            "mini_delivery_pilot_controlled_only"
+        ],
+        "mini_delivery_real_llm_enabled": mini_delivery_summary["mini_delivery_real_llm_enabled"],
+        "mini_delivery_github_write_enabled": mini_delivery_summary[
+            "mini_delivery_github_write_enabled"
+        ],
+        "mini_delivery_pr_creation_enabled": mini_delivery_summary[
+            "mini_delivery_pr_creation_enabled"
+        ],
+        "mini_delivery_deploy_enabled": mini_delivery_summary["mini_delivery_deploy_enabled"],
+        "mini_delivery_external_delivery_enabled": mini_delivery_summary[
+            "mini_delivery_external_delivery_enabled"
+        ],
+        "latest_mini_delivery_pilot_status": mini_delivery_summary[
+            "latest_mini_delivery_pilot_status"
+        ],
+        "latest_mini_delivery_pilot_id": mini_delivery_summary["latest_mini_delivery_pilot_id"],
+        "latest_mini_delivery_acceptance_total": mini_delivery_summary[
+            "latest_mini_delivery_acceptance_total"
+        ],
+        "latest_mini_delivery_acceptance_satisfied": mini_delivery_summary[
+            "latest_mini_delivery_acceptance_satisfied"
+        ],
+        "latest_mini_delivery_acceptance_failed": mini_delivery_summary[
+            "latest_mini_delivery_acceptance_failed"
+        ],
+        "latest_mini_delivery_acceptance_pending": mini_delivery_summary[
+            "latest_mini_delivery_acceptance_pending"
+        ],
+        "latest_mini_delivery_qa_status": mini_delivery_summary["latest_mini_delivery_qa_status"],
+        "latest_mini_delivery_safety_status": mini_delivery_summary[
+            "latest_mini_delivery_safety_status"
+        ],
+        "mini_delivery_pilot_ready_for_delivery_package": mini_delivery_summary[
+            "mini_delivery_pilot_ready_for_delivery_package"
         ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
@@ -4263,6 +4306,59 @@ async def _workspace_operator_safety_summary() -> dict[str, Any]:
             ):
                 summary["latest_workspace_safety_status"] = "unsafe"
             summary["workspace_generation_pilot_ready"] = ws["status"] == "tests_passed"
+    except Exception:
+        pass
+    return summary
+
+
+# Stage 48 -- mini project delivery pilot safety snapshot.
+async def _mini_delivery_safety_summary() -> dict[str, Any]:
+    """Stage 48: mini delivery pilot posture (flags + latest pilot snapshot).
+
+    Booleans + opaque ids + status strings only. A failing store NEVER fails
+    the safety view -- the latest-pilot fields degrade to None.
+    """
+    from shared.sdk.mini_delivery_pilot.safety import mini_delivery_safety_flags
+
+    flags = mini_delivery_safety_flags()
+    summary: dict[str, Any] = {
+        **flags,
+        "latest_mini_delivery_pilot_status": None,
+        "latest_mini_delivery_pilot_id": None,
+        "latest_mini_delivery_acceptance_total": None,
+        "latest_mini_delivery_acceptance_satisfied": None,
+        "latest_mini_delivery_acceptance_failed": None,
+        "latest_mini_delivery_acceptance_pending": None,
+        "latest_mini_delivery_qa_status": None,
+        "latest_mini_delivery_safety_status": None,
+        "mini_delivery_pilot_ready_for_delivery_package": False,
+    }
+    try:
+        from shared.sdk.mini_delivery_pilot import MiniDeliveryPilotStore
+
+        store = MiniDeliveryPilotStore()
+        pilot = await store.get_latest_pilot()
+        if pilot is not None:
+            pid = pilot["id"]
+            summary["latest_mini_delivery_pilot_id"] = pid
+            summary["latest_mini_delivery_pilot_status"] = pilot["status"]
+            acc = await store.get_acceptance_summary(pid)
+            summary["latest_mini_delivery_acceptance_total"] = acc["total"]
+            summary["latest_mini_delivery_acceptance_satisfied"] = acc["satisfied"]
+            summary["latest_mini_delivery_acceptance_failed"] = acc["failed"]
+            summary["latest_mini_delivery_acceptance_pending"] = acc["pending"]
+            qa = await store.get_qa_report(pid)
+            if qa is not None:
+                summary["latest_mini_delivery_qa_status"] = qa["status"]
+            safety = await store.get_safety_report(pid)
+            if safety is not None:
+                summary["latest_mini_delivery_safety_status"] = safety["status"]
+            summary["mini_delivery_pilot_ready_for_delivery_package"] = bool(
+                pilot["status"] in ("completed", "report_ready")
+                and acc["failed"] == 0
+                and (qa or {}).get("status") in ("passed", "passed_with_findings")
+                and (safety or {}).get("status") in ("safe", "safe_with_findings")
+            )
     except Exception:
         pass
     return summary

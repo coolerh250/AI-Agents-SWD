@@ -40,6 +40,8 @@ WORKFLOW_EVENT_STREAMS = [
     "stream.design_review_events",
     # Stage 47 -- workspace operator completion events.
     "stream.workspace_events",
+    # Stage 48 -- mini delivery pilot completion events.
+    "stream.delivery_pilot_events",
 ]
 WORKFLOW_EVENT_GROUP = "orchestrator-workflow-group"
 WORKFLOW_EVENT_CONSUMER = "orchestrator-1"
@@ -65,6 +67,9 @@ _AGENT_BY_EVENT = {
     # Stage 47 -- workspace operator completion events.
     "workspace.execution_completed": "workspace-operator-agent",
     "workspace.execution_failed": "workspace-operator-agent",
+    # Stage 48 -- mini delivery pilot completion events.
+    "delivery_pilot.completed": "mini-delivery-pilot-agent",
+    "delivery_pilot.failed": "mini-delivery-pilot-agent",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
 
@@ -107,6 +112,13 @@ def _workspace_operator_enabled() -> bool:
     return _env_flag("ENABLE_WORKSPACE_OPERATOR", True) and _env_flag(
         "WORKSPACE_OPERATOR_CONTROLLED_ONLY", True
     )
+
+
+# Stage 48 -- mini delivery pilot events flip the workflow to a pilot stage
+# (controlled-only) instead of advancing the legacy pipeline.
+_DELIVERY_PILOT_COMPLETED_EVENT = "delivery_pilot.completed"
+_DELIVERY_PILOT_FAILED_EVENT = "delivery_pilot.failed"
+_DELIVERY_PILOT_EVENTS = (_DELIVERY_PILOT_COMPLETED_EVENT, _DELIVERY_PILOT_FAILED_EVENT)
 
 
 # Stage 45 -- project planning events flip the workflow to a project stage
@@ -192,6 +204,10 @@ class WorkflowEventConsumer:
             )
         if event in _WORKSPACE_EVENTS:
             return await self._advance_workspace(workflow, event, payload, state, execution_result)
+        if event in _DELIVERY_PILOT_EVENTS:
+            return await self._advance_delivery_pilot(
+                workflow, event, payload, state, execution_result
+            )
         # Stage 29: only the "<agent>.completed" events mark an agent as
         # completed. QA auto-fix / blocked events represent a gating
         # decision, not a successful agent run.
@@ -499,6 +515,59 @@ class WorkflowEventConsumer:
             "generated_files_count": int(payload.get("generated_files_count") or 0),
             "github_write_performed": False,
             "repo_write_performed": False,
+            "deployment_performed": False,
+            "real_llm_used": False,
+        }
+        state["stage"] = stage
+        state["execution_result"] = execution_result
+        updated = await self.store.update_workflow_state(
+            task_id,
+            stage=stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        with contextlib.suppress(Exception):
+            await send_notification(task_id, event, f"workflow {task_id} {stage}")
+        return updated
+
+    async def _advance_delivery_pilot(
+        self,
+        workflow: dict,
+        event: str,
+        payload: dict,
+        state: dict,
+        execution_result: dict,
+    ) -> dict | None:
+        """Stage 48 -- apply a mini delivery pilot event (controlled-only).
+
+        Sets the workflow stage to mini_delivery_pilot_completed /
+        mini_delivery_pilot_failed. Never advances to production, PR, or deploy.
+        """
+        task_id = workflow["task_id"]
+        if workflow["stage"] == "completed":
+            return None
+        pilot_status = str(payload.get("pilot_status") or "")
+        if event == _DELIVERY_PILOT_FAILED_EVENT or pilot_status in ("failed", "blocked"):
+            stage = "mini_delivery_pilot_failed"
+        else:
+            stage = "mini_delivery_pilot_completed"
+        execution_result["status"] = stage
+        execution_result["production_executed"] = False
+        execution_result["controlled_only"] = True
+        execution_result["mini_delivery_pilot"] = {
+            "pilot_id": str(payload.get("pilot_id") or ""),
+            "project_id": str(payload.get("project_id") or ""),
+            "workspace_id": str(payload.get("workspace_id") or ""),
+            "pilot_status": pilot_status,
+            "qa_status": str(payload.get("qa_status") or ""),
+            "safety_status": str(payload.get("safety_status") or ""),
+            "acceptance_total": int(payload.get("acceptance_total") or 0),
+            "acceptance_satisfied": int(payload.get("acceptance_satisfied") or 0),
+            "github_write_performed": False,
+            "pr_created": False,
             "deployment_performed": False,
             "real_llm_used": False,
         }
