@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 47 — Real Repo Workspace Operator v1
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; code commit this stage, remote-validation + progress commit follow.
+- **Git branch / commit:** `main`; code `89d8057`, verify-script fix `f7cb502`, verify-chain client-timeout fix `f2be00b`, progress commit follows.
 - **Step:** 45 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -98,13 +98,36 @@ issues & blockers, and next-step suggestions.
   secret leak, no repo write, no chain-of-thought.
 
 ### Regression result (remote 10.0.1.31)
-- _Pending remote deploy + migration 019 + verify + full regression; recorded in
-  the follow-up progress commit._
+- Migration 019 applied (6 new tables + code_workspaces extended columns
+  present); orchestrator + workspace-operator-agent (port 8018) built + healthy.
+- Live controlled execution via operations API: workspace generated 12 files,
+  **pytest passed**, compileall passed, diff summary + 4 artifacts + work-item
+  execution links produced; `production_executed=false`, no GitHub/PR/deploy/LLM.
+- `verify_real_repo_workspace_operator.sh`: **37/37 checks PASS**
+  (`REAL_REPO_WORKSPACE_OPERATOR_VERIFY: PASS`). Scenario H ran the design
+  review verify (planner + full regression inside) green.
+- Full regression `FULL_REGRESSION_VERIFY: PASS_WITH_DOCUMENTED_GAPS` — total 24,
+  pass 20, skipped_pass 3, pass_with_gaps 1, **fail 0**, env_fail 0,
+  safety_fail 0, regression_fail 0, audit_serialization_failure 0,
+  audit_tamper_residue_failure 0, audit_lock_timeout 0; known_gaps = backup
+  readiness only.
+- Fix during validation (verifier strictness unchanged): the audit chain has
+  grown to ~298k rows and a full `/operations/audit/verify-chain` legitimately
+  takes ~10s+ and returns `status=passed`; the 8s/10s curl client timeouts in
+  `verify_tamper_evident_audit.sh`, `audit_verification_lock.sh`, and
+  `check_runtime_state.sh` produced false `curl(28)` timeouts on a passing
+  chain. Raised the HTTP client timeout to 60s (commit f2be00b) — canonicalization
+  and the `passed|partial` gate unchanged; no full-regression failure reclassified
+  as a gap.
 
 ### Production safety result
-- Local checks: production_executed false on all results; controlled-only flags
-  correct; no secret leak. Remote production-safety counters recorded in the
-  follow-up commit.
+- `/operations/safety` `result=safe`; `production_executed_true_count=0`;
+  `deployment_records` production-true count 0; `workflow_states`
+  production-true count 0. Workspace flags: controlled_only=true, real_llm=false,
+  github_write=false, repo_write=false, deploy=false;
+  latest_workspace_execution_status=tests_passed, tests=passed, static=passed,
+  generated_files=12, safety_status=safe, pilot_ready=true. No secret leak; no
+  chain-of-thought persisted.
 
 ### Remaining gaps / observations only
 - Real repo workspace operator (Step 45) delivered this stage (controlled-only).
