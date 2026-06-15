@@ -76,6 +76,15 @@ Thumbs.db
 .workspaces/
 .workspaces/**
 
+# ===== Stage 47 Real Repo Workspace Operator generated workspaces =====
+# The workspace-operator-agent writes controlled generated projects under
+# ``$WORKSPACE_OPERATOR_ROOT`` (default ``/tmp/aiagents-workspaces``) or the
+# repo-internal ``.generated-workspaces/`` root. Generated FastAPI Todo code,
+# test reports, and workspace archives are operator review artifacts ONLY and
+# MUST NOT be committed to the main repo.
+.generated-workspaces/
+.generated-workspaces/**
+
 # ===== Stage 42 audit chain forensic artifacts =====
 # Forensic *reports* (source/audit-forensics/*.json) are redacted and may
 # be committed. Forensic *snapshots* contain (redacted) full payload rows

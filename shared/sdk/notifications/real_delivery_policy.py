@@ -70,6 +70,10 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     # and must NEVER land on a real Discord channel by default.
     "discussion.*",
     "design_review.*",
+    # Stage 47 -- controlled workspace operator events are operator-internal
+    # and must NEVER land on a real Discord channel by default.
+    "workspace.*",
+    "codegen.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

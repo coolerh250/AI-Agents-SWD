@@ -939,6 +939,56 @@ ACCEPTANCE_COVERAGE_CHECKS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 47 -- Real Repo Workspace Operator v1.
+# ---------------------------------------------------------------------------
+WORKSPACE_EXECUTION_RUNS_TOTAL = Counter(
+    "workspace_execution_runs_total",
+    "Controlled workspace executions started",
+    ["workspace_type", "generation_mode", "status"],
+)
+WORKSPACE_EXECUTION_FAILURES_TOTAL = Counter(
+    "workspace_execution_failures_total",
+    "Controlled workspace executions that ended failed/blocked",
+    ["status"],
+)
+WORKSPACE_FILES_GENERATED_TOTAL = Counter(
+    "workspace_files_generated_total",
+    "Files generated across controlled workspaces",
+    ["workspace_type"],
+)
+WORKSPACE_TESTS_RUNS_TOTAL = Counter(
+    "workspace_tests_runs_total",
+    "Workspace test runs executed",
+    ["test_type", "status"],
+)
+WORKSPACE_TESTS_PASSED_TOTAL = Counter(
+    "workspace_tests_passed_total",
+    "Workspace test runs that passed",
+    ["test_type"],
+)
+WORKSPACE_TESTS_FAILED_TOTAL = Counter(
+    "workspace_tests_failed_total",
+    "Workspace test runs that failed",
+    ["test_type"],
+)
+WORKSPACE_STATIC_CHECKS_TOTAL = Counter(
+    "workspace_static_checks_total",
+    "Workspace static checks executed",
+    ["test_type", "status"],
+)
+WORKSPACE_DIFF_SUMMARIES_TOTAL = Counter(
+    "workspace_diff_summaries_total",
+    "Workspace diff summaries produced",
+    ["workspace_type"],
+)
+WORKSPACE_SAFETY_BLOCKS_TOTAL = Counter(
+    "workspace_safety_blocks_total",
+    "Workspace executions blocked by a safety precondition",
+    ["reason"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

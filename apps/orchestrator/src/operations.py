@@ -1689,6 +1689,9 @@ async def operations_safety() -> dict:
     # Stage 46 -- agent discussion & design review snapshot.
     design_review_summary = await _design_review_safety_summary()
 
+    # Stage 47 -- real repo workspace operator snapshot.
+    workspace_operator_summary = await _workspace_operator_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -1932,6 +1935,43 @@ async def operations_safety() -> dict:
         ],
         "project_pre_execution_gate_passed": design_review_summary[
             "project_pre_execution_gate_passed"
+        ],
+        # Stage 47 -- real repo workspace operator. Controlled-only; booleans +
+        # opaque ids + status strings only, never secrets or chain-of-thought.
+        "workspace_operator_enabled": workspace_operator_summary["workspace_operator_enabled"],
+        "workspace_operator_controlled_only": workspace_operator_summary[
+            "workspace_operator_controlled_only"
+        ],
+        "workspace_operator_real_llm_enabled": workspace_operator_summary[
+            "workspace_operator_real_llm_enabled"
+        ],
+        "workspace_operator_github_write_enabled": workspace_operator_summary[
+            "workspace_operator_github_write_enabled"
+        ],
+        "workspace_operator_repo_write_enabled": workspace_operator_summary[
+            "workspace_operator_repo_write_enabled"
+        ],
+        "workspace_operator_deploy_enabled": workspace_operator_summary[
+            "workspace_operator_deploy_enabled"
+        ],
+        "latest_workspace_execution_status": workspace_operator_summary[
+            "latest_workspace_execution_status"
+        ],
+        "latest_workspace_id": workspace_operator_summary["latest_workspace_id"],
+        "latest_workspace_tests_status": workspace_operator_summary[
+            "latest_workspace_tests_status"
+        ],
+        "latest_workspace_static_check_status": workspace_operator_summary[
+            "latest_workspace_static_check_status"
+        ],
+        "latest_workspace_generated_files_count": workspace_operator_summary[
+            "latest_workspace_generated_files_count"
+        ],
+        "latest_workspace_safety_status": workspace_operator_summary[
+            "latest_workspace_safety_status"
+        ],
+        "workspace_generation_pilot_ready": workspace_operator_summary[
+            "workspace_generation_pilot_ready"
         ],
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
@@ -4161,6 +4201,68 @@ async def _design_review_safety_summary() -> dict[str, Any]:
                         "passed",
                         "passed_with_findings",
                     )
+    except Exception:
+        pass
+    return summary
+
+
+# Stage 47 -- real repo workspace operator safety snapshot.
+async def _workspace_operator_safety_summary() -> dict[str, Any]:
+    """Stage 47: workspace operator posture (flags + latest workspace snapshot).
+
+    Booleans + opaque ids + status strings only. A failing store NEVER fails
+    the safety view -- the latest-workspace fields degrade to None.
+    """
+    from shared.sdk.workspace_operator.safety import workspace_safety_flags
+
+    flags = workspace_safety_flags()
+    summary: dict[str, Any] = {
+        "workspace_operator_enabled": flags["workspace_operator_enabled"],
+        "workspace_operator_controlled_only": flags["workspace_operator_controlled_only"],
+        "workspace_operator_real_llm_enabled": flags["workspace_operator_real_llm_enabled"],
+        "workspace_operator_github_write_enabled": flags["workspace_operator_github_write_enabled"],
+        "workspace_operator_repo_write_enabled": flags["workspace_operator_repo_write_enabled"],
+        "workspace_operator_deploy_enabled": flags["workspace_operator_deploy_enabled"],
+        "latest_workspace_execution_status": None,
+        "latest_workspace_id": None,
+        "latest_workspace_tests_status": None,
+        "latest_workspace_static_check_status": None,
+        "latest_workspace_generated_files_count": None,
+        "latest_workspace_safety_status": "safe",
+        "workspace_generation_pilot_ready": False,
+    }
+    try:
+        from shared.sdk.workspace_operator import WorkspaceOperatorStore
+
+        store = WorkspaceOperatorStore()
+        ws = await store.get_latest_workspace()
+        if ws is not None:
+            summary["latest_workspace_id"] = ws["workspace_id"]
+            summary["latest_workspace_execution_status"] = ws["status"]
+            ws_summary = (
+                await store.compute_workspace_summary(ws["project_id"])
+                if ws.get("project_id")
+                else {}
+            )
+            summary["latest_workspace_tests_status"] = ws_summary.get(
+                "latest_workspace_tests_status"
+            )
+            summary["latest_workspace_static_check_status"] = ws_summary.get(
+                "latest_workspace_static_check_status"
+            )
+            summary["latest_workspace_generated_files_count"] = ws_summary.get(
+                "latest_workspace_generated_files_count"
+            )
+            # controlled-only is "safe" unless any real-write flag flipped true.
+            if (
+                ws.get("repo_write_enabled")
+                or ws.get("github_write_enabled")
+                or ws.get("deployment_enabled")
+                or ws.get("real_llm_enabled")
+                or ws.get("production_executed")
+            ):
+                summary["latest_workspace_safety_status"] = "unsafe"
+            summary["workspace_generation_pilot_ready"] = ws["status"] == "tests_passed"
     except Exception:
         pass
     return summary

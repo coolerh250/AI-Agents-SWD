@@ -16,6 +16,7 @@ from operations import router as operations_router
 from progress import build_audit_timeline, build_progress, build_retry_timeline
 from design_review_api import router as design_review_router
 from project_api import router as project_router
+from workspace_api import router as workspace_router
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.audit.store import AuditStore
@@ -184,6 +185,8 @@ app.include_router(operations_router)
 app.include_router(project_router)
 # Stage 46: agent discussion & design review operations API.
 app.include_router(design_review_router)
+# Stage 47: real repo workspace operator operations API.
+app.include_router(workspace_router)
 app.include_router(approval_policy_router)
 # Stage 40: external alert receiver. Mounted on /alerts/*.
 app.include_router(alert_receiver_router)

@@ -3836,5 +3836,196 @@ else
   echo "DESIGN_REVIEW_NO_CHAIN_OF_THOUGHT_SMOKE: FAIL"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 47 -- real repo workspace operator smokes (178-192).
+# ---------------------------------------------------------------------------
+
+# 178. workspace-operator-agent service health
+wo_health=$(curl -sS -m 5 "http://localhost:8018/health" 2>/dev/null || echo '{}')
+if echo "$wo_health" | grep -q '"status":"ok"'; then
+  echo "WORKSPACE_OPERATOR_SERVICE_SMOKE: PASS"
+else
+  echo "WORKSPACE_OPERATOR_SERVICE_SMOKE: CHECK"
+fi
+
+# 179. workspace root allowlist + repo-root rejection (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.path_safety import validate_workspace_root, REPO_ROOT, WorkspacePathError
+import os
+os.environ['WORKSPACE_OPERATOR_ALLOWED_ROOTS']='/tmp/aiagents-workspaces'
+validate_workspace_root('/tmp/aiagents-workspaces/ws-x')
+try:
+    validate_workspace_root(REPO_ROOT); raise SystemExit(1)
+except WorkspacePathError:
+    pass
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_ROOT_SAFETY_SMOKE: PASS"
+else
+  echo "WORKSPACE_ROOT_SAFETY_SMOKE: FAIL"
+fi
+
+# 180. deterministic FastAPI Todo generation (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+f=build_fastapi_todo_files()
+assert len(f)>=8 and 'app/main.py' in f and 'tests/test_todos.py' in f
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_FASTAPI_TODO_GENERATION_SMOKE: PASS"
+else
+  echo "WORKSPACE_FASTAPI_TODO_GENERATION_SMOKE: FAIL"
+fi
+
+# 181. file manifest (hash + size)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.file_manifest import build_manifest
+m=build_manifest(build_fastapi_todo_files())
+assert all(x.content_hash and x.size_bytes is not None for x in m)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_FILE_MANIFEST_SMOKE: PASS"
+else
+  echo "WORKSPACE_FILE_MANIFEST_SMOKE: FAIL"
+fi
+
+# 182. test runner classifies pytest pass/skip on generated workspace
+if "$PYBIN" -c "
+import sys, tempfile, os; sys.path.insert(0,'.')
+d=tempfile.mkdtemp(prefix='aiagents-workspaces-'); os.environ['WORKSPACE_OPERATOR_ALLOWED_ROOTS']=os.path.dirname(d)
+from shared.sdk.workspace_operator.workspace_manager import WorkspaceManager
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.test_runner import run_pytest
+mgr=WorkspaceManager(os.path.dirname(d)); r=mgr.prepare('ws-smoke'); mgr.write_files(r, build_fastapi_todo_files())
+run=run_pytest(r)
+assert run.status in ('passed','skipped')
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_TEST_RUN_SMOKE: PASS"
+else
+  echo "WORKSPACE_TEST_RUN_SMOKE: CHECK"
+fi
+
+# 183. static check (compileall always passes on generated code)
+if "$PYBIN" -c "
+import sys, tempfile, os; sys.path.insert(0,'.')
+d=tempfile.mkdtemp(prefix='aiagents-workspaces-'); os.environ['WORKSPACE_OPERATOR_ALLOWED_ROOTS']=os.path.dirname(d)
+from shared.sdk.workspace_operator.workspace_manager import WorkspaceManager
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.static_check_runner import run_compileall
+mgr=WorkspaceManager(os.path.dirname(d)); r=mgr.prepare('ws-static'); mgr.write_files(r, build_fastapi_todo_files())
+assert run_compileall(r).status=='passed'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_STATIC_CHECK_SMOKE: PASS"
+else
+  echo "WORKSPACE_STATIC_CHECK_SMOKE: FAIL"
+fi
+
+# 184. diff summary counts (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.file_manifest import build_manifest
+from shared.sdk.workspace_operator.diff_summary import build_diff_summary
+d=build_diff_summary(build_manifest(build_fastapi_todo_files()))
+assert d.created_files_count>=8 and d.changed_files_count>=8
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_DIFF_SUMMARY_SMOKE: PASS"
+else
+  echo "WORKSPACE_DIFF_SUMMARY_SMOKE: FAIL"
+fi
+
+# 185. artifacts builder (controlled-only impl summary)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.file_manifest import build_manifest
+from shared.sdk.workspace_operator.artifact_builder import build_implementation_summary
+a=build_implementation_summary(project_id='p',workspace_key='w',template='fastapi_todo_service',manifest=build_manifest(build_fastapi_todo_files()),tests_status='passed',static_check_status='passed')
+assert a.content['production_executed'] is False and a.content['github_write_performed'] is False
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_ARTIFACTS_SMOKE: PASS"
+else
+  echo "WORKSPACE_ARTIFACTS_SMOKE: FAIL"
+fi
+
+# 186. work item execution link mapping (pure SDK)
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.work_item_mapper import map_work_items
+links=map_work_items([{'id':'i1','work_item_key':'QA-002','work_type':'qa'}],tests_status='passed')
+assert links and links[0].execution_status=='passed'
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_WORK_ITEM_LINK_SMOKE: PASS"
+else
+  echo "WORKSPACE_WORK_ITEM_LINK_SMOKE: FAIL"
+fi
+
+# 187. operations API safety fields present
+wo_safety=$(curl -sS -m 10 "http://localhost:8000/operations/safety" 2>/dev/null || echo '{}')
+if echo "$wo_safety" | grep -q '"workspace_operator_controlled_only":true'; then
+  echo "WORKSPACE_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "WORKSPACE_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 188. controlled-only safety flags (no real write)
+if echo "$wo_safety" | grep -q '"workspace_operator_real_llm_enabled":false' \
+   && echo "$wo_safety" | grep -q '"workspace_operator_github_write_enabled":false' \
+   && echo "$wo_safety" | grep -q '"workspace_operator_deploy_enabled":false'; then
+  echo "WORKSPACE_CONTROLLED_ONLY_SAFETY_SMOKE: PASS"
+else
+  echo "WORKSPACE_CONTROLLED_ONLY_SAFETY_SMOKE: CHECK"
+fi
+
+# 189. workspace.* / codegen.* notifications default-denied
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.events import WORKSPACE_NOTIFICATION_EVENTS
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST, _matches_pattern
+evs=list(WORKSPACE_NOTIFICATION_EVENTS)+['codegen.file_written']
+assert all(any(_matches_pattern(e,p) for p in DEFAULT_REAL_DELIVERY_DENYLIST) for e in evs)
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "WORKSPACE_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 190. audit integrity remains clean (no tamper residue)
+if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: (PASS|SKIP)"; then
+  echo "WORKSPACE_AUDIT_INTEGRITY_SMOKE: PASS"
+else
+  echo "WORKSPACE_AUDIT_INTEGRITY_SMOKE: CHECK"
+fi
+
+# 191. no secret leak in generated files
+if "$PYBIN" -c "
+import sys; sys.path.insert(0,'.')
+from shared.sdk.workspace_operator.fastapi_todo_generator import build_fastapi_todo_files
+from shared.sdk.workspace_operator.safety import contains_secret
+assert not any(contains_secret(c) for c in build_fastapi_todo_files().values())
+print('OK')
+" >/dev/null 2>&1; then
+  echo "WORKSPACE_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "WORKSPACE_NO_SECRET_LEAK_SMOKE: FAIL"
+fi
+
+# 192. no generated workspace files tracked in git
+if ! git -C "$(pwd)" status --porcelain 2>/dev/null | grep -qE '\.generated-workspaces/|\.workspaces/'; then
+  echo "WORKSPACE_NO_REPO_WRITE_SMOKE: PASS"
+else
+  echo "WORKSPACE_NO_REPO_WRITE_SMOKE: FAIL"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

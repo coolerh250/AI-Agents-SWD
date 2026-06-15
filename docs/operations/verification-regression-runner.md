@@ -276,3 +276,20 @@ verify list. Run it directly in the regression sequence. Marker:
 review surfaces (service health, session/contribution builders, FastAPI Todo
 review, gate evaluation, acceptance coverage, operations API, planning-only
 safety, denylist, audit integrity, no-secret-leak, no-chain-of-thought).
+
+## Stage 47 — Real repo workspace operator verify (additive)
+
+`scripts/verify_real_repo_workspace_operator.sh` is a standalone verifier: its
+Scenario H runs `verify_agent_discussion_design_review.sh` (which transitively
+runs `verify_project_planner_task_graph.sh` and `run_full_regression.sh
+--full`), so it is **not** part of the runner's own verify list. Run it
+directly in the regression sequence. Scenario G waits for audit/notification
+convergence (bounded verify-chain loop) before reading the chain, to avoid the
+Stage 44 eventual-consistency false failure. Marker:
+`REAL_REPO_WORKSPACE_OPERATOR_VERIFY: PASS`.
+
+`check_runtime_state.sh` smokes 178–192 cover the workspace operator surfaces
+(service health, workspace-root allowlist, FastAPI Todo generation, file
+manifest, pytest/static-check runners, diff summary, artifacts, work-item
+links, operations API, controlled-only safety, denylist, audit integrity,
+no-secret-leak, no-repo-write).

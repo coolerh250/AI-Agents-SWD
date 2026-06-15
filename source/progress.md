@@ -6,6 +6,114 @@ issues & blockers, and next-step suggestions.
 
 ---
 
+## Stage 47 — Real Repo Workspace Operator v1
+
+- **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
+- **Git branch / commit:** `main`; code commit this stage, remote-validation + progress commit follow.
+- **Step:** 45 (per external spec numbering)
+- **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
+
+### Inventory result
+- Stages 43/44 delivered the reviewed project graph; Stage 28 already owns a
+  `code_workspaces` / `code_change_artifacts` / `pr_draft_artifacts` controlled
+  code-generation surface (development-agent) with path safety + py_compile, but
+  it is task-driven, not project-graph / design-review driven, and runs no
+  pytest/ruff and produces no diff-summary / work-item execution links. This
+  stage **extends** `code_workspaces` additively and adds six new tables; no
+  Stage 28 / 43 / 44 / legacy path is modified.
+
+### Data model / migration
+- `migrations/019_controlled_workspace_operator.sql` — idempotent, PostgreSQL
+  16. ALTERs `code_workspaces` (ADD COLUMN IF NOT EXISTS: project_id,
+  design_review_session_id, source_task_id, workspace_key (partial-unique),
+  workspace_type, workspace_root, generation_mode, repo/github/deploy/real_llm/
+  production_executed booleans default false, completed_at, metadata). Six new
+  tables: workspace_files, workspace_operations, workspace_test_runs,
+  workspace_diff_summaries, workspace_artifacts, work_item_execution_links.
+  CHECK constraints on every enum; `work_item_execution_links` unique
+  (work_item_id, workspace_id). No chain_of_thought / raw_prompt / transcript.
+
+### Workspace SDK result
+- `shared/sdk/workspace_operator/`: models (Pydantic strict), path_safety
+  (allowlist + traversal/symlink/.git/secret blocks), workspace_manager,
+  fastapi_todo_generator (deterministic, sqlite3, ≥8 files), file_manifest,
+  command_runner (allowlisted `python -m` only, shell=False, timeout, redaction),
+  test_runner (pytest; skip-with-reason when deps absent), static_check_runner
+  (ruff optional + compileall), diff_summary, artifact_builder, work_item_mapper,
+  store, events, audit_events, safety, report_builder, runner (orchestration +
+  metrics + audit/notification). mypy clean; ruff + black clean.
+
+### Workspace-operator-agent result
+- `agents/workspace-operator-agent/` (StreamAgent, port 8018). Consumes
+  `stream.workspace_execution`, runs the controlled execution, reports
+  `workspace.execution_completed` / `workspace.execution_failed` on
+  `stream.workspace_events`. Controlled-only: TEMPLATE_MODE, CONTROLLED_ONLY,
+  REAL_LLM=false, GITHUB_WRITE=false, REPO_WRITE=false, DEPLOY=false,
+  WORK_ITEM_DISPATCH=false.
+
+### Orchestrator integration
+- On a non-blocked `design_review.completed` (decision in planning_only /
+  go_with_findings / go) the orchestrator requests a controlled workspace
+  execution on `stream.workspace_execution` (gated by `ENABLE_WORKSPACE_OPERATOR`
+  + `WORKSPACE_OPERATOR_CONTROLLED_ONLY`). `workflow_events.py` consumes
+  `stream.workspace_events` and sets the stage to `workspace_tests_passed` /
+  `workspace_tests_failed` / `workspace_execution_failed` — never deploys, never
+  opens a PR, never dispatches the legacy development-agent. Stage 43/44/legacy
+  paths untouched.
+
+### Operations API + FastAPI Todo workspace result
+- `apps/orchestrator/src/workspace_api.py`: POST
+  `/operations/projects/{id}/workspace/execute` (controlled-only) + read-only
+  workspaces / files / operations / test-runs / diff-summary / artifacts /
+  report / work-item-execution-links / workspace-summary. `/operations/safety`
+  carries 13 workspace fields (controlled_only=true, real_llm/github/repo/deploy
+  all false, latest_workspace_* + safety_status + pilot_ready).
+- Generated FastAPI Todo project ≥8 files (app/main.py CRUD over SQLite,
+  schemas, crud, database, models, README with setup/run/test/API examples,
+  tests/test_todos.py covering CRUD + 404 + 422). pytest passes when
+  fastapi/httpx/pytest present (skip-with-reason otherwise); compileall passes;
+  diff summary + 4 artifacts + work-item execution links produced.
+
+### Controlled-only / safety result
+- production_executed remains false everywhere; no repo-root write (allowlisted
+  root only), no GitHub, no PR, no merge, no deploy, no real LLM, no real
+  external messaging. `workspace.*` + `codegen.*` added to the default
+  real-delivery denylist (project.*/discussion.*/design_review.*/audit.*/
+  verification.* still denied). No chain-of-thought / raw-prompt persistence;
+  artifacts carry summaries + hashes + counts only. Generated workspaces under
+  `/tmp/aiagents-workspaces` (or gitignored `.generated-workspaces/`), never
+  committed.
+
+### Audit / notification / metrics result
+- 8 workspace audit decision types; 11 workspace notification events
+  (default-denied); 9 metrics + 8 spans.
+
+### Regression result (local)
+- 154 workspace tests + fakes PASS (1 skipped: symlink on Windows); related
+  design-review / project-planning / operations-safety suites PASS; ruff + black
+  + mypy clean. 19 test files cover models, path safety (traversal/symlink/.git/
+  secret/repo-root), manager, generator, command runner, test runner, static
+  check runner, diff summary, artifacts, work-item mapper, store, agent,
+  orchestrator integration, operations API, safety, audit/notification, no
+  secret leak, no repo write, no chain-of-thought.
+
+### Regression result (remote 10.0.1.31)
+- _Pending remote deploy + migration 019 + verify + full regression; recorded in
+  the follow-up progress commit._
+
+### Production safety result
+- Local checks: production_executed false on all results; controlled-only flags
+  correct; no secret leak. Remote production-safety counters recorded in the
+  follow-up commit.
+
+### Remaining gaps / observations only
+- Real repo workspace operator (Step 45) delivered this stage (controlled-only).
+  Mini project delivery pilot (Step 46) and delivery package / acceptance gate
+  (Step 47) not done; work-item dispatch still off. Carry-forward unchanged:
+  backup/DR gaps, Kubernetes/Helm/ArgoCD baseline, real production secret store,
+  real off-host backup, real pager / escalation. Claude Code does not declare
+  production readiness.
+
 ## Stage 46 — Agent Discussion & Design Review Protocol
 
 - **Execution time:** 2026-06-14 (UTC+8, Asia/Taipei)

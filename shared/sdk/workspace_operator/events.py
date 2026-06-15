@@ -1,0 +1,58 @@
+"""Stage 47 -- workspace operator Redis stream + notification events.
+
+All ``workspace.*`` (and any ``codegen.*``) notification events are
+operator-internal and on the default real-delivery denylist (added in
+Stage 47). They MUST NEVER reach a real Discord / Slack / Telegram channel.
+"""
+
+from __future__ import annotations
+
+STREAM_WORKSPACE_EXECUTION = "stream.workspace_execution"
+STREAM_WORKSPACE_EVENTS = "stream.workspace_events"
+
+EVENT_WORKSPACE_CREATED = "workspace.created"
+EVENT_WORKSPACE_PREPARED = "workspace.prepared"
+EVENT_WORKSPACE_GENERATION_STARTED = "workspace.generation_started"
+EVENT_WORKSPACE_GENERATION_COMPLETED = "workspace.generation_completed"
+EVENT_WORKSPACE_TESTS_STARTED = "workspace.tests_started"
+EVENT_WORKSPACE_TESTS_COMPLETED = "workspace.tests_completed"
+EVENT_WORKSPACE_STATIC_CHECKS_COMPLETED = "workspace.static_checks_completed"
+EVENT_WORKSPACE_DIFF_SUMMARIZED = "workspace.diff_summarized"
+EVENT_WORKSPACE_EXECUTION_STARTED = "workspace.execution_started"
+EVENT_WORKSPACE_EXECUTION_COMPLETED = "workspace.execution_completed"
+EVENT_WORKSPACE_EXECUTION_FAILED = "workspace.execution_failed"
+
+# Internal pipeline event published by the orchestrator router.
+EVENT_PROJECT_WORKSPACE_EXECUTION_REQUESTED = "project.workspace_execution_requested"
+
+WORKSPACE_NOTIFICATION_EVENTS: tuple[str, ...] = (
+    EVENT_WORKSPACE_CREATED,
+    EVENT_WORKSPACE_PREPARED,
+    EVENT_WORKSPACE_GENERATION_STARTED,
+    EVENT_WORKSPACE_GENERATION_COMPLETED,
+    EVENT_WORKSPACE_TESTS_STARTED,
+    EVENT_WORKSPACE_TESTS_COMPLETED,
+    EVENT_WORKSPACE_STATIC_CHECKS_COMPLETED,
+    EVENT_WORKSPACE_DIFF_SUMMARIZED,
+    EVENT_WORKSPACE_EXECUTION_STARTED,
+    EVENT_WORKSPACE_EXECUTION_COMPLETED,
+    EVENT_WORKSPACE_EXECUTION_FAILED,
+)
+
+__all__ = [
+    "STREAM_WORKSPACE_EXECUTION",
+    "STREAM_WORKSPACE_EVENTS",
+    "EVENT_WORKSPACE_CREATED",
+    "EVENT_WORKSPACE_PREPARED",
+    "EVENT_WORKSPACE_GENERATION_STARTED",
+    "EVENT_WORKSPACE_GENERATION_COMPLETED",
+    "EVENT_WORKSPACE_TESTS_STARTED",
+    "EVENT_WORKSPACE_TESTS_COMPLETED",
+    "EVENT_WORKSPACE_STATIC_CHECKS_COMPLETED",
+    "EVENT_WORKSPACE_DIFF_SUMMARIZED",
+    "EVENT_WORKSPACE_EXECUTION_STARTED",
+    "EVENT_WORKSPACE_EXECUTION_COMPLETED",
+    "EVENT_WORKSPACE_EXECUTION_FAILED",
+    "EVENT_PROJECT_WORKSPACE_EXECUTION_REQUESTED",
+    "WORKSPACE_NOTIFICATION_EVENTS",
+]

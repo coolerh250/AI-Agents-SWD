@@ -2356,6 +2356,22 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Real Repo Workspace Operator v1 (Stage 47)
+
+On top of the Stage 45 graph + Stage 46 design review, the platform can run a
+**controlled workspace execution**: after a non-blocked design review it
+generates a deterministic FastAPI Todo project under an allowlisted workspace
+root, runs `pytest` + static checks (`ruff`/`compileall`), and records a diff
+summary, artifacts (implementation summary / generated-code manifest / test
+result / diff), and work-item execution links. Controlled-only — no repo-root
+write, no GitHub, no PR, no merge, no deploy, no real LLM; `production_executed`
+stays `false`. Generated workspaces are gitignored and never committed. See
+[`docs/product/real-repo-workspace-operator.md`](docs/product/real-repo-workspace-operator.md),
+[`docs/product/controlled-workspace-safety.md`](docs/product/controlled-workspace-safety.md),
+[`docs/product/fastapi-todo-workspace-template.md`](docs/product/fastapi-todo-workspace-template.md),
+and
+[`docs/operations/workspace-operator-operations.md`](docs/operations/workspace-operator-operations.md).
+
 ## Agent Discussion & Design Review Protocol (Stage 46)
 
 On top of the Stage 45 project graph, the platform runs a structured multi-role

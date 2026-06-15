@@ -233,6 +233,18 @@ services:
       DESIGN_REVIEW_PLANNING_ONLY: ${DESIGN_REVIEW_PLANNING_ONLY:-true}
       ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH: ${ENABLE_DESIGN_REVIEW_WORK_ITEM_DISPATCH:-false}
       ENABLE_DESIGN_REVIEW_REAL_LLM: ${ENABLE_DESIGN_REVIEW_REAL_LLM:-false}
+      # Stage 47 -- real repo workspace operator. Controlled-only; repo write /
+      # GitHub write / deploy / real LLM / work-item dispatch all stay OFF.
+      ENABLE_WORKSPACE_OPERATOR: ${ENABLE_WORKSPACE_OPERATOR:-true}
+      WORKSPACE_OPERATOR_CONTROLLED_ONLY: ${WORKSPACE_OPERATOR_CONTROLLED_ONLY:-true}
+      WORKSPACE_OPERATOR_TEMPLATE_MODE: ${WORKSPACE_OPERATOR_TEMPLATE_MODE:-true}
+      ENABLE_WORKSPACE_OPERATOR_REAL_LLM: ${ENABLE_WORKSPACE_OPERATOR_REAL_LLM:-false}
+      ENABLE_WORKSPACE_OPERATOR_GITHUB_WRITE: ${ENABLE_WORKSPACE_OPERATOR_GITHUB_WRITE:-false}
+      ENABLE_WORKSPACE_OPERATOR_REPO_WRITE: ${ENABLE_WORKSPACE_OPERATOR_REPO_WRITE:-false}
+      ENABLE_WORKSPACE_OPERATOR_DEPLOY: ${ENABLE_WORKSPACE_OPERATOR_DEPLOY:-false}
+      ENABLE_WORKSPACE_OPERATOR_WORK_ITEM_DISPATCH: ${ENABLE_WORKSPACE_OPERATOR_WORK_ITEM_DISPATCH:-false}
+      WORKSPACE_OPERATOR_ROOT: ${WORKSPACE_OPERATOR_ROOT:-/tmp/aiagents-workspaces}
+      WORKSPACE_OPERATOR_ALLOWED_ROOTS: ${WORKSPACE_OPERATOR_ALLOWED_ROOTS:-/tmp/aiagents-workspaces}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator
@@ -488,6 +500,41 @@ services:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8017/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  workspace-operator-agent:
+    build:
+      context: ../..
+      dockerfile: agents/workspace-operator-agent/Dockerfile
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres@postgres:5432/aiagents
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_EXPORTER_OTLP_PROTOCOL: grpc
+      OTEL_SERVICE_NAME: workspace-operator-agent
+      # Stage 47 -- controlled-only. No repo write, no GitHub, no deploy, no LLM.
+      WORKSPACE_OPERATOR_TEMPLATE_MODE: "true"
+      WORKSPACE_OPERATOR_CONTROLLED_ONLY: "true"
+      ENABLE_WORKSPACE_OPERATOR: "true"
+      ENABLE_WORKSPACE_OPERATOR_REAL_LLM: "false"
+      ENABLE_WORKSPACE_OPERATOR_GITHUB_WRITE: "false"
+      ENABLE_WORKSPACE_OPERATOR_REPO_WRITE: "false"
+      ENABLE_WORKSPACE_OPERATOR_DEPLOY: "false"
+      ENABLE_WORKSPACE_OPERATOR_WORK_ITEM_DISPATCH: "false"
+      WORKSPACE_OPERATOR_ROOT: /tmp/aiagents-workspaces
+      WORKSPACE_OPERATOR_ALLOWED_ROOTS: /tmp/aiagents-workspaces
+    ports:
+      - "127.0.0.1:8018:8018"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8018/health')"]
       interval: 10s
       timeout: 5s
       retries: 5

@@ -38,6 +38,8 @@ WORKFLOW_EVENT_STREAMS = [
     "stream.project_events",
     # Stage 46 -- design review completion events.
     "stream.design_review_events",
+    # Stage 47 -- workspace operator completion events.
+    "stream.workspace_events",
 ]
 WORKFLOW_EVENT_GROUP = "orchestrator-workflow-group"
 WORKFLOW_EVENT_CONSUMER = "orchestrator-1"
@@ -60,6 +62,9 @@ _AGENT_BY_EVENT = {
     # Stage 46 -- design review completion events.
     "design_review.completed": "design-review-agent",
     "design_review.blocked": "design-review-agent",
+    # Stage 47 -- workspace operator completion events.
+    "workspace.execution_completed": "workspace-operator-agent",
+    "workspace.execution_failed": "workspace-operator-agent",
 }
 _FINAL_EVENT = "devops.deployment_simulated"
 
@@ -77,6 +82,30 @@ def _design_review_enabled() -> bool:
         "false",
         "0",
         "no",
+    )
+
+
+# Stage 47 -- workspace operator events flip the workflow to a controlled
+# workspace stage (controlled-only) instead of advancing to development.
+_WORKSPACE_COMPLETED_EVENT = "workspace.execution_completed"
+_WORKSPACE_FAILED_EVENT = "workspace.execution_failed"
+_WORKSPACE_EVENTS = (_WORKSPACE_COMPLETED_EVENT, _WORKSPACE_FAILED_EVENT)
+
+
+def _env_flag(name: str, default: bool) -> bool:
+    import os
+
+    return str(os.environ.get(name, "true" if default else "false")).strip().lower() not in (
+        "false",
+        "0",
+        "no",
+        "",
+    )
+
+
+def _workspace_operator_enabled() -> bool:
+    return _env_flag("ENABLE_WORKSPACE_OPERATOR", True) and _env_flag(
+        "WORKSPACE_OPERATOR_CONTROLLED_ONLY", True
     )
 
 
@@ -161,6 +190,8 @@ class WorkflowEventConsumer:
             return await self._advance_design_review(
                 workflow, event, payload, state, execution_result
             )
+        if event in _WORKSPACE_EVENTS:
+            return await self._advance_workspace(workflow, event, payload, state, execution_result)
         # Stage 29: only the "<agent>.completed" events mark an agent as
         # completed. QA auto-fix / blocked events represent a gating
         # decision, not a successful agent run.
@@ -399,6 +430,91 @@ class WorkflowEventConsumer:
             await send_notification(
                 task_id, event, f"workflow {task_id} {stage} (decision={decision})"
             )
+        # Stage 47 -- on a non-blocked design review, request a controlled
+        # workspace execution (controlled-only). Never dispatches the legacy
+        # development-agent, never deploys, never writes GitHub.
+        project_id = str(payload.get("project_id") or "")
+        if (
+            stage in ("design_reviewed", "design_reviewed_with_findings")
+            and project_id
+            and decision in ("planning_only", "go_with_findings", "go")
+            and _workspace_operator_enabled()
+        ):
+            with contextlib.suppress(Exception):
+                await self.bus.publish_event(
+                    "stream.workspace_execution",
+                    {
+                        "event": "project.workspace_execution_requested",
+                        "task_id": task_id,
+                        "workflow_id": str(payload.get("workflow_id", "")),
+                        "project_id": project_id,
+                        "design_review_session_id": str(payload.get("review_session_id") or ""),
+                        "execution_type": "fastapi_todo_generation",
+                        "workspace_type": "generated_project",
+                        "requested_by_agent": "orchestrator",
+                        "controlled_only": True,
+                        "production_executed": False,
+                    },
+                )
+        return updated
+
+    async def _advance_workspace(
+        self,
+        workflow: dict,
+        event: str,
+        payload: dict,
+        state: dict,
+        execution_result: dict,
+    ) -> dict | None:
+        """Stage 47 -- apply a controlled workspace execution event.
+
+        Sets the workflow stage to workspace_execution_requested /
+        workspace_generated / workspace_tests_passed / workspace_tests_failed /
+        workspace_execution_failed. Never advances to deployment or PR creation;
+        no auto-fix this stage.
+        """
+        task_id = workflow["task_id"]
+        if workflow["stage"] == "completed":
+            return None
+        ws_status = str(payload.get("status") or "")
+        tests_status = str(payload.get("tests_status") or "")
+        if event == _WORKSPACE_FAILED_EVENT or ws_status == "failed":
+            stage = "workspace_execution_failed"
+        elif ws_status == "tests_passed" or tests_status == "passed":
+            stage = "workspace_tests_passed"
+        elif ws_status == "tests_failed" or tests_status == "failed":
+            stage = "workspace_tests_failed"
+        else:
+            stage = "workspace_generated"
+        execution_result["status"] = stage
+        execution_result["production_executed"] = False
+        execution_result["planning_only"] = True
+        execution_result["controlled_only"] = True
+        execution_result["workspace_execution"] = {
+            "project_id": str(payload.get("project_id") or ""),
+            "workspace_id": str(payload.get("workspace_id") or ""),
+            "status": ws_status,
+            "tests_status": tests_status,
+            "static_check_status": str(payload.get("static_check_status") or ""),
+            "generated_files_count": int(payload.get("generated_files_count") or 0),
+            "github_write_performed": False,
+            "repo_write_performed": False,
+            "deployment_performed": False,
+            "real_llm_used": False,
+        }
+        state["stage"] = stage
+        state["execution_result"] = execution_result
+        updated = await self.store.update_workflow_state(
+            task_id,
+            stage=stage,
+            state=state,
+            approval_required=bool(workflow["approval_required"]),
+            approval_status=str(workflow["approval_status"] or "none"),
+            risk_level=str(workflow["risk_level"] or "unknown"),
+            execution_result=execution_result,
+        )
+        with contextlib.suppress(Exception):
+            await send_notification(task_id, event, f"workflow {task_id} {stage}")
         return updated
 
     async def _record_ignored_event(self, task_id: str, event: str, stage: str) -> None:
