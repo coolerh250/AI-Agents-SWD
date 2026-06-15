@@ -4484,16 +4484,16 @@ else
   echo "ADMIN_CONSOLE_NO_CHAIN_OF_THOUGHT_SMOKE: PASS"
 fi
 
-# 241. no operator action calls in the frontend source
-if grep -rqiE '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run' \
+# 241. no operator action calls in the frontend source (excl. read-only guard test)
+if grep -rqiE --exclude-dir=__tests__ '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run' \
      apps/admin-console/src apps/admin-console/static 2>/dev/null; then
   echo "ADMIN_CONSOLE_NO_OPERATOR_ACTION_SMOKE: FAIL"
 else
   echo "ADMIN_CONSOLE_NO_OPERATOR_ACTION_SMOKE: PASS"
 fi
 
-# 242. no write HTTP methods in the frontend source
-if grep -rqiE "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" \
+# 242. no write HTTP methods in the frontend source (excl. read-only guard test)
+if grep -rqiE --exclude-dir=__tests__ "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" \
      apps/admin-console/src apps/admin-console/static 2>/dev/null; then
   echo "ADMIN_CONSOLE_NO_WRITE_API_SMOKE: FAIL"
 else

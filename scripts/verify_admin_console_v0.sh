@@ -81,12 +81,14 @@ curl -sS -m 10 "$ORCH/operations/admin-console/regression-summary" 2>/dev/null |
 # ---------------------------------------------------------------------------
 echo
 echo "=== Scenario C: UI read-only guard ==="
-if grep -rqiE "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" "$APP/src" "$APP/static" 2>/dev/null; then
+# Exclude __tests__ (the read-only guard test legitimately lists the forbidden
+# patterns it asserts are absent from the app code).
+if grep -rqiE --exclude-dir=__tests__ "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" "$APP/src" "$APP/static" 2>/dev/null; then
   _fail "write HTTP method found in frontend"
 else
   _pass "no POST/PUT/PATCH/DELETE in frontend"
 fi
-if grep -rqiE '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run|/workflow/resume|/approve' "$APP/src" "$APP/static" 2>/dev/null; then
+if grep -rqiE --exclude-dir=__tests__ '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run|/workflow/resume|/approve' "$APP/src" "$APP/static" 2>/dev/null; then
   _fail "operator/approve/deploy action call found in frontend"
 else
   _pass "no operator/approve/deploy action calls in frontend"
