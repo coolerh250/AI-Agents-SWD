@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 48 — Mini Project Delivery Pilot
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; code commit this stage, remote-validation + progress commit follow.
+- **Git branch / commit:** `main`; code `2cd17cd`, verify fix `dcce312`, progress commit follows.
 - **Step:** 46 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -90,12 +90,33 @@ issues & blockers, and next-step suggestions.
   chain-of-thought, no GitHub write, no deploy.
 
 ### Regression result (remote 10.0.1.31)
-- _Pending remote deploy + migration 020 + verify + full regression; recorded in
-  the follow-up progress commit._
+- Migration 020 applied (7 tables); orchestrator + mini-delivery-pilot-agent
+  (port 8019) built + healthy. Live pilot via operations API: status
+  `completed`, QA `passed_with_findings` (ruff not installed in the orchestrator
+  image → skipped, documented; pytest passed), safety `safe`, acceptance
+  **10/10 satisfied, 0 failed**, all controlled-only flags false.
+- `verify_mini_project_delivery_pilot.sh`: **47/47 checks PASS**
+  (`MINI_PROJECT_DELIVERY_PILOT_VERIFY: PASS`). Scenario H reused
+  `verify_real_repo_workspace_operator.sh` (→ design review → planner → full
+  regression) green.
+- Full regression `FULL_REGRESSION_VERIFY: PASS_WITH_DOCUMENTED_GAPS` — total 24,
+  pass 20, skipped_pass 3, pass_with_gaps 1, **fail 0**, env_fail 0,
+  safety_fail 0, regression_fail 0, audit_serialization_failure 0,
+  audit_tamper_residue_failure 0, audit_lock_timeout 0; known_gaps = backup
+  readiness only.
+- Verify-script fix during validation (no strictness reduction): the pytest
+  summary omits a 0-failure count, so the QA report's `tests_failed` is None on
+  a passing run; the Scenario E check now treats None/empty as 0 (the QA-status
+  check already guarantees no failures). Commit `dcce312`.
 
 ### Production safety result
-- Local: controlled-only flags correct; production_executed false; no secret
-  leak. Remote counters recorded in the follow-up commit.
+- `/operations/safety` `result=safe`; `production_executed_true_count=0`;
+  `deployment_records` production-true count 0; `workflow_states`
+  production-true count 0. Mini-delivery flags: controlled_only=true,
+  real_llm=false, github_write=false, pr_creation=false, deploy=false,
+  external_delivery=false; latest pilot completed, acceptance 10/10/0, QA
+  passed_with_findings, safety safe, ready_for_delivery_package=true. No secret
+  leak; no chain-of-thought persisted.
 
 ### Remaining gaps / observations only
 - Mini project delivery pilot (Step 46) delivered this stage (controlled-only).
