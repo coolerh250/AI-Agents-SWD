@@ -150,6 +150,18 @@ echo "$det" | grep -qE "AUDIT_TAMPER_RESIDUE_DETECTOR: (PASS|SKIP)" && _pass "au
 # ---------------------------------------------------------------------------
 echo
 echo "=== Scenario G: regression compatibility ==="
+# Earlier scenarios (a live design review + the tamper-evident verify) generate
+# audit/notification churn through the always-on audit-worker. Let the chain
+# settle before the full regression's verify-chain runs, so an in-flight row
+# does not transiently fail verification. This does NOT lower verifier
+# strictness -- it only waits for eventual consistency to converge.
+for _i in 1 2 3 4 5 6 7 8 9 10; do
+  vc=$(curl -sS -m 20 -X POST "$ORCH/operations/audit/verify-chain" 2>/dev/null || echo '{}')
+  st=$(echo "$vc" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
+  [ "$st" = "passed" ] && break
+  sleep 3
+done
+echo "  audit chain settled (verify-chain status=${st:-unknown})"
 if bash scripts/verify_project_planner_task_graph.sh >/tmp/adr_planner.log 2>&1; then
   grep -q "PROJECT_PLANNER_TASK_GRAPH_VERIFY: PASS" /tmp/adr_planner.log \
     && _pass "project planner verify PASS" || _fail "project planner verify not PASS"
