@@ -2422,7 +2422,7 @@ fi
 before_int=$(docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
   psql -U postgres -d aiagents -tAc "SELECT count(*) FROM audit_integrity_records;" \
   2>/dev/null | tr -d '[:space:]')
-curl -sS -m 10 -X POST "http://localhost:8000/operations/audit/verify-chain" >/dev/null || true
+curl -sS -m 60 -X POST "http://localhost:8000/operations/audit/verify-chain" >/dev/null || true
 after_int=$(docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
   psql -U postgres -d aiagents -tAc "SELECT count(*) FROM audit_integrity_records;" \
   2>/dev/null | tr -d '[:space:]')

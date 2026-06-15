@@ -43,7 +43,11 @@ else
 fi
 
 step "4. POST /operations/audit/verify-chain"
-verify=$(curl -sS -m 10 -X POST "$ORCH/operations/audit/verify-chain" || echo '{}')
+# Client timeout is generous (60s): the chain has grown to ~300k rows and a full
+# verification legitimately takes ~10s+ and grows with the chain. This is only
+# the HTTP client wait -- the endpoint still performs the identical strict
+# verification and the status gate below is unchanged (passed|partial only).
+verify=$(curl -sS -m 60 -X POST "$ORCH/operations/audit/verify-chain" || echo '{}')
 echo "$verify" | python3 -m json.tool 2>/dev/null | head -25 || echo "$verify" | head -c 600
 echo
 case "$(echo "$verify" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null)" in

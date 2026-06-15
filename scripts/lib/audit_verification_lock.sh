@@ -159,7 +159,10 @@ assert_audit_chain_clean_or_known_blocker() {
     # caller decides). Returns 0 if chain passes or the orchestrator is down.
     local orch="${ORCHESTRATOR_URL:-http://localhost:8000}"
     local body
-    body="$(curl -sS -m 8 -X POST "${orch}/operations/audit/verify-chain" 2>/dev/null || echo '{}')"
+    # 60s client timeout: a full chain verification legitimately takes ~10s+ on
+    # a ~300k-row chain and grows with it. This is the HTTP client wait only --
+    # the endpoint's strict verification is unchanged.
+    body="$(curl -sS -m 60 -X POST "${orch}/operations/audit/verify-chain" 2>/dev/null || echo '{}')"
     if echo "$body" | grep -q '"status": "passed"' || echo "$body" | grep -q '"status":"passed"'; then
         return 0
     fi
