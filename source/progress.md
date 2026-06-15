@@ -9,7 +9,7 @@ issues & blockers, and next-step suggestions.
 ## Stage 49 — Delivery Package & Acceptance Gate
 
 - **Execution time:** 2026-06-15 (UTC+8, Asia/Taipei)
-- **Git branch / commit:** `main`; commit follows after local + remote validation.
+- **Git branch / commit:** `main`; code `4ce83ee`, progress commit follows.
 - **Step:** 47 (per external spec numbering)
 - **Deployment target:** 10.0.1.31 (`/home/itadmin/AI-Agents-SWD`).
 
@@ -96,12 +96,34 @@ issues & blockers, and next-step suggestions.
 
 ### Regression result (local)
 - 51 delivery package tests (20 files) pass; mini delivery + orchestrator import
-  checks green; ruff / black / mypy clean. Remote regression results recorded
-  after deployment to 10.0.1.31.
+  checks green; ruff / black / mypy clean (zero new mypy errors in operations.py
+  vs HEAD).
 
-### Production safety result
-- production_executed_true_count target 0; deployment_prod_true / workflow_prod_true
-  target 0 (confirmed on remote).
+### Regression result (remote 10.0.1.31, commit 4ce83ee)
+- Migration 021 applied (8 tables present). orchestrator + delivery-package-agent
+  (port 8020) rebuilt + healthy.
+- `verify_delivery_package_acceptance_gate.sh`: **DELIVERY_PACKAGE_ACCEPTANCE_GATE_VERIFY:
+  PASS (73/73 checks)**, including Scenario I which chains the mini pilot verify →
+  workspace / design / planner verifies → `run_full_regression.sh --full`
+  (PASS / PASS_WITH_DOCUMENTED_GAPS). Audit chain settled (verify-chain status=passed),
+  no tamper residue.
+- Live FastAPI Todo delivery package: package `ready_for_review`, 14/14 sections
+  ready (0 missing), 7 artifact types linked, acceptance gate
+  `passed_with_findings` / `ready_for_operator_review`, 18 checks (0 failed, 0
+  blocking), human acceptance `pending`, 3 handoff summaries, readiness
+  `ready_for_operator_review`, operator accept/reject/request-changes
+  `action_disabled` by default (review stays pending).
+
+### Production safety result (remote)
+- `/operations/safety`: delivery_package_controlled_only=true; real_llm /
+  github_write / pr_creation / deploy / external_delivery / auto_accept /
+  operator_actions all false; latest_delivery_package_status=ready_for_review;
+  latest_acceptance_gate_status=passed_with_findings;
+  latest_acceptance_gate_decision=ready_for_operator_review;
+  latest_delivery_readiness_status=ready_for_operator_review;
+  latest_human_acceptance_status=pending;
+  delivery_package_ready_for_admin_console=true; production_executed_true_count=0.
+- deployment_prod_true=0; workflow_prod_true=0.
 
 ### Remaining gaps / observations only
 - Admin Console v0 (Step 48), backup / DR gap closure (Step 49 in the product
