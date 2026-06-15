@@ -118,7 +118,10 @@ if [ -n "$PILOT_ID" ]; then
     passed|passed_with_findings) _pass "QA status ok";;
     *) _fail "QA status=$(_field "$qa" status)";;
   esac
-  [ "$(_field "$qa" tests_failed)" = "0" ] && _pass "tests_failed=0" || _fail "tests_failed=$(_field "$qa" tests_failed)"
+  # A passing/passed-with-findings QA (validated above) means no failures; the
+  # pytest summary reports tests_failed only when >0, so None/empty == 0.
+  tf=$(_field "$qa" tests_failed)
+  { [ "$tf" = "0" ] || [ -z "$tf" ] || [ "$tf" = "None" ]; } && _pass "tests_failed=0 (${tf:-none})" || _fail "tests_failed=$tf"
   sa=$(curl -sS -m 10 "$ORCH/operations/mini-delivery-pilots/$PILOT_ID/safety-report" 2>/dev/null || echo '{}')
   [ "$(_field "$sa" status)" = "safe" ] && _pass "safety status=safe" || _fail "safety status=$(_field "$sa" status)"
   [ "$(_field "$sa" production_executed_count)" = "0" ] && _pass "production_executed_count=0" || _fail "production count != 0"
