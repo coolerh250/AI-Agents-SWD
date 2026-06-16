@@ -31,17 +31,18 @@ _fail() { echo "  [FAIL] $1"; total=$((total + 1)); }
 _skip() { echo "  [SKIP] $1"; }
 
 # Helpers -------------------------------------------------------------------
-login() { # role -> sets JAR + CSRF (bounded retry: tolerate transient resets)
-  local resp=""
+LOGIN_RESP=""
+login() { # role -> sets globals JAR + CSRF + LOGIN_RESP. Call in current shell
+          # (NOT via $(...)) so the CSRF assignment survives -- command
+          # substitution runs in a subshell and would lose it.
   for _attempt in 1 2 3 4 5; do
     rm -f "$JAR"
-    resp=$(curl -sS -m 10 -c "$JAR" -X POST "$ADMIN/auth/test-login" \
+    LOGIN_RESP=$(curl -sS -m 10 -c "$JAR" -X POST "$ADMIN/auth/test-login" \
       -H 'Content-Type: application/json' -d "{\"role\":\"$1\"}" 2>/dev/null || echo '{}')
-    CSRF=$(echo "$resp" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null || echo "")
+    CSRF=$(echo "$LOGIN_RESP" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null || echo "")
     [ -n "$CSRF" ] && break
     sleep 2
   done
-  echo "$resp"
 }
 post_admin() { # path json -> response (uses JAR + CSRF + idem)
   curl -sS -m 60 -b "$JAR" -X POST "$ADMIN/$1" \
@@ -57,14 +58,23 @@ jq_get() { "$PY" -c "import sys,json;d=json.load(sys.stdin);print(d.get('$1','')
 
 # ---------------------------------------------------------------------------
 echo; echo "=== Scenario A: auth / session ==="
-resp=$(login operator)
+login operator
+resp="$LOGIN_RESP"
 [ -n "$CSRF" ] && _pass "test-login issues session + csrf" || _fail "no csrf from login"
-# HttpOnly + SameSite on the cookie
-hdr=$(curl -sS -m 10 -D - -o /dev/null -X POST "$ADMIN/auth/test-login" \
-  -H 'Content-Type: application/json' -d '{"role":"operator"}' 2>/dev/null | tr -d '\r')
-echo "$hdr" | grep -iq 'set-cookie:.*admin_console_session' && \
-  echo "$hdr" | grep -iq 'httponly' && echo "$hdr" | grep -iq 'samesite=strict' \
-  && _pass "cookie HttpOnly + SameSite=Strict" || _fail "cookie flags missing"
+# HttpOnly + SameSite on the cookie (retry-tolerant)
+hdr=""
+for _a in 1 2 3; do
+  hdr=$(curl -sS -m 10 -D - -o /dev/null -X POST "$ADMIN/auth/test-login" \
+    -H 'Content-Type: application/json' -d '{"role":"operator"}' 2>/dev/null | tr -d '\r')
+  echo "$hdr" | grep -iq 'set-cookie:.*admin_console_session' && break
+  sleep 2
+done
+if echo "$hdr" | grep -iq 'set-cookie:.*admin_console_session' \
+   && echo "$hdr" | grep -iq 'httponly' && echo "$hdr" | grep -iq 'samesite=strict'; then
+  _pass "cookie HttpOnly + SameSite=Strict"
+else
+  _fail "cookie flags missing"
+fi
 sess=$(curl -sS -m 10 -b "$JAR" "$ADMIN/auth/session" 2>/dev/null || echo '{}')
 [ "$(echo "$sess" | jq_get authenticated)" = "True" ] && _pass "session active" || _fail "session not active"
 # no token in URL / response body should not include raw cookie value
