@@ -8,6 +8,8 @@ Foundation only. **No cluster connection, no `kubectl`, no `helm install`.**
 | --- | --- |
 | `runtime-inventory.yaml` | Evidence-backed inventory of every Compose service + one-shot jobs |
 | `runtime-dependency-matrix.yaml` | Service-to-service dependency edges, each with evidence |
+| `workload-security-inventory.yaml` | Step 51.2A per-component runtime security requirements |
+| `rbac-safety-catalog.yaml` | Step 51.2A RBAC safety record (no Kubernetes API access) |
 | `charts/ai-agents-platform/` | Multi-environment Helm foundation chart (v0.1.0) |
 
 Docs: [runtime-service-inventory](../../docs/platform/runtime-service-inventory.md),
@@ -17,8 +19,11 @@ Docs: [runtime-service-inventory](../../docs/platform/runtime-service-inventory.
 ## Verify (no cluster)
 
 ```bash
-python scripts/verify_kubernetes_runtime_inventory.py   # KUBERNETES_RUNTIME_INVENTORY_VERIFY: PASS
-./scripts/verify_helm_foundation.sh                     # HELM_FOUNDATION_VERIFY: PASS
+python scripts/verify_kubernetes_runtime_inventory.py        # KUBERNETES_RUNTIME_INVENTORY_VERIFY: PASS
+./scripts/verify_helm_foundation.sh                          # HELM_FOUNDATION_VERIFY: PASS
+python scripts/verify_kubernetes_workload_security.py        # KUBERNETES_WORKLOAD_SECURITY_VERIFY: PASS
+python scripts/verify_kubernetes_rbac_safety.py              # KUBERNETES_RBAC_SAFETY_VERIFY: PASS
+./scripts/verify_kubernetes_security_rbac_baseline.sh        # KUBERNETES_SECURITY_RBAC_BASELINE_VERIFY: PASS
 ```
 
 `verify_helm_foundation.sh` prefers a local `helm`, otherwise runs a pinned
@@ -42,5 +47,10 @@ In scope (Step 51.1): inventory, component catalog, generic
 Deployment/Service/ConfigMap/ServiceAccount templates, four environment values,
 schema, fail-closed production placeholder, lint + render verification.
 
-Deferred (Step 51.2+): SecurityContext hardening, NetworkPolicy, RBAC,
-PVC/StorageClass, Migration Job, Backup CronJob, HPA, PDB, and ArgoCD/GitOps.
+In scope (Step 51.2A): restricted workload SecurityContext baseline (runAsNonRoot,
+RuntimeDefault seccomp, no privesc, drop ALL, read-only root, size-limited
+emptyDir writable paths), ServiceAccount hardening (token automount off), and
+RBAC safety (no Role/ClusterRole, no Kubernetes API access).
+
+Deferred (Step 51.2B+): NetworkPolicy (51.2B); PVC/StorageClass, Migration Job,
+Backup CronJob (51.2C); HPA, PDB; and ArgoCD/GitOps (51.3).

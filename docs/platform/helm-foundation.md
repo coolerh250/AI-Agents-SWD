@@ -95,9 +95,20 @@ deferred to a future stage with an explicit need.
 - No persistent storage; postgres/redis dev/test components are ephemeral.
 - Observability and one-shot jobs are not packaged.
 
-## Explicit Step 51.2 boundary
+## Step 51.2A update — workload security & RBAC safety
 
-Deferred to Step 51.2 and later: SecurityContext hardening, NetworkPolicy /
-default-deny, RBAC Role/ClusterRole, PVC/StorageClass, workspace RWX, Migration
-Job, Backup CronJob, HPA, PodDisruptionBudget, manifest/secret policy
-validators, and (Step 51.3+) ArgoCD / GitOps.
+The foundation now applies a restricted SecurityContext baseline
+(`global.workloadSecurity`): runAsNonRoot, non-zero UID, RuntimeDefault seccomp,
+no privilege escalation, drop ALL capabilities, read-only root filesystem
+(first-party), size-limited `emptyDir` writable paths, and
+`automountServiceAccountToken: false`. The chart still creates **no** RBAC
+objects and grants **no** Kubernetes API access. See
+[kubernetes-workload-security-baseline.md](kubernetes-workload-security-baseline.md),
+[kubernetes-rbac-safety-baseline.md](kubernetes-rbac-safety-baseline.md), and
+[kubernetes-writable-path-model.md](kubernetes-writable-path-model.md).
+
+## Explicit Step 51.2B/2C boundary
+
+Deferred: NetworkPolicy / default-deny (51.2B); PVC/StorageClass, workspace RWX,
+Migration Job, Backup CronJob (51.2C); HPA, PodDisruptionBudget; and (Step 51.3+)
+ArgoCD / GitOps.

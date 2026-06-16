@@ -1,0 +1,72 @@
+# Step 51.2A -- Kubernetes RBAC Safety Catalog (Stage 53B).
+#
+# This stage creates NO Role / RoleBinding / ClusterRole / ClusterRoleBinding.
+# The catalog records that every component's Kubernetes API requirement is zero
+# (or explicitly deferred) and asserts the global prohibitions. It is the
+# evidence that least-privilege == no-privilege at this baseline.
+
+meta:
+  stage: "53B"
+  step: "51.2A"
+
+rbac:
+  clusterRolesAllowed: false
+  clusterRoleBindingsAllowed: false
+  wildcardPermissionsAllowed: false
+  secretReadPermissionsAllowed: false
+  deploymentMutationPermissionsAllowed: false
+  jobCreationPermissionsAllowed: false
+  podsExecAllowed: false
+  podsPortForwardAllowed: false
+  rolesCreatedThisStage: 0
+  roleBindingsCreatedThisStage: 0
+  clusterRolesCreatedThisStage: 0
+  clusterRoleBindingsCreatedThisStage: 0
+
+# Every component: no Kubernetes API access, dedicated ServiceAccount with token
+# automount disabled, no roles. The orchestrator and the Step 50
+# operator/platform_admin roles get NO Kubernetes permission.
+components:
+  orchestrator: {kubernetesApiRequired: false, allowedRoles: [], rationale: "REST workflow API only; no kube-apiserver calls. Step 50 operator/platform_admin do NOT map to any Kubernetes permission."}
+  policy-engine: {kubernetesApiRequired: false, allowedRoles: [], rationale: "stateless policy evaluation"}
+  approval-engine: {kubernetesApiRequired: false, allowedRoles: [], rationale: "DB-backed approval gate"}
+  audit-service: {kubernetesApiRequired: false, allowedRoles: [], rationale: "audit store API"}
+  communication-gateway: {kubernetesApiRequired: false, allowedRoles: [], rationale: "service-to-service HTTP"}
+  github-automation: {kubernetesApiRequired: false, allowedRoles: [], rationale: "GitHub client (dry-run); no kube API"}
+  discord-gateway: {kubernetesApiRequired: false, allowedRoles: [], rationale: "sandbox gateway"}
+  audit-worker: {kubernetesApiRequired: false, allowedRoles: [], rationale: "Redis stream consumer"}
+  notification-worker: {kubernetesApiRequired: false, allowedRoles: [], rationale: "sandbox notification worker"}
+  retry-scheduler: {kubernetesApiRequired: false, allowedRoles: [], rationale: "internal retry queue"}
+  intake-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "agent; no kube API"}
+  requirement-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "agent; no kube API"}
+  development-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "agent writes ephemeral workspace under /tmp; no kube API"}
+  qa-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "agent; no kube API"}
+  devops-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "agent uses github-automation HTTP (dry-run); NO Kubernetes deploy permission"}
+  project-planner-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "planning-only agent"}
+  design-review-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "review-only agent"}
+  workspace-operator-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "controlled workspace operator; no kube API"}
+  mini-delivery-pilot-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "controlled pilot; no kube API"}
+  delivery-package-agent: {kubernetesApiRequired: false, allowedRoles: [], rationale: "package assembly; no kube API"}
+  postgres: {kubernetesApiRequired: false, allowedRoles: [], rationale: "datastore; no kube API"}
+  redis: {kubernetesApiRequired: false, allowedRoles: [], rationale: "cache/streams; no kube API"}
+  vault: {kubernetesApiRequired: false, allowedRoles: [], rationale: "test-only dev vault; no kube API"}
+
+# Forbidden permission patterns (asserted absent by verify_kubernetes_rbac_safety.py).
+prohibitedPermissions:
+  apiGroups: ["*"]
+  resources: ["*", "secrets", "deployments", "daemonsets", "statefulsets", "jobs", "cronjobs", "pods/exec", "pods/portforward"]
+  verbs: ["*"]
+  notes:
+    - "no secrets get/list/watch"
+    - "no deployments/statefulsets/daemonsets create/update/patch/delete"
+    - "no jobs/cronjobs create"
+    - "no pods/exec, no pods/portforward"
+    - "no cluster-admin, no wildcard apiGroup/resource/verb"
+
+# Boundary recorded for a FUTURE deployment-agent (NOT created here): even when a
+# deploy capability is introduced, it must go through the governed action plane
+# (Step 50 policy/approval/audit), never a broad Kubernetes RBAC grant.
+futureBoundary:
+  deploymentAgentPolicy: "any future Kubernetes deploy capability must be namespaced, least-privilege, and gated by the existing policy/approval/audit plane -- never cluster-admin, wildcard, or direct Secret access. Deferred; not in scope for Step 51.2A."
+
+unresolvedKubernetesApiNeeds: []

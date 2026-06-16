@@ -9861,3 +9861,56 @@ issues & blockers, and next-step suggestions.
   Step 50 operator policy, or `/operations/safety` (no Kubernetes fields added).
 - **Roadmap.** Step 51.1 closed (if verified); Step 51.2/51.3/51.4 pending;
   Step 51 overall OPEN.
+
+## Stage 53B — Workload Security & RBAC Safety Baseline (Step 51.2A)
+
+- **Scope.** Second sub-stage of Step 51.2. Applied a restricted, values-driven
+  Kubernetes SecurityContext baseline to every workload in the foundation chart
+  and proved the RBAC posture is zero-privilege. Static manifest baseline only:
+  NO cluster connection, NO kubectl, NO helm install/upgrade. Did NOT do
+  NetworkPolicy (51.2B), storage/Jobs (51.2C), or ArgoCD (51.3).
+- **Workload inventory.** `infra/kubernetes/workload-security-inventory.yaml` —
+  all 23 components, evidence-backed. Verified: 20 first-party services are
+  `python:3.12-slim` with NO USER directive (run as root today; image USER
+  remediation RECORDED, not changed); the only first-party disk writes are
+  under `/tmp` (workspace roots + tempfile) — no /var, /data, /app, SQLite, or
+  file logs. postgres/redis/vault carry documented per-component overrides.
+- **Security profile.** `global.workloadSecurity` (restricted-baseline):
+  runAsNonRoot=true, runAsUser/Group=10001 (non-zero), fsGroup=10001,
+  seccomp RuntimeDefault, allowPrivilegeEscalation=false, privileged=false,
+  readOnlyRootFilesystem=true (first-party), dropCapabilities=[ALL] (no add),
+  automountServiceAccountToken=false. Component `security` may override ONLY
+  uid/gid/fsGroup/readOnlyRootFilesystem/writablePaths — no privileged/root/
+  cap-add/hostPath escape (schema additionalProperties=false + validate-values).
+  Rendered via `templates/_security_helpers.tpl`.
+- **Writable paths.** Read-only root + size-limited emptyDir. Default /tmp
+  256Mi; 1Gi for the 4 workspace-writing agents; redis /data 256Mi. postgres
+  PGDATA + redis/workspace persistence marked deferred_to_51_2C (NOT faked as
+  emptyDir). PYTHONDONTWRITEBYTECODE=1 added to the shared ConfigMap.
+- **Infra overrides.** postgres UID 999, read-only root OFF (writes PGDATA +
+  sockets); redis UID 999, read-only root ON + /data emptyDir; vault test-only
+  UID 100, not deployed (baseline drops ALL caps; a deployed dev vault would
+  need VAULT_DISABLE_MLOCK). All keep runAsNonRoot + drop ALL + no-privesc +
+  RuntimeDefault + automount=false.
+- **RBAC safety.** `infra/kubernetes/rbac-safety-catalog.yaml` — 0 Role/
+  RoleBinding/ClusterRole/ClusterRoleBinding created; all 23 components
+  kubernetesApiRequired=false; no secret/deploy/job/exec/portforward/wildcard.
+  Step 50 operator/platform_admin get NO Kubernetes permission. Future
+  deployment-agent boundary recorded (must go through policy/approval/audit).
+- **Verifiers.** `verify_kubernetes_workload_security.py` (parses rendered
+  manifests; hard violations FAIL, runtime-compat = observations),
+  `verify_kubernetes_rbac_safety.py`, and combined
+  `verify_kubernetes_security_rbac_baseline.sh`. Render via pinned
+  `alpine/helm:3.16.3` (no cluster).
+- **Dependencies.** Added PyYAML + jsonschema to requirements.txt so the 4
+  Step 51.1 schema-validation tests no longer skip.
+- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Local checks.** 10 new pytest files (49 passed) + 51.1 suite still green;
+  ruff/black/mypy clean on new Python.
+- **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
+  registry/image push, no production namespace/deploy. No secret / rendered
+  manifest committed. production_executed_true_count remains 0. No change to
+  HARD_SAFETY_ACTIONS, audit canonicalization, Step 50 operator policy, or
+  `/operations/safety` (no Kubernetes fields added).
+- **Roadmap.** Step 51.1 closed; Step 51.2A closed (if verified); 51.2B/51.2C/
+  51.3/51.4 pending; Step 51 overall OPEN.

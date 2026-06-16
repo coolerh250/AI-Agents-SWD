@@ -2356,6 +2356,36 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Workload Security & RBAC Safety Baseline (Stage 53B / Step 51.2A)
+
+Applies a restricted, values-driven SecurityContext baseline to every workload
+in the foundation chart and proves the RBAC posture is zero-privilege. The
+[workload-security inventory](infra/kubernetes/workload-security-inventory.yaml)
+records each of the 23 components' real runtime needs (first-party images are
+`python:3.12-slim` with no USER directive; only `/tmp` is written). The chart's
+`global.workloadSecurity` enforces runAsNonRoot, non-zero UID, RuntimeDefault
+seccomp, `allowPrivilegeEscalation=false`, `privileged=false`, drop ALL
+capabilities (no add), read-only root filesystem (first-party), size-limited
+`emptyDir` writable paths, and `automountServiceAccountToken=false` on both the
+ServiceAccount and pod spec. `validate-values.yaml` is fail-closed (staging/prod
+cannot disable security; no root UID, privilege escalation, cap-add, hostPath,
+docker socket, or writable `/`,`/app`,`/etc`). The
+[RBAC safety catalog](infra/kubernetes/rbac-safety-catalog.yaml) records that no
+Role/ClusterRole is created and no component needs the Kubernetes API; the Step
+50 operator/platform_admin roles get no Kubernetes permission. Verify with
+`python scripts/verify_kubernetes_workload_security.py`
+(`KUBERNETES_WORKLOAD_SECURITY_VERIFY: PASS`),
+`python scripts/verify_kubernetes_rbac_safety.py`
+(`KUBERNETES_RBAC_SAFETY_VERIFY: PASS`), and
+`scripts/verify_kubernetes_security_rbac_baseline.sh`
+(`KUBERNETES_SECURITY_RBAC_BASELINE_VERIFY: PASS`). Static manifest baseline only
+(no cluster, no kubectl, no helm install); non-root/read-only-root runtime start
+is flagged `requires_cluster_smoke`. See
+[`docs/platform/kubernetes-workload-security-baseline.md`](docs/platform/kubernetes-workload-security-baseline.md),
+[`docs/platform/kubernetes-rbac-safety-baseline.md`](docs/platform/kubernetes-rbac-safety-baseline.md),
+and [`docs/platform/kubernetes-writable-path-model.md`](docs/platform/kubernetes-writable-path-model.md).
+NetworkPolicy (51.2B), storage/Jobs (51.2C) and GitOps (51.3) are deferred.
+
 ## Runtime Inventory & Helm Foundation (Stage 53A / Step 51.1)
 
 Turns the actual Docker Compose runtime into an evidence-backed inventory and a

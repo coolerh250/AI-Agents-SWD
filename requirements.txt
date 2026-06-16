@@ -19,3 +19,6 @@ pytest-asyncio
 ruff
 black
 mypy
+# Step 51.1+/51.2A -- YAML inventory parsing + Helm values.schema.json validation tests
+PyYAML
+jsonschema

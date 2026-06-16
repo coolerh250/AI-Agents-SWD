@@ -15,7 +15,9 @@ project delivery pilot. Each step builds on the previous one.
 | 50 | Admin Console v1 (operator actions) | **done (this stage)** | controlled operator actions (accept / reject / request-changes / note / allowlisted verification rerun) gated by test-local auth + RBAC + CSRF + policy + confirmation + idempotency + audit; high-risk actions disabled; acceptance is human-review only (no deploy/PR/prod) |
 | 51 | Kubernetes / Helm / ArgoCD Runtime Baseline | **open** (split into 51.1–51.4) | container runtime + GitOps deployment baseline |
 | 51.1 | Runtime Inventory & Helm Foundation | **done (this stage)** | evidence-backed runtime inventory + dependency matrix + component catalog; values-driven Helm foundation chart (generic Deployment/Service/ConfigMap/ServiceAccount) across dev/test/staging-placeholder/prod-placeholder; fail-closed non-deployable production placeholder; lint + render verified; no cluster, no deploy |
-| 51.2 | Kubernetes Security, Network & Storage Baseline | pending | SecurityContext, NetworkPolicy, RBAC, PVC/storage, Migration Job, Backup CronJob |
+| 51.2A | Workload Security & RBAC Safety Baseline | **done (this stage)** | restricted SecurityContext baseline (runAsNonRoot, RuntimeDefault seccomp, no privesc, drop ALL, read-only root, size-limited emptyDir writable paths), ServiceAccount token automount off, RBAC safety (no Role/ClusterRole, no Kubernetes API access); static manifest baseline, no cluster |
+| 51.2B | NetworkPolicy & Service Connectivity Baseline | pending | default-deny ingress/egress, DNS egress, dependency allow rules |
+| 51.2C | Storage, Migration & Backup Job Baseline | pending | PVC/StorageClass, workspace RWX, Migration Job, Backup CronJob |
 | 51.3 | ArgoCD & Environment GitOps Baseline | pending | ArgoCD project/application + app-of-apps + environment wiring |
 | 51.4 | Runtime Visibility & Integrated Verification | pending | runtime ops surface + integrated verification |
 
