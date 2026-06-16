@@ -10,6 +10,9 @@ metadata:
   labels:
     {{- include "aiagents.commonLabels" . | nindent 4 }}
 data:
+  # Step 51.2A -- keep read-only-root filesystem clean (no .pyc writes to /app).
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
   ENVIRONMENT: {{ .Values.global.environment | quote }}
   PRODUCTION: {{ .Values.global.production | quote }}
   REAL_DEPLOY_ENABLED: {{ .Values.global.realDeployEnabled | quote }}

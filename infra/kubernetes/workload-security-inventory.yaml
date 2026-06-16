@@ -1,0 +1,285 @@
+# Step 51.2A -- Workload Runtime Security Inventory (Stage 53B).
+#
+# Evidence-backed per-component runtime requirements, produced BEFORE applying
+# Helm SecurityContext settings. Source of truth: Dockerfiles (apps/*, agents/*),
+# docker-compose.yml, and source disk-write behaviour.
+#
+# Findings (verified):
+#   - All 20 first-party services use `python:3.12-slim`, WORKDIR /app, NO USER
+#     directive -> they currently run as root (UID 0). Image USER remediation is
+#     RECORDED here, NOT modified in this stage.
+#   - The only disk writes in first-party source are under /tmp: workspace roots
+#     default to /tmp/aiagents-workspaces and qa-agent uses tempfile (=> /tmp).
+#     No /var, /data, /app, SQLite, or file-logging writes were found.
+#   - Logs go to stdout (uvicorn). Python bytecode writes to /app are tolerated
+#     (Python ignores .pyc write failures); PYTHONDONTWRITEBYTECODE is set in the
+#     shared ConfigMap to keep read-only-root clean.
+#   - postgres/redis/vault are official upstream images with their own UID/GID
+#     and writable-path needs -> documented component overrides (NOT the
+#     first-party fixed-UID assumption).
+#
+# runtimeCompatibility.status semantics:
+#   static_baseline_only      -- security baseline applied; no further runtime risk identified
+#   requires_cluster_smoke    -- baseline applied, but non-root/read-only-root start
+#                                cannot be confirmed without a cluster smoke test (deferred)
+
+meta:
+  stage: "53B"
+  step: "51.2A"
+  firstPartyImageUser: root        # python:3.12-slim, no USER directive (recorded, not changed)
+  firstPartyRunAsUser: 10001
+  firstPartyRunAsGroup: 10001
+
+components:
+  # ===== first-party: core application =====
+  orchestrator:
+    sourcePath: apps/orchestrator
+    dockerfile: apps/orchestrator/Dockerfile
+    classification: core_application
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 256Mi, evidence: "tempfile/general scratch; no other writes found"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["image declares no non-root user; runAsUser=10001 + read-only root needs a cluster smoke", "compose RW report mounts are read-views; K8s storage deferred to 51.2C"]
+
+  # ===== first-party: governance =====
+  policy-engine: &fp
+    sourcePath: apps/policy-engine
+    dockerfile: apps/policy-engine/Dockerfile
+    classification: governance_service
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 256Mi, evidence: "scratch only; no disk writes found"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["image declares no non-root user; needs cluster smoke"]
+  approval-engine:
+    <<: *fp
+    sourcePath: apps/approval-engine
+    dockerfile: apps/approval-engine/Dockerfile
+  audit-service:
+    <<: *fp
+    sourcePath: apps/audit-service
+    dockerfile: apps/audit-service/Dockerfile
+
+  # ===== first-party: communication =====
+  communication-gateway:
+    <<: *fp
+    sourcePath: apps/communication-gateway
+    dockerfile: apps/communication-gateway/Dockerfile
+    classification: communication_service
+  github-automation:
+    <<: *fp
+    sourcePath: apps/github-automation
+    dockerfile: apps/github-automation/Dockerfile
+    classification: communication_service
+  discord-gateway:
+    <<: *fp
+    sourcePath: apps/discord-gateway
+    dockerfile: apps/discord-gateway/Dockerfile
+    classification: communication_service
+
+  # ===== first-party: workers =====
+  audit-worker:
+    <<: *fp
+    sourcePath: apps/audit-worker
+    dockerfile: apps/audit-worker/Dockerfile
+    classification: worker
+  notification-worker:
+    <<: *fp
+    sourcePath: apps/notification-worker
+    dockerfile: apps/notification-worker/Dockerfile
+    classification: worker
+  retry-scheduler:
+    <<: *fp
+    sourcePath: apps/retry-scheduler
+    dockerfile: apps/retry-scheduler/Dockerfile
+    classification: worker
+
+  # ===== first-party: agents =====
+  intake-agent:
+    <<: *fp
+    sourcePath: agents/intake-agent
+    dockerfile: agents/intake-agent/Dockerfile
+    classification: agent
+  requirement-agent:
+    <<: *fp
+    sourcePath: agents/requirement-agent
+    dockerfile: agents/requirement-agent/Dockerfile
+    classification: agent
+  # workspace-writing agents: generate project files under /tmp/aiagents-workspaces
+  development-agent:
+    sourcePath: agents/development-agent
+    dockerfile: agents/development-agent/Dockerfile
+    classification: agent
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 1Gi, evidence: "code_generator writes generated project under /tmp/aiagents-workspaces (os.makedirs)"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["ephemeral workspace under /tmp; PERSISTENT workspace storage deferred to Step 51.2C", "image declares no non-root user; needs cluster smoke"]
+  qa-agent:
+    sourcePath: agents/qa-agent
+    dockerfile: agents/qa-agent/Dockerfile
+    classification: agent
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 1Gi, evidence: "tempfile.TemporaryDirectory + materialised test workspace under /tmp"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["ephemeral workspace under /tmp; persistent storage deferred to 51.2C", "image declares no non-root user; needs cluster smoke"]
+  devops-agent:
+    <<: *fp
+    sourcePath: agents/devops-agent
+    dockerfile: agents/devops-agent/Dockerfile
+    classification: agent
+  project-planner-agent:
+    <<: *fp
+    sourcePath: agents/project-planner-agent
+    dockerfile: agents/project-planner-agent/Dockerfile
+    classification: agent
+  design-review-agent:
+    <<: *fp
+    sourcePath: agents/design-review-agent
+    dockerfile: agents/design-review-agent/Dockerfile
+    classification: agent
+  workspace-operator-agent:
+    sourcePath: agents/workspace-operator-agent
+    dockerfile: agents/workspace-operator-agent/Dockerfile
+    classification: agent
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 1Gi, evidence: "WORKSPACE_OPERATOR_ROOT defaults to /tmp/aiagents-workspaces"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["ephemeral workspace under /tmp; persistent workspace RWX deferred to 51.2C", "image declares no non-root user; needs cluster smoke"]
+  mini-delivery-pilot-agent:
+    sourcePath: agents/mini-delivery-pilot-agent
+    dockerfile: agents/mini-delivery-pilot-agent/Dockerfile
+    classification: agent
+    currentImageUser: root
+    targetRunAsNonRoot: true
+    targetRunAsUser: 10001
+    targetRunAsGroup: 10001
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /tmp, type: emptyDir, required: true, sizeLimit: 1Gi, evidence: "runs controlled workspace execution under /tmp/aiagents-workspaces in-process"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["ephemeral workspace under /tmp; persistent storage deferred to 51.2C", "image declares no non-root user; needs cluster smoke"]
+  delivery-package-agent:
+    <<: *fp
+    sourcePath: agents/delivery-package-agent
+    dockerfile: agents/delivery-package-agent/Dockerfile
+    classification: agent
+
+  # ===== infrastructure (official upstream images: component overrides) =====
+  postgres:
+    sourcePath: ""
+    dockerfile: ""
+    classification: infrastructure
+    image: postgres:16
+    currentImageUser: "root->postgres(999) via entrypoint"
+    targetRunAsNonRoot: true
+    targetRunAsUser: 999
+    targetRunAsGroup: 999
+    targetFsGroup: 999
+    readOnlyRootFilesystemTarget: false
+    writablePaths:
+      - {path: /var/lib/postgresql/data, type: deferred_to_51_2C, required: true, evidence: "PGDATA; PERSISTENT storage -> Step 51.2C, NOT emptyDir-faked here"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions:
+      - "readOnlyRootFilesystem=false: official image writes PGDATA + /var/run/postgresql sockets; full read-only + persistence deferred to Step 51.2C"
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["dev/test optional only; staging/prod use external managed Postgres", "keeps runAsNonRoot + drop ALL + no-privesc + RuntimeDefault + automount=false"]
+  redis:
+    sourcePath: ""
+    dockerfile: ""
+    classification: infrastructure
+    image: redis:7
+    currentImageUser: "root->redis(999)"
+    targetRunAsNonRoot: true
+    targetRunAsUser: 999
+    targetRunAsGroup: 999
+    targetFsGroup: 999
+    readOnlyRootFilesystemTarget: true
+    writablePaths:
+      - {path: /data, type: emptyDir, required: true, sizeLimit: 256Mi, evidence: "redis working dir /data; ephemeral in dev/test (persistence deferred to 51.2C)"}
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions: []
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["dev/test optional only; staging/prod use external managed Redis"]
+  vault:
+    sourcePath: ""
+    dockerfile: ""
+    classification: infrastructure
+    image: hashicorp/vault:1.17
+    testOnly: true
+    currentImageUser: "vault(100)"
+    targetRunAsNonRoot: true
+    targetRunAsUser: 100
+    targetRunAsGroup: 1000
+    readOnlyRootFilesystemTarget: false
+    writablePaths: []
+    kubernetesApiRequired: false
+    serviceAccountTokenRequired: false
+    securityExceptions:
+      - "readOnlyRootFilesystem=false: dev-mode vault; TEST-ONLY and never deployed in this stage"
+      - "compose grants cap_add IPC_LOCK for mlock; the K8s baseline FORBIDS capability add -> a deployed vault would need VAULT_DISABLE_MLOCK or a real secret store. Deferred/test-only, NOT deployed."
+    runtimeCompatibility:
+      status: requires_cluster_smoke
+      notes: ["TEST-ONLY; disabled for staging/production; not deployed; real secret store deferred"]
+
+# Components whose runtime needs are deferred and MUST NOT be hardened here.
+deferred:
+  observability:
+    reason: "Out of scope (Step 51.4); not packaged in this chart."
+    services: [tempo, prometheus, alertmanager, grafana]
+  persistentStorage:
+    reason: "PVC/StorageClass/workspace-RWX deferred to Step 51.2C."
+    components: [postgres, redis, development-agent, qa-agent, workspace-operator-agent, mini-delivery-pilot-agent, orchestrator]
+
+unresolvedWritablePaths: []

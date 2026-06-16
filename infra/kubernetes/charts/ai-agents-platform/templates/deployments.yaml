@@ -38,10 +38,13 @@ spec:
       imagePullSecrets:
         {{- toYaml $root.Values.global.imagePullSecrets | nindent 8 }}
       {{- end }}
-      {{- if $root.Values.defaults.podSecurityContext.enabled }}
+      {{- if $root.Values.global.workloadSecurity.enabled }}
       securityContext:
-        {{- toYaml (omit $root.Values.defaults.podSecurityContext "enabled") | nindent 8 }}
+        {{- include "aiagents.podSecurityContext" (dict "root" $root "comp" $comp) | nindent 8 }}
       {{- end }}
+      {{- $sec := $comp.security | default dict }}
+      {{- $writable := list }}
+      {{- if hasKey $sec "writablePaths" }}{{- $writable = $sec.writablePaths }}{{- else }}{{- $writable = list (dict "name" "tmp" "mountPath" "/tmp" "sizeLimit" "256Mi") }}{{- end }}
       containers:
         - name: {{ $name }}
           image: {{ include "aiagents.image" (dict "root" $root "comp" $comp) }}
@@ -109,9 +112,27 @@ spec:
           {{- end }}
           resources:
             {{- toYaml $comp.resources | nindent 12 }}
-          {{- if $root.Values.defaults.containerSecurityContext.enabled }}
+          {{- if $root.Values.global.workloadSecurity.enabled }}
           securityContext:
-            {{- toYaml (omit $root.Values.defaults.containerSecurityContext "enabled") | nindent 12 }}
+            {{- include "aiagents.containerSecurityContext" (dict "root" $root "comp" $comp) | nindent 12 }}
           {{- end }}
+          {{- if $writable }}
+          volumeMounts:
+            {{- range $w := $writable }}
+            - name: {{ $w.name }}
+              mountPath: {{ $w.mountPath }}
+            {{- end }}
+          {{- end }}
+      {{- if $writable }}
+      volumes:
+        {{- range $w := $writable }}
+        - name: {{ $w.name }}
+          emptyDir:
+            sizeLimit: {{ $w.sizeLimit }}
+            {{- if $w.medium }}
+            medium: {{ $w.medium }}
+            {{- end }}
+        {{- end }}
+      {{- end }}
 {{- end }}
 {{- end }}

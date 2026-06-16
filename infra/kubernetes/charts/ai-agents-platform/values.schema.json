@@ -18,7 +18,39 @@
         "realDeployEnabled": { "type": "boolean" },
         "imageRegistry": { "type": "string" },
         "imagePullSecrets": { "type": "array" },
-        "nameOverride": { "type": "string" }
+        "nameOverride": { "type": "string" },
+        "workloadSecurity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "enabled", "runAsNonRoot", "runAsUser", "runAsGroup",
+            "seccompProfile", "allowPrivilegeEscalation", "privileged",
+            "readOnlyRootFilesystem", "dropCapabilities", "automountServiceAccountToken"
+          ],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "profile": { "type": "string" },
+            "runAsNonRoot": { "const": true },
+            "runAsUser": { "type": "integer", "minimum": 1 },
+            "runAsGroup": { "type": "integer", "minimum": 1 },
+            "fsGroup": { "type": "integer", "minimum": 1 },
+            "seccompProfile": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["type"],
+              "properties": { "type": { "enum": ["RuntimeDefault"] } }
+            },
+            "allowPrivilegeEscalation": { "const": false },
+            "privileged": { "const": false },
+            "readOnlyRootFilesystem": { "type": "boolean" },
+            "dropCapabilities": {
+              "type": "array",
+              "contains": { "const": "ALL" },
+              "items": { "type": "string" }
+            },
+            "automountServiceAccountToken": { "const": false }
+          }
+        }
       }
     },
     "platform": {
@@ -109,6 +141,30 @@
           "command": { "type": "array" },
           "useCommonSecretRefs": { "type": "boolean" },
           "env": { "type": "object" },
+          "security": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "runAsUser": { "type": "integer", "minimum": 1 },
+              "runAsGroup": { "type": "integer", "minimum": 1 },
+              "fsGroup": { "type": "integer", "minimum": 1 },
+              "readOnlyRootFilesystem": { "type": "boolean" },
+              "writablePaths": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["name", "mountPath", "sizeLimit"],
+                  "properties": {
+                    "name": { "type": "string", "minLength": 1 },
+                    "mountPath": { "type": "string", "pattern": "^/.+" },
+                    "sizeLimit": { "type": "string", "minLength": 1 },
+                    "medium": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
           "image": {
             "type": "object",
             "required": ["repository"],

@@ -15,6 +15,27 @@ global:
   imagePullSecrets: []
   nameOverride: ""
 
+  # Step 51.2A -- restricted workload security baseline. Applied to every enabled
+  # component; per-component `security` blocks may override only runAsUser/Group,
+  # fsGroup, readOnlyRootFilesystem and writablePaths. runAsNonRoot, seccomp,
+  # privilege escalation, privileged, dropped capabilities and token automount
+  # are NOT component-overridable (no privileged/root/cap-add escape hatch).
+  workloadSecurity:
+    enabled: true
+    profile: restricted-baseline
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    seccompProfile:
+      type: RuntimeDefault
+    allowPrivilegeEscalation: false
+    privileged: false
+    readOnlyRootFilesystem: true
+    dropCapabilities:
+      - ALL
+    automountServiceAccountToken: false
+
 # Non-secret platform configuration surfaced into a shared ConfigMap.
 platform:
   adminConsole:
@@ -50,13 +71,8 @@ defaults:
     type: RollingUpdate
     maxSurge: 1
     maxUnavailable: 0
-  # SecurityContext hardening is intentionally OFF in Step 51.1. Deep hardening
-  # (readOnlyRootFilesystem / runAsNonRoot / drop ALL / seccomp) is introduced in
-  # Step 51.2 against real runtime needs.
-  podSecurityContext:
-    enabled: false
-  containerSecurityContext:
-    enabled: false
+  # Step 51.2A -- SecurityContext is now driven by global.workloadSecurity (above)
+  # and per-component `security` overrides; these legacy toggles are removed.
 
 # Shared secret reference applied to components that talk to Postgres/Redis.
 # secretRefs[].keys maps SECRET KEY -> ENV VAR NAME (no values, ever).
@@ -240,6 +256,9 @@ components:
     enabled: true
     type: agent
     image: {repository: aiagents/development-agent, tag: step-51-1-placeholder, digest: ""}
+    security:
+      writablePaths:
+        - {name: tmp, mountPath: /tmp, sizeLimit: 1Gi}   # generates project under /tmp/aiagents-workspaces
     containerPort: 8012
     service: {enabled: true, port: 8012}
     health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
@@ -253,6 +272,9 @@ components:
     enabled: true
     type: agent
     image: {repository: aiagents/qa-agent, tag: step-51-1-placeholder, digest: ""}
+    security:
+      writablePaths:
+        - {name: tmp, mountPath: /tmp, sizeLimit: 1Gi}   # tempfile + materialised test workspace
     containerPort: 8013
     service: {enabled: true, port: 8013}
     health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
@@ -310,6 +332,9 @@ components:
     enabled: true
     type: agent
     image: {repository: aiagents/workspace-operator-agent, tag: step-51-1-placeholder, digest: ""}
+    security:
+      writablePaths:
+        - {name: tmp, mountPath: /tmp, sizeLimit: 1Gi}   # WORKSPACE_OPERATOR_ROOT=/tmp/aiagents-workspaces
     containerPort: 8018
     service: {enabled: true, port: 8018}
     health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
@@ -325,6 +350,9 @@ components:
     enabled: true
     type: agent
     image: {repository: aiagents/mini-delivery-pilot-agent, tag: step-51-1-placeholder, digest: ""}
+    security:
+      writablePaths:
+        - {name: tmp, mountPath: /tmp, sizeLimit: 1Gi}   # in-process workspace execution under /tmp
     containerPort: 8019
     service: {enabled: true, port: 8019}
     health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
@@ -356,6 +384,15 @@ components:
     enabled: false
     type: infrastructure
     image: {repository: postgres, tag: "16", digest: ""}
+    # Override: official image UID/GID; read-only root OFF (writes PGDATA +
+    # /var/run/postgresql sockets). Persistent storage deferred to Step 51.2C.
+    # Keeps runAsNonRoot + drop ALL + no-privesc + RuntimeDefault + automount=false.
+    security:
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+      readOnlyRootFilesystem: false
+      writablePaths: []
     containerPort: 5432
     service: {enabled: true, port: 5432}
     health:
@@ -377,6 +414,15 @@ components:
     enabled: false
     type: infrastructure
     image: {repository: redis, tag: "7", digest: ""}
+    # Override: official image UID/GID; read-only root ON with writable /data
+    # (ephemeral in dev/test; persistence deferred to Step 51.2C).
+    security:
+      runAsUser: 999
+      runAsGroup: 999
+      fsGroup: 999
+      readOnlyRootFilesystem: true
+      writablePaths:
+        - {name: data, mountPath: /data, sizeLimit: 256Mi}
     containerPort: 6379
     service: {enabled: true, port: 6379}
     health:
@@ -396,6 +442,15 @@ components:
     type: infrastructure
     testOnly: true
     image: {repository: hashicorp/vault, tag: "1.17", digest: ""}
+    # Override: test-only dev vault (never deployed). Official vault UID 100.
+    # read-only root OFF. Baseline drops ALL capabilities -- a deployed dev vault
+    # would need VAULT_DISABLE_MLOCK (compose grants IPC_LOCK; cap-add is forbidden
+    # by the baseline). Test-only; not deployed.
+    security:
+      runAsUser: 100
+      runAsGroup: 1000
+      readOnlyRootFilesystem: false
+      writablePaths: []
     containerPort: 8200
     command: ["server", "-dev"]
     service: {enabled: true, port: 8200}

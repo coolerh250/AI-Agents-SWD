@@ -36,3 +36,37 @@ but stay non-deployable (global.realDeployEnabled=false everywhere).
   {{- if $comp.testOnly }}{{- if $g.production }}{{ fail (printf "production must not enable test-only component %s" $name) }}{{ end }}{{- end }}
 {{- end }}
 {{- end }}
+
+{{/* ---- Step 51.2A workload security fail-closed ---- */}}
+{{- $ws := .Values.global.workloadSecurity -}}
+{{- if not $ws.enabled }}
+  {{- if or (eq $env "production") (eq $env "staging") }}{{ fail (printf "%s must not disable workloadSecurity" $env) }}{{ end }}
+{{- end }}
+{{- if $ws.enabled }}
+  {{- if not $ws.runAsNonRoot }}{{ fail "workloadSecurity.runAsNonRoot must be true" }}{{ end }}
+  {{- if eq (int $ws.runAsUser) 0 }}{{ fail "workloadSecurity.runAsUser must not be 0 (root)" }}{{ end }}
+  {{- if $ws.allowPrivilegeEscalation }}{{ fail "workloadSecurity.allowPrivilegeEscalation must be false" }}{{ end }}
+  {{- if $ws.privileged }}{{ fail "workloadSecurity.privileged must be false" }}{{ end }}
+  {{- if ne $ws.seccompProfile.type "RuntimeDefault" }}{{ fail "workloadSecurity.seccompProfile.type must be RuntimeDefault" }}{{ end }}
+  {{- if not (has "ALL" $ws.dropCapabilities) }}{{ fail "workloadSecurity.dropCapabilities must include ALL" }}{{ end }}
+  {{- if $ws.automountServiceAccountToken }}{{ fail "workloadSecurity.automountServiceAccountToken must be false" }}{{ end }}
+{{- end }}
+{{- if .Values.serviceAccount.automountServiceAccountToken }}{{ fail "serviceAccount.automountServiceAccountToken must be false" }}{{ end }}
+{{- range $name, $comp := .Values.components }}
+{{- if $comp.enabled }}
+{{- $sec := $comp.security | default dict }}
+  {{- if hasKey $sec "runAsUser" }}{{- if eq (int $sec.runAsUser) 0 }}{{ fail (printf "component %s runAsUser must not be 0" $name) }}{{ end }}{{- end }}
+  {{- if hasKey $sec "capabilities" }}{{ fail (printf "component %s must not set capabilities (cap-add forbidden; baseline drops ALL)" $name) }}{{ end }}
+  {{- if hasKey $sec "hostPath" }}{{ fail (printf "component %s must not use hostPath" $name) }}{{ end }}
+  {{- if hasKey $sec "privileged" }}{{ fail (printf "component %s must not override privileged" $name) }}{{ end }}
+  {{- if hasKey $sec "allowPrivilegeEscalation" }}{{ fail (printf "component %s must not override allowPrivilegeEscalation" $name) }}{{ end }}
+  {{- range $w := ($sec.writablePaths | default list) }}
+    {{- if not (hasPrefix "/" $w.mountPath) }}{{ fail (printf "component %s writable path %q must be absolute" $name $w.mountPath) }}{{ end }}
+    {{- if eq $w.mountPath "/" }}{{ fail (printf "component %s must not mount writable /" $name) }}{{ end }}
+    {{- if eq $w.mountPath "/app" }}{{ fail (printf "component %s must not mount writable /app" $name) }}{{ end }}
+    {{- if eq $w.mountPath "/etc" }}{{ fail (printf "component %s must not mount writable /etc" $name) }}{{ end }}
+    {{- if contains "docker.sock" $w.mountPath }}{{ fail (printf "component %s must not mount the docker socket" $name) }}{{ end }}
+    {{- if not $w.sizeLimit }}{{ fail (printf "component %s writable path %q must set sizeLimit" $name $w.mountPath) }}{{ end }}
+  {{- end }}
+{{- end }}
+{{- end }}
