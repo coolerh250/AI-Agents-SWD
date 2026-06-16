@@ -1,0 +1,646 @@
+# Step 51.1 -- Runtime Inventory (Stage 53A).
+#
+# Source of truth: infra/docker-compose/docker-compose.yml (project
+# aiagents-test) cross-checked against apps/*, agents/*, shared/sdk/* source.
+# Every long-running FastAPI service exposes /health and /metrics via
+# shared.sdk.observability.metrics.install_metrics_endpoint (verified in all
+# 20 build services' main.py) and the compose healthcheck confirms the port.
+#
+# This file records NAMES and CLASSIFICATION only. It MUST NOT contain real
+# secret values -- secretReferences list environment-variable NAMES only.
+#
+# It is descriptive inventory, not a deployable manifest. No cluster, no
+# kubectl, no Helm install is implied by this file.
+
+meta:
+  stage: "53A"
+  step: "51.1"
+  composeProject: aiagents-test
+  composeFile: infra/docker-compose/docker-compose.yml
+  generated: "Step 51.1 baseline (manual inventory, evidence-backed)"
+
+services:
+  # ---- core application ----
+  - name: orchestrator
+    type: core_application
+    sourcePath: apps/orchestrator
+    dockerfile: apps/orchestrator/Dockerfile
+    composeService: orchestrator
+    runtimeMode: long_running
+    port: 8000
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [policy-engine, approval-engine, audit-service, postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: bind_mount_reports_read_only
+    environmentVariables:
+      - REDIS_URL
+      - DATABASE_URL
+      - POLICY_ENGINE_URL
+      - APPROVAL_ENGINE_URL
+      - AUDIT_SERVICE_URL
+      - ENABLE_ADMIN_CONSOLE_V1
+      - ADMIN_CONSOLE_AUTH_MODE
+      - ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+      - GITHUB_TOKEN
+      - DISCORD_BOT_TOKEN
+      - AUDIT_HMAC_KEY
+      - AUDIT_HMAC_KEY_ID
+    notes:
+      - "Serves Admin Console at /admin (no separate console service)."
+      - "Bind-mounts source/regression-reports, dr-reports, audit-forensics read views; K8s storage deferred to Step 51.2."
+
+  # ---- governance services ----
+  - name: policy-engine
+    type: governance_service
+    sourcePath: apps/policy-engine
+    dockerfile: apps/policy-engine/Dockerfile
+    composeService: policy-engine
+    runtimeMode: long_running
+    port: 8001
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+      - OTEL_SERVICE_NAME
+    secretReferences: []
+    notes:
+      - "Stateless policy evaluation; no DATABASE_URL/REDIS_URL in compose."
+
+  - name: approval-engine
+    type: governance_service
+    sourcePath: apps/approval-engine
+    dockerfile: apps/approval-engine/Dockerfile
+    composeService: approval-engine
+    runtimeMode: long_running
+    port: 8002
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - REDIS_URL
+      - DATABASE_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+    notes: []
+
+  - name: audit-service
+    type: governance_service
+    sourcePath: apps/audit-service
+    dockerfile: apps/audit-service/Dockerfile
+    composeService: audit-service
+    runtimeMode: long_running
+    port: 8003
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - REDIS_URL
+      - DATABASE_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+    notes: []
+
+  # ---- communication services ----
+  - name: communication-gateway
+    type: communication_service
+    sourcePath: apps/communication-gateway
+    dockerfile: apps/communication-gateway/Dockerfile
+    composeService: communication-gateway
+    runtimeMode: long_running
+    port: 8004
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [orchestrator, github-automation, postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - ORCHESTRATOR_URL
+      - REDIS_URL
+      - DATABASE_URL
+      - GITHUB_AUTOMATION_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+    notes: []
+
+  - name: github-automation
+    type: communication_service
+    sourcePath: apps/github-automation
+    dockerfile: apps/github-automation/Dockerfile
+    composeService: github-automation
+    runtimeMode: long_running
+    port: 8005
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [audit-service, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - GITHUB_DEFAULT_REPO
+      - GITHUB_DRY_RUN
+      - RUN_REAL_GITHUB_TEST
+      - AUDIT_SERVICE_URL
+      - REDIS_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - GITHUB_TOKEN
+    notes:
+      - "GITHUB_DRY_RUN=true by default; real GitHub write stays OFF."
+
+  - name: discord-gateway
+    type: communication_service
+    sourcePath: apps/discord-gateway
+    dockerfile: apps/discord-gateway/Dockerfile
+    composeService: discord-gateway
+    runtimeMode: long_running
+    port: 8007
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [communication-gateway, orchestrator, postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - DISCORD_GATEWAY_MODE
+      - COMMUNICATION_GATEWAY_URL
+      - ORCHESTRATOR_URL
+      - REDIS_URL
+      - DATABASE_URL
+      - RUN_REAL_DISCORD_TEST
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DISCORD_BOT_TOKEN
+      - DATABASE_URL
+    notes:
+      - "DISCORD_GATEWAY_MODE=sandbox by default; real Discord delivery stays OFF."
+
+  # ---- workers ----
+  - name: audit-worker
+    type: worker
+    sourcePath: apps/audit-worker
+    dockerfile: apps/audit-worker/Dockerfile
+    composeService: audit-worker
+    runtimeMode: long_running
+    port: 8006
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - REDIS_URL
+      - DATABASE_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+      - AUDIT_HMAC_KEY
+      - AUDIT_HMAC_KEY_ID
+    notes:
+      - "Consumes stream.audit; writes audit chain. Health endpoint on 8006."
+
+  - name: notification-worker
+    type: worker
+    sourcePath: apps/notification-worker
+    dockerfile: apps/notification-worker/Dockerfile
+    composeService: notification-worker
+    runtimeMode: long_running
+    port: 8008
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, orchestrator, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - NOTIFICATION_WORKER_MODE
+      - REDIS_URL
+      - DATABASE_URL
+      - ORCHESTRATOR_PUBLIC_URL
+      - RUN_REAL_DISCORD_TEST
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DISCORD_BOT_TOKEN
+      - DATABASE_URL
+    notes:
+      - "NOTIFICATION_WORKER_MODE=sandbox by default; real external delivery stays OFF."
+
+  - name: retry-scheduler
+    type: worker
+    sourcePath: apps/retry-scheduler
+    dockerfile: apps/retry-scheduler/Dockerfile
+    composeService: retry-scheduler
+    runtimeMode: long_running
+    port: 8015
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [redis, postgres, audit-service, tempo]
+    persistence:
+      required: false
+      currentType: none
+    environmentVariables:
+      - REDIS_URL
+      - DATABASE_URL
+      - AUDIT_SERVICE_URL
+      - OTEL_EXPORTER_OTLP_ENDPOINT
+    secretReferences:
+      - DATABASE_URL
+    notes: []
+
+  # ---- agents ----
+  - name: intake-agent
+    type: agent
+    sourcePath: agents/intake-agent
+    dockerfile: agents/intake-agent/Dockerfile
+    composeService: intake-agent
+    runtimeMode: long_running
+    port: 8010
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: []
+
+  - name: requirement-agent
+    type: agent
+    sourcePath: agents/requirement-agent
+    dockerfile: agents/requirement-agent/Dockerfile
+    composeService: requirement-agent
+    runtimeMode: long_running
+    port: 8011
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, ENABLE_PROJECT_PLANNER, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: []
+
+  - name: development-agent
+    type: agent
+    sourcePath: agents/development-agent
+    dockerfile: agents/development-agent/Dockerfile
+    composeService: development-agent
+    runtimeMode: long_running
+    port: 8012
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: []
+
+  - name: qa-agent
+    type: agent
+    sourcePath: agents/qa-agent
+    dockerfile: agents/qa-agent/Dockerfile
+    composeService: qa-agent
+    runtimeMode: long_running
+    port: 8013
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: []
+
+  - name: devops-agent
+    type: agent
+    sourcePath: agents/devops-agent
+    dockerfile: agents/devops-agent/Dockerfile
+    composeService: devops-agent
+    runtimeMode: long_running
+    port: 8014
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, audit-service, github-automation, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, AUDIT_SERVICE_URL, GITHUB_AUTOMATION_URL, GITHUB_DRY_RUN, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["GITHUB_DRY_RUN=true; no real GitHub write."]
+
+  - name: project-planner-agent
+    type: agent
+    sourcePath: agents/project-planner-agent
+    dockerfile: agents/project-planner-agent/Dockerfile
+    composeService: project-planner-agent
+    runtimeMode: long_running
+    port: 8016
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, ENABLE_PROJECT_WORK_ITEM_DISPATCH, ENABLE_PROJECT_PLANNER_REAL_LLM, PROJECT_PLANNER_TEMPLATE_MODE, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["Planning-only; work-item dispatch + real LLM OFF."]
+
+  - name: design-review-agent
+    type: agent
+    sourcePath: agents/design-review-agent
+    dockerfile: agents/design-review-agent/Dockerfile
+    composeService: design-review-agent
+    runtimeMode: long_running
+    port: 8017
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, DESIGN_REVIEW_TEMPLATE_MODE, ENABLE_DESIGN_REVIEW_REAL_LLM, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["Review-only; real LLM OFF."]
+
+  - name: workspace-operator-agent
+    type: agent
+    sourcePath: agents/workspace-operator-agent
+    dockerfile: agents/workspace-operator-agent/Dockerfile
+    composeService: workspace-operator-agent
+    runtimeMode: long_running
+    port: 8018
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: ephemeral_workspace_tmp}
+    environmentVariables: [REDIS_URL, DATABASE_URL, WORKSPACE_OPERATOR_TEMPLATE_MODE, WORKSPACE_OPERATOR_CONTROLLED_ONLY, ENABLE_WORKSPACE_OPERATOR_REPO_WRITE, WORKSPACE_OPERATOR_ROOT, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["Controlled-only; repo/GitHub/deploy/LLM OFF. Writes ephemeral workspaces under WORKSPACE_OPERATOR_ROOT (RWX storage deferred to Step 51.2)."]
+
+  - name: mini-delivery-pilot-agent
+    type: agent
+    sourcePath: agents/mini-delivery-pilot-agent
+    dockerfile: agents/mini-delivery-pilot-agent/Dockerfile
+    composeService: mini-delivery-pilot-agent
+    runtimeMode: long_running
+    port: 8019
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: ephemeral_workspace_tmp}
+    environmentVariables: [REDIS_URL, DATABASE_URL, MINI_DELIVERY_PILOT_TEMPLATE_MODE, MINI_DELIVERY_PILOT_CONTROLLED_ONLY, ENABLE_MINI_DELIVERY_REAL_LLM, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["Controlled-only; real LLM/GitHub/PR/deploy/external delivery OFF."]
+
+  - name: delivery-package-agent
+    type: agent
+    sourcePath: agents/delivery-package-agent
+    dockerfile: agents/delivery-package-agent/Dockerfile
+    composeService: delivery-package-agent
+    runtimeMode: long_running
+    port: 8020
+    healthPath: /health
+    metricsPath: /metrics
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: deployment
+    dependencies: [postgres, redis, tempo]
+    persistence: {required: false, currentType: none}
+    environmentVariables: [REDIS_URL, DATABASE_URL, DELIVERY_PACKAGE_TEMPLATE_MODE, DELIVERY_PACKAGE_CONTROLLED_ONLY, ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS, OTEL_EXPORTER_OTLP_ENDPOINT]
+    secretReferences: [DATABASE_URL]
+    notes: ["Controlled-only; auto-accept + operator actions OFF on the agent."]
+
+  # ---- infrastructure dependencies ----
+  - name: postgres
+    type: infrastructure_dependency
+    sourcePath: ""
+    dockerfile: ""
+    composeService: postgres
+    image: postgres:16
+    runtimeMode: long_running
+    port: 5432
+    healthPath: ""
+    healthProbe: exec_pg_isready
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: optional_dev_test_component
+    dependencies: []
+    persistence:
+      required: true
+      currentType: named_volume_postgres-data
+    environmentVariables: [POSTGRES_USER, POSTGRES_DB, POSTGRES_HOST_AUTH_METHOD]
+    secretReferences: [POSTGRES_PASSWORD]
+    notes:
+      - "Test compose uses POSTGRES_HOST_AUTH_METHOD=trust (no password)."
+      - "Dev/test optional in-cluster only. Staging/prod expect an EXTERNAL managed Postgres. PVC/StorageClass deferred to Step 51.2."
+
+  - name: redis
+    type: infrastructure_dependency
+    sourcePath: ""
+    dockerfile: ""
+    composeService: redis
+    image: redis:7
+    runtimeMode: long_running
+    port: 6379
+    healthPath: ""
+    healthProbe: exec_redis_cli_ping
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: optional_dev_test_component
+    dependencies: []
+    persistence:
+      required: false
+      currentType: ephemeral_no_volume_in_test_compose
+    environmentVariables: []
+    secretReferences: [REDIS_PASSWORD]
+    notes:
+      - "No volume in test compose (ephemeral). Dev/test optional in-cluster only; staging/prod expect EXTERNAL managed Redis."
+
+  - name: vault
+    type: infrastructure_dependency
+    sourcePath: ""
+    dockerfile: ""
+    composeService: vault
+    image: hashicorp/vault:1.17
+    runtimeMode: long_running
+    port: 8200
+    healthPath: /v1/sys/health
+    healthProbe: deferred
+    metricsPath: ""
+    longRunning: true
+    testOnly: true
+    kubernetesTarget: test_only_optional_component
+    dependencies: []
+    persistence:
+      required: false
+      currentType: ephemeral_dev_mode
+    environmentVariables: [VAULT_DEV_LISTEN_ADDRESS]
+    secretReferences: [VAULT_DEV_ROOT_TOKEN]
+    notes:
+      - "Runs `server -dev` (in-memory, unsealed). TEST ONLY. Never enabled for staging/production -- real secret store deferred."
+
+  # ---- observability (NOT in Helm deployment this stage) ----
+  - name: tempo
+    type: observability
+    sourcePath: ""
+    dockerfile: ""
+    composeService: tempo
+    image: grafana/tempo:2.6.1
+    runtimeMode: long_running
+    port: 3200
+    healthPath: /ready
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: external_deferred
+    dependencies: []
+    persistence: {required: false, currentType: named_volume_tempo-data}
+    environmentVariables: []
+    secretReferences: []
+    notes: ["OTLP trace sink (4317/4318). Deferred: treated as an external/managed observability backend; not packaged in this chart."]
+
+  - name: prometheus
+    type: observability
+    sourcePath: ""
+    dockerfile: ""
+    composeService: prometheus
+    image: prom/prometheus:v2.55.1
+    runtimeMode: long_running
+    port: 9090
+    healthPath: /-/ready
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: external_deferred
+    dependencies: [orchestrator, communication-gateway, alertmanager]
+    persistence: {required: false, currentType: named_volume_prometheus-data}
+    environmentVariables: []
+    secretReferences: []
+    notes: ["Scrapes service /metrics. Deferred: cluster monitoring stack out of scope for Step 51.1."]
+
+  - name: alertmanager
+    type: observability
+    sourcePath: ""
+    dockerfile: ""
+    composeService: alertmanager
+    image: prom/alertmanager:v0.27.0
+    runtimeMode: long_running
+    port: 9093
+    healthPath: /-/healthy
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: external_deferred
+    dependencies: []
+    persistence: {required: false, currentType: named_volume_alertmanager-data}
+    environmentVariables: []
+    secretReferences: []
+    notes: ["Deferred observability backend."]
+
+  - name: grafana
+    type: observability
+    sourcePath: ""
+    dockerfile: ""
+    composeService: grafana
+    image: grafana/grafana:11.3.0
+    runtimeMode: long_running
+    port: 3000
+    healthPath: /api/health
+    metricsPath: ""
+    longRunning: true
+    testOnly: false
+    kubernetesTarget: external_deferred
+    dependencies: [prometheus, tempo, alertmanager]
+    persistence: {required: false, currentType: named_volume_grafana-data}
+    environmentVariables: [GF_AUTH_ANONYMOUS_ENABLED]
+    secretReferences: []
+    notes: ["Deferred observability backend."]
+
+# One-shot / job-style work that is NOT a compose service today and is
+# explicitly excluded from the Deployment set. Recorded so it is not lost,
+# but NOT turned into a Deployment in this stage.
+oneShotJobs:
+  - name: database-migrations
+    runtimeMode: one_shot
+    evidence: "migrations/*.sql applied via `docker exec -i ... psql ... < migrations/NNN.sql`; no compose service."
+    kubernetesTarget: deferred_migration_job_step_51_2
+    notes: ["Must become a Helm pre-install/pre-upgrade Job in Step 51.2 -- NOT a Deployment."]
+  - name: backup-dr-run
+    runtimeMode: one_shot
+    evidence: "shared/sdk/backup_dr/cli.py run-all + scripts/run_encrypted_backup.sh; host-run, no compose service."
+    kubernetesTarget: deferred_backup_cronjob_step_51_2
+    notes: ["Backup CronJob deferred to Step 51.2; must stay disabled for production placeholder."]
+  - name: verification-scripts
+    runtimeMode: one_shot
+    evidence: "scripts/verify_*.sh + run_full_regression.sh; CI/operator-run, no compose service."
+    kubernetesTarget: not_a_workload
+    notes: ["Operator/CI tooling; never a Deployment."]

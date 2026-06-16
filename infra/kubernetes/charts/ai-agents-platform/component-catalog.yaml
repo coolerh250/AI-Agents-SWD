@@ -1,0 +1,365 @@
+# Step 51.1 -- Kubernetes Component Catalog (Stage 53A).
+#
+# Derived from infra/kubernetes/runtime-inventory.yaml. Lists ONLY services that
+# are candidates to become Kubernetes long-running workloads. One-shot jobs
+# (migrations, backup, verification scripts) are deliberately EXCLUDED here and
+# remain in runtime-inventory.yaml#oneShotJobs (deferred to Step 51.2).
+#
+# Image tags are step-51-1-placeholder for first-party services: NOT yet wired
+# to any registry, NO real digest. Infrastructure images are real pinned
+# upstream tags. This file is a catalog, not a deployable manifest.
+#
+# values.yaml carries the authoritative `components:` map consumed by the
+# templates; this catalog is the inventory->chart bridge and classification
+# record (kept in sync; tests assert completeness against the inventory).
+
+meta:
+  stage: "53A"
+  step: "51.1"
+  imagePlaceholderTag: step-51-1-placeholder
+  registryIntegrated: false
+
+components:
+  # ---- core application ----
+  orchestrator:
+    enabled: true
+    type: application
+    sourcePath: apps/orchestrator
+    image: {repository: aiagents/orchestrator, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8000
+    service: {enabled: true, port: 8000}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 250m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    dependencies: [policy-engine, approval-engine, audit-service, postgres, redis]
+    testOnly: false
+
+  # ---- governance ----
+  policy-engine:
+    enabled: true
+    type: governance
+    sourcePath: apps/policy-engine
+    image: {repository: aiagents/policy-engine, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8001
+    service: {enabled: true, port: 8001}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: []
+    testOnly: false
+
+  approval-engine:
+    enabled: true
+    type: governance
+    sourcePath: apps/approval-engine
+    image: {repository: aiagents/approval-engine, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8002
+    service: {enabled: true, port: 8002}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  audit-service:
+    enabled: true
+    type: governance
+    sourcePath: apps/audit-service
+    image: {repository: aiagents/audit-service, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8003
+    service: {enabled: true, port: 8003}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  # ---- communication ----
+  communication-gateway:
+    enabled: true
+    type: communication
+    sourcePath: apps/communication-gateway
+    image: {repository: aiagents/communication-gateway, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8004
+    service: {enabled: true, port: 8004}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [orchestrator, github-automation, postgres, redis]
+    testOnly: false
+
+  github-automation:
+    enabled: true
+    type: communication
+    sourcePath: apps/github-automation
+    image: {repository: aiagents/github-automation, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8005
+    service: {enabled: true, port: 8005}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [audit-service, redis]
+    testOnly: false
+
+  discord-gateway:
+    enabled: true
+    type: communication
+    sourcePath: apps/discord-gateway
+    image: {repository: aiagents/discord-gateway, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8007
+    service: {enabled: true, port: 8007}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [communication-gateway, orchestrator, postgres, redis]
+    testOnly: false
+
+  # ---- workers ----
+  audit-worker:
+    enabled: true
+    type: worker
+    sourcePath: apps/audit-worker
+    image: {repository: aiagents/audit-worker, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8006
+    service: {enabled: true, port: 8006}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  notification-worker:
+    enabled: true
+    type: worker
+    sourcePath: apps/notification-worker
+    image: {repository: aiagents/notification-worker, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8008
+    service: {enabled: true, port: 8008}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis, orchestrator]
+    testOnly: false
+
+  retry-scheduler:
+    enabled: true
+    type: worker
+    sourcePath: apps/retry-scheduler
+    image: {repository: aiagents/retry-scheduler, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8015
+    service: {enabled: true, port: 8015}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [redis, postgres, audit-service]
+    testOnly: false
+
+  # ---- agents ----
+  intake-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/intake-agent
+    image: {repository: aiagents/intake-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8010
+    service: {enabled: true, port: 8010}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  requirement-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/requirement-agent
+    image: {repository: aiagents/requirement-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8011
+    service: {enabled: true, port: 8011}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  development-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/development-agent
+    image: {repository: aiagents/development-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8012
+    service: {enabled: true, port: 8012}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  qa-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/qa-agent
+    image: {repository: aiagents/qa-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8013
+    service: {enabled: true, port: 8013}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  devops-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/devops-agent
+    image: {repository: aiagents/devops-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8014
+    service: {enabled: true, port: 8014}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis, audit-service, github-automation]
+    testOnly: false
+
+  project-planner-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/project-planner-agent
+    image: {repository: aiagents/project-planner-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8016
+    service: {enabled: true, port: 8016}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  design-review-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/design-review-agent
+    image: {repository: aiagents/design-review-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8017
+    service: {enabled: true, port: 8017}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  workspace-operator-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/workspace-operator-agent
+    image: {repository: aiagents/workspace-operator-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8018
+    service: {enabled: true, port: 8018}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+    notes: "Writes ephemeral workspaces under WORKSPACE_OPERATOR_ROOT; RWX storage deferred to Step 51.2."
+
+  mini-delivery-pilot-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/mini-delivery-pilot-agent
+    image: {repository: aiagents/mini-delivery-pilot-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8019
+    service: {enabled: true, port: 8019}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  delivery-package-agent:
+    enabled: true
+    type: agent
+    sourcePath: agents/delivery-package-agent
+    image: {repository: aiagents/delivery-package-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8020
+    service: {enabled: true, port: 8020}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    dependencies: [postgres, redis]
+    testOnly: false
+
+  # ---- infrastructure (dev/test optional in-cluster; external in staging/prod) ----
+  postgres:
+    enabled: false
+    type: infrastructure
+    sourcePath: ""
+    image: {repository: postgres, tag: "16", digest: ""}
+    containerPort: 5432
+    service: {enabled: true, port: 5432}
+    health: {enabled: true, type: exec, command: ["pg_isready", "-U", "postgres"], initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 1Gi}
+    dependencies: []
+    testOnly: false
+    notes: "Dev/test optional only. Staging/prod use EXTERNAL managed Postgres. PVC deferred to Step 51.2 (ephemeral until then)."
+
+  redis:
+    enabled: false
+    type: infrastructure
+    sourcePath: ""
+    image: {repository: redis, tag: "7", digest: ""}
+    containerPort: 6379
+    service: {enabled: true, port: 6379}
+    health: {enabled: true, type: exec, command: ["redis-cli", "ping"], initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+    dependencies: []
+    testOnly: false
+    notes: "Dev/test optional only. Staging/prod use EXTERNAL managed Redis."
+
+  vault:
+    enabled: false
+    type: infrastructure
+    sourcePath: ""
+    image: {repository: hashicorp/vault, tag: "1.17", digest: ""}
+    containerPort: 8200
+    service: {enabled: true, port: 8200}
+    command: ["server", "-dev"]
+    health: {enabled: false, type: httpGet, path: /v1/sys/health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+    dependencies: []
+    testOnly: true
+    notes: "TEST ONLY (server -dev). MUST stay disabled for staging/production. Real secret store deferred."
+
+# Recorded but NOT packaged as Helm workloads in this chart (Step 51.1).
+deferred:
+  observability:
+    reason: "Cluster monitoring stack (Tempo/Prometheus/Alertmanager/Grafana) treated as external/managed; out of scope for Step 51.1."
+    services: [tempo, prometheus, alertmanager, grafana]
+    kubernetesTarget: external_deferred
+  oneShotJobs:
+    reason: "Migration Job + backup CronJob are job-style workloads; deferred to Step 51.2. MUST NOT become Deployments."
+    services: [database-migrations, backup-dr-run]
+    kubernetesTarget: deferred_step_51_2

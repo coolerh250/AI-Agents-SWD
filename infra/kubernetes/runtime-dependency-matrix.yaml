@@ -1,0 +1,99 @@
+# Step 51.1 -- Runtime Dependency Matrix (Stage 53A).
+#
+# Each edge is backed by EVIDENCE from infra/docker-compose/docker-compose.yml
+# (depends_on) and/or an explicit environment-variable service URL. Edges are
+# NOT inferred from name similarity.
+#
+# evidence values:
+#   compose_depends_on   -- listed under the service's depends_on
+#   env:<VAR>            -- service URL injected via that environment variable
+#
+# required=true means the dependency is needed for the source to function
+# (DB / governance call path). required=false means best-effort / observability
+# (OTLP trace export) where the source still starts without it.
+
+meta:
+  stage: "53A"
+  step: "51.1"
+  composeFile: infra/docker-compose/docker-compose.yml
+
+dependencies:
+  # orchestrator
+  - {source: orchestrator, target: policy-engine, protocol: http, port: 8001, required: true, purpose: policy_evaluation, evidence: "compose_depends_on + env:POLICY_ENGINE_URL"}
+  - {source: orchestrator, target: approval-engine, protocol: http, port: 8002, required: true, purpose: approval_gate, evidence: "compose_depends_on + env:APPROVAL_ENGINE_URL"}
+  - {source: orchestrator, target: audit-service, protocol: http, port: 8003, required: true, purpose: audit_write, evidence: "compose_depends_on + env:AUDIT_SERVICE_URL"}
+  - {source: orchestrator, target: postgres, protocol: tcp, port: 5432, required: true, purpose: primary_datastore, evidence: "env:DATABASE_URL"}
+  - {source: orchestrator, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
+  - {source: orchestrator, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+
+  # governance
+  - {source: policy-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: approval-engine, target: postgres, protocol: tcp, port: 5432, required: true, purpose: primary_datastore, evidence: "env:DATABASE_URL"}
+  - {source: approval-engine, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
+  - {source: approval-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: audit-service, target: postgres, protocol: tcp, port: 5432, required: true, purpose: audit_store, evidence: "env:DATABASE_URL"}
+  - {source: audit-service, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
+  - {source: audit-service, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+
+  # communication
+  - {source: communication-gateway, target: orchestrator, protocol: http, port: 8000, required: true, purpose: workflow_api, evidence: "compose_depends_on + env:ORCHESTRATOR_URL"}
+  - {source: communication-gateway, target: github-automation, protocol: http, port: 8005, required: false, purpose: github_ops, evidence: "env:GITHUB_AUTOMATION_URL"}
+  - {source: communication-gateway, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "env:DATABASE_URL"}
+  - {source: communication-gateway, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "env:REDIS_URL"}
+  - {source: github-automation, target: audit-service, protocol: http, port: 8003, required: true, purpose: audit_write, evidence: "compose_depends_on + env:AUDIT_SERVICE_URL"}
+  - {source: github-automation, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: discord-gateway, target: communication-gateway, protocol: http, port: 8004, required: true, purpose: inbound_routing, evidence: "env:COMMUNICATION_GATEWAY_URL"}
+  - {source: discord-gateway, target: orchestrator, protocol: http, port: 8000, required: true, purpose: workflow_api, evidence: "env:ORCHESTRATOR_URL"}
+  - {source: discord-gateway, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: discord-gateway, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+
+  # workers
+  - {source: audit-worker, target: postgres, protocol: tcp, port: 5432, required: true, purpose: audit_chain_write, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: audit-worker, target: redis, protocol: tcp, port: 6379, required: true, purpose: stream_audit_consume, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: notification-worker, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: notification-worker, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: notification-worker, target: orchestrator, protocol: http, port: 8000, required: false, purpose: callback_links, evidence: "env:ORCHESTRATOR_PUBLIC_URL"}
+  - {source: retry-scheduler, target: redis, protocol: tcp, port: 6379, required: true, purpose: retry_queue, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: retry-scheduler, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: retry-scheduler, target: audit-service, protocol: http, port: 8003, required: false, purpose: audit_write, evidence: "env:AUDIT_SERVICE_URL"}
+
+  # agents (common postgres + redis)
+  - {source: intake-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: intake-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: requirement-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: requirement-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: development-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: development-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: qa-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: qa-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: devops-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: devops-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: devops-agent, target: audit-service, protocol: http, port: 8003, required: false, purpose: audit_write, evidence: "env:AUDIT_SERVICE_URL"}
+  - {source: devops-agent, target: github-automation, protocol: http, port: 8005, required: false, purpose: github_ops, evidence: "env:GITHUB_AUTOMATION_URL"}
+  - {source: project-planner-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: project-planner-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: design-review-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: design-review-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: workspace-operator-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: workspace-operator-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: mini-delivery-pilot-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: mini-delivery-pilot-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+  - {source: delivery-package-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
+  - {source: delivery-package-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+
+  # observability (deferred backends)
+  - {source: prometheus, target: orchestrator, protocol: http, port: 8000, required: false, purpose: metrics_scrape, evidence: "compose_depends_on"}
+  - {source: prometheus, target: communication-gateway, protocol: http, port: 8004, required: false, purpose: metrics_scrape, evidence: "compose_depends_on"}
+  - {source: prometheus, target: alertmanager, protocol: http, port: 9093, required: false, purpose: alert_routing, evidence: "compose_depends_on"}
+  - {source: grafana, target: prometheus, protocol: http, port: 9090, required: false, purpose: datasource, evidence: "compose_depends_on"}
+  - {source: grafana, target: tempo, protocol: http, port: 3200, required: false, purpose: trace_datasource, evidence: "compose_depends_on"}
+  - {source: grafana, target: alertmanager, protocol: http, port: 9093, required: false, purpose: alert_datasource, evidence: "compose_depends_on"}
+
+# Dependencies that could NOT be confirmed from compose or an explicit env URL.
+# Empty -- every edge above carries concrete evidence. Unknowns must be listed
+# here rather than silently dropped.
+unknownDependencies: []
+
+deferredQuestions:
+  - "Staging/production external Postgres + Redis connection strings (managed services) -- modelled as external secretRefs only; endpoints unknown until Step 51.3 environment wiring."
+  - "OTLP collector endpoint in-cluster vs external -- observability backend topology deferred (Step 51.4)."
