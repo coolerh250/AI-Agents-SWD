@@ -110,8 +110,8 @@ class OperatorActionStore:
         try:
             row = await conn.fetchrow(
                 "INSERT INTO admin_console_sessions (identity_id, session_hash, expires_at) "
-                "SELECT id, $2, $3::timestamptz FROM operator_identities WHERE identity_key=$1 "
-                "RETURNING id",
+                "SELECT id, $2, $3::text::timestamptz FROM operator_identities "
+                "WHERE identity_key=$1 RETURNING id",
                 identity_key,
                 session_hash,
                 expires_at_iso,
@@ -317,7 +317,7 @@ class OperatorActionStore:
             row = await conn.fetchrow(
                 "INSERT INTO operator_action_confirmations "
                 "(action_request_id, identity_id, confirmation_type, nonce_hash, expires_at) "
-                "VALUES ($1::uuid,$2::uuid,$3,$4,$5::timestamptz) RETURNING id",
+                "VALUES ($1::uuid,$2::uuid,$3,$4,$5::text::timestamptz) RETURNING id",
                 action_id,
                 identity_id,
                 confirmation_type,

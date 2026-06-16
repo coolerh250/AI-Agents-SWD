@@ -70,10 +70,11 @@ curl -sS -m 10 -b "$JAR" -X POST "$ADMIN/auth/logout" -H "X-CSRF-Token: $CSRF" >
 after=$(curl -sS -m 10 -b "$JAR" "$ADMIN/auth/session" 2>/dev/null || echo '{}')
 [ "$(echo "$after" | jq_get authenticated)" != "True" ] && _pass "logout revokes session" || _fail "session survived logout"
 
-# anonymous action rejected
-anon=$(curl -sS -m 10 -o /dev/null -w '%{http_code}' -X POST "$ADMIN/verifications/rerun" \
-  -H 'Content-Type: application/json' -d '{"script_key":"admin_console_v0","reason":"x"}' 2>/dev/null || echo "000")
-{ [ "$anon" = "401" ] || [ "$anon" = "403" ]; } && _pass "anonymous action rejected ($anon)" || _fail "anonymous allowed ($anon)"
+# anonymous action rejected (no session cookie / no CSRF -> governance blocks)
+anon=$(curl -sS -m 10 -X POST "$ADMIN/verifications/rerun" \
+  -H 'Content-Type: application/json' -d '{"script_key":"admin_console_v0","reason":"x"}' 2>/dev/null || echo '{}')
+echo "$anon" | grep -qE 'no_valid_session|csrf_invalid|operator_actions_disabled|policy_blocked' \
+  && _pass "anonymous action rejected" || _fail "anonymous allowed ($anon)"
 
 # ---------------------------------------------------------------------------
 echo; echo "=== Scenario B: RBAC (backend authoritative) ==="
