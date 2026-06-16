@@ -76,7 +76,7 @@ echo "schedule_status=$schedule_status"
 if [ "$mig_closed" = "true" ]; then
   migration_status="rollback_catalog_complete"
 else
-  inv_output=$(./scripts/check_migration_down_scripts.sh 2>/dev/null || echo "")
+  inv_output=$(bash scripts/check_migration_down_scripts.sh 2>/dev/null || echo "")
   if echo "$inv_output" | grep -q 'MIGRATION_DOWN_SCRIPT_INVENTORY: PASS$'; then
     migration_status="complete"
   else

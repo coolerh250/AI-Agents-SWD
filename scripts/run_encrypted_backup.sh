@@ -36,7 +36,7 @@ if [ "$ENVIRONMENT" = "production" ]; then
 fi
 
 mkdir -p "$RUNTIME_DIR"
-./scripts/setup_backup_dr_test_key.sh >/dev/null || { echo "BACKUP_ENCRYPTED_PRODUCE: FAIL key_setup"; exit 1; }
+bash scripts/setup_backup_dr_test_key.sh >/dev/null || { echo "BACKUP_ENCRYPTED_PRODUCE: FAIL key_setup"; exit 1; }
 
 ts=$(date -u +"%Y%m%dT%H%M%SZ")
 backup_key="backup-dr-${ENVIRONMENT}-${ts}"
