@@ -9629,3 +9629,40 @@ issues & blockers, and next-step suggestions.
   production readiness. The backup/DR readiness baseline is controlled/test-only;
   declaring production readiness remains an operator decision requiring the real
   production substrate above.
+
+- **Remote validation (10.0.1.31, commit `0845517`).**
+    - Migration 022 applied (11 tables). Orchestrator rebuilt + healthy;
+      `/operations/backup-dr/*` endpoints live.
+    - `BACKUP_DR_GAP_CLOSURE_VERIFY: PASS` — 36/36 checks. All four gaps closed;
+      encryption key_id derived; off-host readback verified; restore drill
+      `verified` into an isolated DB with `rto=9.26s`,
+      `production_restore_performed=false`; migration catalog `unknown_count=0`;
+      readiness `passed_with_non_production_limitations`.
+    - `BACKUP_PRODUCTION_READINESS_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS`
+      (limitations: real_production_secret_store / real_off_host_cloud_target /
+      production_schedule / production_restore).
+    - `/operations/safety`: `backup_dr_enabled=true`,
+      `backup_encryption_configured=true`,
+      `backup_encryption_raw_key_persisted=false`, `backup_latest_encrypted=true`,
+      `backup_offhost_target_configured=true`,
+      `backup_offhost_readback_verified=true`,
+      `backup_restore_drill_status=verified` (rto 9.26s),
+      `backup_schedule_dry_run_validated=true`,
+      `backup_production_schedule_enabled=false`,
+      `backup_retention_delete_enabled=false`,
+      `migration_rollback_catalog_complete=true`,
+      `migration_rollback_unknown_count=0`,
+      `backup_readiness_status=passed_with_non_production_limitations`,
+      `backup_readiness_gaps=[]`, `backup_real_cloud_write_performed=false`,
+      `backup_production_backup_performed=false`,
+      `backup_production_restore_performed=false`,
+      `production_executed_true_count=0`.
+    - `run_full_regression.sh --full`:
+      `FULL_REGRESSION_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS` —
+      total=25, pass=21, skipped_pass=3, pass_with_gaps=0,
+      pass_with_non_production_limitations=1; fail=0, env_fail=0, safety_fail=0,
+      regression_fail=0, audit_serialization_failure=0,
+      audit_tamper_residue_failure=0, audit_lock_timeout=0. No
+      `PASS_WITH_DOCUMENTED_GAPS` from the original four backup gaps.
+    - Production counters: `deployment_prod_true=0`, `workflow_prod_true=0`,
+      `production_executed_true_count=0`.
