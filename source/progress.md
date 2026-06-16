@@ -9966,7 +9966,17 @@ issues & blockers, and next-step suggestions.
 - **Verifiers.** topology (source-level), network-policy (rendered),
   service-connectivity coverage (rendered; missing=0/unexpected=0 required), and
   combined `verify_kubernetes_network_baseline.sh`.
-- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Verification (remote 10.0.1.31, HEAD ea7074f).** All nine markers PASS:
+  runtime-inventory, helm-foundation (44/44), workload-security (86 workloads),
+  rbac-safety (6/6), security-rbac-baseline, network-topology (75 edges =
+  49 internal + 26 observability-deferred), network-policy (12/12),
+  service-connectivity (required=122 across 4 envs [dev 49 + test 49 + staging
+  12 + prod 12], fully_covered=122, missing=0, unexpected=0), and the combined
+  network-baseline. Targeted pytest: 153 passed, 0 skipped. `docker compose
+  config --quiet` OK; `git diff --check` clean. `/operations/safety`: no
+  kubernetes/helm/argocd/networkpolicy fields, `production_executed_true_count=0`.
+  Step 51.2A markers preserved after the instance-label change. No cluster
+  connection; render via pinned alpine/helm:3.16.3.
 - **Local checks.** 14 new pytest files + carried 51.1/51.2A suites green;
   topology verifier PASS; ruff/black/mypy clean; merged values validate against
   the extended schema (jsonschema).
