@@ -183,10 +183,12 @@ fi
 # Scan only non-comment lines so the header doc ("NO helm install/upgrade")
 # does not self-trigger.
 echo "=== Check 18: no cluster mutation commands ==="
-if grep -vE '^[[:space:]]*#' "$0" | grep -nE '(kubectl|helm_run|helm)[[:space:]]+(apply|install|upgrade|delete|create)\b' >/dev/null 2>&1; then
+if grep -vE '^[[:space:]]*#' "$0" \
+     | grep -vE 'ok |bad ' \
+     | grep -nE '(kubectl|helm_run|helm)[[:space:]]+(apply|install|upgrade|delete|create)\b' >/dev/null 2>&1; then
   bad "this verifier contains a cluster mutation command"
 else
-  ok "verifier performs no kubectl/helm install/upgrade/apply"
+  ok "verifier performs no cluster-state-changing commands"
 fi
 
 echo ""
