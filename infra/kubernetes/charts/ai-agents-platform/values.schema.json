@@ -123,6 +123,97 @@
         }
       }
     },
+    "networkPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["enabled", "defaultDenyIngress", "defaultDenyEgress", "dns", "internalEdges"],
+      "properties": {
+        "enabled": { "const": true },
+        "defaultDenyIngress": { "type": "boolean" },
+        "defaultDenyEgress": { "type": "boolean" },
+        "dns": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["enabled", "namespaceSelector", "podSelector", "ports"],
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelector": { "type": "object", "minProperties": 1 },
+            "podSelector": { "type": "object", "minProperties": 1 },
+            "ports": {
+              "type": "array",
+              "minItems": 1,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["protocol", "port"],
+                "properties": {
+                  "protocol": { "enum": ["TCP", "UDP"] },
+                  "port": { "const": 53 }
+                }
+              }
+            }
+          }
+        },
+        "ingressController": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "namespaceSelector": { "type": "object" },
+            "podSelector": { "type": "object" },
+            "ports": { "type": "array", "items": { "type": "integer", "minimum": 1, "maximum": 65535 } }
+          }
+        },
+        "observability": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "prometheusScrape": { "type": "object", "properties": { "enabled": { "type": "boolean" } } },
+            "otlpExport": { "type": "object", "properties": { "enabled": { "type": "boolean" } } }
+          }
+        },
+        "externalEgress": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "enabled": { "type": "boolean" } }
+        },
+        "internalEdges": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["source", "target", "protocol", "port"],
+            "properties": {
+              "source": { "type": "string", "minLength": 1 },
+              "target": { "type": "string", "minLength": 1 },
+              "protocol": { "enum": ["TCP", "UDP"] },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
+              "required": { "type": "boolean" },
+              "infra": { "type": "boolean" }
+            }
+          }
+        }
+      }
+    },
+    "externalDataServices": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["enabled", "cidrs", "port"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "cidrs": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "not": { "enum": ["0.0.0.0/0", "::/0"] }
+            }
+          },
+          "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        }
+      }
+    },
     "components": {
       "type": "object",
       "additionalProperties": {

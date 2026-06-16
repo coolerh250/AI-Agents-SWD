@@ -70,3 +70,31 @@ but stay non-deployable (global.realDeployEnabled=false everywhere).
   {{- end }}
 {{- end }}
 {{- end }}
+
+{{/* ---- Step 51.2B network policy fail-closed ---- */}}
+{{- $np := .Values.networkPolicy -}}
+{{- if not $np.enabled }}{{ fail "networkPolicy.enabled must be true (default-deny baseline)" }}{{ end }}
+{{- if not $np.defaultDenyIngress }}{{ fail "networkPolicy.defaultDenyIngress must be true" }}{{ end }}
+{{- if not $np.defaultDenyEgress }}{{ fail "networkPolicy.defaultDenyEgress must be true" }}{{ end }}
+{{- if not $np.dns.enabled }}{{ fail "networkPolicy.dns must be enabled" }}{{ end }}
+{{- if eq (len $np.dns.namespaceSelector) 0 }}{{ fail "networkPolicy.dns.namespaceSelector must not be empty" }}{{ end }}
+{{- if eq (len $np.dns.podSelector) 0 }}{{ fail "networkPolicy.dns.podSelector must not be empty" }}{{ end }}
+{{- range $p := $np.dns.ports }}{{- if ne (int $p.port) 53 }}{{ fail "networkPolicy.dns ports must be 53 only" }}{{ end }}{{- end }}
+{{- if $np.externalEgress.enabled }}{{ fail "networkPolicy.externalEgress must be disabled in this baseline" }}{{ end }}
+{{- if $np.ingressController.enabled }}
+  {{- if eq (len $np.ingressController.namespaceSelector) 0 }}{{ fail "ingressController.namespaceSelector must not be empty when enabled" }}{{ end }}
+  {{- if eq (len $np.ingressController.podSelector) 0 }}{{ fail "ingressController.podSelector must not be empty when enabled" }}{{ end }}
+  {{- if eq (len $np.ingressController.ports) 0 }}{{ fail "ingressController.ports must be set when enabled" }}{{ end }}
+  {{- range $port := $np.ingressController.ports }}{{- if ne (int $port) 8000 }}{{ fail "ingressController port must equal the orchestrator service port (8000)" }}{{ end }}{{- end }}
+  {{- if $g.production }}{{ fail "production must not enable the ingress-controller policy" }}{{ end }}
+{{- end }}
+{{- range $svcName, $svc := .Values.externalDataServices }}
+  {{- range $cidr := ($svc.cidrs | default list) }}
+    {{- if or (eq $cidr "0.0.0.0/0") (eq $cidr "::/0") }}{{ fail (printf "externalDataServices.%s must not use an unrestricted CIDR" $svcName) }}{{ end }}
+  {{- end }}
+  {{- if and $g.production $svc.enabled }}{{ fail (printf "production must not enable the external %s data service in this stage" $svcName) }}{{ end }}
+{{- end }}
+{{- if $g.production }}
+  {{- if $np.observability.otlpExport.enabled }}{{ fail "production must not enable OTLP export" }}{{ end }}
+  {{- if $np.observability.prometheusScrape.enabled }}{{ fail "production must not enable prometheus external scrape" }}{{ end }}
+{{- end }}

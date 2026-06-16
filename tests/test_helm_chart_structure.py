@@ -25,11 +25,13 @@ REQUIRED = [
     "templates/serviceaccounts.yaml",
     "templates/validate-values.yaml",
     "templates/NOTES.txt",
+    # Step 51.2A / 51.2B additions
+    "templates/_security_helpers.tpl",
+    "templates/networkpolicies.yaml",
 ]
 
-# Step 51.2+ templates that MUST NOT exist yet.
+# Step 51.2C+ templates that MUST NOT exist yet.
 FORBIDDEN = [
-    "templates/networkpolicies.yaml",
     "templates/persistentvolumeclaims.yaml",
     "templates/migration-job.yaml",
     "templates/backup-cronjob.yaml",

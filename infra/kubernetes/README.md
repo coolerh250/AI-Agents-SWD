@@ -10,6 +10,7 @@ Foundation only. **No cluster connection, no `kubectl`, no `helm install`.**
 | `runtime-dependency-matrix.yaml` | Service-to-service dependency edges, each with evidence |
 | `workload-security-inventory.yaml` | Step 51.2A per-component runtime security requirements |
 | `rbac-safety-catalog.yaml` | Step 51.2A RBAC safety record (no Kubernetes API access) |
+| `network-connectivity-catalog.yaml` | Step 51.2B canonical connectivity model (49 internal edges) |
 | `charts/ai-agents-platform/` | Multi-environment Helm foundation chart (v0.1.0) |
 
 Docs: [runtime-service-inventory](../../docs/platform/runtime-service-inventory.md),
@@ -24,6 +25,10 @@ python scripts/verify_kubernetes_runtime_inventory.py        # KUBERNETES_RUNTIM
 python scripts/verify_kubernetes_workload_security.py        # KUBERNETES_WORKLOAD_SECURITY_VERIFY: PASS
 python scripts/verify_kubernetes_rbac_safety.py              # KUBERNETES_RBAC_SAFETY_VERIFY: PASS
 ./scripts/verify_kubernetes_security_rbac_baseline.sh        # KUBERNETES_SECURITY_RBAC_BASELINE_VERIFY: PASS
+python scripts/verify_kubernetes_network_topology.py         # KUBERNETES_NETWORK_TOPOLOGY_VERIFY: PASS
+python scripts/verify_kubernetes_network_policy.py           # KUBERNETES_NETWORK_POLICY_VERIFY: PASS
+python scripts/verify_kubernetes_service_connectivity.py     # KUBERNETES_SERVICE_CONNECTIVITY_VERIFY: PASS
+./scripts/verify_kubernetes_network_baseline.sh              # KUBERNETES_NETWORK_BASELINE_VERIFY: PASS
 ```
 
 `verify_helm_foundation.sh` prefers a local `helm`, otherwise runs a pinned
@@ -52,5 +57,9 @@ RuntimeDefault seccomp, no privesc, drop ALL, read-only root, size-limited
 emptyDir writable paths), ServiceAccount hardening (token automount off), and
 RBAC safety (no Role/ClusterRole, no Kubernetes API access).
 
-Deferred (Step 51.2B+): NetworkPolicy (51.2B); PVC/StorageClass, Migration Job,
-Backup CronJob (51.2C); HPA, PDB; and ArgoCD/GitOps (51.3).
+In scope (Step 51.2B): default-deny NetworkPolicy baseline (ingress + egress),
+scoped DNS egress, per-target ingress / per-source egress from the connectivity
+catalog (49 internal edges), Postgres/Redis isolation, external egress disabled.
+
+Deferred (Step 51.2C+): PVC/StorageClass, Migration Job, Backup CronJob (51.2C);
+HPA, PDB; and ArgoCD/GitOps (51.3).

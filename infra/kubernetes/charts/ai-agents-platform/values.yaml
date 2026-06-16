@@ -82,6 +82,99 @@ commonSecretRefs:
       databaseUrl: DATABASE_URL
       redisUrl: REDIS_URL
 
+# Step 51.2B -- NetworkPolicy & service connectivity (default-deny baseline).
+# internalEdges mirror infra/kubernetes/network-connectivity-catalog.yaml (which
+# is derived from the dependency matrix); the topology verifier asserts they match.
+networkPolicy:
+  enabled: true
+  defaultDenyIngress: true
+  defaultDenyEgress: true
+  dns:
+    enabled: true
+    namespaceSelector:
+      kubernetes.io/metadata.name: kube-system
+    podSelector:
+      k8s-app: kube-dns
+    ports:
+      - {protocol: UDP, port: 53}
+      - {protocol: TCP, port: 53}
+  ingressController:
+    enabled: false
+    namespaceSelector: {}
+    podSelector: {}
+    ports: []
+  observability:
+    prometheusScrape:
+      enabled: false
+    otlpExport:
+      enabled: false
+  externalEgress:
+    enabled: false
+  # Internal component-to-component edges (TCP). infra=true edges target the
+  # in-cluster postgres/redis and only render where that component is enabled.
+  internalEdges:
+    - {source: orchestrator, target: policy-engine, protocol: TCP, port: 8001, required: true, infra: false}
+    - {source: orchestrator, target: approval-engine, protocol: TCP, port: 8002, required: true, infra: false}
+    - {source: orchestrator, target: audit-service, protocol: TCP, port: 8003, required: true, infra: false}
+    - {source: orchestrator, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: orchestrator, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: approval-engine, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: approval-engine, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: audit-service, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: audit-service, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: communication-gateway, target: orchestrator, protocol: TCP, port: 8000, required: true, infra: false}
+    - {source: communication-gateway, target: github-automation, protocol: TCP, port: 8005, required: false, infra: false}
+    - {source: communication-gateway, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: communication-gateway, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: github-automation, target: audit-service, protocol: TCP, port: 8003, required: true, infra: false}
+    - {source: github-automation, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: discord-gateway, target: communication-gateway, protocol: TCP, port: 8004, required: true, infra: false}
+    - {source: discord-gateway, target: orchestrator, protocol: TCP, port: 8000, required: true, infra: false}
+    - {source: discord-gateway, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: discord-gateway, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: audit-worker, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: audit-worker, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: notification-worker, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: notification-worker, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: notification-worker, target: orchestrator, protocol: TCP, port: 8000, required: false, infra: false}
+    - {source: retry-scheduler, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: retry-scheduler, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: retry-scheduler, target: audit-service, protocol: TCP, port: 8003, required: false, infra: false}
+    - {source: intake-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: intake-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: requirement-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: requirement-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: development-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: development-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: qa-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: qa-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: devops-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: devops-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: devops-agent, target: audit-service, protocol: TCP, port: 8003, required: false, infra: false}
+    - {source: devops-agent, target: github-automation, protocol: TCP, port: 8005, required: false, infra: false}
+    - {source: project-planner-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: project-planner-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: design-review-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: design-review-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: workspace-operator-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: workspace-operator-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: mini-delivery-pilot-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: mini-delivery-pilot-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+    - {source: delivery-package-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true}
+    - {source: delivery-package-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true}
+
+# Typed, DISABLED placeholders for external managed data services (staging/prod).
+# No real CIDR; enabled only when realDeployEnabled=true (NOT this stage).
+externalDataServices:
+  postgres:
+    enabled: false
+    cidrs: []
+    port: 5432
+  redis:
+    enabled: false
+    cidrs: []
+    port: 6379
+
 components:
   orchestrator:
     enabled: true

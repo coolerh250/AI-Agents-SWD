@@ -107,8 +107,17 @@ objects and grants **no** Kubernetes API access. See
 [kubernetes-rbac-safety-baseline.md](kubernetes-rbac-safety-baseline.md), and
 [kubernetes-writable-path-model.md](kubernetes-writable-path-model.md).
 
-## Explicit Step 51.2B/2C boundary
+## Step 51.2B update — NetworkPolicy & service connectivity
 
-Deferred: NetworkPolicy / default-deny (51.2B); PVC/StorageClass, workspace RWX,
-Migration Job, Backup CronJob (51.2C); HPA, PodDisruptionBudget; and (Step 51.3+)
-ArgoCD / GitOps.
+The chart now renders a default-deny NetworkPolicy baseline (ingress + egress)
+plus a scoped DNS egress and per-target ingress / per-source egress allows
+generated from the connectivity catalog (49 internal edges). ClusterIP-only,
+no external egress, no unrestricted CIDR. See
+[kubernetes-network-policy-baseline.md](kubernetes-network-policy-baseline.md),
+[kubernetes-service-connectivity.md](kubernetes-service-connectivity.md), and
+[kubernetes-external-egress-model.md](kubernetes-external-egress-model.md).
+
+## Explicit Step 51.2C boundary
+
+Deferred: PVC/StorageClass, workspace RWX, Migration Job, Backup CronJob
+(51.2C); HPA, PodDisruptionBudget; and (Step 51.3+) ArgoCD / GitOps.

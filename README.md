@@ -2356,6 +2356,39 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## NetworkPolicy & Service Connectivity Baseline (Stage 53C / Step 51.2B)
+
+Adds a default-deny Kubernetes NetworkPolicy baseline generated from the
+evidence-backed connectivity model. The dependency matrix was revalidated (one
+correction: OTLP→tempo now lists all 20 services → **75** edges = 49 internal +
+26 observability-deferred), normalized into a
+[connectivity catalog](infra/kubernetes/network-connectivity-catalog.yaml) and
+mirrored into `networkPolicy.internalEdges`. Each environment renders
+default-deny ingress + egress (the only empty pod selectors), a scoped DNS
+egress (kube-dns, TCP/UDP 53 only), and per-target ingress / per-source egress
+allows for all 49 internal edges — every required edge covered in both
+directions (verifier requires `missing=0`, `unexpected=0`). Postgres (18
+sources) and Redis (19 sources) are ClusterIP, dev/test-only, never exposed.
+External egress is disabled for GitHub/LLM/Discord/Slack/Telegram/cloud/OIDC and
+OTLP/Prometheus (observability deferred); no `0.0.0.0/0`/`::/0`, no IPBlock, no
+NodePort/LoadBalancer/Ingress. `validate-values.yaml` is fail-closed (staging/
+prod cannot disable NetworkPolicy or enable external egress / ingress-controller
+/ external datastores). Verify with
+`python scripts/verify_kubernetes_network_topology.py`
+(`KUBERNETES_NETWORK_TOPOLOGY_VERIFY: PASS`),
+`python scripts/verify_kubernetes_network_policy.py`
+(`KUBERNETES_NETWORK_POLICY_VERIFY: PASS`),
+`python scripts/verify_kubernetes_service_connectivity.py`
+(`KUBERNETES_SERVICE_CONNECTIVITY_VERIFY: PASS`), and
+`scripts/verify_kubernetes_network_baseline.sh`
+(`KUBERNETES_NETWORK_BASELINE_VERIFY: PASS`). Static manifest baseline only (no
+cluster, no kubectl, no helm install); CNI enforcement is a deferred cluster
+concern. See
+[`docs/platform/kubernetes-network-policy-baseline.md`](docs/platform/kubernetes-network-policy-baseline.md),
+[`docs/platform/kubernetes-service-connectivity.md`](docs/platform/kubernetes-service-connectivity.md),
+and [`docs/platform/kubernetes-external-egress-model.md`](docs/platform/kubernetes-external-egress-model.md).
+Storage/Jobs (51.2C) and GitOps (51.3) are deferred.
+
 ## Workload Security & RBAC Safety Baseline (Stage 53B / Step 51.2A)
 
 Applies a restricted, values-driven SecurityContext baseline to every workload

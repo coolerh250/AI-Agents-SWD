@@ -1,0 +1,166 @@
+{{/*
+Step 51.2B NetworkPolicy baseline. Default-deny ingress + egress, a scoped DNS
+egress allow, and per-target ingress / per-source egress allows generated from
+networkPolicy.internalEdges (the canonical connectivity catalog). Empty pod
+selectors appear ONLY on the two default-deny policies. No unrestricted CIDRs,
+no external egress (deferred until realDeployEnabled=true), no NodePort/LB.
+*/}}
+{{- if .Values.networkPolicy.enabled }}
+{{- $root := . }}
+{{- $fullname := include "aiagents.fullname" . }}
+{{- $np := .Values.networkPolicy }}
+{{- $instance := .Release.Name }}
+{{- if $np.defaultDenyIngress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-default-deny-ingress
+  labels:
+    {{- include "aiagents.commonLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+{{- end }}
+{{- if $np.defaultDenyEgress }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-default-deny-egress
+  labels:
+    {{- include "aiagents.commonLabels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Egress
+{{- end }}
+{{- if $np.dns.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-allow-dns
+  labels:
+    {{- include "aiagents.commonLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/part-of: ai-agents-platform
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $np.dns.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.dns.podSelector | nindent 14 }}
+      ports:
+        {{- range $p := $np.dns.ports }}
+        - protocol: {{ $p.protocol }}
+          port: {{ $p.port }}
+        {{- end }}
+{{- end }}
+{{/* ---- group enabled internal edges by target (ingress) and source (egress) ---- */}}
+{{- $ingressByTarget := dict }}
+{{- $egressBySource := dict }}
+{{- range $e := $np.internalEdges }}
+  {{- $targetEnabled := true }}
+  {{- if $e.infra }}{{- $targetEnabled = (index $root.Values.components $e.target).enabled }}{{- end }}
+  {{- $sourceComp := index $root.Values.components $e.source }}
+  {{- $sourceEnabled := and $sourceComp $sourceComp.enabled }}
+  {{- if and $targetEnabled $sourceEnabled }}
+    {{- $ti := index $ingressByTarget $e.target | default list }}
+    {{- $ingressByTarget = set $ingressByTarget $e.target (append $ti $e) }}
+    {{- $se := index $egressBySource $e.source | default list }}
+    {{- $egressBySource = set $egressBySource $e.source (append $se $e) }}
+  {{- end }}
+{{- end }}
+{{- range $target, $edges := $ingressByTarget }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-ingress-{{ $target }}
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $target }}
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $e := $edges }}
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $e.source }}
+              app.kubernetes.io/instance: {{ $instance }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: {{ (first $edges).port }}
+{{- end }}
+{{- range $source, $edges := $egressBySource }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-egress-{{ $source }}
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: {{ $source }}
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Egress
+  egress:
+    {{- range $e := $edges }}
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: {{ $e.target }}
+              app.kubernetes.io/instance: {{ $instance }}
+      ports:
+        - protocol: {{ $e.protocol }}
+          port: {{ $e.port }}
+    {{- end }}
+{{- end }}
+{{- if $np.ingressController.enabled }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-ingress-controller
+  labels:
+    {{- include "aiagents.commonLabels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: orchestrator
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              {{- toYaml $np.ingressController.namespaceSelector | nindent 14 }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $np.ingressController.podSelector | nindent 14 }}
+      ports:
+        {{- range $port := $np.ingressController.ports }}
+        - protocol: TCP
+          port: {{ $port }}
+        {{- end }}
+{{- end }}
+{{- end }}

@@ -9926,3 +9926,56 @@ issues & blockers, and next-step suggestions.
   `/operations/safety` (no Kubernetes fields added).
 - **Roadmap.** Step 51.1 closed; Step 51.2A closed (if verified); 51.2B/51.2C/
   51.3/51.4 pending; Step 51 overall OPEN.
+
+## Stage 53C — NetworkPolicy & Service Connectivity Baseline (Step 51.2B)
+
+- **Scope.** Third sub-stage of Step 51.2. Revalidated the dependency matrix and
+  built a default-deny Kubernetes NetworkPolicy baseline from the canonical
+  connectivity model. Static manifest baseline only: NO cluster connection, NO
+  kubectl, NO helm install/upgrade. Did NOT do storage/Jobs (51.2C) or ArgoCD
+  (51.3).
+- **Matrix revalidation.** Rechecked all edges against source; 1 correction:
+  OTLP->tempo was listed for only 4 of 20 services -> added the 16 missing edges
+  (all evidence-backed env:OTEL_EXPORTER_OTLP_ENDPOINT). Total **75** edges = 49
+  internal policy-generating (12 first-party HTTP + 18 Postgres + 19 Redis) + 26
+  observability-deferred (20 OTLP export + 6 backend). 0 duplicates, 0 unknown,
+  0 self-edges.
+- **Connectivity catalog.** `infra/kubernetes/network-connectivity-catalog.yaml`
+  derived from the matrix (49 internal edges + environments, external deps all
+  disabled, postgres 18 / redis 19 allowedSources, observability deferred).
+  Mirrored into `networkPolicy.internalEdges`; the topology verifier asserts
+  matrix == catalog == values.
+- **NetworkPolicy template.** `templates/networkpolicies.yaml`: default-deny
+  ingress + egress (only empty podSelectors), scoped DNS egress (kube-dns,
+  TCP/UDP 53 only, values-driven selectors), per-target ingress + per-source
+  egress for every enabled internal edge. Infra (postgres/redis) edges render
+  only where the component is enabled (dev/test). Label contract adds
+  `app.kubernetes.io/instance` (commonLabels + selectorLabels) so policies pin
+  the release. ClusterIP only; no NodePort/LB/Ingress; no IPBlock/0.0.0.0/0.
+- **External egress.** All external dependencies (GitHub/LLM/Discord/Slack/
+  Telegram/cloud/OIDC/OTLP/external DB) disabled; no egress generated. Typed
+  disabled `externalDataServices` placeholders (no real CIDR); enabled only when
+  realDeployEnabled=true (not this stage). Native NetworkPolicy FQDN limitation
+  documented (future egress gateway / FQDN-aware CNI).
+- **Schema + fail-closed.** values.schema.json validates networkPolicy (enabled
+  const true, DNS ports const 53, no unrestricted CIDR via `not enum`) +
+  externalDataServices. validate-values.yaml fails on: networkPolicy disabled,
+  default-deny off, DNS misconfig, empty ingress-controller selectors,
+  production ingress-controller/external egress/external DB/OTLP/scrape, and
+  unrestricted CIDR.
+- **Verifiers.** topology (source-level), network-policy (rendered),
+  service-connectivity coverage (rendered; missing=0/unexpected=0 required), and
+  combined `verify_kubernetes_network_baseline.sh`.
+- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Local checks.** 14 new pytest files + carried 51.1/51.2A suites green;
+  topology verifier PASS; ruff/black/mypy clean; merged values validate against
+  the extended schema (jsonschema).
+- **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
+  NodePort/LB, no external egress, no Postgres/Redis external exposure, no real
+  endpoint/CIDR. No secret / rendered manifest committed.
+  production_executed_true_count remains 0. No change to HARD_SAFETY_ACTIONS,
+  audit canonicalization, Step 50 operator policy, or `/operations/safety` (no
+  Kubernetes fields). Step 51.2A security baseline preserved (instance label
+  added to selectors; all 51.2A markers must remain PASS).
+- **Roadmap.** Step 51.1/51.2A closed; 51.2B closed (if verified); 51.2C/51.3/
+  51.4 pending; Step 51 overall OPEN.

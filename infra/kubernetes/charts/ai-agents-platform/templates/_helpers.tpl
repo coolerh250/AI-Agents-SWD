@@ -14,6 +14,7 @@ Step 51.1 helpers for ai-agents-platform foundation chart.
 {{/* Common labels applied to every rendered object. */}}
 {{- define "aiagents.commonLabels" -}}
 app.kubernetes.io/part-of: ai-agents-platform
+app.kubernetes.io/instance: {{ .Release.Name }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 helm.sh/chart: {{ include "aiagents.chartLabel" . }}
 ai-agents-swd/environment: {{ .Values.global.environment | quote }}
@@ -31,6 +32,7 @@ ai-agents-swd/test-only: {{ .comp.testOnly | default false | quote }}
 {{/* Selector labels (stable subset). Call with (dict "root" $ "name" $name). */}}
 {{- define "aiagents.selectorLabels" -}}
 app.kubernetes.io/name: {{ .name }}
+app.kubernetes.io/instance: {{ .root.Release.Name }}
 app.kubernetes.io/part-of: ai-agents-platform
 {{- end -}}
 
