@@ -9757,3 +9757,40 @@ issues & blockers, and next-step suggestions.
 
 - **Observations only.** Claude Code reports observed state and does NOT decide
   production readiness.
+
+- **Remote validation (10.0.1.31, commit `0b335a3`).**
+    - Migration 023 applied (10 tables). Orchestrator rebuilt (COPY scripts +
+      migrations; v1 test-auth env) + healthy.
+    - `ADMIN_CONSOLE_V1_OPERATOR_ACTIONS_VERIFY: PASS` — 46/46 checks. Auth
+      (test-login issues HttpOnly + SameSite=Strict cookie + CSRF; logout
+      revokes; anonymous rejected), RBAC matrix correct, delivery review actions
+      (add note, request-changes confirmed, accept confirmed →
+      `human_acceptance_status=accepted`), verification rerun (SDK allowlist +
+      containment, shell=False, API rejects non-allowlisted, requires
+      confirmation, full_regression needs high_risk_ack), all disabled actions
+      blocked, safety fields correct, operator-action audit events persisted (64),
+      no tamper residue. Scenario I: `verify_admin_console_v0.sh` still PASS
+      (read-only guard + full regression chain green). One SKIP: viewer accept on
+      a placeholder package id (404) — RBAC otherwise verified by the SDK matrix +
+      unit tests.
+    - `/operations/safety` v1 fields confirmed:
+      `admin_console_v1_enabled=true`,
+      `admin_console_auth_mode=test_local_signed_session`,
+      `admin_console_test_auth_enabled=true`,
+      `admin_console_production_auth_enabled=false`,
+      `admin_console_oidc_enabled=false`, `admin_console_rbac_enabled=true`,
+      `admin_console_csrf_enabled=true`,
+      `admin_console_operator_actions_enabled=true`,
+      `admin_console_operator_actions_controlled_only=true`, and
+      arbitrary_action / arbitrary_shell / workflow_pause_resume /
+      work_item_mutation / github_actions / deployment_actions /
+      production_actions all `false`.
+    - Production safety: `deployment_prod_true=0`, `workflow_prod_true=0`,
+      `operator_action_executions.production_executed=true count=0`,
+      `production_executed_true_count=0`. No GitHub write / PR / branch push /
+      deploy / external delivery / real escalation. Acceptance is human-review
+      only. No raw token/secret committed (session key under gitignored
+      `.runtime/`).
+    - Fixes during validation: asyncpg `$N::timestamptz` bind (cast via
+      `::text::timestamptz`); v1 verify Scenario A subshell (login CSRF lost via
+      command substitution) + login retry hardening.
