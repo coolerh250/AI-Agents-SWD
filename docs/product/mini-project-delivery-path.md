@@ -12,7 +12,7 @@ project delivery pilot. Each step builds on the previous one.
 | 47 | Delivery Package & Acceptance Gate | **closed** | assemble a formal delivery package (14 sections + artifacts), gate it (18 acceptance checks), produce handoff summaries + readiness snapshot + operator-review placeholder; `ready_for_operator_review`, human acceptance pending, controlled-only |
 | 48 | Admin Console v0 (read-only) | **closed** | read-only browser UI (`/admin`) + 6 aggregate `/operations/admin-console/*` endpoints over projects / reviews / workspaces / pilots / delivery packages / safety / regression / incidents / LLM; no write API, no operator actions, secret/CoT redaction |
 | 49 | Backup / DR Gap Closure | **done (this stage)** | close the four backup/DR gaps (encryption_no_key, storage_not_off_host, schedule_dry_run_only, migration_down_gaps) at a controlled test baseline → readiness `passed_with_non_production_limitations`; no production backup/restore, no real cloud, no real schedule |
-| 50 | Admin Console v1 (operator actions) | planned | enable real operator accept / reject / request-changes with policy + approval + audit |
+| 50 | Admin Console v1 (operator actions) | **done (this stage)** | controlled operator actions (accept / reject / request-changes / note / allowlisted verification rerun) gated by test-local auth + RBAC + CSRF + policy + confirmation + idempotency + audit; high-risk actions disabled; acceptance is human-review only (no deploy/PR/prod) |
 | 51 | Kubernetes / Helm / ArgoCD Runtime Baseline | planned | container runtime + GitOps deployment baseline |
 
 ## Current foundation (Steps 43–44)
@@ -68,10 +68,20 @@ project delivery pilot. Each step builds on the previous one.
   cloud write, no real schedule, no raw key persisted; `production_executed=false`
   (Step 49). See `docs/operations/backup-dr-gap-closure.md`.
 
+* Admin Console v1 Operator Actions: a controlled Operator Console at `/operator`
+  with test-local signed-session auth, RBAC (viewer/reviewer/operator/
+  platform_admin), CSRF, policy-engine gate, one-time confirmation, idempotency,
+  and audit. Enabled actions: add note, request changes, accept, reject, and
+  allowlisted verification rerun. Delivery acceptance is a human-review
+  acceptance only — it never triggers GitHub / PR / merge / deploy / external
+  delivery / production. High-risk actions are disabled-only catalog entries;
+  `production_executed=false` (Step 50). See
+  `docs/product/admin-console-v1-operator-actions.md`.
+
 ## Still out of scope (carry-forward)
 
-* Admin Console v1 operator actions (Step 50); Kubernetes / Helm / ArgoCD
-  runtime baseline (Step 51).
+* Kubernetes / Helm / ArgoCD runtime baseline (Step 51); production OIDC /
+  external IdP integration.
 * Work-item dispatch to a real implementing agent.
 * Real LLM, real GitHub production write, real deploy, real escalation.
 * Real production secret store, real off-host cloud backup target, real

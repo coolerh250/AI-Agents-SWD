@@ -1154,6 +1154,44 @@ BACKUP_READINESS_EVALUATIONS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 52 -- Admin Console v1 Operator Actions.
+# ---------------------------------------------------------------------------
+OPERATOR_SESSIONS_TOTAL = Counter(
+    "operator_sessions_total", "Operator sessions created", ["result"]
+)
+OPERATOR_ACTION_REQUESTS_TOTAL = Counter(
+    "operator_action_requests_total", "Operator action requests", ["action_type", "status"]
+)
+OPERATOR_ACTION_POLICY_BLOCKS_TOTAL = Counter(
+    "operator_action_policy_blocks_total", "Operator actions blocked by policy", ["action_type"]
+)
+OPERATOR_ACTION_CONFIRMATIONS_TOTAL = Counter(
+    "operator_action_confirmations_total", "Operator action confirmations", ["result"]
+)
+OPERATOR_ACTION_COMPLETIONS_TOTAL = Counter(
+    "operator_action_completions_total", "Operator actions completed", ["action_type"]
+)
+OPERATOR_ACTION_FAILURES_TOTAL = Counter(
+    "operator_action_failures_total", "Operator actions failed", ["action_type"]
+)
+OPERATOR_REVIEW_ACCEPTS_TOTAL = Counter(
+    "operator_review_accepts_total", "Delivery package operator accepts", []
+)
+OPERATOR_REVIEW_REJECTS_TOTAL = Counter(
+    "operator_review_rejects_total", "Delivery package operator rejects", []
+)
+OPERATOR_REVIEW_CHANGES_REQUESTED_TOTAL = Counter(
+    "operator_review_changes_requested_total", "Delivery package change requests", []
+)
+VERIFICATION_RERUNS_TOTAL = Counter(
+    "verification_reruns_total", "Allowlisted verification reruns", ["verification_key", "status"]
+)
+VERIFICATION_RERUN_FAILURES_TOTAL = Counter(
+    "verification_rerun_failures_total", "Verification reruns that failed", ["verification_key"]
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

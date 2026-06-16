@@ -4609,5 +4609,99 @@ else
   echo "BACKUP_DR_NO_ARTIFACT_TRACKED_SMOKE: PASS"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 52 -- Admin Console v1 Operator Actions smokes (257-273).
+# ---------------------------------------------------------------------------
+_safv1=$(curl -sS -m 5 "$ORCH_URL/operations/safety" 2>/dev/null || echo '{}')
+
+# 257. auth enabled (test-local signed session).
+echo "$_safv1" | grep -q '"admin_console_auth_mode":"test_local_signed_session"' \
+  && echo "ADMIN_CONSOLE_V1_AUTH_SMOKE: PASS" || echo "ADMIN_CONSOLE_V1_AUTH_SMOKE: CHECK"
+
+# 258. session endpoint responds.
+curl -sS -m 5 "$ORCH_URL/operations/admin-console/auth/session" 2>/dev/null | grep -q 'authenticated' \
+  && echo "ADMIN_CONSOLE_V1_SESSION_SMOKE: PASS" || echo "ADMIN_CONSOLE_V1_SESSION_SMOKE: CHECK"
+
+# 259. CSRF enabled.
+echo "$_safv1" | grep -q '"admin_console_csrf_enabled":true' \
+  && echo "ADMIN_CONSOLE_V1_CSRF_SMOKE: PASS" || echo "ADMIN_CONSOLE_V1_CSRF_SMOKE: CHECK"
+
+# 260. RBAC enabled.
+echo "$_safv1" | grep -q '"admin_console_rbac_enabled":true' \
+  && echo "ADMIN_CONSOLE_V1_RBAC_SMOKE: PASS" || echo "ADMIN_CONSOLE_V1_RBAC_SMOKE: CHECK"
+
+# 261. action catalog endpoint.
+curl -sS -m 5 "$ORCH_URL/operations/admin-console/operator-actions/catalog" 2>/dev/null | grep -q 'enabled' \
+  && echo "OPERATOR_ACTION_CATALOG_SMOKE: PASS" || echo "OPERATOR_ACTION_CATALOG_SMOKE: CHECK"
+
+# 262-265. enabled action types are present in catalog (note/request-changes/accept/reject).
+_cat=$(curl -sS -m 5 "$ORCH_URL/operations/admin-console/operator-actions/catalog" 2>/dev/null || echo '{}')
+echo "$_cat" | grep -q 'operator_review.add_note' && echo "OPERATOR_REVIEW_NOTE_SMOKE: PASS" || echo "OPERATOR_REVIEW_NOTE_SMOKE: CHECK"
+echo "$_cat" | grep -q 'delivery_package.request_changes' && echo "OPERATOR_REQUEST_CHANGES_SMOKE: PASS" || echo "OPERATOR_REQUEST_CHANGES_SMOKE: CHECK"
+echo "$_cat" | grep -q 'delivery_package.accept' && echo "OPERATOR_ACCEPT_SMOKE: PASS" || echo "OPERATOR_ACCEPT_SMOKE: CHECK"
+echo "$_cat" | grep -q 'delivery_package.reject' && echo "OPERATOR_REJECT_SMOKE: PASS" || echo "OPERATOR_REJECT_SMOKE: CHECK"
+
+# 266. verification rerun allowlist (SDK) + no arbitrary path.
+if "${PYTHON:-python3}" -c "
+from shared.sdk.operator_actions.verification_runner import resolve_script, VerificationNotAllowed
+resolve_script('admin_console_v0')
+try:
+    resolve_script('../../etc/passwd'); raise SystemExit(1)
+except VerificationNotAllowed:
+    pass
+" >/dev/null 2>&1; then
+  echo "VERIFICATION_RERUN_ALLOWLIST_SMOKE: PASS"
+else
+  echo "VERIFICATION_RERUN_ALLOWLIST_SMOKE: CHECK"
+fi
+
+# 267. runner uses shell=False (no shell injection).
+if grep -q 'shell=False' shared/sdk/operator_actions/verification_runner.py 2>/dev/null \
+   && ! grep -q 'shell=True' shared/sdk/operator_actions/verification_runner.py 2>/dev/null; then
+  echo "VERIFICATION_RERUN_NO_SHELL_SMOKE: PASS"
+else
+  echo "VERIFICATION_RERUN_NO_SHELL_SMOKE: FAIL"
+fi
+
+# 268. idempotency key validation present.
+if grep -q 'idempotency_key' shared/sdk/operator_actions/store.py 2>/dev/null; then
+  echo "OPERATOR_ACTION_IDEMPOTENCY_SMOKE: PASS"
+else
+  echo "OPERATOR_ACTION_IDEMPOTENCY_SMOKE: CHECK"
+fi
+
+# 269. operator action audit decision types defined.
+if "${PYTHON:-python3}" -c "from shared.sdk.operator_actions.audit_events import OPERATOR_ACTION_DECISION_TYPES as d; assert len(d)>=14" >/dev/null 2>&1; then
+  echo "OPERATOR_ACTION_AUDIT_SMOKE: PASS"
+else
+  echo "OPERATOR_ACTION_AUDIT_SMOKE: CHECK"
+fi
+
+# 270. operator_action.* / operator_review.* / verification_rerun.* default-denied.
+if "${PYTHON:-python3}" -c "
+from shared.sdk.notifications.real_delivery_policy import DEFAULT_REAL_DELIVERY_DENYLIST as d
+assert 'operator_action.*' in d and 'operator_review.*' in d and 'verification_rerun.*' in d
+" >/dev/null 2>&1; then
+  echo "OPERATOR_ACTION_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "OPERATOR_ACTION_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 271. no GitHub actions enabled.
+echo "$_safv1" | grep -q '"admin_console_github_actions_enabled":false' \
+  && echo "OPERATOR_ACTION_NO_GITHUB_SMOKE: PASS" || echo "OPERATOR_ACTION_NO_GITHUB_SMOKE: CHECK"
+
+# 272. no deployment actions enabled.
+echo "$_safv1" | grep -q '"admin_console_deployment_actions_enabled":false' \
+  && echo "OPERATOR_ACTION_NO_DEPLOY_SMOKE: PASS" || echo "OPERATOR_ACTION_NO_DEPLOY_SMOKE: CHECK"
+
+# 273. no production actions enabled + production_executed=0.
+if echo "$_safv1" | grep -q '"admin_console_production_actions_enabled":false' \
+   && echo "$_safv1" | grep -q '"production_executed_true_count":0'; then
+  echo "OPERATOR_ACTION_NO_PRODUCTION_SMOKE: PASS"
+else
+  echo "OPERATOR_ACTION_NO_PRODUCTION_SMOKE: CHECK"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

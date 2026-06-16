@@ -11,6 +11,12 @@ COPY apps/orchestrator/src/ ./
 # at /admin). A built Vite bundle (admin_console_static/dist) is preferred when
 # present; the committed static/ fallback guarantees /admin responds.
 COPY apps/admin-console/static/ ./admin_console_static/
+# Stage 52 -- allowlisted verification scripts (path-resolution for the
+# governed operator verification rerun). The runner uses realpath containment to
+# the scripts/ dir and shell=False with fixed argv; heavy docker-dependent
+# verifications still require a runner with docker access (documented limitation).
+COPY scripts/ ./scripts/
+COPY migrations/ ./migrations/
 
 EXPOSE 8000
 

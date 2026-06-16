@@ -1668,6 +1668,9 @@ async def operations_safety() -> dict:
     # Stage 51 -- backup / DR gap closure readiness snapshot.
     backup_dr_safety = _backup_dr_safety_summary()
 
+    # Stage 52 -- Admin Console v1 operator-action safety snapshot.
+    operator_action_safety = await _operator_action_safety_summary()
+
     # Stage 38 -- LLM Model Routing & Agent Model Policy safety snapshot.
     routing_safety = await _llm_routing_safety_summary()
 
@@ -2078,14 +2081,18 @@ async def operations_safety() -> dict:
         "delivery_package_ready_for_admin_console": delivery_package_summary[
             "delivery_package_ready_for_admin_console"
         ],
-        # Stage 50 -- Admin Console v0 read-only visibility. Constant booleans:
-        # the console performs no operator action and calls no write API.
+        # Stage 50 -- Admin Console v0 read-only visibility. The v0 aggregate
+        # views/API remain read-only (GET-only, no write API). Stage 52 adds a
+        # SEPARATE governed v1 operator-actions surface; its flags come from
+        # ``operator_action_safety`` spread below.
         "admin_console_enabled": os.environ.get("ENABLE_ADMIN_CONSOLE", "true").strip().lower()
         != "false",
         "admin_console_read_only": True,
-        "admin_console_operator_actions_enabled": False,
         "admin_console_write_api_enabled": False,
         "admin_console_secret_redaction_enabled": True,
+        # Stage 52 -- Admin Console v1 governed operator actions (auth/RBAC/CSRF/
+        # policy/confirmation/idempotency/audit). High-risk actions hard-disabled.
+        **operator_action_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3978,6 +3985,41 @@ def _backup_dr_safety_summary() -> dict[str, Any]:
         "backup_production_backup_performed": False,
         "backup_production_restore_performed": bool(rd.get("production_restore_performed")),
     }
+
+
+async def _operator_action_safety_summary() -> dict[str, Any]:
+    """Stage 52 -- Admin Console v1 operator-action safety snapshot.
+
+    Booleans-only (no raw token / secret). High-risk capabilities are hard
+    false. Latest action / rerun status is read from the store (resilient).
+    """
+    from shared.sdk.operator_actions.safety import operator_action_safety_flags
+
+    flags = operator_action_safety_flags()
+    summary: dict[str, Any] = dict(flags)
+    summary["latest_operator_action_status"] = None
+    summary["latest_operator_action_type"] = None
+    summary["latest_operator_identity"] = None
+    summary["latest_verification_rerun_status"] = None
+    summary["operator_action_policy_block_count"] = 0
+    try:
+        from shared.sdk.operator_actions import OperatorActionStore
+
+        store = OperatorActionStore()
+        actions = await store.list_actions(limit=50)
+        if actions:
+            summary["latest_operator_action_status"] = actions[0].get("status")
+            summary["latest_operator_action_type"] = actions[0].get("action_type")
+            summary["latest_operator_identity"] = actions[0].get("identity_key")
+            summary["operator_action_policy_block_count"] = sum(
+                1 for a in actions if a.get("status") == "policy_blocked"
+            )
+        reruns = await store.list_reruns(limit=1)
+        if reruns:
+            summary["latest_verification_rerun_status"] = reruns[0].get("status")
+    except Exception:
+        pass
+    return summary
 
 
 def _read_dr_report_latest() -> dict[str, Any] | None:

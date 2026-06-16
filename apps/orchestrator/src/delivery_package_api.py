@@ -17,7 +17,7 @@ from __future__ import annotations
 import os
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from shared.sdk.delivery_package import (
     DeliveryPackageRequest,
@@ -250,31 +250,76 @@ def _operator_action_disabled_response(package_id: str, action: str) -> dict:
     }
 
 
+def _v1_actions_enabled() -> bool:
+    """Stage 52 -- governed operator actions go through the Admin Console v1
+    operator-actions API (auth + RBAC + CSRF + policy + confirmation + audit),
+    NOT the old ``ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS`` scaffold flag."""
+    from shared.sdk.operator_actions.auth import resolve_auth_config
+
+    return resolve_auth_config().operator_actions_enabled
+
+
 @router.post("/delivery-packages/{package_id}/operator-review/accept")
-async def operator_accept(package_id: str, payload: dict | None = None) -> dict:
+async def operator_accept(package_id: str, request: Request) -> dict:
     await _require_package(package_id)
-    if not _flag("ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS", False):
+    if not _v1_actions_enabled():
         return _operator_action_disabled_response(package_id, "accept")
-    # Scaffold only -- real operator-action handling is Admin Console v1.
-    raise HTTPException(status_code=501, detail="operator accept not implemented this stage")
+    from operator_actions_api import _review_request
+
+    payload = await _safe_json(request)
+    return await _review_request(request, package_id, "delivery_package.accept", payload)
 
 
 @router.post("/delivery-packages/{package_id}/operator-review/reject")
-async def operator_reject(package_id: str, payload: dict | None = None) -> dict:
+async def operator_reject(package_id: str, request: Request) -> dict:
     await _require_package(package_id)
-    if not _flag("ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS", False):
+    if not _v1_actions_enabled():
         return _operator_action_disabled_response(package_id, "reject")
-    raise HTTPException(status_code=501, detail="operator reject not implemented this stage")
+    from operator_actions_api import _review_request
+
+    payload = await _safe_json(request)
+    return await _review_request(request, package_id, "delivery_package.reject", payload)
 
 
 @router.post("/delivery-packages/{package_id}/operator-review/request-changes")
-async def operator_request_changes(package_id: str, payload: dict | None = None) -> dict:
+async def operator_request_changes(package_id: str, request: Request) -> dict:
     await _require_package(package_id)
-    if not _flag("ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS", False):
+    if not _v1_actions_enabled():
         return _operator_action_disabled_response(package_id, "request_changes")
-    raise HTTPException(
-        status_code=501, detail="operator request-changes not implemented this stage"
-    )
+    from operator_actions_api import _review_request
+
+    payload = await _safe_json(request)
+    return await _review_request(request, package_id, "delivery_package.request_changes", payload)
+
+
+@router.post("/delivery-packages/{package_id}/operator-review/notes")
+async def operator_add_note(package_id: str, request: Request) -> dict:
+    await _require_package(package_id)
+    if not _v1_actions_enabled():
+        return _operator_action_disabled_response(package_id, "add_note")
+    from operator_actions_api import _review_request
+
+    payload = await _safe_json(request)
+    return await _review_request(request, package_id, "operator_review.add_note", payload)
+
+
+@router.get("/delivery-packages/{package_id}/operator-review/history")
+async def operator_review_history(package_id: str) -> dict:
+    await _require_package(package_id)
+    from shared.sdk.operator_actions import OperatorActionStore
+
+    store = OperatorActionStore()
+    notes = await store.list_review_notes(package_id)
+    review = await _package_store().get_operator_review(package_id)
+    return {"package_id": package_id, "notes": notes, "operator_review": review}
+
+
+async def _safe_json(request: Request) -> dict:
+    try:
+        body = await request.json()
+        return body if isinstance(body, dict) else {}
+    except Exception:  # noqa: BLE001 - empty/invalid body -> {}
+        return {}
 
 
 __all__ = ["router"]

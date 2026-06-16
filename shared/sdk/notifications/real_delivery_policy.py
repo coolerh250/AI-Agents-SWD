@@ -91,6 +91,11 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     "backup_dr.*",
     "restore.*",
     "dr.*",
+    # Stage 52 -- Admin Console v1 operator actions are operator-internal and
+    # must NEVER land on a real Discord channel by default.
+    "operator_action.*",
+    "operator_review.*",
+    "verification_rerun.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

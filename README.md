@@ -2356,6 +2356,33 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Admin Console v1 — Operator Actions (Stage 52)
+
+Upgrades the Admin Console from read-only visibility to a **controlled Operator
+Console** (`/operator`). Enabled actions — add review note, request changes,
+accept, reject, and **allowlisted** verification rerun — are each gated by
+test-local signed-session **authentication**, **RBAC**
+(viewer/reviewer/operator/platform_admin), **CSRF**, the platform
+**policy-engine**, a one-time **confirmation** nonce, **idempotency**, and
+**audit**. Delivery acceptance is a **human-review acceptance only** — it never
+triggers GitHub, PR, merge, deploy, external delivery, or production. High-risk
+actions (deploy, GitHub write/PR, workflow pause/resume, work-item mutation,
+production backup/restore, policy/budget edits, arbitrary shell) are
+**disabled-only** catalog entries returning `403 policy_blocked` /
+`409 action_disabled`. Auth fails closed (production auth / OIDC disabled,
+unknown modes denied); the session token is an HttpOnly/SameSite=Strict cookie,
+never in localStorage; no raw token/secret is persisted. Verify with
+`scripts/verify_admin_console_v1_operator_actions.sh`
+(`ADMIN_CONSOLE_V1_OPERATOR_ACTIONS_VERIFY: PASS`). See
+[`docs/product/admin-console-v1-operator-actions.md`](docs/product/admin-console-v1-operator-actions.md),
+[`docs/product/operator-rbac-model.md`](docs/product/operator-rbac-model.md),
+[`docs/product/operator-action-policy-model.md`](docs/product/operator-action-policy-model.md),
+[`docs/product/operator-confirmation-idempotency.md`](docs/product/operator-confirmation-idempotency.md),
+[`docs/operations/admin-console-auth-session.md`](docs/operations/admin-console-auth-session.md),
+[`docs/operations/verification-rerun-runbook.md`](docs/operations/verification-rerun-runbook.md),
+and
+[`docs/operations/operator-action-audit.md`](docs/operations/operator-action-audit.md).
+
 ## Backup / DR Gap Closure (Stage 51)
 
 Closes the four long-standing Backup / DR documented gaps — `encryption_no_key`,

@@ -367,6 +367,26 @@ produce `PASS_WITH_DOCUMENTED_GAPS`. `regression_fail` / `env_fail` /
 `safety_fail` must remain 0; verifier strictness is unchanged (a still-open gap
 or a real failure is still reported as such).
 
+## Stage 52 — Admin Console v1 operator actions verify (standalone)
+
+`scripts/verify_admin_console_v1_operator_actions.sh`
+(`ADMIN_CONSOLE_V1_OPERATOR_ACTIONS_VERIFY: PASS`) is a **standalone** verifier
+(its Scenario I re-runs `verify_admin_console_v0.sh`, so it is not part of the
+runner's own list — running it inside the runner would recurse). It exercises
+auth/session, RBAC, delivery review actions (note/request-changes/accept/reject
+with confirmation), confirmation+idempotency, allowlisted verification rerun
+(SDK containment + API governance), disabled-action blocking, safety counters,
+and audit/notification denylist. It requires the orchestrator started with the
+controlled test-auth env (`ADMIN_CONSOLE_AUTH_MODE=test_local_signed_session`,
+`ADMIN_CONSOLE_TEST_AUTH_ENABLED=true`,
+`ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS=true`). `run_full_regression.sh` itself
+is unchanged and stays `PASS_WITH_NON_PRODUCTION_LIMITATIONS`.
+
+`check_runtime_state.sh` smokes 257–273 cover the v1 surfaces (auth/session/CSRF/
+RBAC, action catalog, the enabled actions, verification rerun allowlist +
+shell=False, idempotency, audit decision types, notification denylist, and the
+no-GitHub / no-deploy / no-production invariants).
+
 `check_runtime_state.sh` smokes 243–256 cover the backup/DR surfaces
 (encryption, manifest, off-host, restore drill, schedule, retention, migration
 catalog, readiness, operations API, notification denylist, audit integrity,

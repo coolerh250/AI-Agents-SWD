@@ -12,6 +12,7 @@ import { SafetyCenter } from "./pages/SafetyCenter";
 import { RegressionStatus } from "./pages/RegressionStatus";
 import { CostLlmGovernance } from "./pages/CostLlmGovernance";
 import { Incidents } from "./pages/Incidents";
+import { OperatorConsole } from "./pages/OperatorConsole";
 
 export function App() {
   return (
@@ -29,6 +30,7 @@ export function App() {
         <Route path="/regression" element={<RegressionStatus />} />
         <Route path="/cost-llm" element={<CostLlmGovernance />} />
         <Route path="/incidents" element={<Incidents />} />
+        <Route path="/operator" element={<OperatorConsole />} />
       </Routes>
     </Layout>
   );

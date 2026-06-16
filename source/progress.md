@@ -9666,3 +9666,94 @@ issues & blockers, and next-step suggestions.
       `PASS_WITH_DOCUMENTED_GAPS` from the original four backup gaps.
     - Production counters: `deployment_prod_true=0`, `workflow_prod_true=0`,
       `production_executed_true_count=0`.
+
+## Stage 52 — Admin Console v1 Operator Actions (Step 50)
+
+- **Scope.** Upgraded the Admin Console from read-only visibility to a
+  CONTROLLED Operator Console. Enabled, governed actions: add review note,
+  request changes, accept, reject, and allowlisted verification rerun. NOT an
+  unrestricted admin console; NOT a production control plane.
+
+- **Migration.** `migrations/023_admin_console_operator_actions.sql` — additive
+  + idempotent (PG16), 10 tables: operator_identities, operator_role_assignments,
+  admin_console_sessions (hash only), operator_action_requests,
+  operator_action_executions, operator_action_confirmations (nonce hash only),
+  operator_review_notes, verification_rerun_requests,
+  operator_action_policy_catalog, operator_action_audit_links. No raw password /
+  session token / confirmation token / secret columns; reason non-empty CHECK;
+  `production_executed` default false.
+
+- **SDK.** `shared/sdk/operator_actions/` — models, auth (fail-closed mode
+  resolution), session (HMAC signed token; DB stores sha256 only), csrf
+  (session-bound), rbac, action_catalog (5 enabled + 14 disabled), policy_gate
+  (policy-engine + fail-closed), confirmation (one-time nonce), idempotency,
+  verification_runner (allowlist + realpath containment + shell=False + timeout
+  + redaction), store, audit_events (14 decision types), events, safety.
+
+- **Backend API.** `apps/orchestrator/src/operator_actions_api.py` — auth
+  (test-login/logout/session/csrf), operator-actions catalog/list/get,
+  confirmation/execute, verification rerun + run + reruns, history. Delivery
+  review convenience endpoints (accept/reject/request-changes/notes/history)
+  delegate to the governed flow. Reuses the platform policy-engine.
+
+- **Authentication.** Test-local signed session (HttpOnly + SameSite=Strict
+  cookie, 30-min expiry, runtime-key-file secret, gitignored). Production auth /
+  OIDC required-but-unconfigured (disabled); unknown auth modes fail closed; no
+  anonymous action; session token never in localStorage / URL.
+
+- **RBAC.** viewer (read-only), reviewer (note + request-changes), operator
+  (+ accept/reject/rerun), platform_admin (= operator; no deploy/GitHub/prod by
+  name). Backend-authoritative.
+
+- **Governance.** Each action: authenticate → session → CSRF → RBAC → reason →
+  policy → request → one-time confirmation (accept/reject/request-changes/rerun;
+  full_regression higher) → execute → execution record → audit (Step 37 path) →
+  default-denied notification. Idempotency-Key prevents duplicates.
+
+- **Disabled (never executable).** workflow pause/resume/dispatch,
+  work_item.update_status, project.cancel, github.create_pr/merge_pr,
+  deployment.execute, backup.production_run/restore, policy/model_policy/budget
+  update, incident.real_escalate → 403 policy_blocked / action_disabled. No
+  generic shell/command endpoint.
+
+- **Frontend.** `apps/admin-console/src/operator/` (explicit typed action client
+  with CSRF + credentials + idempotency, no generic request()) + Operator
+  Console page at `/operator` (session banner, role-aware review panel with
+  mandatory-reason confirmation dialog, verification rerun, action history,
+  disabled future actions). v0 read-only guard relocated to exclude the
+  `operator/` module; a STRICTER operatorActionGuard test covers it.
+
+- **Denylist / metrics / safety.** `operator_action.*` / `operator_review.*` /
+  `verification_rerun.*` added to the default real-delivery denylist (all prior
+  namespaces remain). 11 Prometheus counters. `/operations/safety` gains the v1
+  fields (`admin_console_v1_enabled`, auth mode/flags, rbac/csrf enabled,
+  operator_actions_enabled + controlled_only, arbitrary/shell/workflow/work-item/
+  github/deployment/production all false, latest action/rerun, policy block
+  count).
+
+- **Tests.** 125 backend tests (session/csrf/rbac/auth/catalog/policy_gate/
+  confirmation/idempotency/verification allowlist+no-shell+timeout/disabled
+  catalog/audit-notification/safety/no-secret-leak/no-production + accept/reject/
+  request_changes/notes API flow). ruff / black / mypy clean. Frontend:
+  operatorActionGuard + operatorClient vitest (npm-optional).
+
+- **Reconciliation.** v0 verify + read-only guard updated to be v1-aware
+  (operator module is a delineated audited surface; the v0 read-only views stay
+  write-free, and stronger arbitrary/shell/production=false assertions were
+  added — net strictness increased, not reduced). The old
+  `ENABLE_DELIVERY_PACKAGE_OPERATOR_ACTIONS` scaffold flag stays false; v1 uses
+  `ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS`.
+
+- **Production safety.** No deploy / GitHub write / PR / branch push / external
+  delivery / real escalation / production action. Acceptance is human-review
+  only. `production_executed_true_count` stays 0. No raw token/secret committed
+  (session key under gitignored `.runtime/`).
+
+- **Remaining limitations (carry-forward).** production OIDC / external IdP not
+  integrated; operator actions controlled-test-mode only; workflow pause/resume,
+  work-item mutation, GitHub actions, deployment, production actions all
+  disabled; Kubernetes / Helm / ArgoCD baseline (Step 51); real production secret
+  store; real cloud backup; production schedule; real pager / escalation.
+
+- **Observations only.** Claude Code reports observed state and does NOT decide
+  production readiness.

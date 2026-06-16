@@ -2,9 +2,12 @@ import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join } from "node:path";
 
-// Read-only guard: scan the entire frontend source tree and assert it never
-// performs a mutating HTTP call or an operator action. This is the structural
-// invariant that keeps Admin Console v0 read-only.
+// Read-only guard: scan the Admin Console v0 read-only surface and assert it
+// never performs a mutating HTTP call or an operator action. The Stage 52 v1
+// operator-action surface lives under ``src/operator/`` (a clearly delineated,
+// audited module) and is excluded here -- it is covered by the STRICTER
+// operatorActionGuard test instead. Everything else (all read-only views) must
+// remain write-free, so this invariant is unchanged for v0.
 const SRC = join(__dirname, "..");
 
 function walk(dir: string): string[] {
@@ -12,9 +15,11 @@ function walk(dir: string): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
-      if (name === "__tests__") continue;
+      if (name === "__tests__" || name === "operator") continue;
       out.push(...walk(p));
     } else if (/\.(ts|tsx)$/.test(name)) {
+      // OperatorConsole composes the operator module; skip the page shell only.
+      if (name === "OperatorConsole.tsx") continue;
       out.push(p);
     }
   }

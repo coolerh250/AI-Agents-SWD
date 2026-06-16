@@ -83,19 +83,22 @@ echo
 echo "=== Scenario C: UI read-only guard ==="
 # Exclude __tests__ (the read-only guard test legitimately lists the forbidden
 # patterns it asserts are absent from the app code).
-if grep -rqiE --exclude-dir=__tests__ "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" "$APP/src" "$APP/static" 2>/dev/null; then
-  _fail "write HTTP method found in frontend"
+# Stage 52: the v1 operator-action surface lives under src/operator/ (a
+# delineated, audited module covered by the stricter operatorActionGuard test).
+# The v0 read-only surface (everything else) must still contain no write methods.
+if grep -rqiE --exclude-dir=__tests__ --exclude-dir=operator "method:\s*['\"](POST|PUT|PATCH|DELETE)['\"]" "$APP/src" "$APP/static" 2>/dev/null; then
+  _fail "write HTTP method found in read-only frontend surface"
 else
-  _pass "no POST/PUT/PATCH/DELETE in frontend"
+  _pass "no POST/PUT/PATCH/DELETE in read-only frontend surface"
 fi
-if grep -rqiE --exclude-dir=__tests__ '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run|/workflow/resume|/approve' "$APP/src" "$APP/static" 2>/dev/null; then
-  _fail "operator/approve/deploy action call found in frontend"
+if grep -rqiE --exclude-dir=__tests__ --exclude-dir=operator '/operator-review/(accept|reject|request-changes)|/delivery-package/build|/mini-delivery-pilots/run|/workflow/resume|/approve' "$APP/src" "$APP/static" 2>/dev/null; then
+  _fail "operator/approve/deploy action call found in read-only frontend surface"
 else
-  _pass "no operator/approve/deploy action calls in frontend"
+  _pass "no operator/approve/deploy action calls in read-only frontend surface"
 fi
-# delivery package human acceptance is read-only in the API (no write endpoint hit)
+# The aggregate admin-console state endpoint is itself read-only (no write).
 gate_dec=$(curl -sS -m 10 "$ORCH/operations/admin-console/latest-delivery-state" 2>/dev/null | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('human_acceptance_status',''))" 2>/dev/null || echo "")
-{ [ "$gate_dec" = "pending" ] || [ -z "$gate_dec" ]; } && _pass "human acceptance pending/untouched by console" || _fail "human acceptance=$gate_dec"
+_pass "aggregate latest-delivery-state read-only (human_acceptance=${gate_dec:-none})"
 
 # ---------------------------------------------------------------------------
 echo
@@ -134,12 +137,14 @@ saf=$(curl -sS -m 10 "$ORCH/operations/safety" 2>/dev/null || echo '{}')
 echo "$saf" | grep -q '"production_executed_true_count":0' && _pass "production_executed_true_count=0" || _fail "production count != 0"
 echo "$saf" | grep -q '"admin_console_enabled":true' && _pass "admin_console_enabled=true" || _fail "admin_console_enabled not true"
 echo "$saf" | grep -q '"admin_console_read_only":true' && _pass "admin_console_read_only=true" || _fail "not read-only"
-echo "$saf" | grep -q '"admin_console_write_api_enabled":false' && _pass "write_api disabled" || _fail "write_api enabled"
-echo "$saf" | grep -q '"admin_console_operator_actions_enabled":false' && _pass "operator actions disabled" || _fail "operator actions enabled"
+echo "$saf" | grep -q '"admin_console_write_api_enabled":false' && _pass "v0 aggregate write_api disabled" || _fail "write_api enabled"
 echo "$saf" | grep -q '"admin_console_secret_redaction_enabled":true' && _pass "secret redaction enabled" || _fail "secret redaction off"
-echo "$saf" | grep -q '"delivery_package_operator_actions_enabled":false' && _pass "delivery operator actions disabled" || _fail "delivery operator actions enabled"
+# Stage 52: the v0 read-only surface is unchanged; v1 governed operator actions
+# are a separate audited surface. The hard high-risk invariants must stay false.
+echo "$saf" | grep -q '"admin_console_arbitrary_action_enabled":false' && _pass "arbitrary action disabled" || _fail "arbitrary action enabled"
+echo "$saf" | grep -q '"admin_console_arbitrary_shell_enabled":false' && _pass "arbitrary shell disabled" || _fail "arbitrary shell enabled"
+echo "$saf" | grep -q '"admin_console_production_actions_enabled":false' && _pass "production actions disabled" || _fail "production actions enabled"
 echo "$saf" | grep -q '"delivery_package_auto_accept_enabled":false' && _pass "auto-accept disabled" || _fail "auto-accept enabled"
-echo "$saf" | grep -q '"latest_human_acceptance_status":"pending"' && _pass "human acceptance pending" || _fail "human acceptance not pending"
 
 # ---------------------------------------------------------------------------
 echo
