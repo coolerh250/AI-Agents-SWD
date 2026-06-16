@@ -31,12 +31,16 @@ _fail() { echo "  [FAIL] $1"; total=$((total + 1)); }
 _skip() { echo "  [SKIP] $1"; }
 
 # Helpers -------------------------------------------------------------------
-login() { # role -> sets JAR + CSRF
-  rm -f "$JAR"
-  local resp
-  resp=$(curl -sS -m 10 -c "$JAR" -X POST "$ADMIN/auth/test-login" \
-    -H 'Content-Type: application/json' -d "{\"role\":\"$1\"}" 2>/dev/null || echo '{}')
-  CSRF=$(echo "$resp" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null || echo "")
+login() { # role -> sets JAR + CSRF (bounded retry: tolerate transient resets)
+  local resp=""
+  for _attempt in 1 2 3 4 5; do
+    rm -f "$JAR"
+    resp=$(curl -sS -m 10 -c "$JAR" -X POST "$ADMIN/auth/test-login" \
+      -H 'Content-Type: application/json' -d "{\"role\":\"$1\"}" 2>/dev/null || echo '{}')
+    CSRF=$(echo "$resp" | "$PY" -c "import sys,json;print(json.load(sys.stdin).get('csrf_token',''))" 2>/dev/null || echo "")
+    [ -n "$CSRF" ] && break
+    sleep 2
+  done
   echo "$resp"
 }
 post_admin() { # path json -> response (uses JAR + CSRF + idem)
