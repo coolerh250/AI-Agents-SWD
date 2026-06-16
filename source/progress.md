@@ -9836,7 +9836,20 @@ issues & blockers, and next-step suggestions.
   backup schedule + internal PG/Redis/Vault all false; no real hostnames, no
   credentials, only a named external secret. A bad production override is
   rejected at render time.
-- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Verification (remote 10.0.1.31, HEAD a59e8e3).**
+  `KUBERNETES_RUNTIME_INVENTORY_VERIFY: PASS` (14/14) and
+  `HELM_FOUNDATION_VERIFY: PASS` (43/43, helm 3.16.3 via pinned
+  `alpine/helm` container — no local helm, no cluster). helm lint + template
+  for all four environments PASS (dev/test → 70 objects, staging/prod → 61).
+  Fail-closed enforced: production+operatorActions and realDeployEnabled=true
+  both rejected at render time. 9 targeted pytest files: 48 passed, 4
+  jsonschema-gated skips. `docker compose config --quiet` OK; `git diff --check`
+  clean. `/operations/safety`: no kubernetes/helm/argocd fields present (no new
+  fields added), `production_executed_true_count=0`,
+  `admin_console_production_actions_enabled=false`. One remote fix during
+  validation: helm verify Check 18 self-grep matched its own success-message
+  string ("...helm install/upgrade...") — excluded the ok/bad reporting lines
+  before the mutation scan (commit a59e8e3); no behaviour change to checks.
 - **Local checks.** 9 targeted pytest files (48 passed, 4 jsonschema-gated
   skips), `verify_kubernetes_runtime_inventory.py` PASS, ruff/black/mypy clean
   on all new Python.
