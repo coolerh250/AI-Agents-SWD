@@ -2356,6 +2356,33 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Runtime Inventory & Helm Foundation (Stage 53A / Step 51.1)
+
+Turns the actual Docker Compose runtime into an evidence-backed inventory and a
+lint-able, render-able **Helm foundation** — the base for Kubernetes work in
+Step 51.2+. The [runtime inventory](infra/kubernetes/runtime-inventory.yaml) +
+[dependency matrix](infra/kubernetes/runtime-dependency-matrix.yaml) classify
+all 27 Compose services (20 first-party long-running Deployment targets,
+optional dev/test Postgres/Redis, test-only Vault, deferred observability) and
+record one-shot jobs (migrations, backup) so they are never turned into
+Deployments. The [`ai-agents-platform`](infra/kubernetes/charts/ai-agents-platform)
+chart (v0.1.0) renders generic Deployment/Service/ConfigMap/ServiceAccount
+manifests from a values-driven component loop across **dev / test /
+staging-placeholder / production-placeholder**. It is a **foundation only**: no
+cluster connection, no `helm install`; `realDeployEnabled` is false everywhere;
+the production placeholder is **fail-closed and non-deployable**
+(`validate-values.yaml` rejects test/production auth, operator actions, GitHub
+write, deployment, in-cluster datastores, `:latest`, and inline secrets — the
+chart never creates a Secret). Verify with
+`python scripts/verify_kubernetes_runtime_inventory.py`
+(`KUBERNETES_RUNTIME_INVENTORY_VERIFY: PASS`) and
+`scripts/verify_helm_foundation.sh` (`HELM_FOUNDATION_VERIFY: PASS`). See
+[`docs/platform/runtime-service-inventory.md`](docs/platform/runtime-service-inventory.md),
+[`docs/platform/helm-foundation.md`](docs/platform/helm-foundation.md), and
+[`docs/platform/environment-values-foundation.md`](docs/platform/environment-values-foundation.md).
+Security hardening, NetworkPolicy, RBAC, storage, Jobs and GitOps are deferred
+to later Step 51 sub-stages.
+
 ## Admin Console v1 — Operator Actions (Stage 52)
 
 Upgrades the Admin Console from read-only visibility to a **controlled Operator

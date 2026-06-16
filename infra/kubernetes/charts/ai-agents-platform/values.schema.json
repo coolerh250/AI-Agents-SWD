@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft-07/schema#",
+  "title": "ai-agents-platform Step 51.1 foundation values",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["global", "components"],
+  "properties": {
+    "global": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["environment", "production", "realDeployEnabled"],
+      "properties": {
+        "environment": {
+          "type": "string",
+          "enum": ["dev", "test", "staging", "production"]
+        },
+        "production": { "type": "boolean" },
+        "realDeployEnabled": { "type": "boolean" },
+        "imageRegistry": { "type": "string" },
+        "imagePullSecrets": { "type": "array" },
+        "nameOverride": { "type": "string" }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "adminConsole": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "authMode": { "type": "string" },
+            "testAuthEnabled": { "type": "boolean" },
+            "productionAuthEnabled": { "type": "boolean" },
+            "oidcEnabled": { "type": "boolean" },
+            "operatorActionsEnabled": { "type": "boolean" },
+            "operatorActionsControlledOnly": { "type": "boolean" }
+          }
+        },
+        "integrations": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "githubWrite": { "type": "boolean" },
+            "prCreation": { "type": "boolean" },
+            "deployment": { "type": "boolean" },
+            "realLlm": { "type": "boolean" },
+            "externalDelivery": { "type": "boolean" },
+            "productionBackupSchedule": { "type": "boolean" }
+          }
+        }
+      }
+    },
+    "secrets": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "existingSecret": { "type": "string" },
+        "create": { "type": "boolean" }
+      }
+    },
+    "serviceAccount": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "create": { "type": "boolean" },
+        "automountServiceAccountToken": { "type": "boolean" }
+      }
+    },
+    "defaults": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "replicas": { "type": "integer", "minimum": 0 },
+        "terminationGracePeriodSeconds": { "type": "integer", "minimum": 0 },
+        "strategy": { "type": "object" },
+        "podSecurityContext": { "type": "object" },
+        "containerSecurityContext": { "type": "object" }
+      }
+    },
+    "commonSecretRefs": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["name", "keys"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string" },
+          "keys": { "type": "object" }
+        }
+      }
+    },
+    "components": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["enabled", "type", "image"],
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "type": {
+            "type": "string",
+            "enum": ["application", "governance", "communication", "worker", "agent", "infrastructure"]
+          },
+          "testOnly": { "type": "boolean" },
+          "replicas": { "type": "integer", "minimum": 0 },
+          "containerPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
+          "command": { "type": "array" },
+          "useCommonSecretRefs": { "type": "boolean" },
+          "env": { "type": "object" },
+          "image": {
+            "type": "object",
+            "required": ["repository"],
+            "additionalProperties": false,
+            "properties": {
+              "repository": { "type": "string", "minLength": 1 },
+              "tag": { "type": "string" },
+              "digest": { "type": "string" }
+            }
+          },
+          "service": {
+            "type": "object",
+            "required": ["enabled", "port"],
+            "additionalProperties": false,
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "port": { "type": "integer", "minimum": 1, "maximum": 65535 }
+            }
+          },
+          "health": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["enabled", "type"],
+            "properties": {
+              "enabled": { "type": "boolean" },
+              "type": { "type": "string", "enum": ["httpGet", "exec"] },
+              "path": { "type": "string" },
+              "command": { "type": "array" },
+              "initialDelaySeconds": { "type": "integer", "minimum": 0 },
+              "periodSeconds": { "type": "integer", "minimum": 1 }
+            }
+          },
+          "resources": {
+            "type": "object",
+            "required": ["requests", "limits"],
+            "additionalProperties": false,
+            "properties": {
+              "requests": {
+                "type": "object",
+                "required": ["cpu", "memory"],
+                "additionalProperties": false,
+                "properties": {
+                  "cpu": { "type": ["string", "number"] },
+                  "memory": { "type": "string" }
+                }
+              },
+              "limits": {
+                "type": "object",
+                "required": ["cpu", "memory"],
+                "additionalProperties": false,
+                "properties": {
+                  "cpu": { "type": ["string", "number"] },
+                  "memory": { "type": "string" }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

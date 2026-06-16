@@ -13,7 +13,11 @@ project delivery pilot. Each step builds on the previous one.
 | 48 | Admin Console v0 (read-only) | **closed** | read-only browser UI (`/admin`) + 6 aggregate `/operations/admin-console/*` endpoints over projects / reviews / workspaces / pilots / delivery packages / safety / regression / incidents / LLM; no write API, no operator actions, secret/CoT redaction |
 | 49 | Backup / DR Gap Closure | **done (this stage)** | close the four backup/DR gaps (encryption_no_key, storage_not_off_host, schedule_dry_run_only, migration_down_gaps) at a controlled test baseline → readiness `passed_with_non_production_limitations`; no production backup/restore, no real cloud, no real schedule |
 | 50 | Admin Console v1 (operator actions) | **done (this stage)** | controlled operator actions (accept / reject / request-changes / note / allowlisted verification rerun) gated by test-local auth + RBAC + CSRF + policy + confirmation + idempotency + audit; high-risk actions disabled; acceptance is human-review only (no deploy/PR/prod) |
-| 51 | Kubernetes / Helm / ArgoCD Runtime Baseline | planned | container runtime + GitOps deployment baseline |
+| 51 | Kubernetes / Helm / ArgoCD Runtime Baseline | **open** (split into 51.1–51.4) | container runtime + GitOps deployment baseline |
+| 51.1 | Runtime Inventory & Helm Foundation | **done (this stage)** | evidence-backed runtime inventory + dependency matrix + component catalog; values-driven Helm foundation chart (generic Deployment/Service/ConfigMap/ServiceAccount) across dev/test/staging-placeholder/prod-placeholder; fail-closed non-deployable production placeholder; lint + render verified; no cluster, no deploy |
+| 51.2 | Kubernetes Security, Network & Storage Baseline | pending | SecurityContext, NetworkPolicy, RBAC, PVC/storage, Migration Job, Backup CronJob |
+| 51.3 | ArgoCD & Environment GitOps Baseline | pending | ArgoCD project/application + app-of-apps + environment wiring |
+| 51.4 | Runtime Visibility & Integrated Verification | pending | runtime ops surface + integrated verification |
 
 ## Current foundation (Steps 43–44)
 

@@ -1,0 +1,28 @@
+{{/*
+Step 51.1 shared non-secret platform ConfigMap. Holds ONLY non-sensitive
+configuration + safety flags. NEVER contains credentials/tokens/keys -- those
+are referenced from an existing Secret via component secretRefs.
+*/}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "aiagents.fullname" . }}-config
+  labels:
+    {{- include "aiagents.commonLabels" . | nindent 4 }}
+data:
+  ENVIRONMENT: {{ .Values.global.environment | quote }}
+  PRODUCTION: {{ .Values.global.production | quote }}
+  REAL_DEPLOY_ENABLED: {{ .Values.global.realDeployEnabled | quote }}
+  ENABLE_ADMIN_CONSOLE_V1: {{ .Values.platform.adminConsole.enabled | quote }}
+  ADMIN_CONSOLE_AUTH_MODE: {{ .Values.platform.adminConsole.authMode | quote }}
+  ADMIN_CONSOLE_TEST_AUTH_ENABLED: {{ .Values.platform.adminConsole.testAuthEnabled | quote }}
+  ADMIN_CONSOLE_PRODUCTION_AUTH_ENABLED: {{ .Values.platform.adminConsole.productionAuthEnabled | quote }}
+  ADMIN_CONSOLE_OIDC_ENABLED: {{ .Values.platform.adminConsole.oidcEnabled | quote }}
+  ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS: {{ .Values.platform.adminConsole.operatorActionsEnabled | quote }}
+  ADMIN_CONSOLE_OPERATOR_ACTIONS_CONTROLLED_ONLY: {{ .Values.platform.adminConsole.operatorActionsControlledOnly | quote }}
+  ENABLE_GITHUB_WRITE: {{ .Values.platform.integrations.githubWrite | quote }}
+  ENABLE_PR_CREATION: {{ .Values.platform.integrations.prCreation | quote }}
+  ENABLE_DEPLOYMENT: {{ .Values.platform.integrations.deployment | quote }}
+  ENABLE_REAL_LLM: {{ .Values.platform.integrations.realLlm | quote }}
+  ENABLE_EXTERNAL_DELIVERY: {{ .Values.platform.integrations.externalDelivery | quote }}
+  ENABLE_PRODUCTION_BACKUP_SCHEDULE: {{ .Values.platform.integrations.productionBackupSchedule | quote }}

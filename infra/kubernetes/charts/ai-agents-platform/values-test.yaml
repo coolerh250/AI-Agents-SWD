@@ -1,0 +1,33 @@
+# Step 51.1 -- TEST environment values. Mirrors the current controlled test
+# baseline on 10.0.1.31: in-cluster Postgres/Redis + test-only Vault enabled,
+# Admin Console + test-local auth enabled, operator actions controlled-only.
+# GitHub write / PR / deploy / real LLM / external delivery / production all OFF.
+global:
+  environment: test
+  production: false
+  realDeployEnabled: false
+
+defaults:
+  replicas: 1
+
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session
+    testAuthEnabled: true
+    productionAuthEnabled: false
+    oidcEnabled: false
+    operatorActionsEnabled: true
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+components:
+  postgres: {enabled: true}
+  redis: {enabled: true}
+  vault: {enabled: true}        # test-only dev Vault

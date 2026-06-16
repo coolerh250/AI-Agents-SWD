@@ -1,0 +1,23 @@
+apiVersion: v2
+name: ai-agents-platform
+description: >-
+  Step 51.1 runtime-inventory-driven Helm FOUNDATION for the AI-Agents-SWD
+  platform. Renders generic Deployments/Services/ConfigMaps/ServiceAccounts for
+  the inventoried long-running services across dev / test / staging-placeholder /
+  production-placeholder. This is a foundation chart only -- it is NOT a
+  production release, performs NO cluster connection, and the production values
+  are a fail-closed, non-deployable placeholder. Security hardening,
+  NetworkPolicy, RBAC, storage, jobs and GitOps are deferred to Step 51.2+.
+type: application
+version: 0.1.0
+appVersion: "step-51.1-baseline"
+keywords:
+  - ai-agents-swd
+  - foundation
+  - non-production
+maintainers:
+  - name: AI-Agents-SWD platform
+annotations:
+  ai-agents-swd/stage: "53A"
+  ai-agents-swd/step: "51.1"
+  ai-agents-swd/production-ready: "false"

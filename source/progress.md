@@ -9794,3 +9794,57 @@ issues & blockers, and next-step suggestions.
     - Fixes during validation: asyncpg `$N::timestamptz` bind (cast via
       `::text::timestamptz`); v1 verify Scenario A subshell (login CSRF lost via
       command substitution) + login retry hardening.
+
+## Stage 53A — Runtime Inventory & Helm Foundation (Step 51.1)
+
+- **Scope.** First sub-stage of Step 51. Turned the actual Docker Compose
+  runtime into an evidence-backed inventory and a lint-able / render-able Helm
+  FOUNDATION across dev / test / staging-placeholder / production-placeholder.
+  NOT a Kubernetes security stage, NOT a GitOps stage. No cluster connection, no
+  `kubectl`, no `helm install`, no deploy. Did NOT enter Step 51.2.
+- **Inventory.** All 27 Compose services inventoried + classified (1 core
+  application, 3 governance, 3 communication, 3 workers, 10 agents, 3
+  infrastructure, 4 observability). 20 first-party FastAPI services are
+  long-running Deployment targets (ports 8000–8020, each exposes `/health` +
+  `/metrics`, confirmed in source). 3 one-shot jobs (database-migrations,
+  backup-dr-run, verification-scripts) recorded and EXCLUDED from Deployments
+  (migration Job + backup CronJob deferred to Step 51.2). Vault flagged
+  test-only. Observability recorded as external/deferred. Dependency matrix: 59
+  edges, every edge evidence-backed (`compose_depends_on` and/or `env:<VAR>`);
+  `unknownDependencies` declared + empty. No secret values (names only).
+  Files: `infra/kubernetes/runtime-inventory.yaml`,
+  `infra/kubernetes/runtime-dependency-matrix.yaml`.
+- **Component catalog.** `charts/ai-agents-platform/component-catalog.yaml` —
+  20 first-party components + optional postgres/redis + test-only vault (23
+  total). One-shot jobs + observability recorded as deferred (never
+  Deployments). Placeholder image tags (`step-51-1-placeholder`), no fake
+  digests, no `:latest`.
+- **Helm chart.** `infra/kubernetes/charts/ai-agents-platform` (v0.1.0,
+  appVersion `step-51.1-baseline`, production-ready=false). Generic
+  values-driven templates (deployments/services/configmaps/serviceaccounts) +
+  `_helpers.tpl` + fail-closed `validate-values.yaml` + NOTES. ClusterIP only
+  (no NodePort/LoadBalancer/Ingress). ServiceAccount per component,
+  `automountServiceAccountToken: false`, no Role/ClusterRole. Secret model =
+  existing-Secret reference by name+key (`secretKeyRef`); the chart NEVER
+  creates a Secret. `values.schema.json` enforces environment enum +
+  required component fields. SecurityContext hardening OFF (deferred to 51.2).
+- **Environments.** dev/test enable in-cluster Postgres/Redis + test-only Vault;
+  staging/prod placeholders disable them (external managed datastores).
+  `realDeployEnabled=false` in all four. Production placeholder fail-closed:
+  `production=true` + `realDeployEnabled=false`, test/production auth + OIDC +
+  operator actions + GitHub write + deployment + external delivery + production
+  backup schedule + internal PG/Redis/Vault all false; no real hostnames, no
+  credentials, only a named external secret. A bad production override is
+  rejected at render time.
+- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Local checks.** 9 targeted pytest files (48 passed, 4 jsonschema-gated
+  skips), `verify_kubernetes_runtime_inventory.py` PASS, ruff/black/mypy clean
+  on all new Python.
+- **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
+  ArgoCD, no registry login, no image push, no production namespace, no
+  production deploy. No secret / rendered manifest committed (render →
+  gitignored `.runtime/kubernetes-rendered/`). production_executed_true_count
+  remains 0. No change to HARD_SAFETY_ACTIONS, audit canonicalization,
+  Step 50 operator policy, or `/operations/safety` (no Kubernetes fields added).
+- **Roadmap.** Step 51.1 closed (if verified); Step 51.2/51.3/51.4 pending;
+  Step 51 overall OPEN.

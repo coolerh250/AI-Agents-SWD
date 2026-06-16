@@ -1,0 +1,38 @@
+# Step 51.1 -- STAGING PLACEHOLDER values. NOT directly deployable.
+# Internal Postgres/Redis/Vault OFF (staging expects EXTERNAL managed
+# datastores). Test auth + operator actions OFF. Real integrations OFF.
+# Secrets are referenced by name only; image tags remain placeholders.
+global:
+  environment: staging
+  production: false
+  realDeployEnabled: false
+  imageRegistry: ""             # placeholder: no registry wired yet
+
+defaults:
+  replicas: 1
+
+secrets:
+  existingSecret: aiagents-staging-runtime-secrets   # external secret NAME only
+  create: false
+
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session   # inert: testAuthEnabled is false here
+    testAuthEnabled: false
+    productionAuthEnabled: false
+    oidcEnabled: false
+    operatorActionsEnabled: false
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+components:
+  postgres: {enabled: false}
+  redis: {enabled: false}
+  vault: {enabled: false}

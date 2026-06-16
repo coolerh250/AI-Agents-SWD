@@ -1,0 +1,27 @@
+{{/*
+Step 51.1 generic Service template. ClusterIP only -- internal access. No
+NodePort, no LoadBalancer, no Ingress. Service name == component name so the
+in-cluster DNS used by component env URLs (http://orchestrator:8000, etc.)
+resolves. Postgres/Redis Services are internal-only (never publicly exposed).
+*/}}
+{{- $root := . -}}
+{{- range $name, $comp := .Values.components }}
+{{- if and $comp.enabled $comp.service.enabled }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $name }}
+  labels:
+    {{- include "aiagents.componentLabels" (dict "root" $root "name" $name "comp" $comp) | nindent 4 }}
+spec:
+  type: ClusterIP
+  selector:
+    {{- include "aiagents.selectorLabels" (dict "root" $root "name" $name) | nindent 4 }}
+  ports:
+    - name: http
+      port: {{ $comp.service.port }}
+      targetPort: {{ $comp.containerPort }}
+      protocol: TCP
+{{- end }}
+{{- end }}

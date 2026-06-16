@@ -1,0 +1,22 @@
+ai-agents-platform {{ .Chart.Version }} (appVersion {{ .Chart.AppVersion }})
+
+  Step 51.1 FOUNDATION chart -- environment: {{ .Values.global.environment }}
+  production={{ .Values.global.production }}  realDeployEnabled={{ .Values.global.realDeployEnabled }}
+
+THIS IS A FOUNDATION CHART. It is NOT a production release.
+
+  * It performs NO cluster connection and is NOT intended for `helm install`.
+  * `global.realDeployEnabled` is false in every shipped values file.
+  * The production values file is a fail-closed, NON-DEPLOYABLE placeholder.
+  * Security hardening, NetworkPolicy, RBAC, storage, Jobs and GitOps are
+    deferred to Step 51.2 and later.
+
+Enabled components in this render:
+{{- range $name, $comp := .Values.components }}
+{{- if $comp.enabled }}
+  - {{ $name }} ({{ $comp.type }}){{ if $comp.testOnly }} [test-only]{{ end }}
+{{- end }}
+{{- end }}
+
+Secrets are referenced from existing Secret {{ .Values.secrets.existingSecret | quote }};
+this chart never creates a Secret resource.

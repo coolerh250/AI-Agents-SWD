@@ -1,0 +1,43 @@
+# Step 51.1 -- PRODUCTION PLACEHOLDER values. FAIL-CLOSED and NOT deployable.
+#
+# This file exists to prove the chart renders a safe production shape. It is
+# deliberately non-deployable: global.realDeployEnabled stays false. There are
+# NO real hostnames and NO credentials -- only a clearly-marked external secret
+# NAME. Every risky capability is OFF; validate-values.yaml enforces all of it.
+global:
+  environment: production
+  production: true
+  realDeployEnabled: false      # MUST stay false: foundation chart never deploys
+  imageRegistry: ""             # placeholder: production registry NOT wired
+  imagePullSecrets: []
+
+defaults:
+  replicas: 1
+
+secrets:
+  # PLACEHOLDER external secret name only -- the Secret is provisioned out of
+  # band (e.g. External Secrets Operator) in a later stage. No values here.
+  existingSecret: aiagents-prod-runtime-secrets
+  create: false
+
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session   # inert: all auth toggles below are false
+    testAuthEnabled: false
+    productionAuthEnabled: false           # production auth NOT implemented (fail closed)
+    oidcEnabled: false                     # production OIDC NOT implemented (fail closed)
+    operatorActionsEnabled: false
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+components:
+  postgres: {enabled: false}    # production uses EXTERNAL managed Postgres
+  redis: {enabled: false}       # production uses EXTERNAL managed Redis
+  vault: {enabled: false}       # no dev Vault in production

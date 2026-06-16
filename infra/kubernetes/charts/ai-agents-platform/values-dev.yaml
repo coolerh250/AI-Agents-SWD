@@ -1,0 +1,32 @@
+# Step 51.1 -- DEV environment values (override layer over values.yaml).
+# In-cluster Postgres/Redis + test-only Vault are convenient for local dev.
+# No real deploy, no secrets, no external integrations.
+global:
+  environment: dev
+  production: false
+  realDeployEnabled: false
+
+defaults:
+  replicas: 1
+
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session
+    testAuthEnabled: true
+    productionAuthEnabled: false
+    oidcEnabled: false
+    operatorActionsEnabled: true
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+components:
+  postgres: {enabled: true}
+  redis: {enabled: true}
+  vault: {enabled: true}        # test-only dev Vault

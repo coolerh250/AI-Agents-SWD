@@ -1,0 +1,408 @@
+# Step 51.1 -- base values for the ai-agents-platform FOUNDATION chart.
+#
+# Defaults are safe/non-production. Environment files (values-dev/test/
+# staging-placeholder/prod-placeholder.yaml) override `global`, the platform
+# toggles, and infrastructure component `enabled` flags.
+#
+# This file contains NO secret values. Credentials are referenced only by
+# existing-Secret name + key (secretRefs); the chart never creates a Secret.
+
+global:
+  environment: dev          # dev | test | staging | production
+  production: false
+  realDeployEnabled: false  # foundation chart NEVER deploys; stays false everywhere
+  imageRegistry: ""         # optional registry prefix; empty = placeholder/no registry
+  imagePullSecrets: []
+  nameOverride: ""
+
+# Non-secret platform configuration surfaced into a shared ConfigMap.
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session
+    testAuthEnabled: true
+    productionAuthEnabled: false
+    oidcEnabled: false
+    operatorActionsEnabled: true
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+# Secret model: reference an EXISTING secret only. The chart does NOT create it.
+secrets:
+  existingSecret: aiagents-runtime-secrets
+  create: false             # MUST stay false in this chart (no Secret resource)
+
+serviceAccount:
+  create: true
+  automountServiceAccountToken: false
+
+# Defaults applied to every component unless overridden.
+defaults:
+  replicas: 1
+  terminationGracePeriodSeconds: 30
+  strategy:
+    type: RollingUpdate
+    maxSurge: 1
+    maxUnavailable: 0
+  # SecurityContext hardening is intentionally OFF in Step 51.1. Deep hardening
+  # (readOnlyRootFilesystem / runAsNonRoot / drop ALL / seccomp) is introduced in
+  # Step 51.2 against real runtime needs.
+  podSecurityContext:
+    enabled: false
+  containerSecurityContext:
+    enabled: false
+
+# Shared secret reference applied to components that talk to Postgres/Redis.
+# secretRefs[].keys maps SECRET KEY -> ENV VAR NAME (no values, ever).
+commonSecretRefs:
+  - name: aiagents-runtime-secrets
+    keys:
+      databaseUrl: DATABASE_URL
+      redisUrl: REDIS_URL
+
+components:
+  orchestrator:
+    enabled: true
+    type: application
+    image: {repository: aiagents/orchestrator, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8000
+    service: {enabled: true, port: 8000}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 250m, memory: 256Mi}
+      limits: {cpu: "1", memory: 1Gi}
+    useCommonSecretRefs: true
+    env:
+      POLICY_ENGINE_URL: http://policy-engine:8001
+      APPROVAL_ENGINE_URL: http://approval-engine:8002
+      AUDIT_SERVICE_URL: http://audit-service:8003
+
+  policy-engine:
+    enabled: true
+    type: governance
+    image: {repository: aiagents/policy-engine, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8001
+    service: {enabled: true, port: 8001}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: false
+    env: {}
+
+  approval-engine:
+    enabled: true
+    type: governance
+    image: {repository: aiagents/approval-engine, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8002
+    service: {enabled: true, port: 8002}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  audit-service:
+    enabled: true
+    type: governance
+    image: {repository: aiagents/audit-service, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8003
+    service: {enabled: true, port: 8003}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  communication-gateway:
+    enabled: true
+    type: communication
+    image: {repository: aiagents/communication-gateway, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8004
+    service: {enabled: true, port: 8004}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
+
+  github-automation:
+    enabled: true
+    type: communication
+    image: {repository: aiagents/github-automation, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8005
+    service: {enabled: true, port: 8005}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: false
+    env:
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      GITHUB_DRY_RUN: "true"
+
+  discord-gateway:
+    enabled: true
+    type: communication
+    image: {repository: aiagents/discord-gateway, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8007
+    service: {enabled: true, port: 8007}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      COMMUNICATION_GATEWAY_URL: http://communication-gateway:8004
+      ORCHESTRATOR_URL: http://orchestrator:8000
+      DISCORD_GATEWAY_MODE: sandbox
+
+  audit-worker:
+    enabled: true
+    type: worker
+    image: {repository: aiagents/audit-worker, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8006
+    service: {enabled: true, port: 8006}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  notification-worker:
+    enabled: true
+    type: worker
+    image: {repository: aiagents/notification-worker, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8008
+    service: {enabled: true, port: 8008}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      ORCHESTRATOR_PUBLIC_URL: http://orchestrator:8000
+      NOTIFICATION_WORKER_MODE: sandbox
+
+  retry-scheduler:
+    enabled: true
+    type: worker
+    image: {repository: aiagents/retry-scheduler, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8015
+    service: {enabled: true, port: 8015}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      AUDIT_SERVICE_URL: http://audit-service:8003
+
+  intake-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/intake-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8010
+    service: {enabled: true, port: 8010}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  requirement-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/requirement-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8011
+    service: {enabled: true, port: 8011}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  development-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/development-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8012
+    service: {enabled: true, port: 8012}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  qa-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/qa-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8013
+    service: {enabled: true, port: 8013}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env: {}
+
+  devops-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/devops-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8014
+    service: {enabled: true, port: 8014}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      AUDIT_SERVICE_URL: http://audit-service:8003
+      GITHUB_AUTOMATION_URL: http://github-automation:8005
+      GITHUB_DRY_RUN: "true"
+
+  project-planner-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/project-planner-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8016
+    service: {enabled: true, port: 8016}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      PROJECT_PLANNER_TEMPLATE_MODE: "true"
+
+  design-review-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/design-review-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8017
+    service: {enabled: true, port: 8017}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      DESIGN_REVIEW_TEMPLATE_MODE: "true"
+
+  workspace-operator-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/workspace-operator-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8018
+    service: {enabled: true, port: 8018}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      WORKSPACE_OPERATOR_TEMPLATE_MODE: "true"
+      WORKSPACE_OPERATOR_CONTROLLED_ONLY: "true"
+
+  mini-delivery-pilot-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/mini-delivery-pilot-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8019
+    service: {enabled: true, port: 8019}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      MINI_DELIVERY_PILOT_TEMPLATE_MODE: "true"
+      MINI_DELIVERY_PILOT_CONTROLLED_ONLY: "true"
+
+  delivery-package-agent:
+    enabled: true
+    type: agent
+    image: {repository: aiagents/delivery-package-agent, tag: step-51-1-placeholder, digest: ""}
+    containerPort: 8020
+    service: {enabled: true, port: 8020}
+    health: {enabled: true, type: httpGet, path: /health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 100m, memory: 128Mi}
+      limits: {cpu: 500m, memory: 512Mi}
+    useCommonSecretRefs: true
+    env:
+      DELIVERY_PACKAGE_TEMPLATE_MODE: "true"
+      DELIVERY_PACKAGE_CONTROLLED_ONLY: "true"
+
+  # ---- infrastructure (dev/test optional in-cluster; OFF by default) ----
+  postgres:
+    enabled: false
+    type: infrastructure
+    image: {repository: postgres, tag: "16", digest: ""}
+    containerPort: 5432
+    service: {enabled: true, port: 5432}
+    health:
+      enabled: true
+      type: exec
+      command: ["pg_isready", "-U", "postgres"]
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    resources:
+      requests: {cpu: 100m, memory: 256Mi}
+      limits: {cpu: 500m, memory: 1Gi}
+    useCommonSecretRefs: false
+    env:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: aiagents
+      POSTGRES_HOST_AUTH_METHOD: trust
+
+  redis:
+    enabled: false
+    type: infrastructure
+    image: {repository: redis, tag: "7", digest: ""}
+    containerPort: 6379
+    service: {enabled: true, port: 6379}
+    health:
+      enabled: true
+      type: exec
+      command: ["redis-cli", "ping"]
+      initialDelaySeconds: 10
+      periodSeconds: 10
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+    useCommonSecretRefs: false
+    env: {}
+
+  vault:
+    enabled: false
+    type: infrastructure
+    testOnly: true
+    image: {repository: hashicorp/vault, tag: "1.17", digest: ""}
+    containerPort: 8200
+    command: ["server", "-dev"]
+    service: {enabled: true, port: 8200}
+    health: {enabled: false, type: httpGet, path: /v1/sys/health, initialDelaySeconds: 10, periodSeconds: 10}
+    resources:
+      requests: {cpu: 50m, memory: 64Mi}
+      limits: {cpu: 250m, memory: 256Mi}
+    useCommonSecretRefs: false
+    env:
+      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200

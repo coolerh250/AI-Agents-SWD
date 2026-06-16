@@ -1,0 +1,38 @@
+{{/*
+Step 51.1 fail-closed validation. Emits NO Kubernetes resource; it aborts the
+render (helm lint / helm template) when a safety rule is violated. The
+production placeholder values satisfy every rule and therefore render safely --
+but stay non-deployable (global.realDeployEnabled=false everywhere).
+*/}}
+{{- $g := .Values.global -}}
+{{- $env := $g.environment -}}
+{{- $valid := list "dev" "test" "staging" "production" -}}
+{{- if not (has $env $valid) }}
+  {{- fail (printf "global.environment %q must be one of dev|test|staging|production" $env) }}
+{{- end }}
+{{- if eq $env "production" }}
+  {{- if not $g.production }}{{ fail "production environment requires global.production=true" }}{{ end }}
+{{- else }}
+  {{- if $g.production }}{{ fail (printf "non-production environment %q must not set global.production=true" $env) }}{{ end }}
+{{- end }}
+{{- if $g.realDeployEnabled }}{{ fail "global.realDeployEnabled must be false in the Step 51.1 foundation chart (no real deploy)" }}{{ end }}
+{{- if .Values.secrets.create }}{{ fail "secrets.create must be false: this chart never creates a Secret resource" }}{{ end }}
+{{- if $g.production }}
+  {{- if .Values.platform.adminConsole.testAuthEnabled }}{{ fail "production must not enable test-local auth" }}{{ end }}
+  {{- if .Values.platform.adminConsole.productionAuthEnabled }}{{ fail "production auth is not implemented; must stay false (fail closed)" }}{{ end }}
+  {{- if .Values.platform.adminConsole.oidcEnabled }}{{ fail "production OIDC is not implemented; must stay false (fail closed)" }}{{ end }}
+  {{- if .Values.platform.adminConsole.operatorActionsEnabled }}{{ fail "production must not enable operator actions" }}{{ end }}
+  {{- if .Values.platform.integrations.githubWrite }}{{ fail "production must not enable GitHub write" }}{{ end }}
+  {{- if .Values.platform.integrations.deployment }}{{ fail "production must not enable deployment actions" }}{{ end }}
+  {{- if .Values.platform.integrations.externalDelivery }}{{ fail "production must not enable real external delivery" }}{{ end }}
+  {{- if .Values.platform.integrations.productionBackupSchedule }}{{ fail "production must not enable production backup schedule" }}{{ end }}
+  {{- if (index .Values.components "vault").enabled }}{{ fail "production must not enable in-cluster Vault dev" }}{{ end }}
+  {{- if (index .Values.components "postgres").enabled }}{{ fail "production must not enable in-cluster Postgres (use external managed DB)" }}{{ end }}
+  {{- if (index .Values.components "redis").enabled }}{{ fail "production must not enable in-cluster Redis (use external managed Redis)" }}{{ end }}
+{{- end }}
+{{- range $name, $comp := .Values.components }}
+{{- if $comp.enabled }}
+  {{- if eq ($comp.image.tag | toString) "latest" }}{{ fail (printf "component %s uses forbidden image tag 'latest'" $name) }}{{ end }}
+  {{- if $comp.testOnly }}{{- if $g.production }}{{ fail (printf "production must not enable test-only component %s" $name) }}{{ end }}{{- end }}
+{{- end }}
+{{- end }}

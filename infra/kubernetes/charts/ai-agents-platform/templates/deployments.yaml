@@ -1,0 +1,117 @@
+{{/*
+Step 51.1 generic Deployment template. One Deployment per enabled component,
+values-driven (no per-service copy/paste). Foundation only: SecurityContext
+hardening is opt-in and OFF by default (Step 51.2 introduces it).
+*/}}
+{{- $root := . -}}
+{{- $fullname := include "aiagents.fullname" . -}}
+{{- range $name, $comp := .Values.components }}
+{{- if $comp.enabled }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ $fullname }}-{{ $name }}
+  labels:
+    {{- include "aiagents.componentLabels" (dict "root" $root "name" $name "comp" $comp) | nindent 4 }}
+spec:
+  replicas: {{ $comp.replicas | default $root.Values.defaults.replicas }}
+  strategy:
+    type: {{ $root.Values.defaults.strategy.type }}
+    {{- if eq $root.Values.defaults.strategy.type "RollingUpdate" }}
+    rollingUpdate:
+      maxSurge: {{ $root.Values.defaults.strategy.maxSurge }}
+      maxUnavailable: {{ $root.Values.defaults.strategy.maxUnavailable }}
+    {{- end }}
+  selector:
+    matchLabels:
+      {{- include "aiagents.selectorLabels" (dict "root" $root "name" $name) | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "aiagents.componentLabels" (dict "root" $root "name" $name "comp" $comp) | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "aiagents.serviceAccountName" (dict "root" $root "name" $name "comp" $comp) }}
+      automountServiceAccountToken: {{ $root.Values.serviceAccount.automountServiceAccountToken }}
+      terminationGracePeriodSeconds: {{ $root.Values.defaults.terminationGracePeriodSeconds }}
+      {{- if $root.Values.global.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml $root.Values.global.imagePullSecrets | nindent 8 }}
+      {{- end }}
+      {{- if $root.Values.defaults.podSecurityContext.enabled }}
+      securityContext:
+        {{- toYaml (omit $root.Values.defaults.podSecurityContext "enabled") | nindent 8 }}
+      {{- end }}
+      containers:
+        - name: {{ $name }}
+          image: {{ include "aiagents.image" (dict "root" $root "comp" $comp) }}
+          imagePullPolicy: IfNotPresent
+          {{- if $comp.command }}
+          command:
+            {{- toYaml $comp.command | nindent 12 }}
+          {{- end }}
+          {{- if $comp.containerPort }}
+          ports:
+            - name: http
+              containerPort: {{ $comp.containerPort }}
+              protocol: TCP
+          {{- end }}
+          envFrom:
+            - configMapRef:
+                name: {{ $fullname }}-config
+          {{- $hasEnv := and $comp.env (gt (len $comp.env) 0) }}
+          {{- $secretRefs := list }}
+          {{- if $comp.useCommonSecretRefs }}{{- $secretRefs = $root.Values.commonSecretRefs }}{{- end }}
+          {{- if or $hasEnv $secretRefs }}
+          env:
+            {{- range $k, $v := $comp.env }}
+            - name: {{ $k }}
+              value: {{ $v | quote }}
+            {{- end }}
+            {{- range $ref := $secretRefs }}
+            {{- range $sk, $envName := $ref.keys }}
+            - name: {{ $envName }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $ref.name }}
+                  key: {{ $sk }}
+            {{- end }}
+            {{- end }}
+          {{- end }}
+          {{- if $comp.health.enabled }}
+          {{- if eq $comp.health.type "httpGet" }}
+          livenessProbe:
+            httpGet:
+              path: {{ $comp.health.path }}
+              port: {{ $comp.containerPort }}
+            initialDelaySeconds: {{ $comp.health.initialDelaySeconds }}
+            periodSeconds: {{ $comp.health.periodSeconds }}
+          readinessProbe:
+            httpGet:
+              path: {{ $comp.health.path }}
+              port: {{ $comp.containerPort }}
+            initialDelaySeconds: {{ $comp.health.initialDelaySeconds }}
+            periodSeconds: {{ $comp.health.periodSeconds }}
+          {{- else if eq $comp.health.type "exec" }}
+          livenessProbe:
+            exec:
+              command:
+                {{- toYaml $comp.health.command | nindent 16 }}
+            initialDelaySeconds: {{ $comp.health.initialDelaySeconds }}
+            periodSeconds: {{ $comp.health.periodSeconds }}
+          readinessProbe:
+            exec:
+              command:
+                {{- toYaml $comp.health.command | nindent 16 }}
+            initialDelaySeconds: {{ $comp.health.initialDelaySeconds }}
+            periodSeconds: {{ $comp.health.periodSeconds }}
+          {{- end }}
+          {{- end }}
+          resources:
+            {{- toYaml $comp.resources | nindent 12 }}
+          {{- if $root.Values.defaults.containerSecurityContext.enabled }}
+          securityContext:
+            {{- toYaml (omit $root.Values.defaults.containerSecurityContext "enabled") | nindent 12 }}
+          {{- end }}
+{{- end }}
+{{- end }}
