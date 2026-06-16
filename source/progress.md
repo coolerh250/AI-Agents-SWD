@@ -9904,7 +9904,19 @@ issues & blockers, and next-step suggestions.
   `alpine/helm:3.16.3` (no cluster).
 - **Dependencies.** Added PyYAML + jsonschema to requirements.txt so the 4
   Step 51.1 schema-validation tests no longer skip.
-- **Verification (remote 10.0.1.31).** _Recorded after remote run below._
+- **Verification (remote 10.0.1.31, HEAD 75bd71e).** All five markers PASS:
+  `KUBERNETES_RUNTIME_INVENTORY_VERIFY` (14/14), `HELM_FOUNDATION_VERIFY`
+  (43/43), `KUBERNETES_WORKLOAD_SECURITY_VERIFY` (86 workloads across 4 envs;
+  PASS with runtime-compatibility observations — 23 components flagged
+  requires_cluster_smoke, none a failure), `KUBERNETES_RBAC_SAFETY_VERIFY`
+  (6/6; 0 RBAC objects, 86 ServiceAccounts + pods automount=false, 23 components
+  no-API), and `KUBERNETES_SECURITY_RBAC_BASELINE_VERIFY`. Targeted pytest:
+  101 passed, 0 skipped (jsonschema now declared, so the 4 Step 51.1 schema
+  tests run). `docker compose config --quiet` OK; `git diff --check` clean.
+  `/operations/safety`: no kubernetes/helm/argocd/securityContext fields,
+  `production_executed_true_count=0`. No cluster connection, no kubectl, no helm
+  install. Render via pinned alpine/helm:3.16.3 to gitignored
+  `.runtime/kubernetes-rendered/` (untracked).
 - **Local checks.** 10 new pytest files (49 passed) + 51.1 suite still green;
   ruff/black/mypy clean on new Python.
 - **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
