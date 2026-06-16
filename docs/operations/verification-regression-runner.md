@@ -345,3 +345,33 @@ backend regression. Marker: `ADMIN_CONSOLE_V0_VERIFY: PASS`.
 (`/admin` serve, build inputs, static serve, the six aggregate endpoints,
 read-only guard, no-secret-leak, no-chain-of-thought, no-operator-action,
 no-write-API).
+
+## Stage 51 — Backup / DR gap closure verify (in the runner)
+
+`scripts/verify_backup_dr_gap_closure.sh` (marker
+`BACKUP_DR_GAP_CLOSURE_VERIFY: PASS`) closes the four backup/DR gaps at a
+controlled test baseline (encryption, off-host transfer + readback, restore
+drill, schedule/retention dry-run, migration rollback catalog, readiness). It is
+chained into `run_full_regression.sh --full` **before**
+`verify_backup_production_readiness.sh`, so the readiness gate reads the fresh
+`source/dr-reports/backup_dr_readiness_latest.json` snapshot and now reports
+`BACKUP_PRODUCTION_READINESS_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS`
+instead of the original `PASS_WITH_GAPS gaps=encryption_no_key,...`.
+
+The runner gained a new allowed PASS class,
+`pass_with_non_production_limitations`: it is **not** a failure and **not** a
+documented gap. When the only non-`pass` results are non-production limitations,
+the overall marker is `FULL_REGRESSION_VERIFY:
+PASS_WITH_NON_PRODUCTION_LIMITATIONS`. The original four backup gaps no longer
+produce `PASS_WITH_DOCUMENTED_GAPS`. `regression_fail` / `env_fail` /
+`safety_fail` must remain 0; verifier strictness is unchanged (a still-open gap
+or a real failure is still reported as such).
+
+`check_runtime_state.sh` smokes 243–256 cover the backup/DR surfaces
+(encryption, manifest, off-host, restore drill, schedule, retention, migration
+catalog, readiness, operations API, notification denylist, audit integrity,
+no-secret-leak, no-production-action, no-artifact-tracked). The standalone
+sub-verifiers (`verify_backup_encryption.sh`, `verify_backup_offhost_target.sh`,
+`verify_backup_restore_drill.sh`, `verify_backup_schedule_dry_run.sh`,
+`verify_backup_retention_policy.sh`, `verify_migration_rollback_catalog.sh`) each
+emit their own `..._VERIFY: PASS` marker and are also runnable directly.

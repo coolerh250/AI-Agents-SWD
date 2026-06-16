@@ -84,6 +84,13 @@ DEFAULT_REAL_DELIVERY_DENYLIST: tuple[str, ...] = (
     "delivery_package.*",
     "acceptance_gate.*",
     "handoff.*",
+    # Stage 51 -- backup / DR gap closure events are operator-internal and must
+    # NEVER land on a real Discord channel by default. ``backup.*`` /
+    # ``restore_drill.*`` are already listed above (Stage 36); add the new
+    # ``backup_dr.*`` / ``restore.*`` / ``dr.*`` namespaces.
+    "backup_dr.*",
+    "restore.*",
+    "dr.*",
 )
 
 DELIVERY_DECISION_SIMULATED = "simulated"

@@ -75,3 +75,18 @@ docker compose -f infra/docker-compose/docker-compose.yml exec -T postgres \
 * HMAC key rotation and the audit-service direct-POST integrity gap
   (Step 33) are NOT remediated by the drill; the drill simply re-asserts
   the chain that exists in the dump.
+
+## Stage 51 -- Backup / DR gap closure restore drill
+
+The Stage 51 gap-closure verifier (`scripts/verify_backup_dr_gap_closure.sh`,
+Scenario D) and the standalone `scripts/verify_backup_restore_drill.sh` reuse
+this drill. They decrypt the Stage 51 encrypted artifact, restore it into a
+fresh `aiagents_restore_drill_<ts>` database, verify schema/row counts, record
+`rto_seconds`, and drop the isolated DB.
+
+* `production_restore_performed` is always `false` — the drill only ever targets
+  an `aiagents_restore_drill_*` database (`shared/sdk/backup_dr/restore_drill.py`
+  `assert_isolated_target` enforces this).
+* Marker: `BACKUP_RESTORE_DRILL_VERIFY: PASS`.
+* The restore drill result feeds the readiness evaluation
+  (`source/dr-reports/backup_dr_readiness_latest.json`).

@@ -1094,6 +1094,66 @@ OPERATOR_ACCEPTANCE_REVIEWS_TOTAL = Counter(
 )
 
 
+# ---------------------------------------------------------------------------
+# Stage 51 -- Backup / DR Gap Closure.
+# ---------------------------------------------------------------------------
+BACKUP_RUNS_TOTAL = Counter(
+    "backup_runs_total",
+    "Backup runs recorded",
+    ["environment", "status"],
+)
+BACKUP_ENCRYPTED_RUNS_TOTAL = Counter(
+    "backup_encrypted_runs_total",
+    "Encrypted backup runs recorded",
+    ["environment"],
+)
+BACKUP_FAILURES_TOTAL = Counter(
+    "backup_failures_total",
+    "Backup runs that failed",
+    ["environment"],
+)
+BACKUP_OFFHOST_TRANSFERS_TOTAL = Counter(
+    "backup_offhost_transfers_total",
+    "Off-host transfer runs recorded",
+    ["target_type", "status"],
+)
+BACKUP_OFFHOST_VERIFIED_TOTAL = Counter(
+    "backup_offhost_verified_total",
+    "Off-host transfers with verified readback",
+    ["target_type"],
+)
+BACKUP_RESTORE_DRILLS_TOTAL = Counter(
+    "backup_restore_drills_total",
+    "Restore drill runs recorded",
+    ["status"],
+)
+BACKUP_RESTORE_DRILL_FAILURES_TOTAL = Counter(
+    "backup_restore_drill_failures_total",
+    "Restore drill runs that failed",
+    ["status"],
+)
+BACKUP_SCHEDULE_VALIDATIONS_TOTAL = Counter(
+    "backup_schedule_validations_total",
+    "Backup schedule dry-run validations",
+    ["status"],
+)
+BACKUP_RETENTION_DRY_RUNS_TOTAL = Counter(
+    "backup_retention_dry_runs_total",
+    "Backup retention dry runs",
+    ["status"],
+)
+MIGRATION_ROLLBACK_CATALOG_ENTRIES_TOTAL = Counter(
+    "migration_rollback_catalog_entries_total",
+    "Migration rollback catalog entries classified",
+    ["reversibility"],
+)
+BACKUP_READINESS_EVALUATIONS_TOTAL = Counter(
+    "backup_readiness_evaluations_total",
+    "Backup readiness evaluations",
+    ["readiness_status"],
+)
+
+
 def metrics_response() -> tuple[bytes, str]:
     """Render the default Prometheus registry as (body, content_type)."""
     return generate_latest(), CONTENT_TYPE_LATEST

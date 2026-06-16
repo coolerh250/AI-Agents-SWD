@@ -9541,3 +9541,91 @@ issues & blockers, and next-step suggestions.
 - **Following Stages 22 -- 38, Claude Code does not decide
   the next stage roadmap.** Operators choose from the
   carry-forward list above.
+
+## Stage 51 — Backup / DR Gap Closure (Step 49)
+
+- **Inventory result.** Extended the Stage 36 backup/restore design
+  (`shared/sdk/backup`: checksum / encryption metadata / manifest / storage /
+  restore) instead of building a conflicting subsystem. Existing scripts
+  (`backup_postgres_encrypted.sh`, `run_restore_drill.sh`,
+  `check_migration_down_scripts.sh`, `verify_backup_production_readiness.sh`) and
+  `_backup_safety_summary` in `operations.py` were the baseline; the four gaps
+  (`encryption_no_key`, `storage_not_off_host`, `schedule_dry_run_only`,
+  `migration_down_gaps`) were the targets.
+
+- **Migration result.** `migrations/022_backup_dr_gap_closure.sql` — additive +
+  idempotent (PostgreSQL 16), 11 tables: `backup_encryption_configs`,
+  `backup_runs`, `backup_manifests`, `backup_offhost_targets`,
+  `backup_offhost_transfer_runs`, `restore_drill_runs`,
+  `backup_schedule_definitions`, `backup_retention_policies`,
+  `backup_retention_dry_runs`, `migration_rollback_catalog`,
+  `backup_readiness_evaluations`. No raw key / secret / token columns;
+  `production_executed` default false.
+
+- **Backup / DR SDK result.** `shared/sdk/backup_dr/` (models, encryption_config,
+  backup_runner, manifest_builder, offhost_target, offhost_transfer,
+  restore_drill, schedule_builder, retention_policy, migration_catalog,
+  readiness_evaluator, store, events, audit_events, safety, report_builder, cli).
+  Pure, testable logic; reuses `shared/sdk/backup` checksum + restore helpers.
+
+- **Encrypted backup result.** Test-only key file `.runtime/backup-test-key`
+  (chmod 600, gitignored); `pg_dump -Fc` + `openssl aes-256-cbc` via the postgres
+  container; manifest carries a `key_id` label only — never the raw key.
+
+- **Manifest / off-host / restore drill.** Manifest is secret-free
+  (`manifest_contains_secret()` guard). Encrypted artifact copied to a mock
+  off-host target (`/tmp/aiagents-offhost-backups`) with readback checksum
+  verified; `real_cloud_write_performed=false`. Restore drill decrypts + restores
+  into an isolated `aiagents_restore_drill_*` DB, verifies schema/rows, records
+  RTO; `production_restore_performed=false`.
+
+- **Schedule / retention / migration catalog.** Cron / systemd / k8s schedule
+  specs dry-run validated (`production_schedule_enabled=false`); retention
+  dry-run reports candidates with `actual_delete_count=0`,
+  `delete_enabled=false`; migration rollback catalog classifies all 22 migrations
+  (19 forward_only + 3 manual_rollback_required, 0 unknown) with rollback notes.
+
+- **Readiness evaluation.** All four gaps closed → status
+  `passed_with_non_production_limitations` (never a bare production-ready claim).
+  Readiness snapshot written to
+  `source/dr-reports/backup_dr_readiness_latest.json` (gitignored).
+
+- **Operations API / safety.** New read-only `/operations/backup-dr/*` GET
+  endpoints (encryption, latest-backup, manifests/latest, offhost/latest,
+  restore-drill/latest, schedule, retention, migration-rollback-catalog,
+  readiness/latest, report/latest) + a default-disabled
+  `POST /run-verification`. `/operations/safety` gains 24 `backup_*` /
+  `migration_rollback_*` fields. Reads are file/DB-resilient.
+
+- **Audit / notification / metrics.** 9 audit decision types
+  (`backup_run_completed`, `backup_readiness_evaluated`,
+  `migration_rollback_catalog_completed`, …); 10 `backup_dr.*` Redis events;
+  `backup_dr.*` / `restore.*` / `dr.*` added to the default real-delivery
+  denylist (`backup.*` already present); 11 Prometheus counters. Audit writes go
+  through the Step 37 integrity path (stream.audit → audit-worker); bounded
+  convergence wait before chain checks.
+
+- **Regression result.** New `verify_backup_dr_gap_closure.sh` (Scenarios A–J,
+  marker `BACKUP_DR_GAP_CLOSURE_VERIFY: PASS`) chained into
+  `run_full_regression.sh`. `verify_backup_production_readiness.sh` now reports
+  `BACKUP_PRODUCTION_READINESS_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS` (no
+  longer the original four gaps). `run_full_regression.sh` recognises the new
+  non-production-limitations class → `FULL_REGRESSION_VERIFY:
+  PASS_WITH_NON_PRODUCTION_LIMITATIONS` (no `PASS_WITH_DOCUMENTED_GAPS` from the
+  four backup gaps). 61 new unit tests pass; ruff / black / mypy clean.
+
+- **Production safety result.** No production backup / restore, no real cloud
+  write, no real schedule, no raw key persisted; `production_executed_true_count`
+  stays 0. `backup_dr.*` notifications default-denied. Backup artifacts / keys /
+  encrypted dumps / readiness snapshot all gitignored — never committed.
+
+- **Remaining non-production limitations (carry-forward).** real production
+  secret store not integrated; real off-host cloud target not enabled; production
+  schedule not enabled; production restore not executed; Kubernetes CronJob not
+  applied. Also carry-forward: Admin Console v1 operator actions (Step 50);
+  Kubernetes / Helm / ArgoCD baseline (Step 51); real pager / escalation.
+
+- **Observations only.** Claude Code reports observed state and does NOT decide
+  production readiness. The backup/DR readiness baseline is controlled/test-only;
+  declaring production readiness remains an operator decision requiring the real
+  production substrate above.

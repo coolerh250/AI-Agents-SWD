@@ -25,6 +25,16 @@ logs/
 backups/
 *.dump
 *.sql.gz
+*.enc
+
+# ===== Stage 51 Backup / DR runtime artifacts (never commit) =====
+# The Backup / DR gap-closure run writes a test-only encryption key, plain +
+# encrypted backup dumps, mock off-host copies, and a facts file under a runtime
+# dir. NONE may be committed. The readiness *snapshot* (booleans + key_id label,
+# no secrets) is a regeneratable runtime artifact and is also gitignored.
+.runtime/
+source/dr-reports/backup_dr_readiness_latest.json
+source/dr-reports/backup_dr_readiness_*.json
 
 # ===== Environment & local secrets (never commit secrets) =====
 .env

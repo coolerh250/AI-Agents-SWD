@@ -15,6 +15,7 @@ from incidents_api import (
 from operations import router as operations_router
 from progress import build_audit_timeline, build_progress, build_retry_timeline
 from admin_console_api import router as admin_console_router
+from backup_dr_api import router as backup_dr_router
 from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
@@ -196,6 +197,8 @@ app.include_router(mini_delivery_router)
 app.include_router(delivery_package_router)
 # Stage 50: Admin Console v0 read-only aggregate operations API.
 app.include_router(admin_console_router)
+# Stage 51: Backup / DR readiness read-only operations API.
+app.include_router(backup_dr_router)
 app.include_router(approval_policy_router)
 
 # Stage 50: serve the read-only Admin Console v0 static UI at /admin. Prefers a

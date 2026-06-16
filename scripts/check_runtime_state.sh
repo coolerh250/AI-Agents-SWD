@@ -4500,5 +4500,114 @@ else
   echo "ADMIN_CONSOLE_NO_WRITE_API_SMOKE: PASS"
 fi
 
+# ---------------------------------------------------------------------------
+# Stage 51 -- Backup / DR Gap Closure smokes (243-256).
+# ---------------------------------------------------------------------------
+ORCH_URL="${ORCHESTRATOR_URL:-http://localhost:8000}"
+BDR_SNAP="source/dr-reports/backup_dr_readiness_latest.json"
+
+# 243. encryption config / key_id available (snapshot or SDK).
+if [ -f "$BDR_SNAP" ] && grep -q '"encryption_gap_closed": true' "$BDR_SNAP" 2>/dev/null; then
+  echo "BACKUP_DR_ENCRYPTION_SMOKE: PASS"
+else
+  echo "BACKUP_DR_ENCRYPTION_SMOKE: CHECK"
+fi
+
+# 244. manifest endpoint responds.
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/manifests/latest" 2>/dev/null | grep -q 'manifest'; then
+  echo "BACKUP_DR_MANIFEST_SMOKE: PASS"
+else
+  echo "BACKUP_DR_MANIFEST_SMOKE: CHECK"
+fi
+
+# 245. off-host readback verified.
+if [ -f "$BDR_SNAP" ] && grep -q '"offhost_gap_closed": true' "$BDR_SNAP" 2>/dev/null; then
+  echo "BACKUP_DR_OFFHOST_SMOKE: PASS"
+else
+  echo "BACKUP_DR_OFFHOST_SMOKE: CHECK"
+fi
+
+# 246. restore drill endpoint responds.
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/restore-drill/latest" 2>/dev/null | grep -q 'restore_drill'; then
+  echo "BACKUP_DR_RESTORE_DRILL_SMOKE: PASS"
+else
+  echo "BACKUP_DR_RESTORE_DRILL_SMOKE: CHECK"
+fi
+
+# 247. schedule defined + dry-run validated, production disabled.
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/schedule" 2>/dev/null | grep -q '"production_schedule_enabled":false'; then
+  echo "BACKUP_DR_SCHEDULE_SMOKE: PASS"
+else
+  echo "BACKUP_DR_SCHEDULE_SMOKE: CHECK"
+fi
+
+# 248. retention configured, delete disabled.
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/retention" 2>/dev/null | grep -q '"delete_enabled":false'; then
+  echo "BACKUP_DR_RETENTION_SMOKE: PASS"
+else
+  echo "BACKUP_DR_RETENTION_SMOKE: CHECK"
+fi
+
+# 249. migration rollback catalog complete, no unknowns.
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/migration-rollback-catalog" 2>/dev/null | grep -q '"unknown_count":0'; then
+  echo "BACKUP_DR_MIGRATION_CATALOG_SMOKE: PASS"
+else
+  echo "BACKUP_DR_MIGRATION_CATALOG_SMOKE: CHECK"
+fi
+
+# 250. readiness evaluated (passed / non-production limitations).
+if curl -sS -m 5 "$ORCH_URL/operations/backup-dr/readiness/latest" 2>/dev/null \
+     | grep -qE '"status":"(passed|passed_with_non_production_limitations)"'; then
+  echo "BACKUP_DR_READINESS_SMOKE: PASS"
+else
+  echo "BACKUP_DR_READINESS_SMOKE: CHECK"
+fi
+
+# 251. operations API surface present in safety.
+if curl -sS -m 5 "$ORCH_URL/operations/safety" 2>/dev/null | grep -q '"backup_dr_enabled":true'; then
+  echo "BACKUP_DR_OPERATIONS_API_SMOKE: PASS"
+else
+  echo "BACKUP_DR_OPERATIONS_API_SMOKE: CHECK"
+fi
+
+# 252. backup_dr.* / restore.* / dr.* notifications default-denied.
+if grep -qE '"backup_dr\.\*"|backup_dr\.\*' shared/sdk/notifications/real_delivery_policy.py 2>/dev/null \
+   && grep -qE '"restore\.\*"' shared/sdk/notifications/real_delivery_policy.py 2>/dev/null; then
+  echo "BACKUP_DR_NOTIFICATION_DENYLIST_SMOKE: PASS"
+else
+  echo "BACKUP_DR_NOTIFICATION_DENYLIST_SMOKE: FAIL"
+fi
+
+# 253. audit integrity intact after backup_dr audit events.
+if bash scripts/detect_audit_tamper_residue.sh 2>&1 | grep -q "AUDIT_TAMPER_RESIDUE_DETECTOR: FAIL"; then
+  echo "BACKUP_DR_AUDIT_INTEGRITY_SMOKE: FAIL"
+else
+  echo "BACKUP_DR_AUDIT_INTEGRITY_SMOKE: PASS"
+fi
+
+# 254. no raw key persisted in DB / snapshot / safety.
+if curl -sS -m 5 "$ORCH_URL/operations/safety" 2>/dev/null | grep -q '"backup_encryption_raw_key_persisted":false'; then
+  echo "BACKUP_DR_NO_SECRET_LEAK_SMOKE: PASS"
+else
+  echo "BACKUP_DR_NO_SECRET_LEAK_SMOKE: CHECK"
+fi
+
+# 255. no production backup / restore / cloud write / schedule enabled.
+if curl -sS -m 5 "$ORCH_URL/operations/safety" 2>/dev/null \
+     | grep -q '"backup_production_backup_performed":false' \
+   && curl -sS -m 5 "$ORCH_URL/operations/safety" 2>/dev/null \
+     | grep -q '"backup_real_cloud_write_performed":false'; then
+  echo "BACKUP_DR_NO_PRODUCTION_ACTION_SMOKE: PASS"
+else
+  echo "BACKUP_DR_NO_PRODUCTION_ACTION_SMOKE: CHECK"
+fi
+
+# 256. no backup artifact / encrypted dump / key tracked by git.
+if git ls-files 2>/dev/null | grep -qE '\.runtime/|backup-test-key|backup-dr/.*\.(dump|enc)|backup_dr_readiness_latest\.json'; then
+  echo "BACKUP_DR_NO_ARTIFACT_TRACKED_SMOKE: FAIL"
+else
+  echo "BACKUP_DR_NO_ARTIFACT_TRACKED_SMOKE: PASS"
+fi
+
 echo
 echo "CHECK_RUNTIME_STATE_DONE"

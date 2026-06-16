@@ -2356,6 +2356,33 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Backup / DR Gap Closure (Stage 51)
+
+Closes the four long-standing Backup / DR documented gaps — `encryption_no_key`,
+`storage_not_off_host`, `schedule_dry_run_only`, `migration_down_gaps` — at a
+**controlled test baseline**, advancing backup readiness from `PASS_WITH_GAPS` to
+`passed_with_non_production_limitations`. Extends the Stage 36 backup design
+(`shared/sdk/backup`) with `shared/sdk/backup_dr/`: a test-only encrypted backup
+(key file chmod 600, gitignored; manifest carries a `key_id` label, never the raw
+key), a mock off-host transfer with readback-checksum verification, an isolated
+restore drill (`aiagents_restore_drill_*` only — never production), dry-run
+validated cron/systemd/k8s schedule specs, a dry-run retention policy
+(`actual_delete_count=0`), and a complete migration rollback catalog (every
+migration classified, zero `unknown`). Read-only `/operations/backup-dr/*`
+endpoints + 24 new `/operations/safety` fields. **Not** production backup/restore,
+**not** real cloud write, **not** a real production schedule; no raw key
+persisted; `production_executed_true_count` stays 0; `backup_dr.*` / `restore.*` /
+`dr.*` notifications default-denied. Verify with
+`scripts/verify_backup_dr_gap_closure.sh`
+(`BACKUP_DR_GAP_CLOSURE_VERIFY: PASS`). See
+[`docs/operations/backup-dr-gap-closure.md`](docs/operations/backup-dr-gap-closure.md),
+[`docs/operations/encrypted-backup-runbook.md`](docs/operations/encrypted-backup-runbook.md),
+[`docs/operations/restore-drill-runbook.md`](docs/operations/restore-drill-runbook.md),
+[`docs/operations/offhost-backup-target.md`](docs/operations/offhost-backup-target.md),
+[`docs/operations/backup-schedule-and-retention.md`](docs/operations/backup-schedule-and-retention.md),
+and
+[`docs/operations/migration-rollback-catalog.md`](docs/operations/migration-rollback-catalog.md).
+
 ## Admin Console v0 — Read-only Visibility (Stage 50)
 
 The first browser UI: a **read-only** project-delivery management console served

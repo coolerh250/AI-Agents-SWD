@@ -1665,6 +1665,9 @@ async def operations_safety() -> dict:
     # Stage 36 -- backup / restore / DR drill safety snapshot.
     backup_safety = _backup_safety_summary()
 
+    # Stage 51 -- backup / DR gap closure readiness snapshot.
+    backup_dr_safety = _backup_dr_safety_summary()
+
     # Stage 38 -- LLM Model Routing & Agent Model Policy safety snapshot.
     routing_safety = await _llm_routing_safety_summary()
 
@@ -1816,6 +1819,9 @@ async def operations_safety() -> dict:
         "backup_gaps": backup_safety["backup_gaps"],
         "migration_down_scripts_complete": backup_safety["migration_down_scripts_complete"],
         "dr_runbook_present": backup_safety["dr_runbook_present"],
+        # Stage 51 -- Backup / DR Gap Closure readiness snapshot. Booleans +
+        # opaque key_id / labels only; never carries a raw key or DB password.
+        **backup_dr_safety,
         # Stage 40 -- Incident Response & External Alert Receiver safety snapshot.
         "incident_response_enabled": True,
         "external_alert_receiver_enabled": True,
@@ -3881,6 +3887,96 @@ def _backup_safety_summary() -> dict[str, Any]:
         "backup_gaps": gaps,
         "migration_down_scripts_complete": migration_gaps == 0,
         "dr_runbook_present": runbook_present,
+    }
+
+
+_BACKUP_DR_READINESS_SNAPSHOT = Path("source/dr-reports/backup_dr_readiness_latest.json")
+_BACKUP_DR_ORIGINAL_GAPS = (
+    "encryption_no_key",
+    "storage_not_off_host",
+    "schedule_dry_run_only",
+    "migration_down_gaps",
+)
+
+
+def _backup_dr_readiness_snapshot() -> dict[str, Any] | None:
+    """Read the Stage 51 readiness snapshot written by the gap-closure run."""
+    if not _BACKUP_DR_READINESS_SNAPSHOT.is_file():
+        return None
+    try:
+        with open(_BACKUP_DR_READINESS_SNAPSHOT, "r", encoding="utf-8") as fh:
+            return json.load(fh)
+    except (OSError, ValueError):
+        return None
+
+
+def _backup_dr_safety_summary() -> dict[str, Any]:
+    """Stage 51 -- booleans-only backup / DR readiness snapshot for
+    /operations/safety. File-based (no DB dependency) so the safety endpoint
+    always responds. Defaults reflect "gaps still open" until a gap-closure run
+    writes the readiness snapshot. Never carries a raw key / secret / password.
+    """
+    enabled = str(os.environ.get("ENABLE_BACKUP_DR", "true")).strip().lower() != "false"
+    snap = _backup_dr_readiness_snapshot()
+    if snap is None:
+        return {
+            "backup_dr_enabled": enabled,
+            "backup_encryption_configured": False,
+            "backup_encryption_key_source": "disabled",
+            "backup_encryption_raw_key_persisted": False,
+            "backup_latest_encrypted": False,
+            "backup_offhost_target_configured": False,
+            "backup_offhost_readback_verified": False,
+            "backup_restore_drill_status": "not_run",
+            "backup_restore_drill_rto_seconds": None,
+            "backup_schedule_defined": False,
+            "backup_schedule_dry_run_validated": False,
+            "backup_production_schedule_enabled": False,
+            "backup_retention_policy_configured": False,
+            "backup_retention_delete_enabled": False,
+            "migration_rollback_catalog_complete": False,
+            "migration_rollback_unknown_count": 0,
+            "backup_readiness_status": "passed_with_gaps",
+            "backup_readiness_gaps": list(_BACKUP_DR_ORIGINAL_GAPS),
+            "backup_readiness_limitations": [],
+            "backup_real_cloud_write_enabled": False,
+            "backup_real_cloud_write_performed": False,
+            "backup_production_backup_performed": False,
+            "backup_production_restore_performed": False,
+        }
+
+    report = snap.get("report") if isinstance(snap.get("report"), dict) else {}
+    enc = report.get("encryption", {}) if isinstance(report, dict) else {}
+    bk = report.get("backup", {}) if isinstance(report, dict) else {}
+    off = report.get("offhost", {}) if isinstance(report, dict) else {}
+    rd = report.get("restore_drill", {}) if isinstance(report, dict) else {}
+    sch = report.get("schedule", {}) if isinstance(report, dict) else {}
+    ret = report.get("retention", {}) if isinstance(report, dict) else {}
+    mig = report.get("migration_rollback_catalog", {}) if isinstance(report, dict) else {}
+    return {
+        "backup_dr_enabled": enabled,
+        "backup_encryption_configured": enc.get("status") == "configured",
+        "backup_encryption_key_source": enc.get("key_source", "disabled"),
+        "backup_encryption_raw_key_persisted": False,
+        "backup_latest_encrypted": bool(bk.get("encrypted")),
+        "backup_offhost_target_configured": off.get("status") in ("verified", "copied"),
+        "backup_offhost_readback_verified": bool(off.get("readback_verified")),
+        "backup_restore_drill_status": rd.get("status", "not_run"),
+        "backup_restore_drill_rto_seconds": rd.get("rto_seconds"),
+        "backup_schedule_defined": bool(sch.get("schedule_type")),
+        "backup_schedule_dry_run_validated": bool(sch.get("dry_run_validated")),
+        "backup_production_schedule_enabled": bool(sch.get("production_schedule_enabled")),
+        "backup_retention_policy_configured": bool(ret.get("policy_key")),
+        "backup_retention_delete_enabled": bool(ret.get("delete_enabled")),
+        "migration_rollback_catalog_complete": bool(mig.get("complete")),
+        "migration_rollback_unknown_count": int(mig.get("unknown", 0)),
+        "backup_readiness_status": snap.get("status", "passed_with_gaps"),
+        "backup_readiness_gaps": list(snap.get("remaining_gaps", [])),
+        "backup_readiness_limitations": list(snap.get("limitations", [])),
+        "backup_real_cloud_write_enabled": bool(off.get("real_cloud_write_enabled")),
+        "backup_real_cloud_write_performed": bool(off.get("real_cloud_write_performed")),
+        "backup_production_backup_performed": False,
+        "backup_production_restore_performed": bool(rd.get("production_restore_performed")),
     }
 
 
