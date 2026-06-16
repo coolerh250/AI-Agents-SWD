@@ -1,0 +1,148 @@
+# Step 51.2B -- Canonical Network Connectivity Catalog (Stage 53C).
+#
+# Derived from infra/kubernetes/runtime-dependency-matrix.yaml (revalidated in
+# Step 51.2B: 75 edges total; 49 internal policy-generating + 26 observability-
+# deferred). Internal edges drive the NetworkPolicy template (values mirror this
+# list as networkPolicy.internalEdges; the topology verifier asserts they match).
+#
+# Contains NO real external endpoints. External dependencies are all DISABLED and
+# generate no egress. infra targets (postgres/redis) are dev/test only.
+version: "1"
+
+meta:
+  stage: "53C"
+  step: "51.2B"
+  sourceMatrix: infra/kubernetes/runtime-dependency-matrix.yaml
+  internalEdgeCount: 49
+  postgresSourceCount: 18
+  redisSourceCount: 19
+
+defaults:
+  denyIngress: true
+  denyEgress: true
+  allowDns: true
+  allowExternalEgress: false
+  allowIngressController: false
+  allowPrometheusScrape: false
+  allowOtlpExport: false
+
+internalEdges:
+  - {source: orchestrator, target: policy-engine, protocol: TCP, port: 8001, required: true, infra: false, purpose: policy_evaluation, environments: [dev, test, staging, production]}
+  - {source: orchestrator, target: approval-engine, protocol: TCP, port: 8002, required: true, infra: false, purpose: approval_gate, environments: [dev, test, staging, production]}
+  - {source: orchestrator, target: audit-service, protocol: TCP, port: 8003, required: true, infra: false, purpose: audit_write, environments: [dev, test, staging, production]}
+  - {source: orchestrator, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: primary_datastore, environments: [dev, test]}
+  - {source: orchestrator, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams_cache, environments: [dev, test]}
+  - {source: approval-engine, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: primary_datastore, environments: [dev, test]}
+  - {source: approval-engine, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams_cache, environments: [dev, test]}
+  - {source: audit-service, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: audit_store, environments: [dev, test]}
+  - {source: audit-service, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams_cache, environments: [dev, test]}
+  - {source: communication-gateway, target: orchestrator, protocol: TCP, port: 8000, required: true, infra: false, purpose: workflow_api, environments: [dev, test, staging, production]}
+  - {source: communication-gateway, target: github-automation, protocol: TCP, port: 8005, required: false, infra: false, purpose: github_ops, environments: [dev, test, staging, production]}
+  - {source: communication-gateway, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: communication-gateway, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: github-automation, target: audit-service, protocol: TCP, port: 8003, required: true, infra: false, purpose: audit_write, environments: [dev, test, staging, production]}
+  - {source: github-automation, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: discord-gateway, target: communication-gateway, protocol: TCP, port: 8004, required: true, infra: false, purpose: inbound_routing, environments: [dev, test, staging, production]}
+  - {source: discord-gateway, target: orchestrator, protocol: TCP, port: 8000, required: true, infra: false, purpose: workflow_api, environments: [dev, test, staging, production]}
+  - {source: discord-gateway, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: discord-gateway, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: audit-worker, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: audit_chain_write, environments: [dev, test]}
+  - {source: audit-worker, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: stream_audit_consume, environments: [dev, test]}
+  - {source: notification-worker, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: notification-worker, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: notification-worker, target: orchestrator, protocol: TCP, port: 8000, required: false, infra: false, purpose: callback_links, environments: [dev, test, staging, production]}
+  - {source: retry-scheduler, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: retry_queue, environments: [dev, test]}
+  - {source: retry-scheduler, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: retry-scheduler, target: audit-service, protocol: TCP, port: 8003, required: false, infra: false, purpose: audit_write, environments: [dev, test, staging, production]}
+  - {source: intake-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: intake-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: requirement-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: requirement-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: development-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: development-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: qa-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: qa-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: devops-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: devops-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: devops-agent, target: audit-service, protocol: TCP, port: 8003, required: false, infra: false, purpose: audit_write, environments: [dev, test, staging, production]}
+  - {source: devops-agent, target: github-automation, protocol: TCP, port: 8005, required: false, infra: false, purpose: github_ops, environments: [dev, test, staging, production]}
+  - {source: project-planner-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: project-planner-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: design-review-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: design-review-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: workspace-operator-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: workspace-operator-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: mini-delivery-pilot-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: mini-delivery-pilot-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+  - {source: delivery-package-agent, target: postgres, protocol: TCP, port: 5432, required: true, infra: true, purpose: datastore, environments: [dev, test]}
+  - {source: delivery-package-agent, target: redis, protocol: TCP, port: 6379, required: true, infra: true, purpose: streams, environments: [dev, test]}
+
+# External dependencies: ALL disabled. NetworkPolicy does not support generic
+# FQDN egress; none of these produce an egress allow at this baseline.
+externalDependencies:
+  - {component: github-automation, dependencyType: github_api, enabled: false, policyGenerated: false, reason: "real GitHub integration disabled (GITHUB_DRY_RUN=true)"}
+  - {component: orchestrator, dependencyType: llm_provider, enabled: false, policyGenerated: false, reason: "real LLM disabled"}
+  - {component: notification-worker, dependencyType: discord, enabled: false, policyGenerated: false, reason: "sandbox mode; real Discord delivery disabled"}
+  - {component: notification-worker, dependencyType: slack, enabled: false, policyGenerated: false, reason: "not enabled"}
+  - {component: notification-worker, dependencyType: telegram, enabled: false, policyGenerated: false, reason: "not enabled"}
+  - {component: orchestrator, dependencyType: pager_escalation, enabled: false, policyGenerated: false, reason: "real escalation disabled"}
+  - {component: orchestrator, dependencyType: external_oidc, enabled: false, policyGenerated: false, reason: "production OIDC disabled"}
+  - {component: platform, dependencyType: cloud_api, enabled: false, policyGenerated: false, reason: "no cloud API egress"}
+  - {component: platform, dependencyType: otlp_external_collector, enabled: false, policyGenerated: false, reason: "OTLP export deferred (observability not deployed)"}
+
+infrastructure:
+  postgres:
+    externalExposureAllowed: false
+    port: 5432
+    allowedSources:
+      - approval-engine
+      - audit-service
+      - audit-worker
+      - communication-gateway
+      - delivery-package-agent
+      - design-review-agent
+      - development-agent
+      - devops-agent
+      - discord-gateway
+      - intake-agent
+      - mini-delivery-pilot-agent
+      - notification-worker
+      - orchestrator
+      - project-planner-agent
+      - qa-agent
+      - requirement-agent
+      - retry-scheduler
+      - workspace-operator-agent
+  redis:
+    externalExposureAllowed: false
+    port: 6379
+    allowedSources:
+      - approval-engine
+      - audit-service
+      - audit-worker
+      - communication-gateway
+      - delivery-package-agent
+      - design-review-agent
+      - development-agent
+      - devops-agent
+      - discord-gateway
+      - github-automation
+      - intake-agent
+      - mini-delivery-pilot-agent
+      - notification-worker
+      - orchestrator
+      - project-planner-agent
+      - qa-agent
+      - requirement-agent
+      - retry-scheduler
+      - workspace-operator-agent
+
+deferred:
+  observability:
+    prometheusScrape: false
+    otlpExport: false
+    otlpExportEdges: 20   # all 20 build services export OTLP; deferred, no egress generated
+    reason: "observability Helm deployment deferred (Step 51.4); OTLP egress disabled under default-deny"
+  externalManagedDataServices:
+    reason: "staging/production external Postgres/Redis endpoints unknown; typed disabled placeholders only (no real CIDR), enabled only when realDeployEnabled=true (not this stage)"
+

@@ -66,6 +66,12 @@ inferred from name similarity. `required: false` marks best-effort edges
 (OTLP trace export, optional callbacks). `unknownDependencies` is declared and
 empty — nothing was silently dropped.
 
+**Step 51.2B revalidation:** the matrix was rechecked against source and one
+correction applied — OTLP→tempo was listed for only 4 of 20 services, so the 16
+missing edges were added (total **75** edges: 49 internal policy-generating + 26
+observability-deferred). See
+[kubernetes-service-connectivity.md](kubernetes-service-connectivity.md).
+
 ## Deferred / external workloads
 
 - **Observability** (Tempo/Prometheus/Alertmanager/Grafana): treated as an

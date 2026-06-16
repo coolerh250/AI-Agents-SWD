@@ -16,6 +16,14 @@ meta:
   stage: "53A"
   step: "51.1"
   composeFile: infra/docker-compose/docker-compose.yml
+  revalidation:
+    stage: "53C"
+    step: "51.2B"
+    result: "revalidated against source; 1 correction"
+    correction: "OTLP->tempo was listed for only 4 of 20 services; added the 16 missing edges (all evidence-backed env:OTEL_EXPORTER_OTLP_ENDPOINT). All 20 are observability-deferred."
+    totalEdges: 75
+    internalPolicyEdges: 49
+    observabilityDeferredEdges: 26   # 20 OTLP export + 6 observability backend
 
 dependencies:
   # orchestrator
@@ -24,16 +32,12 @@ dependencies:
   - {source: orchestrator, target: audit-service, protocol: http, port: 8003, required: true, purpose: audit_write, evidence: "compose_depends_on + env:AUDIT_SERVICE_URL"}
   - {source: orchestrator, target: postgres, protocol: tcp, port: 5432, required: true, purpose: primary_datastore, evidence: "env:DATABASE_URL"}
   - {source: orchestrator, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
-  - {source: orchestrator, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
 
   # governance
-  - {source: policy-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
   - {source: approval-engine, target: postgres, protocol: tcp, port: 5432, required: true, purpose: primary_datastore, evidence: "env:DATABASE_URL"}
   - {source: approval-engine, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
-  - {source: approval-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
   - {source: audit-service, target: postgres, protocol: tcp, port: 5432, required: true, purpose: audit_store, evidence: "env:DATABASE_URL"}
   - {source: audit-service, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams_cache, evidence: "env:REDIS_URL"}
-  - {source: audit-service, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
 
   # communication
   - {source: communication-gateway, target: orchestrator, protocol: http, port: 8000, required: true, purpose: workflow_api, evidence: "compose_depends_on + env:ORCHESTRATOR_URL"}
@@ -80,6 +84,33 @@ dependencies:
   - {source: mini-delivery-pilot-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
   - {source: delivery-package-agent, target: postgres, protocol: tcp, port: 5432, required: true, purpose: datastore, evidence: "compose_depends_on + env:DATABASE_URL"}
   - {source: delivery-package-agent, target: redis, protocol: tcp, port: 6379, required: true, purpose: streams, evidence: "compose_depends_on + env:REDIS_URL"}
+
+  # OTLP trace export -- ALL 20 build services export to the collector
+  # (env:OTEL_EXPORTER_OTLP_ENDPOINT, grpc 4317). Revalidated in Step 51.2B:
+  # the 51.1 matrix listed only 4 of 20; the remaining 16 were added for
+  # completeness. tempo is an observability/deferred backend (not deployed by
+  # this chart), so ALL of these are observability-deferred and generate NO
+  # NetworkPolicy egress (otlpExport disabled under the default-deny baseline).
+  - {source: orchestrator, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: policy-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: approval-engine, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: audit-service, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: communication-gateway, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: github-automation, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: discord-gateway, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: audit-worker, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: notification-worker, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: retry-scheduler, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: intake-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: requirement-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: development-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: qa-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: devops-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: project-planner-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: design-review-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: workspace-operator-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: mini-delivery-pilot-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
+  - {source: delivery-package-agent, target: tempo, protocol: grpc, port: 4317, required: false, purpose: trace_export, evidence: "env:OTEL_EXPORTER_OTLP_ENDPOINT"}
 
   # observability (deferred backends)
   - {source: prometheus, target: orchestrator, protocol: http, port: 8000, required: false, purpose: metrics_scrape, evidence: "compose_depends_on"}
