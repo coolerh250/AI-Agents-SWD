@@ -1,0 +1,205 @@
+# Step 51.2C1 -- Storage Ownership & Data Lifecycle Catalog (Stage 53D).
+#
+# Canonical record of every STORE (a data location that drives a volume / claim
+# decision), derived from storage-consumer-inventory.yaml. Each store names its
+# owner, writers, readers, lifecycle, durability and a per-environment strategy.
+#
+# Strategy types:
+#   ephemeralEmptyDir              -- rebuildable scratch only; restart-DISCARDED.
+#   generatedPVC                   -- RWO PVC, Dev/Test only (this chart never
+#                                     generates one for staging/production).
+#   existingClaim                  -- future Staging/Production; NO real claim name.
+#   externalService               -- external managed datastore (Postgres/Redis).
+#   externalObjectStorePlaceholder -- future object store; NO endpoint, disabled.
+#   unresolved                     -- blocker recorded; MUST NOT become a fake PVC.
+#
+# Rules enforced by scripts/verify_kubernetes_storage_inventory.py +
+# scripts/verify_kubernetes_data_lifecycle.py:
+#   - generatedPVC only in dev/test; single-writer; RWO.
+#   - infrastructure_state stores are never ephemeral.
+#   - audit-critical stores are never low integrity.
+#   - unresolved stores never claim productionConfigured=true (fail closed).
+#   - backup is separate from active workspace and deferred to 51.2C2.
+
+version: "1"
+
+meta:
+  stage: "53D"
+  step: "51.2C1"
+
+stores:
+  postgres-data:
+    owner: postgres
+    writers: [postgres]
+    readers: []
+    dataCategory: database
+    lifecycle: infrastructure_state
+    durability: deployment_durable
+    rebuildable: not_rebuildable
+    confidentiality: confidential
+    integrityRequirement: audit_critical
+    mountPath: /var/lib/postgresql/data
+    accessMode: ReadWriteOnce
+    requestedSize: 10Gi
+    strategyByEnvironment:
+      dev: generatedPVC
+      test: generatedPVC
+      staging: externalService
+      production: externalService
+    productionConfigured: false
+    statefulSetLimitation: "in-cluster Postgres is Dev/Test ONLY; StatefulSet/operator + production-grade HA is a future runtime engineering decision (not this stage)."
+
+  redis-data:
+    owner: redis
+    writers: [redis]
+    readers: []
+    dataCategory: redis
+    lifecycle: infrastructure_state
+    durability: restart_durable
+    rebuildable: partially_rebuildable
+    confidentiality: internal
+    integrityRequirement: standard
+    mountPath: /data
+    accessMode: ReadWriteOnce
+    requestedSize: 2Gi
+    strategyByEnvironment:
+      dev: generatedPVC
+      test: generatedPVC
+      staging: externalService
+      production: externalService
+    productionConfigured: false
+    persistenceModeNote: "RWO PVC backs /data; AOF/RDB durability + HA (Sentinel/cluster) are NOT configured here."
+    haLimitation: "no Redis HA / Sentinel / cluster in this stage."
+
+  workspace-scratch:
+    owner: workspace-agents
+    writers: [development-agent, qa-agent, workspace-operator-agent, mini-delivery-pilot-agent]
+    readers: []
+    multiWriter: false
+    sharedFilesystem: false
+    dataCategory: workspace
+    lifecycle: workflow_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    mountPath: /tmp
+    accessMode: none
+    strategyByEnvironment:
+      dev: ephemeralEmptyDir
+      test: ephemeralEmptyDir
+      staging: ephemeralEmptyDir
+      production: ephemeralEmptyDir
+    productionConfigured: false
+    persistenceSolved: false
+    lifecycleBoundary:
+      created: "on controlled workspace execution start"
+      destroyed: "on pod restart / workflow completion"
+      durableAcrossRestart: false
+    futureTarget: "if cross-pod handoff or durable workspaces are ever required: existingClaim (RWX) OR object store -- both DISABLED placeholders today"
+    note: "each agent owns its OWN per-pod /tmp; mini-delivery-pilot runs execution in-process. NOT a shared filesystem -> no RWX required today."
+
+  runtime-reports:
+    owner: verification-scripts
+    writers: [verification-scripts]
+    readers: [orchestrator]
+    dataCategory: reports
+    lifecycle: release_scoped
+    durability: externally_managed
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    mountPath: /app/source/regression-reports
+    accessMode: none
+    strategyByEnvironment:
+      dev: unresolved
+      test: unresolved
+      staging: unresolved
+      production: unresolved
+    productionConfigured: false
+    futureTarget: "object store OR shared claim -- DISABLED placeholder; writer is a deferred one-shot verification job"
+    unresolved: ["in-cluster report distribution medium undecided", "writer not a workload"]
+
+  dr-reports:
+    owner: backup-dr-run
+    writers: [backup-dr-run]
+    readers: [orchestrator]
+    dataCategory: reports
+    lifecycle: audit_retained
+    durability: externally_managed
+    rebuildable: partially_rebuildable
+    confidentiality: confidential
+    integrityRequirement: high
+    mountPath: /app/source/dr-reports
+    accessMode: none
+    strategyByEnvironment:
+      dev: unresolved
+      test: unresolved
+      staging: unresolved
+      production: unresolved
+    productionConfigured: false
+    futureTarget: "object store -- DISABLED placeholder; writer (backup-dr-run) deferred to Step 51.2C2"
+    unresolved: ["backup/DR report writer deferred to Step 51.2C2", "cross-pod sharing medium undecided"]
+
+  audit-evidence-export:
+    owner: audit-forensic-export
+    writers: [audit-forensic-export]
+    readers: [orchestrator]
+    dataCategory: audit_evidence
+    lifecycle: audit_retained
+    durability: externally_managed
+    rebuildable: not_rebuildable
+    confidentiality: confidential
+    integrityRequirement: audit_critical
+    mountPath: /app/source/audit-forensics
+    accessMode: none
+    canonicalRecordsLocation: postgresql
+    strategyByEnvironment:
+      dev: unresolved
+      test: unresolved
+      staging: unresolved
+      production: unresolved
+    productionConfigured: false
+    futureTarget: "WORM object store OR shared claim -- DISABLED placeholder"
+    unresolved: ["forensic export sharing medium undecided", "canonical audit records remain in PostgreSQL, NOT this store"]
+
+  delivery-artifacts:
+    owner: delivery-package-agent
+    writers: [delivery-package-agent]
+    readers: [orchestrator]
+    dataCategory: delivery_artifacts
+    lifecycle: release_scoped
+    durability: deployment_durable
+    rebuildable: partially_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    storageMedium: postgresql
+    accessMode: none
+    strategyByEnvironment:
+      dev: externalService
+      test: externalService
+      staging: externalService
+      production: externalService
+    productionConfigured: false
+    note: "delivery packages + QA evidence persisted via PostgreSQL; no dedicated artifact volume in this stage."
+
+# Stores intentionally DEFERRED -- recorded so they are not lost, and excluded
+# from any PVC/mount generation.
+deferred:
+  backup-artifacts:
+    deferredTo: "51.2C2"
+    owner: backup-dr-run
+    writers: [backup-dr-run]
+    readers: [restore-drill]
+    dataCategory: backup
+    lifecycle: audit_retained
+    integrityRequirement: audit_critical
+    separateFromActiveWorkspace: true
+    reason: "Backup CronJob + off-host target + encryption-key reference deferred to Step 51.2C2."
+  observability:
+    deferredTo: "51.4"
+    volumes: [tempo-data, prometheus-data, grafana-data, alertmanager-data]
+    reason: "Observability storage out of scope."
+
+# Which stores actually generate a PVC in this chart (Dev/Test only).
+generatedPvcStores: [postgres-data, redis-data]

@@ -1,0 +1,284 @@
+# Step 51.2C1 -- Storage Consumer Inventory (Stage 53D).
+#
+# Evidence-backed inventory of every filesystem / storage consumer in the actual
+# runtime, produced BEFORE any PVC template was written. Source of truth:
+#   - infra/docker-compose/docker-compose.yml (named volumes + bind mounts)
+#   - infra/kubernetes/runtime-inventory.yaml + workload-security-inventory.yaml
+#   - apps/* agents/* shared/sdk/* scripts/ source disk-write behaviour
+#
+# Findings (verified):
+#   - The ONLY durable named volume in compose is postgres-data
+#     (/var/lib/postgresql/data). Redis has NO compose volume (ephemeral today).
+#   - First-party disk writes are confined to /tmp; workspace agents write under
+#     /tmp/aiagents-workspaces (per-pod, NOT a shared filesystem). The
+#     mini-delivery-pilot runs workspace execution IN-PROCESS -> no cross-pod
+#     handoff via filesystem; agents exchange state via PostgreSQL / in-process.
+#   - Report directories (source/regression-reports, source/dr-reports,
+#     source/audit-forensics) are written by HOST one-shot scripts and mounted
+#     READ-ONLY into the orchestrator. The writers are one-shot jobs (verification
+#     scripts / backup-dr-run) deferred to Step 51.2C2, so the in-cluster
+#     distribution medium is genuinely unresolved (NOT faked here).
+#   - Admin Console static assets are baked into the image layer -> no PVC.
+#   - Delivery packages / QA evidence are persisted via PostgreSQL, not files.
+#   - Backup artifacts are a SEPARATE concern deferred to Step 51.2C2.
+#
+# classificationLegend mirrors the data-lifecycle model (see
+# storage-ownership-catalog.yaml + docs/platform/kubernetes-data-lifecycle.md).
+
+meta:
+  stage: "53D"
+  step: "51.2C1"
+  sources:
+    - infra/docker-compose/docker-compose.yml
+    - infra/kubernetes/runtime-inventory.yaml
+    - infra/kubernetes/workload-security-inventory.yaml
+    - apps/
+    - agents/
+    - shared/sdk/
+    - scripts/
+
+classificationLegend:
+  lifecycle: [request_scoped, workflow_scoped, project_scoped, release_scoped, audit_retained, infrastructure_state]
+  durability: [ephemeral, restart_durable, deployment_durable, externally_managed]
+  rebuildable: [fully_rebuildable, partially_rebuildable, not_rebuildable]
+  confidentiality: [public, internal, confidential, secret_prohibited]
+  integrity: [low, standard, high, audit_critical]
+  targetStrategy: [ephemeralEmptyDir, generatedPVC, existingClaim, externalService, externalObjectStorePlaceholder, imageContained, unresolved]
+
+consumers:
+  # ===== infrastructure datastores =====
+  - component: postgres
+    dataCategory: database
+    path: /var/lib/postgresql/data
+    ownership: postgres
+    writers: [postgres]
+    readers: []
+    lifecycle: infrastructure_state
+    durability: deployment_durable
+    rebuildable: not_rebuildable
+    confidentiality: confidential
+    integrityRequirement: audit_critical
+    currentStorage: docker_named_volume(postgres-data)
+    targetStrategy: generatedPVC
+    accessModeRequirement: ReadWriteOnce
+    evidence: "docker-compose.yml: postgres-data:/var/lib/postgresql/data; canonical platform + audit state"
+    unresolved: []
+
+  - component: redis
+    dataCategory: redis
+    path: /data
+    ownership: redis
+    writers: [redis]
+    readers: []
+    lifecycle: infrastructure_state
+    durability: restart_durable
+    rebuildable: partially_rebuildable
+    confidentiality: internal
+    integrityRequirement: standard
+    currentStorage: ephemeral_no_compose_volume(workload-security /data emptyDir 256Mi)
+    targetStrategy: generatedPVC
+    accessModeRequirement: ReadWriteOnce
+    evidence: "redis:7 working dir /data; queues + cache; no compose named volume (ephemeral today)"
+    unresolved: []
+
+  # ===== workspace (per-pod, NOT shared) =====
+  - component: workspace-operator-agent
+    dataCategory: workspace
+    path: /tmp/aiagents-workspaces
+    ownership: workspace-operator-agent
+    writers: [workspace-operator-agent]
+    readers: []
+    lifecycle: workflow_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: emptyDir(/tmp 1Gi)
+    targetStrategy: ephemeralEmptyDir
+    accessModeRequirement: none
+    evidence: "WORKSPACE_OPERATOR_ROOT=/tmp/aiagents-workspaces; per-pod scratch; controlled-only"
+    unresolved: ["durable / cross-restart workspace storage undecided (ephemeral per-pod today)"]
+  - component: development-agent
+    dataCategory: workspace
+    path: /tmp/aiagents-workspaces
+    ownership: development-agent
+    writers: [development-agent]
+    readers: []
+    lifecycle: workflow_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: emptyDir(/tmp 1Gi)
+    targetStrategy: ephemeralEmptyDir
+    accessModeRequirement: none
+    evidence: "code_generator writes generated project under /tmp/aiagents-workspaces (os.makedirs); per-pod"
+    unresolved: ["durable workspace storage undecided (ephemeral per-pod today)"]
+  - component: qa-agent
+    dataCategory: workspace
+    path: /tmp
+    ownership: qa-agent
+    writers: [qa-agent]
+    readers: []
+    lifecycle: workflow_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: emptyDir(/tmp 1Gi)
+    targetStrategy: ephemeralEmptyDir
+    accessModeRequirement: none
+    evidence: "tempfile.TemporaryDirectory + materialised test workspace under /tmp; per-pod"
+    unresolved: ["durable workspace storage undecided (ephemeral per-pod today)"]
+  - component: mini-delivery-pilot-agent
+    dataCategory: workspace
+    path: /tmp/aiagents-workspaces
+    ownership: mini-delivery-pilot-agent
+    writers: [mini-delivery-pilot-agent]
+    readers: []
+    lifecycle: workflow_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: emptyDir(/tmp 1Gi)
+    targetStrategy: ephemeralEmptyDir
+    accessModeRequirement: none
+    evidence: "runs controlled workspace execution under /tmp/aiagents-workspaces IN-PROCESS; per-pod"
+    unresolved: ["durable workspace storage undecided (ephemeral per-pod today)"]
+
+  # ===== first-party scratch (/tmp) =====
+  - component: orchestrator-and-services
+    dataCategory: scratch
+    path: /tmp
+    ownership: each-first-party-service
+    writers: [each-first-party-service]
+    readers: []
+    lifecycle: request_scoped
+    durability: ephemeral
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: low
+    currentStorage: emptyDir(/tmp 256Mi default)
+    targetStrategy: ephemeralEmptyDir
+    accessModeRequirement: none
+    evidence: "default writable /tmp emptyDir applied by the deployment template (Step 51.2A)"
+    unresolved: []
+
+  # ===== reports / evidence (orchestrator read-only views) =====
+  - component: orchestrator
+    dataCategory: reports
+    path: /app/source/regression-reports
+    ownership: verification-scripts
+    writers: [verification-scripts]
+    readers: [orchestrator]
+    lifecycle: release_scoped
+    durability: externally_managed
+    rebuildable: fully_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: host_bind_mount_read_only_view
+    targetStrategy: unresolved
+    accessModeRequirement: undecided
+    evidence: "compose: ../../source/regression-reports:/app/source/regression-reports; operations.py _REGRESSION_SUMMARY_PATH"
+    unresolved: ["in-cluster report distribution (object store vs shared claim) undecided", "writer is a one-shot verification job (not a workload)"]
+  - component: orchestrator
+    dataCategory: reports
+    path: /app/source/dr-reports
+    ownership: backup-dr-run
+    writers: [backup-dr-run]
+    readers: [orchestrator]
+    lifecycle: audit_retained
+    durability: externally_managed
+    rebuildable: partially_rebuildable
+    confidentiality: confidential
+    integrityRequirement: high
+    currentStorage: host_bind_mount_read_only_view
+    targetStrategy: unresolved
+    accessModeRequirement: undecided
+    evidence: "compose: ../../source/dr-reports:/app/source/dr-reports; shared/sdk/backup/models.py persists dr_report_*.json"
+    unresolved: ["backup/DR report writer (backup-dr-run) deferred to Step 51.2C2", "cross-pod sharing medium undecided"]
+  - component: orchestrator
+    dataCategory: audit_evidence
+    path: /app/source/audit-forensics
+    ownership: audit-forensic-export
+    writers: [audit-forensic-export]
+    readers: [orchestrator]
+    lifecycle: audit_retained
+    durability: externally_managed
+    rebuildable: not_rebuildable
+    confidentiality: confidential
+    integrityRequirement: audit_critical
+    currentStorage: host_bind_mount_read_only_view
+    targetStrategy: unresolved
+    accessModeRequirement: undecided
+    evidence: "compose: ../../source/audit-forensics:/app/source/audit-forensics:ro; canonical audit records remain in PostgreSQL (audit-service)"
+    unresolved: ["audit forensic export sharing medium undecided", "canonical audit data stays in PostgreSQL, NOT this store"]
+
+  # ===== delivery / QA evidence (persisted in PostgreSQL) =====
+  - component: delivery-package-agent
+    dataCategory: delivery_artifacts
+    path: postgresql(no_filesystem_artifact)
+    ownership: delivery-package-agent
+    writers: [delivery-package-agent]
+    readers: [orchestrator]
+    lifecycle: release_scoped
+    durability: deployment_durable
+    rebuildable: partially_rebuildable
+    confidentiality: secret_prohibited
+    integrityRequirement: standard
+    currentStorage: postgresql
+    targetStrategy: externalService
+    accessModeRequirement: none
+    evidence: "no report/artifact disk writes found in agents/*; delivery packages + QA evidence persisted via PostgreSQL"
+    unresolved: []
+
+  # ===== admin console static assets (image-contained) =====
+  - component: admin-console
+    dataCategory: static_asset
+    path: container_image_layer(apps/admin-console/static/dist)
+    ownership: build-pipeline
+    writers: [build-pipeline]
+    readers: [orchestrator]
+    lifecycle: release_scoped
+    durability: deployment_durable
+    rebuildable: fully_rebuildable
+    confidentiality: public
+    integrityRequirement: low
+    currentStorage: container_image_layer
+    targetStrategy: imageContained
+    accessModeRequirement: none
+    evidence: "apps/admin-console/static/dist served by orchestrator StaticFiles; baked into image, no volume"
+    unresolved: []
+
+  # ===== backup artifacts (DEFERRED to Step 51.2C2) =====
+  - component: backup-dr-run
+    dataCategory: backup
+    path: backup_runtime_dir + mock_off_host_target
+    ownership: backup-dr-run
+    writers: [backup-dr-run]
+    readers: [restore-drill]
+    lifecycle: audit_retained
+    durability: externally_managed
+    rebuildable: not_rebuildable
+    confidentiality: confidential
+    integrityRequirement: audit_critical
+    currentStorage: host_runtime_dir + mock_off_host
+    targetStrategy: unresolved
+    deferredTo: "51.2C2"
+    accessModeRequirement: undecided
+    evidence: "scripts/run_encrypted_backup.sh BACKUP_DR_RUNTIME_DIR; shared/sdk/backup_dr/offhost_target.py BACKUP_DR_OFFHOST_DIR"
+    unresolved: ["Backup CronJob + off-host target + encryption key reference deferred to Step 51.2C2", "MUST stay separate from active workspace storage"]
+
+# Consumers whose runtime storage is intentionally NOT handled in this stage.
+deferred:
+  observability:
+    reason: "Tempo/Prometheus/Grafana/Alertmanager data volumes are out of scope (Step 51.4)."
+    volumes: [tempo-data, prometheus-data, grafana-data, alertmanager-data]
+  backup:
+    reason: "Backup CronJob / off-host target / encryption-key reference deferred to Step 51.2C2."
+    consumers: [backup-dr-run]
+
+unresolvedSummary:
+  - "Durable / cross-restart workspace storage (object store vs RWX) -- undecided; ephemeral per-pod today."
+  - "In-cluster report + audit-forensic-export distribution medium -- undecided; writers are deferred one-shot jobs."
