@@ -1,0 +1,53 @@
+# Step 51.2C2 -- Batch Command Catalog (Stage 53E).
+#
+# FIXED commands for the migration Job / backup CronJob / restore scaffold.
+# The command + args for every batch job come from THIS catalog (mirrored into
+# values.batchCommands; the inventory verifier asserts they match). Job templates
+# NEVER take a command/args from free-form values, never use a shell, and never
+# compose an executable from environment values.
+#
+# Each command references EXISTING repo entrypoints by source path (static
+# tracking; image-internal hashing is a deferred cluster-smoke concern). The
+# Step 51.2C2 entrypoints are fixed, shell-free, and execution-gated behind
+# AIAGENTS_BATCH_EXECUTE=true (false everywhere in this baseline).
+
+version: "1"
+
+meta:
+  stage: "53E"
+  step: "51.2C2"
+
+commands:
+  migration:
+    executable: [python]
+    args: ["scripts/k8s_apply_migrations.py"]
+    allowVariableArgs: false
+    shell: false
+    # inputs arrive ONLY as fixed env vars (Secret references), never as argv
+    variableInputs: [DATABASE_URL]
+    sourcePaths:
+      - scripts/k8s_apply_migrations.py
+      - migrations/
+
+  encrypted-backup:
+    executable: [python]
+    args: ["scripts/k8s_encrypted_backup.py"]
+    allowVariableArgs: false
+    shell: false
+    variableInputs: [DATABASE_URL, BACKUP_ENCRYPTION_KEY]
+    sourcePaths:
+      - scripts/k8s_encrypted_backup.py
+      - scripts/run_encrypted_backup.sh
+      - shared/sdk/backup_dr/cli.py
+      - shared/sdk/backup/encryption.py
+
+  isolated-restore-drill:
+    executable: [python]
+    args: ["scripts/k8s_restore_drill.py"]
+    allowVariableArgs: false
+    shell: false
+    variableInputs: [RESTORE_SOURCE_DATABASE, RESTORE_TARGET_DATABASE, BACKUP_ENCRYPTION_KEY]
+    sourcePaths:
+      - scripts/k8s_restore_drill.py
+      - scripts/run_restore_drill.sh
+      - shared/sdk/backup/restore.py

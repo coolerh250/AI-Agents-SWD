@@ -130,3 +130,50 @@ but stay non-deployable (global.realDeployEnabled=false everywhere).
   {{- if has (lower ($st.workspace.existingClaim | default "")) $sampleClaims }}{{ fail "workspace existingClaim must not be a sample/default claim name" }}{{ end }}
 {{- end }}
 {{- if $st.artifacts.productionConfigured }}{{ fail "artifacts productionConfigured=true is not supported in this stage (no external object store configured)" }}{{ end }}
+
+{{/* ---- Step 51.2C2 batch-job fail-closed ---- */}}
+{{- $bj := .Values.batchJobs -}}
+{{- $nondev := or (eq $env "production") (eq $env "staging") -}}
+{{- $m := $bj.migration -}}
+{{- $b := $bj.backup -}}
+{{- $r := $bj.restore -}}
+{{/* (1-4) no batch operation may render/execute in staging/production */}}
+{{- if $nondev }}
+  {{- if $m.renderTemplate }}{{ fail (printf "%s must not render a migration Job" $env) }}{{ end }}
+  {{- if $b.renderTemplate }}{{ fail (printf "%s must not render a backup CronJob" $env) }}{{ end }}
+  {{- if $r.renderTemplate }}{{ fail (printf "%s must not render a restore Job" $env) }}{{ end }}
+  {{- if $m.executionEnabled }}{{ fail (printf "%s must not enable migration execution" $env) }}{{ end }}
+  {{- if $b.scheduleEnabled }}{{ fail (printf "%s must not enable backup schedule" $env) }}{{ end }}
+  {{- if $r.executionEnabled }}{{ fail (printf "%s must not enable restore execution" $env) }}{{ end }}
+{{- end }}
+{{/* (5-8) baseline execution gates */}}
+{{- if $m.executionEnabled }}{{ fail "migration.executionEnabled must be false in this baseline" }}{{ end }}
+{{- if $b.scheduleEnabled }}{{ fail "backup.scheduleEnabled must be false in this baseline" }}{{ end }}
+{{- if not $b.suspend }}{{ fail "backup CronJob must be suspended (suspend=true)" }}{{ end }}
+{{- if $r.executionEnabled }}{{ fail "restore.executionEnabled must be false (critical op)" }}{{ end }}
+{{- if $r.renderTemplate }}{{- if $nondev }}{{ fail "restore Job must never render outside a dev/test fixture" }}{{ end }}{{- end }}
+{{/* (9) backup schedule cannot be enabled without a configured target */}}
+{{- if and $b.scheduleEnabled (eq $b.target.strategy "disabled") }}{{ fail "backup schedule cannot be enabled while the artifact target is disabled" }}{{ end }}
+{{/* (16-19) job timing/retry policy */}}
+{{- range $jn, $j := (dict "migration" $m "backup" $b "restore" $r) }}
+  {{- if gt (int $j.backoffLimit) 0 }}{{ fail (printf "%s backoffLimit must be 0" $jn) }}{{ end }}
+  {{- if not $j.activeDeadlineSeconds }}{{ fail (printf "%s must set activeDeadlineSeconds" $jn) }}{{ end }}
+  {{- if not $j.ttlSecondsAfterFinished }}{{ fail (printf "%s must set ttlSecondsAfterFinished" $jn) }}{{ end }}
+{{- end }}
+{{- if ne $b.concurrencyPolicy "Forbid" }}{{ fail "backup concurrencyPolicy must be Forbid" }}{{ end }}
+{{/* (13-15) fixed commands only -- no shell, no command/args from free-form values */}}
+{{- range $ck, $cmd := .Values.batchCommands }}
+  {{- if $cmd.shell }}{{ fail (printf "batchCommands.%s.shell must be false" $ck) }}{{ end }}
+  {{- if eq (len $cmd.command) 0 }}{{ fail (printf "batchCommands.%s.command must be fixed/non-empty" $ck) }}{{ end }}
+  {{- range $a := $cmd.args }}
+    {{- if or (eq $a "-c") (contains "$(" $a) (contains "&&" $a) (contains ";" $a) }}{{ fail (printf "batchCommands.%s args must not contain shell constructs" $ck) }}{{ end }}
+  {{- end }}
+{{- end }}
+{{/* commandKey must reference a catalogued command */}}
+{{- range $jn, $key := (dict "migration" $m.commandKey "backup" $b.commandKey "restore" $r.commandKey) }}
+  {{- if not (hasKey $.Values.batchCommands $key) }}{{ fail (printf "%s commandKey %q has no batchCommands entry" $jn $key) }}{{ end }}
+{{- end }}
+{{/* (20-21) restore target isolation */}}
+{{- if ne $r.targetPrefix "aiagents_restore_drill_" }}{{ fail "restore.targetPrefix must be aiagents_restore_drill_" }}{{ end }}
+{{/* (26) backup target must not reuse an active workspace/database PVC */}}
+{{- if and (eq $b.target.strategy "existingClaim") (or (eq $b.target.existingClaim "postgres-data") (eq $b.target.existingClaim "redis-data")) }}{{ fail "backup target must not reuse an active datastore PVC" }}{{ end }}

@@ -134,6 +134,70 @@ spec:
           port: {{ $e.port }}
     {{- end }}
 {{- end }}
+{{/* ---- Step 51.2C2: minimal batch-job egress to Postgres + Postgres ingress
+       from batch jobs. Rendered ONLY when a batch job renders AND in-cluster
+       Postgres is enabled (dev/test). Specific ai-agents-swd/batch-job
+       selectors -- never a broad selector, never in production. DNS is already
+       covered by the allow-dns policy (batch pods carry part-of + instance). */}}
+{{- $bj := $root.Values.batchJobs }}
+{{- $pg := index $root.Values.components "postgres" }}
+{{- $batchJobs := list }}
+{{- if $bj.migration.renderTemplate }}{{- $batchJobs = append $batchJobs "migration" }}{{- end }}
+{{- if $bj.backup.renderTemplate }}{{- $batchJobs = append $batchJobs "backup" }}{{- end }}
+{{- if $bj.restore.renderTemplate }}{{- $batchJobs = append $batchJobs "restore" }}{{- end }}
+{{- if and $pg.enabled (gt (len $batchJobs) 0) (has $root.Values.global.environment (list "dev" "test")) }}
+{{- range $job := $batchJobs }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-egress-batch-{{ $job }}
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+    ai-agents-swd/batch-job: {{ $job }}
+spec:
+  podSelector:
+    matchLabels:
+      ai-agents-swd/batch-job: {{ $job }}
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+              app.kubernetes.io/instance: {{ $instance }}
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $fullname }}-ingress-postgres-batch
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgres
+      app.kubernetes.io/instance: {{ $instance }}
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- range $job := $batchJobs }}
+        - podSelector:
+            matchLabels:
+              ai-agents-swd/batch-job: {{ $job }}
+              app.kubernetes.io/instance: {{ $instance }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 5432
+{{- end }}
 {{- if $np.ingressController.enabled }}
 ---
 apiVersion: networking.k8s.io/v1

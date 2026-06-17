@@ -1,0 +1,88 @@
+{{/*
+Step 51.2C2 backup CronJob (controlled, disabled baseline).
+
+Renders ONLY for dev/test when batchJobs.backup.renderTemplate=true. The
+CronJob is SUSPENDED and scheduleEnabled=false in the baseline -> it never
+fires. Staging/production render NO CronJob (validate-values fail-closed).
+Encryption key + database URL are Secret references (never inline). The backup
+artifact target is a disabled placeholder -- never an active workspace/db PVC.
+No Helm hook, no ArgoCD hook, no shell, no external egress.
+*/}}
+{{- $root := . -}}
+{{- $fullname := include "aiagents.fullname" . -}}
+{{- $env := .Values.global.environment -}}
+{{- $b := .Values.batchJobs.backup -}}
+{{- if and $b.renderTemplate (has $env (list "dev" "test")) }}
+{{- $dbSecret := $b.secretRefs.database.name | default $root.Values.secrets.existingSecret -}}
+{{- $encSecret := $b.secretRefs.encryption.name | default $root.Values.secrets.existingSecret -}}
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ $fullname }}-backup
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+    app.kubernetes.io/name: backup
+    app.kubernetes.io/component: batch
+    ai-agents-swd/batch-job: backup
+    ai-agents-swd/production-executed: "false"
+spec:
+  schedule: {{ $b.schedule | quote }}
+  suspend: {{ $b.suspend }}
+  concurrencyPolicy: {{ $b.concurrencyPolicy }}
+  startingDeadlineSeconds: {{ $b.startingDeadlineSeconds }}
+  successfulJobsHistoryLimit: {{ $b.successfulJobsHistoryLimit }}
+  failedJobsHistoryLimit: {{ $b.failedJobsHistoryLimit }}
+  jobTemplate:
+    metadata:
+      labels:
+        app.kubernetes.io/name: backup
+        ai-agents-swd/batch-job: backup
+    spec:
+      backoffLimit: {{ $b.backoffLimit }}
+      activeDeadlineSeconds: {{ $b.activeDeadlineSeconds }}
+      ttlSecondsAfterFinished: {{ $b.ttlSecondsAfterFinished }}
+      template:
+        metadata:
+          labels:
+            {{- include "aiagents.commonLabels" $root | nindent 12 }}
+            app.kubernetes.io/name: backup
+            app.kubernetes.io/component: batch
+            ai-agents-swd/batch-job: backup
+        spec:
+          restartPolicy: Never
+          terminationGracePeriodSeconds: 30
+          serviceAccountName: {{ $fullname }}-backup-job
+          automountServiceAccountToken: false
+          securityContext:
+            {{- include "aiagents.batch.podSecurityContext" $root | nindent 12 }}
+          containers:
+            - name: backup
+              image: {{ include "aiagents.image" (dict "root" $root "comp" (dict "image" $root.Values.batchJobs.image)) }}
+              imagePullPolicy: IfNotPresent
+              {{- include "aiagents.batch.command" (dict "root" $root "commandKey" $b.commandKey) | nindent 14 }}
+              env:
+                - name: AIAGENTS_BATCH_EXECUTE
+                  value: {{ $b.scheduleEnabled | quote }}
+                - name: {{ $b.secretRefs.database.key }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $dbSecret }}
+                      key: databaseUrl
+                - name: {{ $b.secretRefs.encryption.key }}
+                  valueFrom:
+                    secretKeyRef:
+                      name: {{ $encSecret }}
+                      key: backupEncryptionKey
+              resources:
+                {{- toYaml $root.Values.batchJobs.resources | nindent 16 }}
+              securityContext:
+                {{- include "aiagents.batch.containerSecurityContext" $root | nindent 16 }}
+              volumeMounts:
+                - name: tmp
+                  mountPath: /tmp
+          volumes:
+            - name: tmp
+              emptyDir:
+                sizeLimit: 256Mi
+{{- end }}

@@ -1,0 +1,27 @@
+# Step 51.2C2 -- verifier-only fixture (NOT a deployable environment).
+#
+# Overlays the dev values to render the DISABLED restore scaffold so the restore
+# verifier can inspect its shape. Restore stays executionEnabled=false; this
+# fixture only flips renderTemplate so the manifest is produced for inspection.
+# Rendered via: helm template ... -f values-dev.yaml -f this-fixture.yaml
+# It is NEVER applied to a real environment and never enables execution.
+global:
+  environment: dev
+  production: false
+  realDeployEnabled: false
+
+components:
+  postgres: {enabled: true}
+  redis: {enabled: true}
+
+batchJobs:
+  migration:
+    renderTemplate: true
+    executionEnabled: false
+  backup:
+    renderTemplate: true
+    scheduleEnabled: false
+    suspend: true
+  restore:
+    renderTemplate: true        # fixture-only: render the disabled scaffold
+    executionEnabled: false      # still NOT executable

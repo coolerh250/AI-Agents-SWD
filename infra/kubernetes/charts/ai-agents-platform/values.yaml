@@ -218,6 +218,85 @@ storage:
     storageClassName: ""
     productionConfigured: false
 
+# Step 51.2C2 -- controlled migration / backup / restore batch jobs.
+# Templates are validated, NOT executed. Every command is FIXED (from
+# batchCommands, mirroring infra/kubernetes/batch-command-catalog.yaml); no
+# command/args/shell from free-form values. Disabled-by-default everywhere;
+# staging/production render NO executable batch job (validate-values enforced).
+batchJobs:
+  serviceAccounts:
+    create: true
+  # Batch image must carry python + shared/ + migrations/ (reuse app image).
+  image:
+    repository: aiagents/orchestrator
+    tag: step-51-1-placeholder
+    digest: ""
+  resources:
+    requests: {cpu: 100m, memory: 128Mi}
+    limits: {cpu: 500m, memory: 512Mi}
+  migration:
+    renderTemplate: true
+    executionEnabled: false        # baseline: never executes (advisory-locked when enabled)
+    commandKey: migration
+    backoffLimit: 0
+    activeDeadlineSeconds: 900
+    ttlSecondsAfterFinished: 3600
+    lock:
+      required: true
+      mode: postgres_advisory_lock
+    secretRef:
+      name: ""                     # empty -> falls back to secrets.existingSecret (name only)
+      databaseUrlKey: DATABASE_URL
+  backup:
+    renderTemplate: true
+    scheduleEnabled: false         # baseline: schedule disabled
+    suspend: true                  # CronJob suspended
+    commandKey: encrypted-backup
+    schedule: "0 2 * * *"
+    concurrencyPolicy: Forbid
+    startingDeadlineSeconds: 600
+    activeDeadlineSeconds: 1800
+    backoffLimit: 0
+    ttlSecondsAfterFinished: 3600
+    successfulJobsHistoryLimit: 3
+    failedJobsHistoryLimit: 3
+    secretRefs:
+      database: {name: "", key: DATABASE_URL}
+      encryption: {name: "", key: BACKUP_ENCRYPTION_KEY}
+    target:
+      strategy: disabled           # backup store deferred (Step 51.2C1); NOT active workspace/db PVC
+      existingClaim: ""
+      externalObjectStoreEnabled: false
+  restore:
+    renderTemplate: false          # never rendered in standard environments (critical op)
+    executionEnabled: false
+    commandKey: isolated-restore-drill
+    backoffLimit: 0
+    activeDeadlineSeconds: 1800
+    ttlSecondsAfterFinished: 3600
+    targetPrefix: aiagents_restore_drill_
+    secretRefs:
+      source: {name: "", key: RESTORE_SOURCE_DATABASE}
+      target: {name: "", key: RESTORE_TARGET_DATABASE}
+      encryption: {name: "", key: BACKUP_ENCRYPTION_KEY}
+
+# FIXED command map (mirrors infra/kubernetes/batch-command-catalog.yaml; the
+# batch inventory verifier asserts they match). Job templates index this by the
+# validated commandKey -- they never accept a command/args from elsewhere.
+batchCommands:
+  migration:
+    command: [python]
+    args: ["scripts/k8s_apply_migrations.py"]
+    shell: false
+  encrypted-backup:
+    command: [python]
+    args: ["scripts/k8s_encrypted_backup.py"]
+    shell: false
+  isolated-restore-drill:
+    command: [python]
+    args: ["scripts/k8s_restore_drill.py"]
+    shell: false
+
 components:
   orchestrator:
     enabled: true

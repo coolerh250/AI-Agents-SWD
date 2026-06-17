@@ -25,6 +25,14 @@
         }
       ]
     },
+    "batchSecretRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "name": { "type": "string" },
+        "key": { "type": "string", "minLength": 1 }
+      }
+    },
     "appStorage": {
       "type": "object",
       "additionalProperties": false,
@@ -260,6 +268,129 @@
         "redis": { "$ref": "#/definitions/datastoreStorage" },
         "workspace": { "$ref": "#/definitions/appStorage" },
         "artifacts": { "$ref": "#/definitions/appStorage" }
+      }
+    },
+    "batchJobs": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "serviceAccounts": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": { "create": { "type": "boolean" } }
+        },
+        "image": {
+          "type": "object",
+          "required": ["repository"],
+          "additionalProperties": false,
+          "properties": {
+            "repository": { "type": "string", "minLength": 1 },
+            "tag": { "type": "string" },
+            "digest": { "type": "string" }
+          }
+        },
+        "resources": { "type": "object" },
+        "migration": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["renderTemplate", "executionEnabled", "commandKey", "backoffLimit", "activeDeadlineSeconds", "ttlSecondsAfterFinished"],
+          "properties": {
+            "renderTemplate": { "type": "boolean" },
+            "executionEnabled": { "type": "boolean" },
+            "commandKey": { "const": "migration" },
+            "backoffLimit": { "type": "integer", "minimum": 0, "maximum": 0 },
+            "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+            "ttlSecondsAfterFinished": { "type": "integer", "minimum": 1 },
+            "lock": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "required": { "type": "boolean" },
+                "mode": { "enum": ["postgres_advisory_lock"] }
+              }
+            },
+            "secretRef": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "name": { "type": "string" },
+                "databaseUrlKey": { "type": "string", "minLength": 1 }
+              }
+            }
+          }
+        },
+        "backup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["renderTemplate", "scheduleEnabled", "suspend", "commandKey", "schedule", "concurrencyPolicy", "backoffLimit", "activeDeadlineSeconds", "ttlSecondsAfterFinished"],
+          "properties": {
+            "renderTemplate": { "type": "boolean" },
+            "scheduleEnabled": { "type": "boolean" },
+            "suspend": { "type": "boolean" },
+            "commandKey": { "const": "encrypted-backup" },
+            "schedule": { "type": "string", "minLength": 1 },
+            "concurrencyPolicy": { "const": "Forbid" },
+            "startingDeadlineSeconds": { "type": "integer", "minimum": 1 },
+            "backoffLimit": { "type": "integer", "minimum": 0, "maximum": 0 },
+            "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+            "ttlSecondsAfterFinished": { "type": "integer", "minimum": 1 },
+            "successfulJobsHistoryLimit": { "type": "integer", "minimum": 0 },
+            "failedJobsHistoryLimit": { "type": "integer", "minimum": 0 },
+            "secretRefs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "database": { "$ref": "#/definitions/batchSecretRef" },
+                "encryption": { "$ref": "#/definitions/batchSecretRef" }
+              }
+            },
+            "target": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "strategy": { "enum": ["disabled", "existingClaim", "externalObjectStorePlaceholder"] },
+                "existingClaim": { "type": "string" },
+                "externalObjectStoreEnabled": { "type": "boolean" }
+              }
+            }
+          }
+        },
+        "restore": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["renderTemplate", "executionEnabled", "commandKey", "backoffLimit", "activeDeadlineSeconds", "ttlSecondsAfterFinished", "targetPrefix"],
+          "properties": {
+            "renderTemplate": { "type": "boolean" },
+            "executionEnabled": { "type": "boolean" },
+            "commandKey": { "const": "isolated-restore-drill" },
+            "backoffLimit": { "type": "integer", "minimum": 0, "maximum": 0 },
+            "activeDeadlineSeconds": { "type": "integer", "minimum": 1 },
+            "ttlSecondsAfterFinished": { "type": "integer", "minimum": 1 },
+            "targetPrefix": { "const": "aiagents_restore_drill_" },
+            "secretRefs": {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "source": { "$ref": "#/definitions/batchSecretRef" },
+                "target": { "$ref": "#/definitions/batchSecretRef" },
+                "encryption": { "$ref": "#/definitions/batchSecretRef" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "batchCommands": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["command", "args", "shell"],
+        "properties": {
+          "command": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+          "args": { "type": "array", "items": { "type": "string" } },
+          "shell": { "const": false }
+        }
       }
     },
     "components": {

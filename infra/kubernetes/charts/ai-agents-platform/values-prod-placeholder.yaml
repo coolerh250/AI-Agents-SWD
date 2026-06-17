@@ -57,6 +57,19 @@ storage:
     persistenceEnabled: false
     productionConfigured: false
 
+# Production renders NO executable batch job / CronJob (fail-closed).
+batchJobs:
+  migration:
+    renderTemplate: false
+    executionEnabled: false
+  backup:
+    renderTemplate: false
+    scheduleEnabled: false
+    suspend: true
+  restore:
+    renderTemplate: false
+    executionEnabled: false
+
 components:
   postgres: {enabled: false}    # production uses EXTERNAL managed Postgres
   redis: {enabled: false}       # production uses EXTERNAL managed Redis

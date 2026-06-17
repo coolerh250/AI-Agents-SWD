@@ -1,0 +1,89 @@
+{{/*
+Step 51.2C2 restore Job scaffold (CRITICAL -- disabled by default).
+
+Restore is NEVER rendered in standard environment values
+(batchJobs.restore.renderTemplate=false). Only a dedicated, non-production
+verifier fixture renders this disabled scaffold to inspect its shape.
+Staging/production NEVER render it (validate-values fail-closed).
+
+The target DB name uses the fixed prefix `aiagents_restore_drill_` and must
+differ from the source; source + target credentials use SEPARATE Secret
+references; execution is gated by AIAGENTS_BATCH_EXECUTE (false). No service
+traffic switch, no shell, no Helm/ArgoCD hook, no Kubernetes API access.
+*/}}
+{{- $root := . -}}
+{{- $fullname := include "aiagents.fullname" . -}}
+{{- $env := .Values.global.environment -}}
+{{- $r := .Values.batchJobs.restore -}}
+{{- if and $r.renderTemplate (has $env (list "dev" "test")) }}
+{{- $srcSecret := $r.secretRefs.source.name | default $root.Values.secrets.existingSecret -}}
+{{- $tgtSecret := $r.secretRefs.target.name | default $root.Values.secrets.existingSecret -}}
+{{- $encSecret := $r.secretRefs.encryption.name | default $root.Values.secrets.existingSecret -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-restore-drill
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+    app.kubernetes.io/name: restore-drill
+    app.kubernetes.io/component: batch
+    ai-agents-swd/batch-job: restore
+    ai-agents-swd/production-executed: "false"
+spec:
+  backoffLimit: {{ $r.backoffLimit }}
+  activeDeadlineSeconds: {{ $r.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $r.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "aiagents.commonLabels" $root | nindent 8 }}
+        app.kubernetes.io/name: restore-drill
+        app.kubernetes.io/component: batch
+        ai-agents-swd/batch-job: restore
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ $fullname }}-restore-job
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "aiagents.batch.podSecurityContext" $root | nindent 8 }}
+      containers:
+        - name: restore-drill
+          image: {{ include "aiagents.image" (dict "root" $root "comp" (dict "image" $root.Values.batchJobs.image)) }}
+          imagePullPolicy: IfNotPresent
+          {{- include "aiagents.batch.command" (dict "root" $root "commandKey" $r.commandKey) | nindent 10 }}
+          env:
+            - name: AIAGENTS_BATCH_EXECUTE
+              value: {{ $r.executionEnabled | quote }}
+            - name: RESTORE_SOURCE_DATABASE
+              value: "aiagents"
+            - name: RESTORE_TARGET_DATABASE
+              value: {{ printf "%sscaffold" $r.targetPrefix | quote }}
+            - name: RESTORE_SOURCE_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $srcSecret }}
+                  key: databaseUrl
+            - name: RESTORE_TARGET_DATABASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $tgtSecret }}
+                  key: restoreTargetUrl
+            - name: BACKUP_ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $encSecret }}
+                  key: backupEncryptionKey
+          resources:
+            {{- toYaml $root.Values.batchJobs.resources | nindent 12 }}
+          securityContext:
+            {{- include "aiagents.batch.containerSecurityContext" $root | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+{{- end }}

@@ -1,0 +1,69 @@
+{{/*
+Step 51.2C2 migration Job (controlled baseline).
+
+Renders ONLY for dev/test when batchJobs.migration.renderTemplate=true.
+Staging/production render NO migration Job (validate-values fail-closed).
+The command is FIXED (from batchCommands via the batch helper); execution is
+gated by AIAGENTS_BATCH_EXECUTE (=executionEnabled, false in the baseline).
+No Helm hook, no ArgoCD hook, no shell, no Kubernetes API access.
+*/}}
+{{- $root := . -}}
+{{- $fullname := include "aiagents.fullname" . -}}
+{{- $env := .Values.global.environment -}}
+{{- $m := .Values.batchJobs.migration -}}
+{{- if and $m.renderTemplate (has $env (list "dev" "test")) }}
+{{- $secretName := $m.secretRef.name | default $root.Values.secrets.existingSecret -}}
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ $fullname }}-migration
+  labels:
+    {{- include "aiagents.commonLabels" $root | nindent 4 }}
+    app.kubernetes.io/name: migration
+    app.kubernetes.io/component: batch
+    ai-agents-swd/batch-job: migration
+    ai-agents-swd/production-executed: "false"
+spec:
+  backoffLimit: {{ $m.backoffLimit }}
+  activeDeadlineSeconds: {{ $m.activeDeadlineSeconds }}
+  ttlSecondsAfterFinished: {{ $m.ttlSecondsAfterFinished }}
+  template:
+    metadata:
+      labels:
+        {{- include "aiagents.commonLabels" $root | nindent 8 }}
+        app.kubernetes.io/name: migration
+        app.kubernetes.io/component: batch
+        ai-agents-swd/batch-job: migration
+    spec:
+      restartPolicy: Never
+      terminationGracePeriodSeconds: 30
+      serviceAccountName: {{ $fullname }}-migration-job
+      automountServiceAccountToken: false
+      securityContext:
+        {{- include "aiagents.batch.podSecurityContext" $root | nindent 8 }}
+      containers:
+        - name: migration
+          image: {{ include "aiagents.image" (dict "root" $root "comp" (dict "image" $root.Values.batchJobs.image)) }}
+          imagePullPolicy: IfNotPresent
+          {{- include "aiagents.batch.command" (dict "root" $root "commandKey" $m.commandKey) | nindent 10 }}
+          env:
+            - name: AIAGENTS_BATCH_EXECUTE
+              value: {{ $m.executionEnabled | quote }}
+            - name: {{ $m.secretRef.databaseUrlKey }}
+              valueFrom:
+                secretKeyRef:
+                  name: {{ $secretName }}
+                  key: databaseUrl
+          resources:
+            {{- toYaml $root.Values.batchJobs.resources | nindent 12 }}
+          securityContext:
+            {{- include "aiagents.batch.containerSecurityContext" $root | nindent 12 }}
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+      volumes:
+        - name: tmp
+          emptyDir:
+            sizeLimit: 256Mi
+{{- end }}

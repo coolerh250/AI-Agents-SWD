@@ -51,6 +51,19 @@ storage:
     persistenceEnabled: false
     productionConfigured: false
 
+# Staging renders NO executable batch job (external managed datastores).
+batchJobs:
+  migration:
+    renderTemplate: false
+    executionEnabled: false
+  backup:
+    renderTemplate: false
+    scheduleEnabled: false
+    suspend: true
+  restore:
+    renderTemplate: false
+    executionEnabled: false
+
 components:
   postgres: {enabled: false}
   redis: {enabled: false}

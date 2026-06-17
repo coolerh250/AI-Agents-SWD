@@ -1,0 +1,122 @@
+# Step 51.2C2 -- Batch Operation Inventory (Stage 53E).
+#
+# Evidence-backed inventory of the repo's migration / backup / restore
+# capabilities, produced BEFORE any Job template, with risk classification.
+# Source of truth: migrations/, scripts/, shared/sdk/backup*, docker-compose.
+#
+# Findings (verified):
+#   - Migration: applied as a forward-only `psql -f migrations/NNN_*.sql` loop
+#     (scripts/init_local_runtime.sh + start_staging_runtime.sh). NO applied-
+#     migration tracking table -> idempotency is SQL-level (IF NOT EXISTS /
+#     CREATE OR REPLACE). Rollback is the operator-driven *_down.sql catalog
+#     (shared/sdk/backup_dr/migration_catalog.py); NEVER auto-run. No existing
+#     advisory-lock wrapper -> the Step 51.2C2 wrapper adds one using the repo's
+#     pg_advisory_lock(hashtext($1)) idiom (shared/sdk/audit_integrity/store.py).
+#   - Backup: real encrypted backup is host bash scripts/run_encrypted_backup.sh
+#     (pg_dump + openssl); orchestration/recording in shared.sdk.backup_dr.cli;
+#     encryption key resolved by source only (never raw-persisted). Off-host is
+#     a mock target; schedule production-disabled. Container-native pg_dump is
+#     NOT yet ported (unresolved / requires_cluster_smoke).
+#   - Restore: host bash scripts/run_restore_drill.sh into an isolated
+#     `aiagents_restore_drill_<ts>` DB; isolation enforced by
+#     shared.sdk.backup.restore.assert_isolated_restore_db. Container-native
+#     restore is NOT yet ported (unresolved / requires_cluster_smoke).
+
+meta:
+  stage: "53E"
+  step: "51.2C2"
+  sources:
+    - migrations/
+    - scripts/
+    - shared/sdk/backup_dr/
+    - shared/sdk/backup/
+    - infra/docker-compose/docker-compose.yml
+
+operations:
+  - key: migration
+    category: schema_migration
+    risk: high
+    executionMode: manual_job
+    owner: platform
+    existingCommand: "psql -v ON_ERROR_STOP=1 -f migrations/NNN_*.sql (forward-only loop)"
+    executable: ["python", "scripts/k8s_apply_migrations.py"]
+    fixedArgs: []
+    variableInputs: [DATABASE_URL]
+    secretReferences: [DATABASE_URL]
+    storageReferences: []
+    lockRequired: true
+    lockModel: postgres_advisory_lock
+    idempotent: true
+    idempotencyModel: sql_if_not_exists_no_tracking_table
+    rollbackModel: forward_only_operator_down_catalog
+    timeoutSeconds: 900
+    retryPolicy: none_backoffLimit_0
+    environmentEligibility: [dev, test]
+    productionAllowed: false
+    kubernetesTemplate: templates/migration-job.yaml
+    runtimeCompatibility: requires_cluster_smoke
+    evidence: "scripts/init_local_runtime.sh#L42 psql loop; migrations/*.sql; advisory-lock idiom in audit_integrity/store.py"
+    unresolved: []
+
+  - key: encrypted-backup
+    category: backup
+    risk: medium
+    executionMode: scheduled_cronjob
+    owner: platform
+    existingCommand: "scripts/run_encrypted_backup.sh (pg_dump + openssl) + shared.sdk.backup_dr.cli run-all"
+    executable: ["python", "scripts/k8s_encrypted_backup.py"]
+    fixedArgs: []
+    variableInputs: [DATABASE_URL, BACKUP_ENCRYPTION_KEY]
+    secretReferences: [DATABASE_URL, BACKUP_ENCRYPTION_KEY]
+    storageReferences: [backup-artifacts]      # deferred store (Step 51.2C1), NOT active workspace/db PVC
+    lockRequired: false
+    lockModel: cronjob_concurrency_forbid
+    idempotent: false
+    idempotencyModel: timestamped_artifact
+    rollbackModel: not_applicable
+    timeoutSeconds: 1800
+    retryPolicy: none_backoffLimit_0
+    environmentEligibility: [dev, test]
+    productionAllowed: false
+    kubernetesTemplate: templates/backup-cronjob.yaml
+    runtimeCompatibility: requires_cluster_smoke
+    evidence: "scripts/run_encrypted_backup.sh; shared/sdk/backup_dr/cli.py; encryption key source via shared/sdk/backup/encryption.py"
+    unresolved:
+      - "container-native pg_dump pipeline not yet ported (host scripts/run_encrypted_backup.sh)"
+      - "off-host backup artifact target remains a disabled placeholder (Step 51.2C1 backup store deferred)"
+
+  - key: isolated-restore-drill
+    category: restore
+    risk: critical
+    executionMode: disabled
+    owner: platform
+    existingCommand: "scripts/run_restore_drill.sh (isolated aiagents_restore_drill_<ts> DB)"
+    executable: ["python", "scripts/k8s_restore_drill.py"]
+    fixedArgs: []
+    variableInputs: [RESTORE_SOURCE_DATABASE, RESTORE_TARGET_DATABASE, BACKUP_ENCRYPTION_KEY]
+    secretReferences: [RESTORE_SOURCE_DATABASE, RESTORE_TARGET_DATABASE, BACKUP_ENCRYPTION_KEY]
+    storageReferences: []
+    lockRequired: false
+    lockModel: not_applicable
+    idempotent: false
+    idempotencyModel: isolated_target_recreated
+    rollbackModel: drop_isolated_target_only
+    timeoutSeconds: 1800
+    retryPolicy: none_backoffLimit_0
+    environmentEligibility: []              # never rendered in standard environments
+    productionAllowed: false
+    targetIsolation:
+      requiredPrefix: aiagents_restore_drill_
+      sourceMustDiffer: true
+      productionTargetForbidden: true
+    kubernetesTemplate: templates/restore-job.yaml
+    runtimeCompatibility: requires_cluster_smoke
+    evidence: "scripts/run_restore_drill.sh#L40 restore_db prefix; shared/sdk/backup/restore.py assert_isolated_restore_db"
+    unresolved:
+      - "container-native restore pipeline not yet ported (host scripts/run_restore_drill.sh)"
+      - "production restore approval/process deferred (never rendered or executed here)"
+
+# Operations are template-validated only -- NONE are executed in this stage.
+notExecuted:
+  reason: "Step 51.2C2 builds + statically validates Kubernetes batch manifests only. No migration/backup/restore is run; no cluster is connected."
+  productionAllowed: false
