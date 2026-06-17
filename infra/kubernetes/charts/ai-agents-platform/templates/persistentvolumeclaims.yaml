@@ -1,0 +1,42 @@
+{{/*
+Step 51.2C1 generated PVCs for in-cluster datastores (postgres, redis).
+
+A PVC is rendered ONLY when ALL hold:
+  - storage.enabled
+  - storage.<key>.strategy == generatedPVC
+  - storage.<key>.persistenceEnabled
+  - the component is enabled
+  - environment is dev or test
+
+This is fail-closed for staging/production: those environments disable the
+datastore components AND override the strategy to externalService, so no PVC
+is ever generated outside dev/test. The claim requests size + accessMode only;
+it pins no node-local volume and no external storage driver.
+*/}}
+{{- $root := . -}}
+{{- $fullname := include "aiagents.fullname" . -}}
+{{- $env := $root.Values.global.environment -}}
+{{- $devtest := list "dev" "test" -}}
+{{- range $key := (list "postgres" "redis") }}
+{{- $s := index $root.Values.storage $key }}
+{{- $comp := index $root.Values.components $key }}
+{{- if and $root.Values.storage.enabled (eq $s.strategy "generatedPVC") $s.persistenceEnabled $comp.enabled (has $env $devtest) }}
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ $fullname }}-{{ $key }}-data
+  labels:
+    {{- include "aiagents.componentLabels" (dict "root" $root "name" $key "comp" $comp) | nindent 4 }}
+    ai-agents-swd/store: {{ $key }}-data
+spec:
+  accessModes:
+    - {{ $s.accessMode }}
+  resources:
+    requests:
+      storage: {{ $s.size }}
+  {{- if $s.storageClassName }}
+  storageClassName: {{ $s.storageClassName | quote }}
+  {{- end }}
+{{- end }}
+{{- end }}

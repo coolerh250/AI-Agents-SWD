@@ -2356,6 +2356,39 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Storage Ownership & Data Lifecycle Baseline (Stage 53D / Step 51.2C1)
+
+Adds an evidence-backed storage ownership + data-lifecycle baseline and a
+fail-closed, environment-safe PVC layer. Every filesystem/storage consumer in
+the real runtime is inventoried
+([storage-consumer-inventory.yaml](infra/kubernetes/storage-consumer-inventory.yaml))
+and normalized into typed stores with owner/writers/readers, lifecycle,
+durability, rebuildability, confidentiality and integrity, plus a per-environment
+strategy ([storage-ownership-catalog.yaml](infra/kubernetes/storage-ownership-catalog.yaml)).
+In-cluster Postgres (`/var/lib/postgresql/data`) and Redis (`/data`) get
+**generated RWO PVCs in dev/test only**, mounted in the Deployment template;
+staging/production disable the internal datastores and use `externalService`.
+Workspace stays **ephemeral per-pod** (not shared, no RWX); reports / audit
+forensic exports stay `unresolved` (writers are deferred one-shot jobs); backup
+is **separate** and deferred to Step 51.2C2. No `StorageClass`/`PersistentVolume`
+resource, no hostPath/NFS/CSI, no real storage class or claim name, no
+`ReadWriteOncePod`; generated PVCs are RWO single-writer; forbidden mount paths
+rejected; production placeholders stay `productionConfigured=false` (fail
+closed). Verify with `python scripts/verify_kubernetes_storage_inventory.py`
+(`KUBERNETES_STORAGE_INVENTORY_VERIFY: PASS`),
+`python scripts/verify_kubernetes_data_lifecycle.py`
+(`KUBERNETES_DATA_LIFECYCLE_VERIFY: PASS`),
+`python scripts/verify_kubernetes_storage_manifest.py`
+(`KUBERNETES_STORAGE_MANIFEST_VERIFY: PASS`), and
+`scripts/verify_kubernetes_storage_baseline.sh`
+(`KUBERNETES_STORAGE_BASELINE_VERIFY: PASS`). Static manifest baseline only (no
+cluster, no kubectl, no helm install). See
+[`docs/platform/kubernetes-storage-baseline.md`](docs/platform/kubernetes-storage-baseline.md),
+[`docs/platform/kubernetes-data-lifecycle.md`](docs/platform/kubernetes-data-lifecycle.md),
+[`docs/platform/kubernetes-workspace-storage-model.md`](docs/platform/kubernetes-workspace-storage-model.md),
+and [`docs/platform/kubernetes-datastore-persistence.md`](docs/platform/kubernetes-datastore-persistence.md).
+Migration/Backup Jobs (51.2C2) and GitOps (51.3) are deferred.
+
 ## NetworkPolicy & Service Connectivity Baseline (Stage 53C / Step 51.2B)
 
 Adds a default-deny Kubernetes NetworkPolicy baseline generated from the

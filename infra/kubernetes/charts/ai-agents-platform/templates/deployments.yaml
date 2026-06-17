@@ -45,6 +45,22 @@ spec:
       {{- $sec := $comp.security | default dict }}
       {{- $writable := list }}
       {{- if hasKey $sec "writablePaths" }}{{- $writable = $sec.writablePaths }}{{- else }}{{- $writable = list (dict "name" "tmp" "mountPath" "/tmp" "sizeLimit" "256Mi") }}{{- end }}
+      {{- /* Step 51.2C1 storage: a generated PVC backs the datastore mount path
+             (dev/test only). The PVC-backed path is removed from emptyDir paths
+             so it is mounted exactly once. */}}
+      {{- $env := $root.Values.global.environment }}
+      {{- $devtest := list "dev" "test" }}
+      {{- $pvcMounts := list }}
+      {{- $storedPaths := dict }}
+      {{- if and (hasKey $root.Values.storage $name) $root.Values.storage.enabled }}
+      {{- $s := index $root.Values.storage $name }}
+      {{- if and (eq $s.strategy "generatedPVC") $s.persistenceEnabled (has $env $devtest) }}
+      {{- $pvcMounts = append $pvcMounts (dict "name" (printf "%s-data" $name) "mountPath" $s.mountPath "claimName" (printf "%s-%s-data" $fullname $name)) }}
+      {{- $_ := set $storedPaths $s.mountPath true }}
+      {{- end }}
+      {{- end }}
+      {{- $ephemeral := list }}
+      {{- range $w := $writable }}{{- if not (hasKey $storedPaths $w.mountPath) }}{{- $ephemeral = append $ephemeral $w }}{{- end }}{{- end }}
       containers:
         - name: {{ $name }}
           image: {{ include "aiagents.image" (dict "root" $root "comp" $comp) }}
@@ -116,22 +132,31 @@ spec:
           securityContext:
             {{- include "aiagents.containerSecurityContext" (dict "root" $root "comp" $comp) | nindent 12 }}
           {{- end }}
-          {{- if $writable }}
+          {{- if or $ephemeral $pvcMounts }}
           volumeMounts:
-            {{- range $w := $writable }}
+            {{- range $w := $ephemeral }}
             - name: {{ $w.name }}
               mountPath: {{ $w.mountPath }}
             {{- end }}
+            {{- range $m := $pvcMounts }}
+            - name: {{ $m.name }}
+              mountPath: {{ $m.mountPath }}
+            {{- end }}
           {{- end }}
-      {{- if $writable }}
+      {{- if or $ephemeral $pvcMounts }}
       volumes:
-        {{- range $w := $writable }}
+        {{- range $w := $ephemeral }}
         - name: {{ $w.name }}
           emptyDir:
             sizeLimit: {{ $w.sizeLimit }}
             {{- if $w.medium }}
             medium: {{ $w.medium }}
             {{- end }}
+        {{- end }}
+        {{- range $m := $pvcMounts }}
+        - name: {{ $m.name }}
+          persistentVolumeClaim:
+            claimName: {{ $m.claimName }}
         {{- end }}
       {{- end }}
 {{- end }}

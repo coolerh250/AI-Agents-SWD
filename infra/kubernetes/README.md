@@ -11,6 +11,8 @@ Foundation only. **No cluster connection, no `kubectl`, no `helm install`.**
 | `workload-security-inventory.yaml` | Step 51.2A per-component runtime security requirements |
 | `rbac-safety-catalog.yaml` | Step 51.2A RBAC safety record (no Kubernetes API access) |
 | `network-connectivity-catalog.yaml` | Step 51.2B canonical connectivity model (49 internal edges) |
+| `storage-consumer-inventory.yaml` | Step 51.2C1 filesystem/storage consumer inventory |
+| `storage-ownership-catalog.yaml` | Step 51.2C1 typed stores + data lifecycle + per-env strategy |
 | `charts/ai-agents-platform/` | Multi-environment Helm foundation chart (v0.1.0) |
 
 Docs: [runtime-service-inventory](../../docs/platform/runtime-service-inventory.md),
@@ -29,6 +31,10 @@ python scripts/verify_kubernetes_network_topology.py         # KUBERNETES_NETWOR
 python scripts/verify_kubernetes_network_policy.py           # KUBERNETES_NETWORK_POLICY_VERIFY: PASS
 python scripts/verify_kubernetes_service_connectivity.py     # KUBERNETES_SERVICE_CONNECTIVITY_VERIFY: PASS
 ./scripts/verify_kubernetes_network_baseline.sh              # KUBERNETES_NETWORK_BASELINE_VERIFY: PASS
+python scripts/verify_kubernetes_storage_inventory.py        # KUBERNETES_STORAGE_INVENTORY_VERIFY: PASS
+python scripts/verify_kubernetes_data_lifecycle.py           # KUBERNETES_DATA_LIFECYCLE_VERIFY: PASS
+python scripts/verify_kubernetes_storage_manifest.py         # KUBERNETES_STORAGE_MANIFEST_VERIFY: PASS
+./scripts/verify_kubernetes_storage_baseline.sh             # KUBERNETES_STORAGE_BASELINE_VERIFY: PASS
 ```
 
 `verify_helm_foundation.sh` prefers a local `helm`, otherwise runs a pinned
@@ -61,5 +67,12 @@ In scope (Step 51.2B): default-deny NetworkPolicy baseline (ingress + egress),
 scoped DNS egress, per-target ingress / per-source egress from the connectivity
 catalog (49 internal edges), Postgres/Redis isolation, external egress disabled.
 
-Deferred (Step 51.2C+): PVC/StorageClass, Migration Job, Backup CronJob (51.2C);
-HPA, PDB; and ArgoCD/GitOps (51.3).
+In scope (Step 51.2C1): storage consumer inventory + data lifecycle, typed store
+ownership, generated RWO PVCs for in-cluster Postgres/Redis in dev/test only,
+Deployment volume integration, fail-closed environment storage rules. No
+StorageClass/PV resource, no hostPath/NFS, no real storage class/claim. See
+[kubernetes-storage-baseline](../../docs/platform/kubernetes-storage-baseline.md).
+
+Deferred (Step 51.2C2): Migration Job, Backup CronJob, off-host target +
+encryption-key reference, Restore Job. Deferred (51.3): ArgoCD/GitOps. Deferred
+(51.4): runtime visibility. HPA/PDB also deferred.

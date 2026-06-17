@@ -9989,3 +9989,55 @@ issues & blockers, and next-step suggestions.
   added to selectors; all 51.2A markers must remain PASS).
 - **Roadmap.** Step 51.1/51.2A closed; 51.2B closed (if verified); 51.2C/51.3/
   51.4 pending; Step 51 overall OPEN.
+
+## Stage 53D — Storage Ownership & Data Lifecycle Baseline (Step 51.2C1)
+
+- **Scope.** First half of Step 51.2C. Evidence-backed storage ownership + data
+  lifecycle inventory and a fail-closed, environment-safe PVC baseline. Static
+  manifest baseline only: NO cluster connection, NO kubectl, NO helm
+  install/upgrade. Did NOT do Migration Job / Backup CronJob / Restore Job
+  (51.2C2), ArgoCD (51.3), or runtime API (51.4).
+- **Inventory.** `storage-consumer-inventory.yaml` (13 consumers across 8
+  categories) + `storage-ownership-catalog.yaml` (7 typed stores + deferred
+  backup/observability). Findings: only `postgres-data` is a named compose
+  volume; redis is ephemeral in compose; workspace is per-pod `/tmp` (NOT shared
+  — mini-pilot runs in-process); reports/dr/audit-forensics are host-script
+  written + orchestrator read-only; admin static is image-contained; delivery
+  evidence persists via PostgreSQL; backup is separate and deferred.
+- **Datastore persistence.** Generated **RWO PVCs for in-cluster Postgres
+  (`/var/lib/postgresql/data`, 10Gi) + Redis (`/data`, 2Gi) in dev/test only**
+  (`templates/persistentvolumeclaims.yaml`); Deployment mounts them (PVC-backed
+  path replaces the ephemeral emptyDir; redis keeps readOnlyRootFilesystem=true).
+  Staging/production disable internal datastores and use `externalService`.
+  StatefulSet/operator/HA recorded as a future decision (not implemented).
+- **Workspace / reports.** Workspace stays `ephemeralEmptyDir` per-pod
+  (persistenceSolved=false; RWX is an inert disabled placeholder). Reports +
+  audit-forensic exports are `unresolved` (writers are deferred one-shot jobs;
+  in-cluster distribution medium undecided) with recorded blockers + future
+  targets. Backup `deferredTo: 51.2C2`, separate from active workspace.
+- **Schema + fail-closed.** values.schema.json adds `storage` (datastoreStorage
+  + appStorage definitions; strategy/accessMode enums, size pattern, generatedPVC
+  ⟹ RWO via if/then, additionalProperties:false — no hostPath/nfs/csi/volumeName/
+  endpoint/credential). validate-values.yaml fails on: generatedPVC in
+  staging/production, generatedPVC non-RWO, RWX+generatedPVC, empty existingClaim,
+  real-looking storage class, forbidden/absolute mount path, docker socket,
+  workspace productionConfigured without a non-sample existing claim, artifacts
+  productionConfigured.
+- **Verifiers.** storage-inventory (source-level, 8 checks), data-lifecycle
+  (source-level, 10 checks), storage-manifest (rendered four envs), and combined
+  `verify_kubernetes_storage_baseline.sh` (chains 51.1/51.2A/51.2B + storage +
+  pytest + secret scan + PV/StorageClass/hostPath/NFS render scan).
+- **Local checks.** 14 new pytest files + carried 51.1/51.2A/51.2B suites green
+  (214 kubernetes/helm tests, 0 skipped); storage-inventory + data-lifecycle
+  verifiers PASS; ruff/black/mypy clean; merged values validate against the
+  extended schema (jsonschema).
+- **Verification (remote 10.0.1.31).** Pending — to be recorded after the remote
+  render + verifier run on the pushed HEAD.
+- **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
+  StorageClass/PersistentVolume resource, no hostPath/NFS/CSI, no real storage
+  class or claim name, no ReadWriteOncePod, no backup/active-data mixing, no
+  secret / rendered manifest committed. production_executed_true_count remains 0.
+  No change to HARD_SAFETY_ACTIONS, audit canonicalization, Step 50 operator
+  policy, or `/operations/safety`. Step 51.2A/51.2B baselines preserved.
+- **Roadmap.** Step 51.1/51.2A/51.2B closed; 51.2C1 closed (if verified);
+  51.2C2/51.3/51.4 pending; Step 51 overall OPEN.

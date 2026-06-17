@@ -175,6 +175,49 @@ externalDataServices:
     cidrs: []
     port: 6379
 
+# Step 51.2C1 -- storage ownership & data lifecycle baseline.
+# generatedPVC renders ONLY for dev/test (validate-values forbids it in
+# staging/production); staging/production datastores use externalService.
+# Mirrors infra/kubernetes/storage-ownership-catalog.yaml.
+storage:
+  enabled: true
+  postgres:
+    strategy: generatedPVC          # dev/test only; staging/prod override -> externalService
+    persistenceEnabled: true
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClassName: ""            # empty = cluster default; NO real storage class name
+    mountPath: /var/lib/postgresql/data
+  redis:
+    strategy: generatedPVC
+    persistenceEnabled: true
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    storageClassName: ""
+    mountPath: /data
+  # Workspace is per-pod ephemeral scratch (NOT a shared filesystem). RWX is an
+  # inert future placeholder; this baseline never generates a workspace claim.
+  workspace:
+    strategy: ephemeralEmptyDir
+    persistenceEnabled: false
+    existingClaim: ""
+    accessMode: ReadWriteMany       # inert placeholder; only meaningful if an existingClaim is configured (future)
+    size: 20Gi
+    storageClassName: ""
+    productionConfigured: false
+  # Reports / delivery evidence durable storage is a future object store; no
+  # endpoint, no credential, disabled.
+  artifacts:
+    strategy: externalObjectStorePlaceholder
+    persistenceEnabled: false
+    existingClaim: ""
+    accessMode: ReadWriteOnce
+    size: 10Gi
+    storageClassName: ""
+    productionConfigured: false
+
 components:
   orchestrator:
     enabled: true

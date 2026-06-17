@@ -117,7 +117,21 @@ no external egress, no unrestricted CIDR. See
 [kubernetes-service-connectivity.md](kubernetes-service-connectivity.md), and
 [kubernetes-external-egress-model.md](kubernetes-external-egress-model.md).
 
-## Explicit Step 51.2C boundary
+## Step 51.2C1 update — storage ownership & data lifecycle
 
-Deferred: PVC/StorageClass, workspace RWX, Migration Job, Backup CronJob
-(51.2C); HPA, PodDisruptionBudget; and (Step 51.3+) ArgoCD / GitOps.
+The chart now renders generated **RWO PVCs for in-cluster Postgres/Redis in
+dev/test only** (mounted in the Deployment template), backed by an
+evidence-driven storage ownership + data-lifecycle catalog. Staging/production
+disable internal datastores and use `externalService`; workspace stays ephemeral
+per-pod; reports/audit exports stay `unresolved`. No `StorageClass`/
+`PersistentVolume` resource, no hostPath/NFS, no real storage class/claim. See
+[kubernetes-storage-baseline.md](kubernetes-storage-baseline.md),
+[kubernetes-datastore-persistence.md](kubernetes-datastore-persistence.md),
+[kubernetes-workspace-storage-model.md](kubernetes-workspace-storage-model.md),
+and [kubernetes-data-lifecycle.md](kubernetes-data-lifecycle.md).
+
+## Explicit Step 51.2C2 boundary
+
+Deferred: Migration Job, Backup CronJob, off-host target + encryption-key
+reference, Restore Job (51.2C2); HPA, PodDisruptionBudget; and (Step 51.3+)
+ArgoCD / GitOps.

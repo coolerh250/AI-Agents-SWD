@@ -31,16 +31,22 @@ component without an explicit `security.writablePaths`; components needing more
 (or a different mount) declare it in values. Every `emptyDir` carries a
 `sizeLimit` (schema-required).
 
-## Persistent paths — deferred to Step 51.2C
+## Persistent paths — resolved in Step 51.2C1
 
-NOT faked as emptyDir here:
+This 51.2A inventory recorded these as deferred; **Step 51.2C1 now resolves the
+datastore persistence** (the 51.2A `deferred.persistentStorage` record is kept
+as the historical hand-off point):
 
-- **postgres** PGDATA (`/var/lib/postgresql/data`) — marked
-  `type: deferred_to_51_2C`;
-- redis persistence; workspace RWX (cross-pod) for the workspace agents;
-  reports/artifacts storage for the orchestrator.
+- **postgres** PGDATA (`/var/lib/postgresql/data`) and **redis** `/data` are now
+  backed by **generated RWO PVCs in dev/test** (when the storage layer replaces
+  the ephemeral emptyDir). See
+  [datastore persistence](kubernetes-datastore-persistence.md).
+- **workspace** stays **ephemeral per-pod** (not shared, no RWX) — see
+  [workspace storage model](kubernetes-workspace-storage-model.md).
+- **reports / audit-forensic exports** remain `unresolved` (writers are deferred
+  one-shot jobs) — see [data lifecycle](kubernetes-data-lifecycle.md).
 
-These are recorded under `deferred.persistentStorage` in the inventory.
+Backup storage stays deferred to **Step 51.2C2**.
 
 ## Safety rules (enforced)
 

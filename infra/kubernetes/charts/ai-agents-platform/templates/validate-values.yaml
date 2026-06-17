@@ -98,3 +98,35 @@ but stay non-deployable (global.realDeployEnabled=false everywhere).
   {{- if $np.observability.otlpExport.enabled }}{{ fail "production must not enable OTLP export" }}{{ end }}
   {{- if $np.observability.prometheusScrape.enabled }}{{ fail "production must not enable prometheus external scrape" }}{{ end }}
 {{- end }}
+
+{{/* ---- Step 51.2C1 storage fail-closed ---- */}}
+{{- $st := .Values.storage -}}
+{{- if not $st.enabled }}{{ fail "storage.enabled must be true (storage baseline)" }}{{ end }}
+{{- $badSC := list "gp2" "gp3" "standard" "premium-rwo" "managed-premium" "managed-csi" "ebs-sc" "do-block-storage" "csi-cinder" "nfs-client" "longhorn" "openebs-hostpath" "local-path" "azurefile" "azuredisk" "pd-ssd" "pd-standard" "efs-sc" -}}
+{{- $sampleClaims := list "sample" "default" "placeholder" "changeme" "todo" "my-claim" "example" "aiagents-sample" -}}
+{{- $forbiddenMounts := list "/" "/app" "/etc" "/bin" "/sbin" "/usr" "/proc" "/sys" "/dev" -}}
+{{- range $key := (list "postgres" "redis") }}
+{{- $s := index $st $key }}
+  {{- if and (eq $s.strategy "generatedPVC") (or (eq $env "production") (eq $env "staging")) }}{{ fail (printf "%s must not use generatedPVC for %s (use externalService)" $env $key) }}{{ end }}
+  {{- if and (eq $s.strategy "generatedPVC") (ne $s.accessMode "ReadWriteOnce") }}{{ fail (printf "%s generatedPVC must use ReadWriteOnce" $key) }}{{ end }}
+  {{- if and (eq $s.accessMode "ReadWriteMany") (eq $s.strategy "generatedPVC") }}{{ fail (printf "%s ReadWriteMany requires existingClaim, not generatedPVC" $key) }}{{ end }}
+  {{- if and (eq $s.strategy "existingClaim") $s.persistenceEnabled (eq (trim ($s.existingClaim | default "")) "") }}{{ fail (printf "%s existingClaim strategy requires a non-empty claim name" $key) }}{{ end }}
+  {{- if and (hasKey $s "storageClassName") (has (lower ($s.storageClassName | default "")) $badSC) }}{{ fail (printf "%s must not use a real-looking storage class %q" $key $s.storageClassName) }}{{ end }}
+  {{- if hasKey $s "mountPath" }}
+    {{- if not (hasPrefix "/" $s.mountPath) }}{{ fail (printf "%s mountPath must be absolute" $key) }}{{ end }}
+    {{- range $m := $forbiddenMounts }}{{- if eq $s.mountPath $m }}{{ fail (printf "%s must not mount %q" $key $m) }}{{ end }}{{- end }}
+    {{- if contains "docker.sock" $s.mountPath }}{{ fail (printf "%s must not mount the docker socket" $key) }}{{ end }}
+  {{- end }}
+{{- end }}
+{{- range $key := (list "workspace" "artifacts") }}
+{{- $s := index $st $key }}
+  {{- if and (eq ($s.accessMode | default "") "ReadWriteMany") (eq $s.strategy "generatedPVC") }}{{ fail (printf "%s ReadWriteMany requires existingClaim" $key) }}{{ end }}
+  {{- if and (eq $s.strategy "existingClaim") $s.persistenceEnabled (eq (trim ($s.existingClaim | default "")) "") }}{{ fail (printf "%s existingClaim requires a non-empty claim name" $key) }}{{ end }}
+  {{- if and (hasKey $s "storageClassName") (has (lower ($s.storageClassName | default "")) $badSC) }}{{ fail (printf "%s must not use a real-looking storage class %q" $key $s.storageClassName) }}{{ end }}
+{{- end }}
+{{- if $st.workspace.productionConfigured }}
+  {{- if ne $st.workspace.strategy "existingClaim" }}{{ fail "workspace productionConfigured=true requires an existingClaim strategy" }}{{ end }}
+  {{- if eq (trim ($st.workspace.existingClaim | default "")) "" }}{{ fail "workspace productionConfigured=true requires a non-empty existingClaim" }}{{ end }}
+  {{- if has (lower ($st.workspace.existingClaim | default "")) $sampleClaims }}{{ fail "workspace existingClaim must not be a sample/default claim name" }}{{ end }}
+{{- end }}
+{{- if $st.artifacts.productionConfigured }}{{ fail "artifacts productionConfigured=true is not supported in this stage (no external object store configured)" }}{{ end }}

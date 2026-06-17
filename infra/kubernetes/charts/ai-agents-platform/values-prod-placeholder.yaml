@@ -37,6 +37,26 @@ platform:
     externalDelivery: false
     productionBackupSchedule: false
 
+# Production uses EXTERNAL managed datastores -> NO generated PVC, NO internal
+# datastore volume. Workspace / artifacts persistence is NOT configured
+# (productionConfigured=false); no real claim, no storage class, no endpoint.
+storage:
+  enabled: true
+  postgres:
+    strategy: externalService
+    persistenceEnabled: false
+  redis:
+    strategy: externalService
+    persistenceEnabled: false
+  workspace:
+    strategy: ephemeralEmptyDir
+    persistenceEnabled: false
+    productionConfigured: false
+  artifacts:
+    strategy: externalObjectStorePlaceholder
+    persistenceEnabled: false
+    productionConfigured: false
+
 components:
   postgres: {enabled: false}    # production uses EXTERNAL managed Postgres
   redis: {enabled: false}       # production uses EXTERNAL managed Redis

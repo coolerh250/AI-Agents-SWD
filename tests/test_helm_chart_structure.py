@@ -28,11 +28,12 @@ REQUIRED = [
     # Step 51.2A / 51.2B additions
     "templates/_security_helpers.tpl",
     "templates/networkpolicies.yaml",
+    # Step 51.2C1 addition
+    "templates/persistentvolumeclaims.yaml",
 ]
 
-# Step 51.2C+ templates that MUST NOT exist yet.
+# Step 51.2C2+ templates that MUST NOT exist yet.
 FORBIDDEN = [
-    "templates/persistentvolumeclaims.yaml",
     "templates/migration-job.yaml",
     "templates/backup-cronjob.yaml",
     "templates/horizontalpodautoscalers.yaml",

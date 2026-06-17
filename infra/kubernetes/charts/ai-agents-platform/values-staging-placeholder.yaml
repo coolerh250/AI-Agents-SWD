@@ -32,6 +32,25 @@ platform:
     externalDelivery: false
     productionBackupSchedule: false
 
+# Staging uses EXTERNAL managed datastores -> NO generated PVC. Workspace /
+# artifacts persistence stays disabled (no real claim, no storage class).
+storage:
+  enabled: true
+  postgres:
+    strategy: externalService
+    persistenceEnabled: false
+  redis:
+    strategy: externalService
+    persistenceEnabled: false
+  workspace:
+    strategy: ephemeralEmptyDir
+    persistenceEnabled: false
+    productionConfigured: false
+  artifacts:
+    strategy: externalObjectStorePlaceholder
+    persistenceEnabled: false
+    productionConfigured: false
+
 components:
   postgres: {enabled: false}
   redis: {enabled: false}
