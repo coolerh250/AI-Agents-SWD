@@ -10031,8 +10031,20 @@ issues & blockers, and next-step suggestions.
   (214 kubernetes/helm tests, 0 skipped); storage-inventory + data-lifecycle
   verifiers PASS; ruff/black/mypy clean; merged values validate against the
   extended schema (jsonschema).
-- **Verification (remote 10.0.1.31).** Pending — to be recorded after the remote
-  render + verifier run on the pushed HEAD.
+- **Verification (remote 10.0.1.31, HEAD 37217b3).** All 13 markers PASS:
+  runtime-inventory (14/14), helm-foundation (44/44), workload-security (with
+  runtime-compat observations), rbac-safety, security-rbac-baseline,
+  network-topology (75 edges), network-policy, service-connectivity,
+  network-baseline, storage-inventory (8/8), data-lifecycle (10/10),
+  storage-manifest (5/5: dev+test render postgres-data+redis-data PVCs;
+  staging+prod render none), and combined storage-baseline. Targeted pytest:
+  214 passed, 0 skipped. `docker compose config --quiet` OK; `git diff --check`
+  clean. `/operations/safety`: `production_executed_true_count=0`, no
+  kubernetes/helm/argocd/networkpolicy/storage/PVC fields added (pre-existing
+  `backup_storage_mode` from Step 49 unchanged). No cluster connection; render
+  via pinned alpine/helm:3.16.3. Untracked `source/dr-reports` +
+  `source/regression-reports` are pre-existing host-written runtime artifacts
+  (the report stores classified as `unresolved` in this stage), not committed.
 - **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
   StorageClass/PersistentVolume resource, no hostPath/NFS/CSI, no real storage
   class or claim name, no ReadWriteOncePod, no backup/active-data mixing, no
