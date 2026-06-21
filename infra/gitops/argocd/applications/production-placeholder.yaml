@@ -1,0 +1,39 @@
+# Step 51.3 -- ArgoCD Application: production PLACEHOLDER (DISABLED, NOT deployable).
+#
+# Deliberately non-deployable. Never included in any app-of-apps. Obvious
+# .invalid destination + placeholder namespace. No credentials, no secret, no
+# automated sync, no hooks, no finalizers, no rollout config. Real production
+# deployment requires future operator approval, OIDC, secret store, image digest
+# pinning, a backup target, a real destination, and a runtime smoke -- NONE of
+# which exist here. This stage declares NO production readiness.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents-platform-production-placeholder
+  namespace: argocd
+  annotations:
+    ai-agents-swd/disabled-placeholder: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/production-placeholder: "true"
+    ai-agents-swd/real-deploy-enabled: "false"
+    ai-agents-swd/requires-operator-approval: "true"
+    ai-agents-swd/requires-production-oidc: "true"
+    ai-agents-swd/requires-secret-store: "true"
+    ai-agents-swd/requires-image-digest: "true"
+    ai-agents-swd/requires-backup-target: "true"
+    ai-agents-swd/requires-runtime-smoke: "true"
+spec:
+  project: ai-agents-platform
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main          # production must pin an immutable tag/digest (NOT done here)
+    path: infra/kubernetes/charts/ai-agents-platform
+    helm:
+      valueFiles:
+        - values-prod-placeholder.yaml
+  destination:
+    server: https://production-cluster-placeholder.invalid   # obvious placeholder, NOT a real cluster
+    namespace: ai-agents-production-placeholder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

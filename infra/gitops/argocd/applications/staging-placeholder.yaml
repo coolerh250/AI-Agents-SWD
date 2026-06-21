@@ -1,0 +1,30 @@
+# Step 51.3 -- ArgoCD Application: staging PLACEHOLDER (inactive, NOT deployable).
+#
+# Not included in any app-of-apps. Destination is an obvious .invalid placeholder.
+# Requires a real destination + secret store before it could ever be used (future).
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents-platform-staging-placeholder
+  namespace: argocd
+  annotations:
+    ai-agents-swd/disabled-placeholder: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/requires-production-identity: "false"
+    ai-agents-swd/requires-secret-store: "true"
+    ai-agents-swd/requires-real-destination: "true"
+spec:
+  project: ai-agents-platform
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main
+    path: infra/kubernetes/charts/ai-agents-platform
+    helm:
+      valueFiles:
+        - values-staging-placeholder.yaml
+  destination:
+    server: https://staging-cluster-placeholder.invalid   # obvious placeholder, NOT a real cluster
+    namespace: ai-agents-staging-placeholder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

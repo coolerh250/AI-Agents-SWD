@@ -1,0 +1,39 @@
+# Step 51.3 -- ArgoCD Project policy (machine-readable summary for verifiers).
+version: "1"
+project: ai-agents-platform
+
+allowedSourceRepos:
+  - https://github.com/coolerh250/AI-Agents-SWD.git
+
+allowedNamespacedResourceKinds:
+  - Deployment
+  - Service
+  - ConfigMap
+  - ServiceAccount
+  - NetworkPolicy
+  - PersistentVolumeClaim
+  - Job
+  - CronJob
+
+forbiddenResourceKinds:
+  - Namespace
+  - ClusterRole
+  - ClusterRoleBinding
+  - CustomResourceDefinition
+  - PersistentVolume
+  - StorageClass
+  - MutatingWebhookConfiguration
+  - ValidatingWebhookConfiguration
+  - APIService
+  - Node
+  - Secret
+
+clusterScopedResourcesAllowed: false
+secretResourceAllowed: false
+credentialsAllowed: false
+
+allowedDestinationServers:
+  - https://kubernetes.default.svc
+allowedDestinationNamespaces:
+  - ai-agents-dev-placeholder
+  - ai-agents-test-placeholder

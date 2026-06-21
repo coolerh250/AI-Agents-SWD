@@ -1,0 +1,31 @@
+# Step 51.3 -- ArgoCD Application: dev (baseline, NOT synced).
+#
+# Validated, never applied. No automated sync, no prune, no selfHeal, no
+# CreateNamespace, no finalizers, no credentials. Destination is a placeholder.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents-platform-dev
+  namespace: argocd
+  annotations:
+    ai-agents-swd/baseline-only: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/no-production: "true"
+    ai-agents-swd/validated-not-deployed: "true"
+spec:
+  project: ai-agents-platform
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main
+    path: infra/kubernetes/charts/ai-agents-platform
+    helm:
+      valueFiles:
+        - values-dev.yaml
+  destination:
+    server: https://kubernetes.default.svc   # placeholder; sync is NOT authorized here
+    namespace: ai-agents-dev-placeholder
+  # syncPolicy intentionally has NO `automated` key -> manual-only, never
+  # auto-synced. CreateNamespace is disabled.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

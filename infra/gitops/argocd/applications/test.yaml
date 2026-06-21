@@ -1,0 +1,30 @@
+# Step 51.3 -- ArgoCD Application: test (baseline, NOT synced).
+#
+# Validated, never applied. Future controlled-validation target, but this stage
+# performs no sync. No automated sync, no prune, no selfHeal, no CreateNamespace,
+# no finalizers, no credentials. Destination is a placeholder.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents-platform-test
+  namespace: argocd
+  annotations:
+    ai-agents-swd/baseline-only: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/no-production: "true"
+    ai-agents-swd/validated-not-deployed: "true"
+spec:
+  project: ai-agents-platform
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main
+    path: infra/kubernetes/charts/ai-agents-platform
+    helm:
+      valueFiles:
+        - values-test.yaml
+  destination:
+    server: https://kubernetes.default.svc   # placeholder; sync is NOT authorized here
+    namespace: ai-agents-test-placeholder
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

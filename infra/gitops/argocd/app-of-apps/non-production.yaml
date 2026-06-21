@@ -1,0 +1,33 @@
+# Step 51.3 -- non-production app-of-apps (baseline, NOT synced).
+#
+# References ONLY the dev + test Application manifests via a directory include
+# glob. The staging-placeholder and production-placeholder manifests are
+# deliberately EXCLUDED -- they can never be pulled in by this app-of-apps.
+# No automated sync, no prune, no selfHeal, no finalizers, no credentials,
+# no real destination.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: ai-agents-platform-nonprod-apps
+  namespace: argocd
+  annotations:
+    ai-agents-swd/baseline-only: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/excludes-production: "true"
+    ai-agents-swd/excludes-staging: "true"
+spec:
+  project: ai-agents-platform
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main
+    path: infra/gitops/argocd/applications
+    directory:
+      recurse: false
+      # ONLY dev + test child Applications; staging/production excluded.
+      include: "{dev.yaml,test.yaml}"
+  destination:
+    server: https://kubernetes.default.svc   # placeholder; sync is NOT authorized here
+    namespace: argocd
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

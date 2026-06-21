@@ -1,0 +1,37 @@
+# Step 51.3 -- ArgoCD Application safety policy (machine-readable summary).
+version: "1"
+
+forbiddenSyncSettings:
+  automated: true        # syncPolicy.automated must be ABSENT
+  prune: true
+  selfHeal: true
+  allowEmpty: true
+  createNamespace: true
+
+forbiddenFields:
+  - finalizers
+  - operation            # no in-manifest sync operation
+
+forbiddenAnnotations:
+  - argocd-image-updater.argoproj.io/image-list
+  - notifications.argoproj.io/subscribe
+
+forbiddenHookValues:
+  - PreSync
+  - PostSync
+  - SyncFail
+  - Skip
+
+requiredApplicationAnnotations:
+  - ai-agents-swd/do-not-sync
+
+expectedSyncOptions:
+  - CreateNamespace=false
+
+credentialPatterns:
+  - "ghp_"
+  - "BEGIN .*PRIVATE KEY"
+  - "ssh-rsa "
+  - "Bearer "
+  - "token:"
+  - "password:"

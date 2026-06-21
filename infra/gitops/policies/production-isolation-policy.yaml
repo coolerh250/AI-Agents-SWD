@@ -1,0 +1,38 @@
+# Step 51.3 -- production isolation policy (machine-readable summary).
+version: "1"
+
+productionApplication: ai-agents-platform-production-placeholder
+stagingApplication: ai-agents-platform-staging-placeholder
+
+requiredProductionAnnotations:
+  ai-agents-swd/disabled-placeholder: "true"
+  ai-agents-swd/do-not-sync: "true"
+  ai-agents-swd/production-placeholder: "true"
+  ai-agents-swd/real-deploy-enabled: "false"
+  ai-agents-swd/requires-operator-approval: "true"
+  ai-agents-swd/requires-production-oidc: "true"
+  ai-agents-swd/requires-secret-store: "true"
+  ai-agents-swd/requires-image-digest: "true"
+  ai-agents-swd/requires-backup-target: "true"
+  ai-agents-swd/requires-runtime-smoke: "true"
+
+appOfAppsMustExclude:
+  - ai-agents-platform-staging-placeholder
+  - ai-agents-platform-production-placeholder
+
+placeholderDestinationSuffixes:
+  - .invalid
+
+forbiddenInProduction:
+  realDestination: true
+  realNamespace: true
+  automatedSync: true
+  credentials: true
+  generatedPVC: true
+  externalEgress: true
+  batchJobRender: true
+  operatorActions: true
+  productionBackupSchedule: true
+
+productionValuesFile: values-prod-placeholder.yaml
+realDeployEnabled: false

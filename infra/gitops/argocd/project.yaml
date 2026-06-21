@@ -1,0 +1,53 @@
+# Step 51.3 -- ArgoCD AppProject baseline (Stage 53F).
+#
+# Restricts what the ai-agents-platform Applications may deploy. Validated, NOT
+# applied: no cluster connection, no argocd CLI. Source is restricted to this
+# repo; destinations are placeholder namespaces only; cluster-scoped resources
+# are forbidden (empty clusterResourceWhitelist); Secret is NOT allowed (the
+# chart never creates one -- secrets are existing-secret references bootstrapped
+# out of band). No credentials, no sync policy.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: ai-agents-platform
+  namespace: argocd
+  annotations:
+    ai-agents-swd/baseline-only: "true"
+    ai-agents-swd/do-not-sync: "true"
+    ai-agents-swd/no-production: "true"
+    ai-agents-swd/validated-not-deployed: "true"
+spec:
+  description: "ai-agents-platform GitOps baseline (non-production, no auto-sync)"
+  # Only this repository may be a source.
+  sourceRepos:
+    - https://github.com/coolerh250/AI-Agents-SWD.git
+  # Placeholder destinations only -- NO real cluster, NO real namespace.
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: ai-agents-dev-placeholder
+    - server: https://kubernetes.default.svc
+      namespace: ai-agents-test-placeholder
+  # Cluster-scoped resources are forbidden (deny-all).
+  clusterResourceWhitelist: []
+  # Namespaced resources limited to the kinds the chart actually renders.
+  namespaceResourceWhitelist:
+    - group: apps
+      kind: Deployment
+    - group: ""
+      kind: Service
+    - group: ""
+      kind: ConfigMap
+    - group: ""
+      kind: ServiceAccount
+    - group: networking.k8s.io
+      kind: NetworkPolicy
+    - group: ""
+      kind: PersistentVolumeClaim
+    - group: batch
+      kind: Job
+    - group: batch
+      kind: CronJob
+  # Explicitly deny dangerous namespaced kinds (Secret included).
+  namespaceResourceBlacklist:
+    - group: ""
+      kind: Secret

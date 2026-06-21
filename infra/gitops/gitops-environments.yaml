@@ -1,0 +1,86 @@
+# Step 51.3 -- GitOps environment catalog (Stage 53F).
+#
+# Canonical mapping of environments -> Helm values files + ArgoCD Application
+# manifests. The environment-mapping verifier asserts this catalog matches the
+# actual Application manifests and that every values file exists + renders.
+#
+# This is a BASELINE only: NO ArgoCD sync, NO cluster connection, NO real
+# destination, NO credentials. Dev/Test are "active" in the catalog (eligible
+# to become controlled targets later) but auto-sync is disabled everywhere.
+# Staging/Production are inactive placeholders; Production is disabled.
+
+version: "1"
+
+meta:
+  stage: "53F"
+  step: "51.3"
+  clusterConnected: false
+  argocdInstalled: false
+  syncPerformed: false
+
+source:
+  repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+  targetRevision: main          # production must move to an immutable tag/digest (NOT done here)
+  chartPath: infra/kubernetes/charts/ai-agents-platform
+
+project: ai-agents-platform
+
+environments:
+  dev:
+    active: true
+    valuesFile: values-dev.yaml
+    applicationFile: argocd/applications/dev.yaml
+    automatedSync: false
+    prune: false
+    selfHeal: false
+    destination:
+      server: https://kubernetes.default.svc   # placeholder; NOT a sync authorization
+      namespace: ai-agents-dev-placeholder
+      placeholder: true
+    production: false
+
+  test:
+    active: true
+    valuesFile: values-test.yaml
+    applicationFile: argocd/applications/test.yaml
+    automatedSync: false
+    prune: false
+    selfHeal: false
+    destination:
+      server: https://kubernetes.default.svc   # placeholder; NOT a sync authorization
+      namespace: ai-agents-test-placeholder
+      placeholder: true
+    production: false
+
+  staging-placeholder:
+    active: false
+    valuesFile: values-staging-placeholder.yaml
+    applicationFile: argocd/applications/staging-placeholder.yaml
+    automatedSync: false
+    prune: false
+    selfHeal: false
+    destination:
+      server: https://staging-cluster-placeholder.invalid
+      namespace: ai-agents-staging-placeholder
+      placeholder: true
+    production: false
+
+  production-placeholder:
+    active: false
+    disabled: true
+    valuesFile: values-prod-placeholder.yaml
+    applicationFile: argocd/applications/production-placeholder.yaml
+    automatedSync: false
+    prune: false
+    selfHeal: false
+    destination:
+      server: https://production-cluster-placeholder.invalid
+      namespace: ai-agents-production-placeholder
+      placeholder: true
+    production: true
+
+appOfApps:
+  nonProduction:
+    file: argocd/app-of-apps/non-production.yaml
+    includes: [dev, test]
+    excludes: [staging-placeholder, production-placeholder]
