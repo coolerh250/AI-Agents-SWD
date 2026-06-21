@@ -2356,6 +2356,39 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## ArgoCD & Environment GitOps Baseline (Stage 53F / Step 51.3)
+
+Adds a GitOps baseline under [infra/gitops/](infra/gitops/) — **manifests +
+static validation only, never applied**: no ArgoCD installed, no `argocd app
+sync`, no `kubectl`, no cluster connection. An ArgoCD `AppProject` restricts the
+source to this repo, denies all cluster-scoped resources (empty
+`clusterResourceWhitelist`) and `Secret`, and whitelists only the namespaced
+kinds the chart renders. Four `Application` manifests (dev, test,
+staging-placeholder, production-placeholder) are each pinned to their Helm values
+file; a non-production app-of-apps references **dev + test only**. **Auto-sync is
+disabled everywhere** (no `syncPolicy.automated`, no prune/selfHeal/allowEmpty,
+no CreateNamespace, no finalizers, no hooks, no image-updater/notifications);
+destinations are placeholders (`kubernetes.default.svc` marked placeholder;
+`*.invalid` for staging/prod); no credentials, no Secret resource, no real
+cluster endpoint. The **production placeholder is disabled** (`do-not-sync` +
+`disabled-placeholder` + future-requirement annotations), excluded from the
+app-of-apps, and its merged values stay fail-closed (no deploy/PVC/batch/egress/
+operator actions). An environment catalog
+([gitops-environments.yaml](infra/gitops/gitops-environments.yaml)) maps
+environments → values → Applications and the mapping verifier asserts they agree.
+Verify with `python scripts/verify_argocd_manifests.py`
+(`ARGOCD_MANIFESTS_VERIFY: PASS`),
+`verify_gitops_environment_mapping.py` (`GITOPS_ENVIRONMENT_MAPPING_VERIFY:
+PASS`), `verify_gitops_production_isolation.py`
+(`GITOPS_PRODUCTION_ISOLATION_VERIFY: PASS`), and
+`scripts/verify_gitops_argocd_baseline.sh` (`GITOPS_ARGOCD_BASELINE_VERIFY:
+PASS`). See [`docs/platform/argocd-gitops-baseline.md`](docs/platform/argocd-gitops-baseline.md),
+[`gitops-environment-model.md`](docs/platform/gitops-environment-model.md),
+[`argocd-production-isolation.md`](docs/platform/argocd-production-isolation.md),
+and [`argocd-sync-safety.md`](docs/platform/argocd-sync-safety.md). Runtime
+visibility (51.4) is deferred; real GitOps rollout / production readiness remain
+out of scope.
+
 ## Migration, Backup & Restore Job Baseline (Stage 53E / Step 51.2C2)
 
 Adds controlled Kubernetes batch manifests — a migration Job, a disabled +

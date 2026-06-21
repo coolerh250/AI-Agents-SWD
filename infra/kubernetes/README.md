@@ -90,5 +90,11 @@ disabled-by-default and fail-closed in staging/production. Templates validated,
 NOT executed; no cluster. See
 [kubernetes-batch-job-policy](../../docs/platform/kubernetes-batch-job-policy.md).
 
-Deferred (51.3): ArgoCD/GitOps. Deferred (51.4): runtime visibility. HPA/PDB and
-production migration/backup/restore execution also deferred.
+In scope (Step 51.3): ArgoCD GitOps baseline (AppProject + dev/test/staging/
+production Application manifests + non-production app-of-apps + environment
+catalog), under `infra/gitops/` — validated, NOT applied (no ArgoCD, no sync, no
+cluster). See [infra/gitops/README.md](../gitops/README.md) and
+[argocd-gitops-baseline](../../docs/platform/argocd-gitops-baseline.md).
+
+Deferred (51.4): runtime visibility. HPA/PDB and production
+migration/backup/restore execution + real GitOps rollout also deferred.

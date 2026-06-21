@@ -10122,3 +10122,51 @@ issues & blockers, and next-step suggestions.
   Kubernetes baselines preserved (workload-security verifier extended to CronJob).
 - **Roadmap.** Step 51.1/51.2A/51.2B/51.2C1 closed; 51.2C2 closed (if verified);
   51.3/51.4 pending; Step 51 overall OPEN.
+
+## Stage 53F — ArgoCD & Environment GitOps Baseline (Step 51.3)
+
+- **Scope.** GitOps manifests + static validation only, under `infra/gitops/`.
+  Validated, NOT applied: NO ArgoCD installed, NO `argocd app sync`, NO kubectl,
+  NO Helm install, NO cluster connection. Did NOT do runtime API (51.4) or any
+  production rollout.
+- **Structure.** `infra/gitops/{README.md, gitops-environments.yaml,
+  argocd/project.yaml, argocd/applications/{dev,test,staging-placeholder,
+  production-placeholder}.yaml, argocd/app-of-apps/non-production.yaml,
+  policies/{argocd-project,application-safety,production-isolation}-policy.yaml}`.
+  No credentials/secrets/clusters directories created.
+- **AppProject.** Source restricted to this repo; destinations are placeholder
+  namespaces only; `clusterResourceWhitelist: []` (no cluster-scoped resources);
+  namespaceResourceWhitelist limited to the 8 kinds the chart renders
+  (Deployment/Service/ConfigMap/ServiceAccount/NetworkPolicy/PVC/Job/CronJob);
+  Secret blacklisted; no credentials, no sync policy.
+- **Applications.** dev/test active in the catalog (eligible future targets) but
+  auto-sync disabled; staging/production placeholders inactive; production
+  disabled. Each pinned to its values file (dev->values-dev, ...,
+  production->values-prod-placeholder); repoURL exact; targetRevision fixed
+  (main; production must move to immutable tag/digest, recorded). No automated
+  sync, no prune/selfHeal/allowEmpty, no CreateNamespace, no finalizers, no hooks.
+  Destinations: kubernetes.default.svc (placeholder) for dev/test;
+  *.invalid placeholders for staging/production.
+- **App-of-apps.** Non-production references dev + test only (directory include
+  glob `{dev.yaml,test.yaml}`); staging + production excluded; no auto-sync.
+- **Production isolation.** production-placeholder carries disabled +
+  do-not-sync + 6 future-requirement annotations (operator approval / OIDC /
+  secret store / image digest / backup target / runtime smoke); obvious
+  .invalid destination; never in app-of-apps; merged prod values fail closed
+  (realDeployEnabled false, internal datastores off -> no generated PVC, all
+  batch jobs renderTemplate false, external egress off, operator actions off,
+  production backup schedule off).
+- **Verifiers.** verify_argocd_manifests (5 checks), verify_gitops_environment_mapping
+  (4), verify_gitops_production_isolation (7), and combined
+  verify_gitops_argocd_baseline.sh (chains 51.1->51.2C2 + the 3 gitops verifiers
+  + secret scan + no-rendered-tracked + no cluster/sync command).
+- **Local checks.** 13 new pytest files (49 gitops tests) + carried full Step 51
+  suites green; 3 gitops verifiers PASS; ruff/black/mypy clean.
+- **Verification (remote 10.0.1.31).** Pending — recorded after the remote run.
+- **Safety.** No cluster connection, no kubectl, no argocd CLI/sync, no Helm
+  install/upgrade, no real cluster endpoint/namespace, no credential/secret/
+  rendered manifest committed, no production app active, no production deploy.
+  production_executed_true_count remains 0. No change to HARD_SAFETY_ACTIONS,
+  audit canonicalization, Step 50 operator policy, or `/operations/safety`.
+- **Roadmap.** Step 51.1/51.2A/51.2B/51.2C1/51.2C2 closed; 51.3 closed (if
+  verified); 51.4 pending; Step 51 overall OPEN.
