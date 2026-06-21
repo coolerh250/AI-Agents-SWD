@@ -10053,3 +10053,60 @@ issues & blockers, and next-step suggestions.
   policy, or `/operations/safety`. Step 51.2A/51.2B baselines preserved.
 - **Roadmap.** Step 51.1/51.2A/51.2B closed; 51.2C1 closed (if verified);
   51.2C2/51.3/51.4 pending; Step 51 overall OPEN.
+
+## Stage 53E — Migration, Backup & Restore Job Baseline (Step 51.2C2)
+
+- **Scope.** Second half of Step 51.2C. Controlled Kubernetes batch manifests
+  (migration Job, backup CronJob, restore Job scaffold) + fixed shell-free
+  command catalog + static policy verification. Templates validated, NOT
+  executed: NO cluster, NO kubectl, NO helm install/upgrade, NO
+  migration/backup/restore run. Did NOT do ArgoCD (51.3) or runtime API (51.4).
+- **Inventory.** `batch-operation-inventory.yaml` (3 operations: migration=high,
+  backup=medium, restore=critical; productionAllowed=false) +
+  `batch-command-catalog.yaml` (fixed commands, shell:false, source paths).
+  Evidence: migration = forward-only `psql -f migrations/*.sql` loop (no tracking
+  table, SQL IF NOT EXISTS idempotency, `_down.sql` operator rollback catalog);
+  backup = host `run_encrypted_backup.sh` + `shared.sdk.backup_dr`; restore =
+  host `run_restore_drill.sh` isolated `aiagents_restore_drill_<ts>` DB.
+- **Entrypoints.** Three fixed, shell-free, execution-gated python wrappers
+  (`scripts/k8s_apply_migrations.py` advisory-lock apply;
+  `scripts/k8s_encrypted_backup.py`; `scripts/k8s_restore_drill.py` reusing the
+  tested `assert_isolated_restore_db` guard). Gated by AIAGENTS_BATCH_EXECUTE
+  (false everywhere) -> perform NO DB work in this stage.
+- **Templates.** `migration-job.yaml` (dev/test only; advisory lock; Never;
+  backoffLimit 0; deadline/TTL), `backup-cronjob.yaml` (dev/test only;
+  suspend=true; scheduleEnabled=false; concurrencyPolicy Forbid; disabled
+  artifact target), `restore-job.yaml` (renderTemplate=false standard; fixture-
+  only disabled scaffold; isolated prefix; source!=target; separate source/target
+  secret refs). Dedicated `*-{migration,backup,restore}-job` ServiceAccounts
+  (automountServiceAccountToken=false, no Role/ClusterRole). Minimal batch
+  NetworkPolicy (batch egress -> Postgres 5432; Postgres ingress from batch;
+  specific batch-job selector; dev/test only). All credentials secretKeyRef-only.
+  No Helm/ArgoCD hooks. The 51.2A workload-security verifier was EXTENDED to
+  reach CronJob pod specs (coverage increase, not a strictness reduction).
+- **Schema + fail-closed.** values.schema.json adds batchJobs + batchCommands
+  (commandKey const per job, concurrencyPolicy const Forbid, backoffLimit max 0,
+  required deadline/TTL, restore targetPrefix const, shell const false,
+  additionalProperties:false -> no command/args/shell/inline-credential fields).
+  validate-values.yaml rejects: staging/prod render or execution, executionEnabled
+  /scheduleEnabled true, unsuspended CronJob, non-Forbid concurrency, backoffLimit
+  >0, missing deadline/TTL, shell constructs in args, wrong restore prefix, backup
+  target reusing an active datastore PVC, schedule enabled without a target.
+- **Verifiers.** batch-operation-inventory (source-level: no drift inventory ==
+  catalog == values), migration-job, backup-cronjob, restore-job (fixture),
+  batch-job-policy (rendered), and combined `verify_kubernetes_batch_jobs_baseline.sh`.
+- **Local checks.** 16 new pytest files + carried 51.1/51.2A/51.2B/51.2C1 suites
+  green (275 kubernetes/helm tests, 0 skipped); inventory verifier + 3 wrappers
+  run baseline (no DB); ruff/black/mypy clean; merged values validate against the
+  extended schema (jsonschema).
+- **Verification (remote 10.0.1.31).** Pending — recorded after the remote
+  render + verifier run on the pushed HEAD.
+- **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
+  migration/backup/restore executed, no production schedule/Job, no real cloud
+  write, no database mutation, no secret/artifact/rendered-manifest committed, no
+  Helm/ArgoCD hooks, no Kubernetes RBAC, ServiceAccount token off.
+  production_executed_true_count remains 0. No change to HARD_SAFETY_ACTIONS,
+  audit canonicalization, Step 50 operator policy, or `/operations/safety`. Prior
+  Kubernetes baselines preserved (workload-security verifier extended to CronJob).
+- **Roadmap.** Step 51.1/51.2A/51.2B/51.2C1 closed; 51.2C2 closed (if verified);
+  51.3/51.4 pending; Step 51 overall OPEN.

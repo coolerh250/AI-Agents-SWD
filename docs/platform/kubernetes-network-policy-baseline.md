@@ -5,6 +5,12 @@ connectivity catalog. Static manifest baseline only — **no cluster connection,
 no kubectl, no helm install**. CNI enforcement of NetworkPolicy is a cluster
 concern verified later.
 
+> **Step 51.2C2 update.** When a batch Job/CronJob renders (dev/test, Postgres
+> enabled), a minimal policy grants the batch pod egress to Postgres `5432`
+> (DNS is already covered by `allow-dns`) and Postgres ingress from the batch
+> jobs, using the specific `ai-agents-swd/batch-job` selector (never broad).
+> Production renders no batch network rule.
+
 ## Default-deny model
 
 Every environment renders two namespace-wide policies with an empty

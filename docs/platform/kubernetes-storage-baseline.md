@@ -51,11 +51,17 @@ python scripts/verify_kubernetes_storage_manifest.py     # KUBERNETES_STORAGE_MA
 ./scripts/verify_kubernetes_storage_baseline.sh          # KUBERNETES_STORAGE_BASELINE_VERIFY: PASS
 ```
 
-## Deferred (Step 51.2C2)
+## Migration / Backup / Restore Jobs (Step 51.2C2)
 
-Migration Job, Backup CronJob, off-host target + encryption-key reference,
-Restore Job, production scheduling. Backup storage stays **separate** from
-active workspace and is recorded as deferred — never mixed in.
+The Migration Job, Backup CronJob and Restore Job scaffold are now added as
+controlled, disabled-by-default batch manifests (validated, not executed). The
+backup artifact target remains a **disabled placeholder**, kept **separate** from
+active workspace/datastore PVCs. See
+[batch job policy](kubernetes-batch-job-policy.md),
+[migration job](kubernetes-migration-job-baseline.md),
+[backup cronjob](kubernetes-backup-cronjob-baseline.md), and
+[restore safety](kubernetes-restore-job-safety.md). Production
+scheduling / off-host target / real backup execution stay deferred.
 
 See also: [data lifecycle](kubernetes-data-lifecycle.md),
 [workspace storage model](kubernetes-workspace-storage-model.md),

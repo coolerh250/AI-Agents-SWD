@@ -2356,6 +2356,42 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Migration, Backup & Restore Job Baseline (Stage 53E / Step 51.2C2)
+
+Adds controlled Kubernetes batch manifests — a migration Job, a disabled +
+suspended backup CronJob, and a disabled restore Job scaffold — **validated, not
+executed** (no cluster, no kubectl, no helm install, no migration/backup/restore
+run). Every batch command is **fixed and shell-free**, catalogued in
+[batch-command-catalog.yaml](infra/kubernetes/batch-command-catalog.yaml) and
+mirrored into `values.batchCommands` (no command/args/shell from free-form
+values; verified equal). The migration wrapper uses a Postgres **advisory lock**
+(`pg_advisory_lock`, the repo's existing idiom) and is forward-only; backup +
+restore use **`secretKeyRef`-only** credentials (encryption key never inline);
+the restore scaffold is isolated to the fixed `aiagents_restore_drill_` prefix
+with source ≠ target and separate source/target Secret references. Batch pods get
+restricted SecurityContext (runAsNonRoot, RuntimeDefault, no privesc, drop ALL,
+read-only root, `/tmp` only), dedicated ServiceAccounts with
+`automountServiceAccountToken: false` and **no Kubernetes RBAC**, and a minimal
+DB-only NetworkPolicy. All operations are **disabled-by-default**
+(`executionEnabled`/`scheduleEnabled=false`, CronJob `suspend=true`,
+`concurrencyPolicy: Forbid`, `backoffLimit: 0`, deadline + TTL) and **fail-closed
+in staging/production** (no batch resource renders; the 51.2A workload-security
+verifier was extended to also cover CronJob pods). The backup artifact target is
+a disabled placeholder, never an active datastore PVC; no Helm/ArgoCD hooks.
+Verify with `python scripts/verify_kubernetes_batch_operation_inventory.py`
+(`KUBERNETES_BATCH_OPERATION_INVENTORY_VERIFY: PASS`),
+`verify_kubernetes_migration_job.py` (`KUBERNETES_MIGRATION_JOB_VERIFY: PASS`),
+`verify_kubernetes_backup_cronjob.py` (`KUBERNETES_BACKUP_CRONJOB_VERIFY: PASS`),
+`verify_kubernetes_restore_job.py` (`KUBERNETES_RESTORE_JOB_VERIFY: PASS`),
+`verify_kubernetes_batch_job_policy.py` (`KUBERNETES_BATCH_JOB_POLICY_VERIFY:
+PASS`), and `scripts/verify_kubernetes_batch_jobs_baseline.sh`
+(`KUBERNETES_BATCH_JOBS_BASELINE_VERIFY: PASS`). See
+[`docs/platform/kubernetes-batch-job-policy.md`](docs/platform/kubernetes-batch-job-policy.md),
+[`kubernetes-migration-job-baseline.md`](docs/platform/kubernetes-migration-job-baseline.md),
+[`kubernetes-backup-cronjob-baseline.md`](docs/platform/kubernetes-backup-cronjob-baseline.md),
+and [`kubernetes-restore-job-safety.md`](docs/platform/kubernetes-restore-job-safety.md).
+GitOps (51.3) is deferred; production migration/backup/restore execution remains out of scope.
+
 ## Storage Ownership & Data Lifecycle Baseline (Stage 53D / Step 51.2C1)
 
 Adds an evidence-backed storage ownership + data-lifecycle baseline and a

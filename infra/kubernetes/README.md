@@ -13,6 +13,9 @@ Foundation only. **No cluster connection, no `kubectl`, no `helm install`.**
 | `network-connectivity-catalog.yaml` | Step 51.2B canonical connectivity model (49 internal edges) |
 | `storage-consumer-inventory.yaml` | Step 51.2C1 filesystem/storage consumer inventory |
 | `storage-ownership-catalog.yaml` | Step 51.2C1 typed stores + data lifecycle + per-env strategy |
+| `batch-operation-inventory.yaml` | Step 51.2C2 migration/backup/restore inventory + risk |
+| `batch-command-catalog.yaml` | Step 51.2C2 fixed, shell-free batch commands |
+| `fixtures/` | Step 51.2C2 verifier-only render fixtures (e.g. restore scaffold) |
 | `charts/ai-agents-platform/` | Multi-environment Helm foundation chart (v0.1.0) |
 
 Docs: [runtime-service-inventory](../../docs/platform/runtime-service-inventory.md),
@@ -35,6 +38,12 @@ python scripts/verify_kubernetes_storage_inventory.py        # KUBERNETES_STORAG
 python scripts/verify_kubernetes_data_lifecycle.py           # KUBERNETES_DATA_LIFECYCLE_VERIFY: PASS
 python scripts/verify_kubernetes_storage_manifest.py         # KUBERNETES_STORAGE_MANIFEST_VERIFY: PASS
 ./scripts/verify_kubernetes_storage_baseline.sh             # KUBERNETES_STORAGE_BASELINE_VERIFY: PASS
+python scripts/verify_kubernetes_batch_operation_inventory.py # KUBERNETES_BATCH_OPERATION_INVENTORY_VERIFY: PASS
+python scripts/verify_kubernetes_migration_job.py            # KUBERNETES_MIGRATION_JOB_VERIFY: PASS
+python scripts/verify_kubernetes_backup_cronjob.py           # KUBERNETES_BACKUP_CRONJOB_VERIFY: PASS
+python scripts/verify_kubernetes_restore_job.py              # KUBERNETES_RESTORE_JOB_VERIFY: PASS
+python scripts/verify_kubernetes_batch_job_policy.py         # KUBERNETES_BATCH_JOB_POLICY_VERIFY: PASS
+./scripts/verify_kubernetes_batch_jobs_baseline.sh          # KUBERNETES_BATCH_JOBS_BASELINE_VERIFY: PASS
 ```
 
 `verify_helm_foundation.sh` prefers a local `helm`, otherwise runs a pinned
@@ -73,6 +82,13 @@ Deployment volume integration, fail-closed environment storage rules. No
 StorageClass/PV resource, no hostPath/NFS, no real storage class/claim. See
 [kubernetes-storage-baseline](../../docs/platform/kubernetes-storage-baseline.md).
 
-Deferred (Step 51.2C2): Migration Job, Backup CronJob, off-host target +
-encryption-key reference, Restore Job. Deferred (51.3): ArgoCD/GitOps. Deferred
-(51.4): runtime visibility. HPA/PDB also deferred.
+In scope (Step 51.2C2): controlled migration Job, disabled+suspended backup
+CronJob, disabled restore Job scaffold — fixed shell-free commands (catalogued),
+advisory-lock migration, secretKeyRef-only credentials, restricted security,
+dedicated token-off ServiceAccounts, minimal DB-only NetworkPolicy, all
+disabled-by-default and fail-closed in staging/production. Templates validated,
+NOT executed; no cluster. See
+[kubernetes-batch-job-policy](../../docs/platform/kubernetes-batch-job-policy.md).
+
+Deferred (51.3): ArgoCD/GitOps. Deferred (51.4): runtime visibility. HPA/PDB and
+production migration/backup/restore execution also deferred.

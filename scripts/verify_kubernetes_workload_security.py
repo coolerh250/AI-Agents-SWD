@@ -73,7 +73,11 @@ def ensure_rendered() -> list[Path]:
 
 
 def pod_spec(doc: dict) -> dict | None:
+    # Step 51.2C2: CronJob nests the pod spec under jobTemplate; extend coverage
+    # so the restricted baseline is enforced on CronJob pods too.
     try:
+        if doc.get("kind") == "CronJob":
+            return doc["spec"]["jobTemplate"]["spec"]["template"]["spec"]
         return doc["spec"]["template"]["spec"]
     except (KeyError, TypeError):
         return None

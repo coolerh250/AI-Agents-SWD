@@ -30,12 +30,15 @@ REQUIRED = [
     "templates/networkpolicies.yaml",
     # Step 51.2C1 addition
     "templates/persistentvolumeclaims.yaml",
-]
-
-# Step 51.2C2+ templates that MUST NOT exist yet.
-FORBIDDEN = [
+    # Step 51.2C2 additions
+    "templates/_batch_helpers.tpl",
     "templates/migration-job.yaml",
     "templates/backup-cronjob.yaml",
+    "templates/restore-job.yaml",
+]
+
+# Step 51.3+ templates that MUST NOT exist yet.
+FORBIDDEN = [
     "templates/horizontalpodautoscalers.yaml",
     "templates/poddisruptionbudgets.yaml",
 ]

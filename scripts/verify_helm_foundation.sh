@@ -54,13 +54,13 @@ for f in Chart.yaml values.yaml values.schema.json values-dev.yaml \
          templates/services.yaml templates/configmaps.yaml templates/serviceaccounts.yaml \
          templates/validate-values.yaml templates/NOTES.txt \
          templates/_security_helpers.tpl templates/networkpolicies.yaml \
-         templates/persistentvolumeclaims.yaml; do
+         templates/persistentvolumeclaims.yaml templates/_batch_helpers.tpl \
+         templates/migration-job.yaml templates/backup-cronjob.yaml templates/restore-job.yaml; do
   if [ -f "$CHART/$f" ]; then ok "present: $f"; else bad "missing: $f"; fi
 done
-# forbidden Step 51.2C2+ template files must NOT exist yet
-for f in templates/migration-job.yaml templates/backup-cronjob.yaml \
-         templates/horizontalpodautoscalers.yaml templates/poddisruptionbudgets.yaml; do
-  if [ -e "$CHART/$f" ]; then bad "Step 51.2C2 file present too early: $f"; else ok "correctly absent: $f"; fi
+# forbidden Step 51.3+ template files must NOT exist yet
+for f in templates/horizontalpodautoscalers.yaml templates/poddisruptionbudgets.yaml; do
+  if [ -e "$CHART/$f" ]; then bad "Step 51.3 file present too early: $f"; else ok "correctly absent: $f"; fi
 done
 if [ -e "$CHART/../../charts/ai-agents-platform/argocd" ] || [ -e "infra/kubernetes/argocd" ]; then
   bad "argocd/ present too early (Step 51.3)"
