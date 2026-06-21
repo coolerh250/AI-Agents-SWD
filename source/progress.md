@@ -10162,7 +10162,18 @@ issues & blockers, and next-step suggestions.
   + secret scan + no-rendered-tracked + no cluster/sync command).
 - **Local checks.** 13 new pytest files (49 gitops tests) + carried full Step 51
   suites green; 3 gitops verifiers PASS; ruff/black/mypy clean.
-- **Verification (remote 10.0.1.31).** Pending — recorded after the remote run.
+- **Verification (remote 10.0.1.31, HEAD ec7d4af).** All 23 markers PASS: the
+  prior 19 (chained via the batch-jobs baseline) plus the 4 new GitOps markers —
+  ARGOCD_MANIFESTS_VERIFY (5/5), GITOPS_ENVIRONMENT_MAPPING_VERIFY (4/4),
+  GITOPS_PRODUCTION_ISOLATION_VERIFY (7/7), GITOPS_ARGOCD_BASELINE_VERIFY.
+  Targeted pytest: 324 passed, 0 skipped. `docker compose config --quiet` OK;
+  `git diff --check` clean. `/operations/safety`:
+  `production_executed_true_count=0`, no gitops/argocd fields added (per spec).
+  No cluster connection, no ArgoCD installed, no sync. One fix during remote
+  validation: the combined shell's Secret-resource grep matched the AppProject
+  `namespaceResourceBlacklist` `kind: Secret` (a DENY entry) -> anchored to
+  top-level `^kind:` (commit ec7d4af); Python verifiers were already correct
+  (per-document parse).
 - **Safety.** No cluster connection, no kubectl, no argocd CLI/sync, no Helm
   install/upgrade, no real cluster endpoint/namespace, no credential/secret/
   rendered manifest committed, no production app active, no production deploy.
