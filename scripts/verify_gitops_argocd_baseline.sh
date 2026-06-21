@@ -54,7 +54,10 @@ else
 fi
 
 step "7. no real cluster endpoint / no Secret in GitOps manifests"
-if grep -rnE 'kind:[[:space:]]*Secret' "$GITOPS_DIR" >/dev/null 2>&1; then
+# A Secret RESOURCE has `kind: Secret` at column 0 (top-level). The Project's
+# namespaceResourceBlacklist legitimately names an INDENTED `kind: Secret` to
+# DENY it -- that must not trip this scan, so anchor at line start.
+if grep -rnE '^kind:[[:space:]]*Secret' "$GITOPS_DIR" >/dev/null 2>&1; then
   echo "  [FAIL] Secret resource present in GitOps manifests"; FAIL=1
 elif grep -rnE 'server:[[:space:]]*https://([0-9]{1,3}\.){3}[0-9]{1,3}' "$GITOPS_DIR" >/dev/null 2>&1; then
   echo "  [FAIL] real IP cluster endpoint in GitOps manifests"; FAIL=1
