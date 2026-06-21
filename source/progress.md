@@ -10099,8 +10099,20 @@ issues & blockers, and next-step suggestions.
   green (275 kubernetes/helm tests, 0 skipped); inventory verifier + 3 wrappers
   run baseline (no DB); ruff/black/mypy clean; merged values validate against the
   extended schema (jsonschema).
-- **Verification (remote 10.0.1.31).** Pending — recorded after the remote
-  render + verifier run on the pushed HEAD.
+- **Verification (remote 10.0.1.31, HEAD 2049ff7).** All 19 markers PASS:
+  the prior 13 (runtime-inventory, helm-foundation, workload-security,
+  rbac-safety, security-rbac-baseline, network-topology, network-policy,
+  service-connectivity, network-baseline, storage-inventory, data-lifecycle,
+  storage-manifest, storage-baseline) plus the 6 new batch markers
+  (batch-operation-inventory 5/5, migration-job 5/5, backup-cronjob 5/5,
+  restore-job 2/2, batch-job-policy 1/1, batch-jobs-baseline). Workload-security
+  now checks **116** workloads across 5 envs (was 86 — the dev/test batch
+  Jobs/CronJob are now covered by the restricted baseline and pass). Targeted
+  pytest: 275 passed, 0 skipped. `docker compose config --quiet` OK; `git diff
+  --check` clean. `/operations/safety`: `production_executed_true_count=0`, no
+  kubernetes/cronjob/batch-job/argocd/helm fields added (the pre-existing Step 49
+  `migration_rollback_*` fields are unchanged). No cluster connection; render via
+  pinned alpine/helm:3.16.3.
 - **Safety.** No cluster connection, no kubectl, no helm install/upgrade, no
   migration/backup/restore executed, no production schedule/Job, no real cloud
   write, no database mutation, no secret/artifact/rendered-manifest committed, no
