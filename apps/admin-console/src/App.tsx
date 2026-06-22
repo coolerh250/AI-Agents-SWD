@@ -13,6 +13,7 @@ import { RegressionStatus } from "./pages/RegressionStatus";
 import { CostLlmGovernance } from "./pages/CostLlmGovernance";
 import { Incidents } from "./pages/Incidents";
 import { OperatorConsole } from "./pages/OperatorConsole";
+import { RuntimeBaseline } from "./pages/RuntimeBaseline";
 
 export function App() {
   return (
@@ -31,6 +32,7 @@ export function App() {
         <Route path="/cost-llm" element={<CostLlmGovernance />} />
         <Route path="/incidents" element={<Incidents />} />
         <Route path="/operator" element={<OperatorConsole />} />
+        <Route path="/runtime" element={<RuntimeBaseline />} />
       </Routes>
     </Layout>
   );

@@ -20,3 +20,7 @@ export const getLatestDeliveryState = () =>
   apiGet<LatestDeliveryState>(`${BASE}/latest-delivery-state`);
 export const getSafetySummary = () => apiGet<SafetySummary>(`${BASE}/safety-summary`);
 export const getRegressionSummary = () => apiGet<RegressionSummary>(`${BASE}/regression-summary`);
+
+// Step 51.4 -- read-only Kubernetes/Helm/GitOps runtime baseline (GET only).
+export const getRuntimeReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/runtime/report`);

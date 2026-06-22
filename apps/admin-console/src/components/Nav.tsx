@@ -13,6 +13,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/cost-llm", label: "Cost / LLM" },
   { to: "/incidents", label: "Incidents" },
   { to: "/operator", label: "Operator Console" },
+  { to: "/runtime", label: "Runtime Baseline" },
 ];
 
 export function Nav() {

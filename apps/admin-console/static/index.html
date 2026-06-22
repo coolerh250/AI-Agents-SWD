@@ -105,6 +105,7 @@
     { id:"regression", label:"Regression", render: renderRegression },
     { id:"cost", label:"Cost / LLM", render: renderCost },
     { id:"incidents", label:"Incidents", render: renderIncidents },
+    { id:"runtime", label:"Runtime Baseline", render: renderRuntime },
   ];
 
   async function renderOverview(el) {
@@ -167,6 +168,46 @@
     const d = await apiGet("/operations/admin-console/overview");
     const inc = d.incidents_summary || {};
     el.innerHTML = `<h2>Incidents</h2>${kvTable(inc)}`;
+  }
+
+  // Read-only Kubernetes / Helm / GitOps runtime baseline. GET-only; NO deploy,
+  // sync, apply, install, or any mutation control is rendered here.
+  async function renderRuntime(el) {
+    const d = await apiGet("/operations/runtime/report");
+    const area = d.area_status || d.areaStatus || {};
+    const prod = d.production_safety || d.productionSafety || {};
+    const facts = d.safety_facts || d.safetyFacts || {};
+    const ms = d.marker_summary || d.markerSummary || {};
+    const limits = d.limitations || [];
+    const envs = d.environments || [];
+    const envRows = envs.map(e => `<tr><td>${esc(e.name)}</td><td>${badge(e.active)}</td>
+      <td>${badge(e.disabled)}</td><td>${badge(e.production)}</td>
+      <td>${badge(e.automatedSync)}</td><td>${esc(e.valuesFile)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Kubernetes / Helm / GitOps Runtime Baseline</h2>
+      <p class="note">Read-only static baseline — no cluster connected, no deploy, no Helm install, no ArgoCD sync. This view provides NO deploy / sync / apply / install control.</p>
+      <div class="grid">
+        ${card("Runtime status", badge(d.status))}
+        ${card("Production ready", badge(prod.productionReady))}
+        ${card("Validated not deployed", badge(prod.validatedNotDeployed))}
+        ${card("Cluster connected", badge(d.cluster_connected ?? d.clusterConnected))}
+        ${card("Helm", badge(area.helm))}
+        ${card("Workload security", badge(area.workloadSecurity))}
+        ${card("RBAC", badge(area.rbac))}
+        ${card("NetworkPolicy", badge(area.networkPolicy))}
+        ${card("Storage", badge(area.storage))}
+        ${card("Batch jobs", badge(area.batchJobs))}
+        ${card("GitOps", badge(area.gitops))}
+        ${card("Auto-sync enabled", badge(prod.autoSyncEnabled))}
+        ${card("Production app enabled", badge(prod.productionApplicationEnabled))}
+        ${card("Markers", esc(ms.total))}
+      </div>
+      <h2 style="margin-top:20px">Production safety caveat</h2>
+      <p class="note">Production is NOT ready. Real rollout still requires ArgoCD install, real destination clusters, repo credentials, production OIDC, a secret store, image-digest pinning, a backup target, operator approval, and a runtime cluster smoke.</p>
+      <h2 style="margin-top:20px">Environments</h2>
+      <table><tr><th>Environment</th><th>Active</th><th>Disabled</th><th>Production</th><th>Auto-sync</th><th>Values</th></tr>${envRows}</table>
+      <h2 style="margin-top:20px">Safety facts</h2>${kvTable(facts)}
+      <h2 style="margin-top:20px">Non-production limitations</h2>
+      <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}</ul>`;
   }
 
   async function refreshSafetyPill() {
