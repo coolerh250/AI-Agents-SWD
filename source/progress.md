@@ -10282,7 +10282,20 @@ issues & blockers, and next-step suggestions.
   verify_identity_auth_boundary_baseline.sh (chains Step 50 v1 + Step 51 baseline
   + the 3 identity verifiers + tests + secret scan + production posture). 15 new
   pytest files (59 cases); ruff/black/mypy clean.
-- **Verification (remote 10.0.1.31).** Pending — recorded after the remote run.
+- **Verification (remote 10.0.1.31, HEAD 889320a).** All markers PASS:
+  IDENTITY_BOUNDARY_INVENTORY_VERIFY (9/9), AUTH_RBAC_BOUNDARY_VERIFY (6/6),
+  IDENTITY_AUDIT_BOUNDARY_VERIFY (4/4), and combined
+  IDENTITY_AUTH_BOUNDARY_BASELINE_VERIFY — which also re-confirms the maintained
+  ADMIN_CONSOLE_V1_OPERATOR_ACTIONS_VERIFY (46/46) and
+  KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY. Identity pytest: 59 passed, 0 skipped.
+  `docker compose config --quiet` OK; `git diff --check` clean.
+  `/operations/safety`: admin_console_operator_actions_controlled_only=true,
+  admin_console_production_auth_enabled=false,
+  admin_console_production_actions_enabled=false, runtime_production_ready=false,
+  argocd_auto_sync_enabled=false, production_executed_true_count=0. One verifier
+  fix during remote validation: the combined shell's OIDC scan matched the
+  unconfigured prerequisite field names -> require a real https URL value (889320a).
+  No orchestrator rebuild (no auth runtime code changed).
 - **Safety.** No production auth, no real OIDC, no OIDC discovery/JWKS fetch, no
   client secret/token committed, no raw session token persisted, no localStorage
   token, platform_admin has no infrastructure/deploy authority, no
