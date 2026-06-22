@@ -1710,6 +1710,9 @@ async def operations_safety() -> dict:
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
+    # Stage 55A (Step 53) -- read-only secret management foundation fields.
+    secret_foundation_safety = _secret_foundation_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2105,6 +2108,9 @@ async def operations_safety() -> dict:
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
+        # Stage 55A (Step 53) -- read-only secret management foundation. Booleans/
+        # enums only; no production store, no value access, no committed secret.
+        **secret_foundation_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3959,6 +3965,22 @@ def _identity_posture_safety_summary() -> dict[str, Any]:
 
     summary = load_identity_posture_summary(Path("infra/identity/identity-posture-summary.yaml"))
     return identity_posture_safety_fields(summary)
+
+
+def _secret_foundation_safety_summary() -> dict[str, Any]:
+    """Step 53 -- read-only secret management foundation safety fields. File-based
+    (reads the committed infra/secrets catalogs); never connects to a store, reads
+    a secret value, or enables a production store. Absent summary -> safe `unknown`
+    posture, never a fake PASS.
+    """
+    from shared.sdk.secrets_foundation import (
+        load_secret_foundation_summary,
+        secret_safety_fields,
+    )
+
+    root = Path(".")
+    summary = load_secret_foundation_summary(root / "infra/secrets/secret-foundation-summary.yaml")
+    return secret_safety_fields(summary, root)
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:

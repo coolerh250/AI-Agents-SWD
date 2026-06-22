@@ -28,3 +28,7 @@ export const getRuntimeReport = () =>
 // Step 52.4 -- read-only identity posture (GET only; no mutation client method).
 export const getIdentityReport = () =>
   apiGet<Record<string, unknown>>(`/operations/identity/report`);
+
+// Step 53 -- read-only secret management foundation (GET only).
+export const getSecretReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/secrets/report`);

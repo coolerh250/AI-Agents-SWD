@@ -25,6 +25,10 @@ COPY infra/kubernetes/runtime-baseline-summary.yaml ./infra/kubernetes/runtime-b
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.
 COPY infra/identity/identity-posture-summary.yaml ./infra/identity/identity-posture-summary.yaml
+# Stage 55A (Step 53) -- committed read-only secret management foundation catalogs
+# consumed by the /operations/secrets/* read-only API + /operations/safety.
+# References/metadata only (store=disabled); NO secret value, token, or key.
+COPY infra/secrets/ ./infra/secrets/
 
 EXPOSE 8000
 
