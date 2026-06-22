@@ -1,0 +1,22 @@
+# Step 52.2 -- JWKS Reference Model (Stage 54B).
+# REFERENCE ONLY. No JWKS is fetched, no key material is stored.
+# alg=none is forbidden; HS256 is not valid for external IdP ID tokens.
+
+version: "1"
+
+jwks:
+  required: true
+  fetchEnabled: false
+  cacheEnabled: false
+  uriConfigured: false
+  allowedAlgorithms:
+    - RS256
+  disallowedAlgorithms:
+    - none
+    - HS256
+  keyRotation:
+    required: true
+    configured: false
+  cacheTtlSeconds:
+    configured: false
+  status: disabled_unconfigured
