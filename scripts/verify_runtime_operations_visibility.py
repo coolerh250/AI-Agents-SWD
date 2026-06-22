@@ -67,14 +67,20 @@ def _get(path: str) -> tuple[int, str]:
 
 
 def main() -> int:
-    # 1. source-level: API is GET-only, no mutation verbs
+    # 1. source-level: API is GET-only, no mutation verbs.
     src = API_SRC.read_text(encoding="utf-8")
     for verb in ("@router.post", "@router.put", "@router.patch", "@router.delete"):
         if verb in src:
             bad(f"runtime API must not define {verb}")
-    for word in ("deploy", "sync", "apply", "install", "kubectl", "subprocess"):
-        if re.search(rf"def .*{word}|/{word}\b", src):
-            bad(f"runtime API must not expose a {word} operation")
+    # route paths must carry no deploy/sync/apply/install action (scan only the
+    # @router decorator lines, NOT docstrings/comments that name the forbidden ops)
+    route_lines = [ln for ln in src.splitlines() if ln.strip().startswith("@router.")]
+    for ln in route_lines:
+        for word in ("deploy", "sync", "apply", "install"):
+            if word in ln.lower():
+                bad(f"runtime API route exposes a {word} operation: {ln.strip()}")
+    if "kubectl" in src or "subprocess" in src:
+        bad("runtime API must not use kubectl/subprocess")
     if not [f for f in failures]:
         ok("runtime API source is GET-only with no deploy/sync/apply/install operation")
 
