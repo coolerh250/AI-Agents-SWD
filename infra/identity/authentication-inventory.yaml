@@ -1,0 +1,100 @@
+# Step 52.1 -- Authentication Inventory (Stage 54A).
+#
+# Evidence-backed inventory of the platform's CURRENT authentication, produced
+# before any OIDC/production identity work. Source of truth:
+#   - shared/sdk/operator_actions/auth.py (mode resolution, fail-closed)
+#   - shared/sdk/operator_actions/session.py (signed session tokens)
+#   - apps/orchestrator/src/operator_actions_api.py (login/logout/cookie wiring)
+#
+# NO real OIDC, NO production auth, NO external IdP. test-local auth is
+# non-production only. This is an inventory + boundary model, not a config change.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+  productionAuthEnabled: false
+  oidcConfigured: false
+
+authenticationModes:
+  - key: test_local_signed_session
+    name: Test-local signed session (HMAC-SHA256)
+    status: active_test_only
+    environmentEligibility:
+      dev: allowed
+      test: allowed
+      staging: forbidden
+      production: forbidden
+    entrypoints:
+      - "POST /operations/admin-console/auth/test-login (gated by test_login_allowed)"
+      - "POST /operations/admin-console/auth/logout"
+      - "GET  /operations/admin-console/auth/session"
+      - "GET  /operations/admin-console/auth/csrf"
+    cookieModel: "admin_console_session cookie; HttpOnly; SameSite=strict; Secure configurable (ADMIN_CONSOLE_COOKIE_SECURE); max_age=1800s"
+    tokenModel: "base64url(identity|issued|expires).hmac_sig; DB stores sha256(token) only (session_hash); raw token never persisted"
+    secretSource: "runtime key file (ADMIN_CONSOLE_SESSION_KEY_FILE / .runtime/admin-console-session-key) or ephemeral in-memory (test); never committed/logged"
+    productionAllowed: false
+    evidence:
+      - "auth.py AUTH_MODE_TEST_LOCAL + test_login_allowed()"
+      - "session.py issue_session/verify_session + session_hash"
+      - "operator_actions_api.py test_login cookie httponly=True samesite=strict"
+    unresolved: []
+
+  - key: oidc
+    name: Production OIDC (external IdP)
+    status: required_but_unconfigured_disabled
+    environmentEligibility:
+      dev: not_applicable
+      test: not_applicable
+      staging: future_required
+      production: future_required
+    entrypoints: []
+    cookieModel: "deferred (production session secret store + cookie Secure required)"
+    tokenModel: "deferred (no issuer, no JWKS, no client, no token validation)"
+    secretSource: "production_secret_store_required (NOT configured)"
+    productionAllowed: false
+    evidence:
+      - "auth.py AUTH_MODE_OIDC defined but oidc_enabled defaults false"
+      - "resolve_auth_config fails closed: production mode without OIDC -> operator_actions off"
+    unresolved:
+      - "no issuer / JWKS / client id / client secret / redirect URI configured (Step 52.2)"
+      - "no group->role mapping (Step 52.3)"
+      - "no production session secret store (Step 53)"
+
+  - key: disabled
+    name: Auth disabled (default / unknown mode)
+    status: fail_closed_default
+    environmentEligibility:
+      dev: default
+      test: default
+      staging: default
+      production: default
+    entrypoints: []
+    cookieModel: none
+    tokenModel: none
+    secretSource: none
+    productionAllowed: false
+    evidence:
+      - "auth.py default ADMIN_CONSOLE_AUTH_MODE=disabled; unknown mode -> AuthConfig(disabled,...)"
+    unresolved: []
+
+behaviors:
+  anonymousBlocked: true            # no session cookie -> _authenticate raises 401 (no anonymous operator action)
+  logoutRevokes: true               # logout revokes session + deletes cookie
+  expiredSessionRejected: true      # verify_session returns None past expires; store marks expired
+  revokedSessionRejected: true      # store status active/expired/revoked separate from signature
+  sessionExpirySeconds: 1800
+  cookieHttpOnly: true
+  cookieSameSite: strict
+  cookieSecureConfigurable: true    # ADMIN_CONSOLE_COOKIE_SECURE (production must set true)
+  productionAuthFailClosed: true    # production/staging cannot use test-local auth
+  testAuthMisuseProtected: true     # test auth forced off unless test_local mode + production_auth off
+  frontendLocalStorageToken: false  # token lives in HttpOnly cookie, never localStorage
+  urlToken: false                   # token never in URL/query
+
+productionReadiness:
+  status: not_production_ready
+  blockers:
+    - "production OIDC not configured (no issuer/JWKS/client)"
+    - "production session secret store not configured"
+    - "cookie Secure flag must be enforced (configurable today)"
+    - "no group->role mapping; no production logout/revocation hardening"

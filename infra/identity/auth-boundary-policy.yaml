@@ -1,0 +1,45 @@
+# Step 52.1 -- Test Auth vs Production Auth Boundary (Stage 54A).
+# Source: auth.py resolve_auth_config (fail-closed).
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+testLocalSignedSession:
+  environmentsAllowed: [dev, test]
+  purpose: controlled_testing_only
+  testIdentities: [viewer, reviewer, operator, platform_admin]
+  forbiddenIn: [staging, production]
+  isEnterpriseIdentity: false
+  isProductionAuditIdentity: false
+  grantsDeployOrSync: false
+
+productionAuth:
+  status: disabled
+  oidcProviderConfigured: false
+  oidcClientConfigured: false
+  jwksConfigured: false
+  groupMappingConfigured: false
+  productionSessionSecretStoreConfigured: false
+  productionLogoutRevocationComplete: false
+  productionRoleMappingComplete: false
+  mfaConditionalAccess: managed_by_external_idp_not_integrated
+
+productionFailClosedRules:
+  - key: production_requires_oidc_ready_config
+    rule: "production auth mode without an explicit OIDC-ready config must be rejected (operator actions off)"
+  - key: production_must_not_use_test_local
+    rule: "production cannot use test-local signed session"
+  - key: production_must_not_use_ephemeral_session_secret
+    rule: "production cannot use an ephemeral/in-memory session secret"
+  - key: production_must_not_allow_unknown_user
+    rule: "production must deny unknown users (no default role)"
+  - key: production_must_not_allow_unsigned_role_claim
+    rule: "production must reject unsigned/forged role claims"
+  - key: production_must_not_auto_grant_platform_admin
+    rule: "production must never auto-grant platform_admin"
+
+evidence:
+  - "auth.py: test auth forced off unless mode==test_local and production_auth off"
+  - "auth.py: operator_actions only when test_local + test_auth + not production"
+  - "auth.py: unknown mode -> disabled (fail closed)"

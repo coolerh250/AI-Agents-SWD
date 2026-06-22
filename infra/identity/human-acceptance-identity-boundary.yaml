@@ -1,0 +1,25 @@
+# Step 52.1 -- Human Acceptance Identity Boundary (Stage 54A).
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+humanAcceptance:
+  canAccept: [operator, platform_admin]
+  canReject: [operator, platform_admin]
+  canRequestChanges: [reviewer, operator, platform_admin]
+  identityRecorded: [identity_key, role, target_package_id, reason, confirmation_hash, idempotency_key_hash]
+  requiresReason: true
+  requiresConfirmation: true
+  acceptanceDoesNot:
+    - deploy
+    - merge_pr
+    - sync_argocd
+    - kubernetes_apply
+    - mark_production_readiness
+    - trigger_external_delivery
+  futureGateInput: true              # acceptance MAY feed a future gate, but is NOT production approval
+  isProductionApproval: false
+  evidence:
+    - "action_catalog accept/reject (operator/platform_admin, confirm+reason)"
+    - "operator_actions_api _apply_effect records human acceptance only; no deploy/merge/sync path"

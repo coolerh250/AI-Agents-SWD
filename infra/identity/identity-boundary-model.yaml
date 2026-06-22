@@ -1,0 +1,53 @@
+# Step 52.1 -- Identity Trust Boundary Model (Stage 54A).
+# Defines who may initiate vs authorize actions. Backend is authoritative.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+boundaries:
+  browser:
+    trusted: false
+    canStoreTokens: false
+    notes: ["session lives in an HttpOnly cookie; no localStorage/URL token"]
+  adminConsoleFrontend:
+    trusted: partially
+    mayInitiateActions: true
+    mayAuthorizeActions: false
+    notes: ["hide/disable is UX only; never a security control"]
+  backendSession:
+    trusted: true
+    validatesIdentity: true
+    notes: ["verify_session checks signature + expiry; store checks active/expired/revoked"]
+  policyEngine:
+    trusted: true
+    authorizesAction: true
+    notes: ["policy_gate decision required before execution"]
+  approvalEngine:
+    trusted: true
+    governsHumanApproval: true
+  auditService:
+    trusted: true
+    recordsIdentity: true
+    notes: ["records identity_key/role/action; never raw token/secret/CoT"]
+  externalIdP:
+    trusted: future
+    enabled: false
+  kubernetesCluster:
+    trusted: future
+    enabled: false
+  argocd:
+    trusted: future
+    enabled: false
+
+invariants:
+  frontendCannotSelfAuthorize: true
+  roleIsBackendAuthoritative: true
+  sessionValidatedBackend: true
+  csrfIsNotAuthorization: true        # CSRF prevents forgery, not authorization
+  confirmationIsNotAuthorization: true
+  idempotencyIsNotAuthorization: true
+  auditIsNotApproval: true
+  humanAcceptanceIsNotDeployment: true
+  platformAdminIsNotInfrastructureAdmin: true
+  productionIdPNotTrustedBecauseDisabled: true

@@ -1,0 +1,47 @@
+# Step 52.1 -- Session Inventory (Stage 54A).
+# Source: shared/sdk/operator_actions/session.py + operator_actions_api.py +
+# migrations/023_admin_console_operator_actions.sql. No raw token persisted.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+sessions:
+  mode: test_local_signed_session
+  cookie:
+    name: admin_console_session
+    httpOnly: true
+    sameSite: strict
+    secureConfigurable: true        # ADMIN_CONSOLE_COOKIE_SECURE (must be true in production)
+    maxAgeMinutes: 30
+  serverSide:
+    enabled: true
+    store: postgres (operator session table, migration 023)
+    tokenHashPersisted: true        # sha256(token) only
+    rawTokenPersisted: false
+  signing:
+    algorithm: HMAC-SHA256
+    secretSource: runtime_key_file_or_ephemeral
+    secretCommitted: false
+    productionSecretStore: not_configured
+  revocation:
+    supported: true
+    evidence: "logout revokes session + deletes cookie; store status revoked"
+  expiry:
+    enforced: true
+    evidence: "verify_session rejects past expires_ts; store marks expired"
+  confirmationNonce:
+    hashedAtRest: true              # sha256(nonce); raw returned once
+    rawPersisted: false
+  csrfToken:
+    persisted: false                # recomputed (HMAC bound to session hash), never stored
+  productionReadiness:
+    status: not_production_ready
+    blockers:
+      - "production session secret store not configured (ephemeral/keyfile only)"
+      - "session signing key rotation not productionized (Step 52.3 / 53)"
+      - "cookie Secure flag configurable, not enforced"
+  gaps:
+    sessionCleanup: "expired-session reaping is store-side; periodic cleanup job not productionized (gap, deferred)"
+    concurrentSessionPolicy: "no concurrent-session cap (gap, deferred to 52.3)"
+    forcedLogout: "no global forced-logout / key-rotation revocation sweep (gap, deferred to 52.3)"

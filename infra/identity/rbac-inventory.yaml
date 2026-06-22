@@ -1,0 +1,90 @@
+# Step 52.1 -- RBAC Inventory (Stage 54A).
+# Source: shared/sdk/operator_actions/rbac.py + action_catalog.py.
+# Backend-authoritative. platform_admin == operator action set (NOT root/infra admin).
+
+meta:
+  stage: "54A"
+  step: "52.1"
+  enforcement: backend_authoritative   # frontend hide/disable is UX only, never a control
+
+roles:
+  - key: viewer
+    rank: 0
+    description: Read-only console access.
+    productionAuthority: none
+    permissions: []
+    deniedPermissions: [add_note, request_changes, accept, reject, verification_rerun, deploy, sync, github_write, production]
+    evidence: ["rbac.py ROLE_RANK viewer=0", "no enabled action lists viewer in allowed_roles"]
+  - key: reviewer
+    rank: 1
+    description: May add review notes and request changes; cannot accept/reject.
+    productionAuthority: none
+    permissions: [add_note, request_changes]
+    deniedPermissions: [accept, reject, verification_rerun, deploy, sync, github_write, production]
+    evidence: ["action_catalog add_note/request_changes allowed_roles include reviewer; accept/reject/rerun do not"]
+  - key: operator
+    rank: 2
+    description: May accept/reject packages and rerun allowlisted verification.
+    productionAuthority: none
+    permissions: [add_note, request_changes, accept, reject, verification_rerun]
+    deniedPermissions: [deploy, sync, github_write, pr, argocd_sync, kubernetes_apply, production_backup, production_restore]
+    evidence: ["action_catalog accept/reject/verification.rerun allowed_roles include operator"]
+  - key: platform_admin
+    rank: 2
+    description: Same action set as operator. Name grants NO infrastructure/deploy authority.
+    productionAuthority: none
+    permissions: [add_note, request_changes, accept, reject, verification_rerun]
+    deniedPermissions: [deploy, sync, github_write, pr, argocd_sync, kubernetes_apply, production_backup, production_restore, root]
+    evidence: ["rbac.py platform_admin rank == operator (2); identical allowed_roles membership; no deploy/infra capability anywhere"]
+
+permissions:
+  - key: add_note
+    action: operator_review.add_note
+    enabled: true
+    rolesAllowed: [reviewer, operator, platform_admin]
+    requiresConfirmation: false
+    requiresReason: true
+    productionRelated: false
+    downstreamEffects: "appends a review note; no workspace/deploy mutation"
+    evidence: ["action_catalog ENABLED_ACTIONS"]
+  - key: request_changes
+    action: delivery_package.request_changes
+    enabled: true
+    rolesAllowed: [reviewer, operator, platform_admin]
+    requiresConfirmation: true
+    requiresReason: true
+    productionRelated: false
+    downstreamEffects: "marks package needs-changes; does not modify workspace"
+    evidence: ["action_catalog ENABLED_ACTIONS"]
+  - key: accept
+    action: delivery_package.accept
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresConfirmation: true
+    requiresReason: true
+    productionRelated: false
+    downstreamEffects: "human acceptance only; NOT deploy/merge/sync"
+    evidence: ["action_catalog ENABLED_ACTIONS"]
+  - key: reject
+    action: delivery_package.reject
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresConfirmation: true
+    requiresReason: true
+    productionRelated: false
+    downstreamEffects: "marks package rejected; no destructive action"
+    evidence: ["action_catalog ENABLED_ACTIONS"]
+  - key: verification_rerun
+    action: verification.rerun
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresConfirmation: true
+    requiresReason: true
+    productionRelated: false
+    downstreamEffects: "runs an allowlisted verification script (shell=False, fixed argv); no production mutation"
+    evidence: ["action_catalog ENABLED_ACTIONS; verification_runner ALLOWLISTED_SCRIPTS"]
+
+deniedActions:
+  description: Critical actions present ONLY as disabled catalog entries (never executable).
+  actions: [workflow.pause, workflow.resume, workflow.dispatch, work_item.update_status, project.cancel, github.create_pr, github.merge_pr, deployment.execute, backup.production_run, backup.production_restore, policy.update, model_policy.update, budget.update, incident.real_escalate]
+  evidence: ["action_catalog DISABLED_ACTION_TYPES; execution_enabled=False; allowed_roles=[]"]

@@ -1,0 +1,34 @@
+# Step 52.1 -- CSRF Inventory (Stage 54A).
+# Source: shared/sdk/operator_actions/csrf.py + operator_actions_api.py (_require_csrf).
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+csrf:
+  enabled: true
+  protectedMethods: [POST, PUT, PATCH, DELETE]
+  unprotectedMethods: [GET, HEAD]     # read-only views need no CSRF
+  tokenDelivery: "GET /operations/admin-console/auth/csrf (and on test-login response)"
+  tokenStorage: "client-held, echoed in header; server recomputes (HMAC bound to session_hash), never persisted"
+  headerName: X-CSRF-Token
+  sameOriginRequired: true            # SameSite=strict cookie + bound CSRF token
+  boundToSession: true                # token bound to session_hash prefix; not replayable across sessions
+  missingTokenBehavior: reject_403    # _require_csrf -> 403 csrf_invalid
+  invalidTokenBehavior: reject_403    # no fallback allow
+  tokenInUrl: false
+  tokenAuditedOrLogged: false
+  protectedSurfaces:
+    - "operator action create (add_note / request_changes / accept / reject / verification.rerun)"
+    - "operator action confirmation"
+    - "logout"
+  readOnlySurfaces:
+    - "/operations/runtime/* (Step 51.4 read-only, GET-only, no mutation -> no CSRF surface)"
+    - "/operations/admin-console/* aggregate read-only views"
+  productionReadiness:
+    status: adequate_for_test_baseline
+    blockers:
+      - "production deployment must enforce HTTPS + cookie Secure for SameSite/CSRF guarantees"
+  evidence:
+    - "csrf.py issue_csrf/verify_csrf HMAC bound to session_hash[:16]"
+    - "operator_actions_api.py _require_csrf raises 403 on missing/invalid; GET endpoints omit it"

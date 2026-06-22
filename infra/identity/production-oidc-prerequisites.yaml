@@ -1,0 +1,57 @@
+# Step 52.1 -- Production OIDC Prerequisite Inventory (Stage 54A).
+# REQUIREMENTS ONLY. No real IdP, no issuer, no client, no discovery, no login.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+  oidcConfigured: false
+  oidcDiscoveryPerformed: false
+  realIssuer: false
+  realClientId: false
+  realClientSecret: false
+  productionLogin: false
+
+oidcPrerequisites:
+  provider:
+    issuerUrl:
+      required: true
+      configured: false
+    jwksUri:
+      required: true
+      configured: false
+    clientId:
+      required: true
+      configured: false
+    clientSecret:
+      required: true
+      configured: false
+      storage: production_secret_store_required
+    redirectUris:
+      required: true
+      configured: false
+  claims:
+    subject:
+      required: true
+    email:
+      required: true
+    groups:
+      required: true
+      configured: false
+  roleMapping:
+    configured: false
+    defaultRole: none
+    unknownUserBehavior: deny
+  session:
+    productionSecretStore:
+      required: true
+      configured: false
+  logout:
+    configured: false
+  audit:
+    subjectMapping:
+      configured: false
+
+deferredTo:
+  providerAbstraction: "52.2"
+  roleMappingAndSessionHardening: "52.3"
+  productionSecretStore: "53"

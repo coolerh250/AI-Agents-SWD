@@ -1,0 +1,47 @@
+# Step 52.1 -- Identity-to-Audit Mapping (Stage 54A).
+# Source: shared/sdk/operator_actions/audit_events.py safe_operator_action_refs.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+recordedFields:
+  actorIdentity: identity_key        # opaque identity key (e.g. operator-test)
+  role: role
+  action: action_type
+  actionKey: action_key
+  targetType: target_type
+  targetId: target_id
+  policyDecision: policy_status
+  status: status
+  verificationKey: verification_key
+  resultMarker: result_marker
+  productionExecutedFlag: production_executed   # always false
+  controlledOnly: controlled_only               # always true
+
+confirmationRecording:
+  rawNoncePersisted: false           # only sha256(nonce) hash at rest
+  hashPersisted: true
+idempotencyRecording:
+  clientKeyValidatedCharsetBound: true   # ^[A-Za-z0-9._:-]{8,128}$ (is_valid_key)
+  rawAuthTokenPersisted: false           # idempotency key is a non-secret correlation key, not an auth token
+
+neverRecorded:
+  - raw_session_token
+  - csrf_token
+  - confirmation_nonce_raw
+  - session_signing_secret
+  - chain_of_thought
+  - reason_free_text_dump   # reason is captured as a field on the action, not dumped into audit refs
+
+traceability:
+  humanAcceptanceTraceable: true     # accept records identity_key + role + target package id
+  verificationRerunTraceable: true   # rerun records identity_key + role + verification_key + result_marker
+  futureOidcSubjectMapping:
+    planned: true
+    configured: false
+    note: "reserve an oidc_subject field for Step 52.2/52.3; not implemented here"
+
+evidence:
+  - "audit_events.safe_operator_action_refs emits opaque ids/labels/statuses only"
+  - "confirmation.nonce_hash sha256; idempotency stores key hash"

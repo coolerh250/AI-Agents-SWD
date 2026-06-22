@@ -1,0 +1,99 @@
+# Step 52.1 -- Operator Action Authorization Inventory (Stage 54A).
+# Source: action_catalog.py + operator_actions_api.py + verification_runner.py +
+# policy_gate.py + confirmation.py + idempotency.py + audit_events.py.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+actions:
+  - key: add_note
+    actionType: operator_review.add_note
+    enabled: true
+    rolesAllowed: [reviewer, operator, platform_admin]
+    requiresReason: true
+    requiresConfirmation: false
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+    policyDecisionRequired: true
+    productionEffect: none
+    downstreamEffects: ["appends review note"]
+    deniedFutureCapabilities: []
+    evidence: ["action_catalog", "operator_actions_api _create_action"]
+  - key: request_changes
+    actionType: delivery_package.request_changes
+    enabled: true
+    rolesAllowed: [reviewer, operator, platform_admin]
+    requiresReason: true
+    requiresConfirmation: true
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+    policyDecisionRequired: true
+    productionEffect: none
+    downstreamEffects: ["marks package needs-changes"]
+    deniedFutureCapabilities: ["does not modify workspace files"]
+    evidence: ["action_catalog", "operator_actions_api _apply_effect"]
+  - key: accept
+    actionType: delivery_package.accept
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresReason: true
+    requiresConfirmation: true
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+    policyDecisionRequired: true
+    productionEffect: none
+    downstreamEffects: ["records human acceptance"]
+    deniedFutureCapabilities: ["does NOT deploy", "does NOT merge PR", "does NOT sync ArgoCD", "does NOT mark production readiness"]
+    evidence: ["action_catalog", "operator_actions_api _apply_effect; _assert_acceptable"]
+  - key: reject
+    actionType: delivery_package.reject
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresReason: true
+    requiresConfirmation: true
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+    policyDecisionRequired: true
+    productionEffect: none
+    downstreamEffects: ["marks package rejected"]
+    deniedFutureCapabilities: ["no destructive action"]
+    evidence: ["action_catalog", "operator_actions_api _apply_effect"]
+  - key: verification_rerun
+    actionType: verification.rerun
+    enabled: true
+    rolesAllowed: [operator, platform_admin]
+    requiresReason: true
+    requiresConfirmation: true
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+    policyDecisionRequired: true
+    productionEffect: none
+    downstreamEffects: ["runs ONE allowlisted verification script (shell=False, fixed argv, realpath-contained)"]
+    deniedFutureCapabilities: ["no arbitrary script", "no arbitrary shell", "no arbitrary args", "no production mutation", "no GitHub write", "no deploy"]
+    allowlist: [delivery_package_acceptance_gate, admin_console_v0, backup_dr_gap_closure, audit_integrity, full_regression]
+    highRisk: ["full_regression requires higher confirmation (high_risk_ack)"]
+    evidence: ["verification_runner ALLOWLISTED_SCRIPTS; VerificationNotAllowed for non-allowlisted keys"]
+
+disabledActions:
+  description: Future capabilities present only as DISABLED catalog entries (execution_enabled=false, allowed_roles=[]).
+  actionTypes: [workflow.pause, workflow.resume, workflow.dispatch, work_item.update_status, project.cancel, github.create_pr, github.merge_pr, deployment.execute, backup.production_run, backup.production_restore, policy.update, model_policy.update, budget.update, incident.real_escalate]
+
+invariants:
+  acceptIsNotDeploy: true
+  rejectIsNotDestructive: true
+  requestChangesDoesNotModifyWorkspace: true
+  verificationRerunAllowlistOnly: true
+  noArbitraryScript: true
+  noArbitraryShell: true
+  noArbitraryArgs: true
+  noProductionAction: true
+  confirmationOneTime: true        # nonce hashed at rest, consumed once
+  reasonRequired: true
+  idempotencyReplayRecorded: true  # replays return the prior result without re-executing
+  auditPathExists: true

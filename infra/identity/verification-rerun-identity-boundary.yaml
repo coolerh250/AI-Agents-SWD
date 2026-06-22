@@ -1,0 +1,59 @@
+# Step 52.1 -- Verification Rerun Identity Boundary (Stage 54A).
+# Source: verification_runner.py + action_catalog verification.rerun.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+verificationRerun:
+  canRerun: [operator, platform_admin]
+  allowlistedScripts:
+    - key: delivery_package_acceptance_gate
+      script: scripts/verify_delivery_package_acceptance_gate.sh
+      requiresAuditLock: true
+      higherConfirmation: false
+    - key: admin_console_v0
+      script: scripts/verify_admin_console_v0.sh
+      requiresAuditLock: false
+      higherConfirmation: false
+    - key: backup_dr_gap_closure
+      script: scripts/verify_backup_dr_gap_closure.sh
+      requiresAuditLock: true
+      higherConfirmation: false
+    - key: audit_integrity
+      script: scripts/verify_tamper_evident_audit.sh
+      requiresAuditLock: true
+      higherConfirmation: false
+    - key: full_regression
+      script: scripts/run_full_regression.sh
+      fixedArgs: ["--full", "--json-report"]
+      requiresAuditLock: true
+      higherConfirmation: true        # high_risk_ack required
+  execution:
+    shell: false
+    fixedArgv: true
+    realpathContained: true           # target must live under <repo>/scripts
+    fixedCwd: repo_root
+    sanitizedEnv: true
+    arbitraryCommandProhibited: true
+    arbitraryArgsProhibited: true
+    userSuppliedPathProhibited: true
+  controls:
+    requiresRole: true
+    requiresReason: true
+    requiresConfirmation: true
+    requiresIdempotencyKey: true
+    csrfRequired: true
+    auditRequired: true
+  rerunDoesNot:
+    - mutate_production
+    - execute_deploy
+    - write_github
+    - sync_argocd
+  outputRedaction:
+    enabled: true
+    patterns: [github_token, openai_key, generic_token_secret_password_apikey_hmac_privatekey, private_key_pem]
+    maxOutputBytes: 200000
+  evidence:
+    - "verification_runner ALLOWLISTED_SCRIPTS (fixed path+args+flags)"
+    - "verification_runner shell=False, realpath containment, _SECRET_PATTERNS redaction"

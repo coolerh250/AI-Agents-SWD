@@ -1,0 +1,57 @@
+# Step 52.1 -- Identity Risk Register (Stage 54A).
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+risks:
+  - key: test_local_auth_not_production_grade
+    risk: test-local auth is not production-grade
+    currentState: accepted_for_test
+    severity: high
+    followUpStep: "52.2 / 52.3"
+  - key: production_oidc_disabled
+    risk: production OIDC disabled
+    currentState: fail_closed
+    severity: high
+    followUpStep: "52.2"
+  - key: production_secret_store_absent
+    risk: production secret store absent
+    currentState: not_configured
+    severity: high
+    followUpStep: "53"
+  - key: session_key_rotation_not_productionized
+    risk: session key rotation not productionized
+    currentState: gap
+    severity: medium_high
+    followUpStep: "52.3 / 53"
+  - key: group_to_role_mapping_absent
+    risk: group-to-role mapping absent
+    currentState: gap
+    severity: high
+    followUpStep: "52.3"
+  - key: platform_admin_naming_confusion
+    risk: platform_admin naming confusion
+    currentState: controlled
+    severity: medium
+    followUpStep: "52.3"
+  - key: no_mfa_signal
+    risk: no MFA signal
+    currentState: external_idp_future
+    severity: medium
+    followUpStep: "52.2"
+  - key: no_device_posture
+    risk: no device posture
+    currentState: future
+    severity: medium
+    followUpStep: later
+  - key: no_production_break_glass_model
+    risk: no production break-glass model
+    currentState: absent
+    severity: high
+    followUpStep: later
+  - key: no_production_approval_identity_chain
+    risk: no production approval identity chain
+    currentState: absent
+    severity: high
+    followUpStep: "60"

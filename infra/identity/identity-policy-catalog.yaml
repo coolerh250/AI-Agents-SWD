@@ -1,0 +1,37 @@
+# Step 52.1 -- Identity Policy Catalog (Stage 54A). Machine-readable invariants.
+
+meta:
+  stage: "54A"
+  step: "52.1"
+
+policies:
+  - key: production_auth_must_not_use_test_local
+    severity: critical
+    rule: production environment cannot use test-local signed session
+  - key: frontend_cannot_authorize_roles
+    severity: critical
+    rule: backend must be authoritative for roles
+  - key: platform_admin_is_not_infrastructure_admin
+    severity: high
+    rule: platform_admin does not imply Kubernetes, ArgoCD, GitHub, or production deploy authority
+  - key: human_acceptance_is_not_deployment
+    severity: high
+    rule: package acceptance must not trigger deploy/sync/merge
+  - key: no_raw_session_token_persistence
+    severity: critical
+    rule: only sha256(session token) may be persisted; never the raw token
+  - key: no_oidc_secret_in_repo
+    severity: critical
+    rule: no OIDC client secret / issuer credential may be committed
+  - key: verification_rerun_allowlist_only
+    severity: high
+    rule: verification rerun executes only allowlisted scripts with fixed argv and no shell
+  - key: production_auth_fail_closed
+    severity: critical
+    rule: unknown/unconfigured production auth mode must disable operator actions
+  - key: no_token_in_localstorage_or_url
+    severity: high
+    rule: session/CSRF tokens must never live in localStorage or a URL
+  - key: audit_must_not_record_secrets
+    severity: critical
+    rule: audit must never record raw session token, CSRF token, confirmation nonce, or chain-of-thought
