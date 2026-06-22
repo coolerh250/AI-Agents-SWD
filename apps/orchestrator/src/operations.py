@@ -1707,6 +1707,9 @@ async def operations_safety() -> dict:
     # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime baseline.
     runtime_baseline_safety = _runtime_baseline_safety_summary()
 
+    # Stage 54D (Step 52.4) -- read-only identity posture fields.
+    identity_posture_safety = _identity_posture_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2099,6 +2102,9 @@ async def operations_safety() -> dict:
         # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime
         # baseline. Booleans/enums/counts only; no cluster, no deploy, no secret.
         **runtime_baseline_safety,
+        # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
+        # production identity NOT enabled; no IdP, no secret, no raw email/group.
+        **identity_posture_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3938,6 +3944,21 @@ def _runtime_baseline_safety_summary() -> dict[str, Any]:
         Path("infra/kubernetes/runtime-baseline-summary.yaml")
     )
     return runtime_baseline_safety_fields(summary)
+
+
+def _identity_posture_safety_summary() -> dict[str, Any]:
+    """Step 52.4 -- read-only identity posture safety fields. File-based (reads
+    the committed identity-posture-summary.yaml copied into the image); never
+    connects to an IdP, fetches discovery/JWKS, reads a secret, or enables
+    production auth. Absent summary -> safe `unknown` posture, never a fake PASS.
+    """
+    from shared.sdk.identity_posture import (
+        identity_posture_safety_fields,
+        load_identity_posture_summary,
+    )
+
+    summary = load_identity_posture_summary(Path("infra/identity/identity-posture-summary.yaml"))
+    return identity_posture_safety_fields(summary)
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:

@@ -21,6 +21,10 @@ COPY migrations/ ./migrations/
 # by the /operations/runtime/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/counts/names only); no rendered manifests, no secrets.
 COPY infra/kubernetes/runtime-baseline-summary.yaml ./infra/kubernetes/runtime-baseline-summary.yaml
+# Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
+# by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
+# (booleans/enums/statuses only); no token, secret, raw email, or real group ID.
+COPY infra/identity/identity-posture-summary.yaml ./infra/identity/identity-posture-summary.yaml
 
 EXPOSE 8000
 
