@@ -1,0 +1,41 @@
+# Step 52.2 -- OIDC Safety Policy Catalog (Stage 54B).
+# Enforceable invariants for the disabled production OIDC posture.
+
+version: "1"
+
+policies:
+  - key: oidc_must_be_disabled_until_configured
+    severity: critical
+    statement: Production OIDC must remain disabled until every required field is configured.
+
+  - key: no_oidc_secret_in_repo
+    severity: critical
+    statement: No OIDC client secret, token, or private key may be committed.
+
+  - key: no_oidc_discovery_network_call_in_step_52_2
+    severity: critical
+    statement: No discovery document may be fetched in this step.
+
+  - key: no_jwks_fetch_in_step_52_2
+    severity: critical
+    statement: No JWKS may be fetched in this step.
+
+  - key: no_test_local_fallback_in_production
+    severity: critical
+    statement: Production auth must never fall back to test-local signed sessions.
+
+  - key: unknown_user_must_deny
+    severity: critical
+    statement: An unknown or unmapped user must be denied, never granted a default role.
+
+  - key: frontend_role_claim_not_authoritative
+    severity: critical
+    statement: Role/admin claims from a token or the frontend are never authoritative.
+
+  - key: platform_admin_requires_explicit_mapping
+    severity: high
+    statement: platform_admin must require an explicit, configured role mapping.
+
+  - key: callback_disabled_until_token_validation_ready
+    severity: critical
+    statement: The OIDC callback must stay disabled until token validation is implemented and verified.

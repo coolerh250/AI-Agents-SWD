@@ -1,0 +1,37 @@
+# Step 52.2 -- OIDC Claim Contract (Stage 54B).
+# Defines required/optional claims for a future production ID token.
+# Token "role"/"is_admin"/"platform_admin" claims are NEVER authoritative.
+# No real claims are processed in this step.
+
+contractKey: oidc-claim-contract-v1
+
+requiredClaims:
+  subject:
+    claim: sub
+    required: true
+    immutable: true
+  email:
+    claim: email
+    required: true
+    verifiedRequired: true
+  emailVerified:
+    claim: email_verified
+    required: true
+  groups:
+    claim: groups
+    required: true
+    configured: false
+
+optionalClaims:
+  name:
+    claim: name
+  preferredUsername:
+    claim: preferred_username
+
+forbiddenClaimsAsAuthority:
+  - role
+  - is_admin
+  - platform_admin
+
+unknownUserBehavior: deny
+frontendRoleAuthority: false

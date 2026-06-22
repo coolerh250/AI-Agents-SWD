@@ -1,0 +1,50 @@
+# Step 52.2 -- OIDC Callback Boundary Design (Stage 54B).
+# DESIGN ONLY. No usable callback exists. The callback is disabled and rejects
+# all input. No authorization code exchange, no token handling, no session.
+
+version: "1"
+
+callback:
+  enabled: false
+  authorizationCodeExchange: false
+  createsSession: false
+  assignsRole: false
+
+requirements:
+  authorizationRequestStateRequired: true
+  nonceRequired: true
+  pkceRequired: true
+  redirectUriMustBeAllowlisted: true
+
+mustReject:
+  - provider_disabled
+  - missing_state
+  - invalid_state
+  - invalid_nonce
+  - missing_code
+  - tokens_in_url_fragment
+
+mustNot:
+  - log_authorization_code
+  - log_token
+  - create_session_before_token_validation
+  - assign_role_before_backend_role_mapping
+
+auditing:
+  successRecorded: true
+  failureRecorded: true
+  rawTokenRecorded: false
+  rawCodeRecorded: false
+
+# Only a read-only status surface is permitted in this step. No route is added
+# that can accept/handle an authorization code.
+allowedRoutes:
+  - method: GET
+    path: /auth/oidc/status
+    handlesCode: false
+forbiddenRoutes:
+  - method: GET
+    path: /auth/oidc/callback
+    reason: callback_disabled_until_token_validation_ready
+
+status: disabled

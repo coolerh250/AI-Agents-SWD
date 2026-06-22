@@ -1,0 +1,53 @@
+# Step 52.2 -- OIDC Provider Catalog (Stage 54B).
+# ABSTRACTION ONLY. No real IdP, no issuer, no tenant, no client, no secret,
+# no redirect URI, no group ID, no discovery fetch, no JWKS fetch.
+# Production OIDC remains disabled and unconfigured.
+
+version: "1"
+
+providers:
+  production-oidc-placeholder:
+    enabled: false
+    productionAllowed: false
+    configured: false
+    issuer:
+      required: true
+      configured: false
+      value: ""
+    discovery:
+      required: true
+      fetchEnabled: false
+      configured: false
+    jwks:
+      required: true
+      fetchEnabled: false
+      configured: false
+      uri: ""
+    client:
+      clientId:
+        required: true
+        configured: false
+        valueRef: ""
+      clientSecret:
+        required: true
+        configured: false
+        secretRef:
+          name: ""
+          key: ""
+    redirectUris:
+      required: true
+      configured: false
+      values: []
+    scopes:
+      required:
+        - openid
+        - profile
+        - email
+      configured: false
+      values: []
+    claims:
+      contractRef: oidc-claim-contract-v1
+    roleMapping:
+      configured: false
+      behavior: deny_unknown
+    status: disabled_unconfigured

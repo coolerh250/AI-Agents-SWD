@@ -1,0 +1,23 @@
+# Step 52.2 -- OIDC State / Nonce / PKCE Contract (Stage 54B).
+# CONTRACT ONLY. No real flow implemented; no real state/nonce generated;
+# no raw values persisted. Implementation deferred to a later step.
+
+state:
+  required: true
+  singleUse: true
+  boundToSession: true
+  rawPersistenceAllowed: false
+
+nonce:
+  required: true
+  singleUse: true
+  rawPersistenceAllowed: false
+
+pkce:
+  required: true
+  method: S256
+  plainAllowed: false
+
+status:
+  implemented: false
+  requiredBeforeOidcEnablement: true

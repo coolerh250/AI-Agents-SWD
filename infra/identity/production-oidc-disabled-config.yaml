@@ -1,0 +1,33 @@
+# Step 52.2 -- Disabled Production OIDC Config (Stage 54B).
+# Future production OIDC config placeholder. Proves production auth fails closed.
+# This config MUST NOT be treated as enabled/ready by the runtime.
+
+version: "1"
+
+auth:
+  mode: oidc
+  enabled: false
+  productionEnabled: false
+  failClosed: true
+  testLocalFallbackAllowed: false
+
+providerRef: production-oidc-placeholder
+
+requiredBeforeEnablement:
+  - issuer_url
+  - discovery_metadata
+  - jwks_uri
+  - client_id_secret_ref
+  - client_secret_secret_ref
+  - redirect_uri
+  - claim_contract
+  - role_mapping
+  - production_session_secret_store
+  - audit_subject_mapping
+  - logout_strategy
+  - operator_approval
+
+status:
+  configured: false
+  ready: false
+  reason: required_fields_missing

@@ -1,0 +1,36 @@
+# Step 52.2 -- OIDC Token Validation Boundary (Stage 54B).
+# DESIGN ONLY. No real token is validated, parsed, or persisted in this step.
+# Disabled until a provider is configured.
+
+version: "1"
+
+tokenValidation:
+  enabled: false
+  realTokenValidationPerformed: false
+
+requirements:
+  issuerMustMatch: true
+  audienceMustMatchClientId: true
+  expRequired: true
+  iatRequired: true
+  nonceRequired: true
+  signatureRequired: true
+  keyIdRequired: true
+  jwksKeyRotationRequired: true
+
+algorithms:
+  allowed:
+    - RS256
+  rejected:
+    - none
+    - HS256
+
+clockSkew:
+  configured: false
+  future: true
+
+tokenHandling:
+  rawTokenAudited: false
+  rawTokenPersisted: false
+
+status: disabled_until_provider_configured

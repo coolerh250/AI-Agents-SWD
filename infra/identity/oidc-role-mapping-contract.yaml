@@ -1,0 +1,27 @@
+# Step 52.2 -- OIDC Role Mapping Input Contract (Stage 54B).
+# CONTRACT ONLY. Mapping is NOT implemented in this step.
+# platform_admin is never auto-granted; unknown users are denied.
+# No real group IDs are stored. Default role is "none".
+
+roleMapping:
+  configured: false
+  sourceClaim: groups
+  unknownUserBehavior: deny
+  defaultRole: none
+  rules: []
+
+allowedRoles:
+  - viewer
+  - reviewer
+  - operator
+  - platform_admin
+
+forbiddenAutoGrant:
+  - platform_admin
+
+requiresExplicitMapping:
+  - reviewer
+  - operator
+  - platform_admin
+
+productionStatus: disabled_unconfigured
