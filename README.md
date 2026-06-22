@@ -2383,6 +2383,36 @@ combined `scripts/verify_identity_auth_boundary_baseline.sh`
 OIDC provider abstraction (52.2), session hardening + role mapping (52.3), and
 identity visibility (52.4) follow.
 
+## OIDC Provider Abstraction & Disabled Production Config (Stage 54B / Step 52.2)
+
+Second sub-stage of **Step 52**: a **model-only** OIDC provider abstraction that
+connects to **no** IdP, fetches **no** discovery document or JWKS, exchanges
+**no** authorization code, validates **no** real token, and creates **no**
+session. New SDK [shared/sdk/identity/](shared/sdk/identity/) (`oidc_models`,
+`oidc_provider`, `oidc_config`, `oidc_policy`, `oidc_redaction`) — the
+abstraction imports no HTTP client and every live provider operation raises
+`OidcDisabledError`. Ten contracts under [infra/identity/](infra/identity/):
+provider catalog, disabled production config, discovery contract, JWKS reference
+model, claim contract, role-mapping contract, callback boundary, state/nonce/PKCE
+contract, token-validation boundary, and safety-policy catalog. The committed
+production provider is `enabled: false` / `productionAllowed: false` /
+`status: disabled_unconfigured` (no real issuer / client ID / client-secret ref /
+redirect URI; discovery & JWKS fetch off). The fail-closed loader/validator
+forces `invalid` on production-enabled, test-local fallback, enabled-but-
+incomplete, unknown-user≠deny, a privileged default role, discovery/JWKS/callback
+enabled, or a secret-shaped literal; the committed config reports
+`disabled_unconfigured`. A token's `role`/`is_admin`/`platform_admin` claim is
+**never** authoritative and `platform_admin` is **never** auto-granted. Verify
+with `python scripts/verify_oidc_provider_abstraction.py`
+(`OIDC_PROVIDER_ABSTRACTION_VERIFY`), `verify_oidc_fail_closed_config.py`
+(`OIDC_FAIL_CLOSED_CONFIG_VERIFY`), `verify_oidc_no_secret_leak.py`
+(`OIDC_NO_SECRET_LEAK_VERIFY`), and the combined
+`scripts/verify_oidc_disabled_production_baseline.sh`
+(`OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY`). Docs under
+[docs/security/](docs/security/) (`oidc-*`). Production OIDC remains disabled and
+**not production-ready**; session hardening + role mapping (52.3) and identity
+visibility (52.4) follow.
+
 ## Runtime Visibility & Integrated Verification (Stage 53G / Step 51.4)
 
 Closes Step 51 with a **read-only** runtime visibility surface + integrated

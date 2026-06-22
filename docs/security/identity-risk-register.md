@@ -5,7 +5,7 @@ Source: [identity-risk-register.yaml](../../infra/identity/identity-risk-registe
 | Risk | Current state | Severity | Follow-up |
 | --- | --- | --- | --- |
 | test-local auth not production-grade | accepted for test | high | 52.2 / 52.3 |
-| production OIDC disabled | fail-closed | high | 52.2 |
+| production OIDC disabled | fail-closed; abstraction added (52.2), still disabled/unconfigured | high | 52.3 |
 | production secret store absent | not configured | high | 53 |
 | session key rotation not productionized | gap | medium/high | 52.3 / 53 |
 | group→role mapping absent | gap | high | 52.3 |

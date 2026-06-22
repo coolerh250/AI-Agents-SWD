@@ -17,3 +17,13 @@ MFA/conditional access live in the external IdP (not integrated).
 Production must reject a non-OIDC-ready config, must not use test-local auth, must
 not use an ephemeral session secret, must deny unknown users, must reject unsigned
 role claims, and must never auto-grant `platform_admin`.
+
+## Step 52.2 (Stage 54B) — OIDC abstraction added, still disabled
+The OIDC provider abstraction now exists as model + contracts only and stays
+disabled/fail-closed (see [oidc-fail-closed-policy.md](oidc-fail-closed-policy.md)).
+The validator forces `invalid` if production is enabled, if a test-local fallback
+is allowed, if an unknown user would be allowed, if the default role is
+privileged, or if discovery/JWKS fetch / the callback is enabled. A token's
+`role`/`is_admin`/`platform_admin` claim is never authoritative
+([oidc-claim-contract.md](oidc-claim-contract.md)). Production auth remains
+disabled; no discovery/JWKS fetch; no real IdP.

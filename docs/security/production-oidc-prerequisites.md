@@ -11,3 +11,12 @@ behavior: **deny**; default role: **none**.
 Status: OIDC **not configured**, no discovery performed, no real issuer/client/
 secret, no production login. Deferred — provider abstraction (52.2), role mapping
 + session hardening (52.3), production secret store (53).
+
+## Update — Step 52.2 (Stage 54B)
+
+The provider abstraction is now in place but remains **disabled and
+unconfigured**. See [oidc-provider-abstraction.md](oidc-provider-abstraction.md)
+and [oidc-disabled-production-config.md](oidc-disabled-production-config.md).
+All prerequisites above are still unconfigured; no discovery or JWKS fetch was
+performed; production OIDC is not ready. Role mapping + session hardening remain
+deferred to 52.3, production secret store to 53.

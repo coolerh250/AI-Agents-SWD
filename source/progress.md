@@ -10304,3 +10304,54 @@ issues & blockers, and next-step suggestions.
   production_executed_true_count remains 0.
 - **Roadmap.** Step 52.1 closed (if verified); 52.2/52.3/52.4 pending; Step 52
   overall OPEN. NOT a production-identity readiness declaration.
+
+## Stage 54B — OIDC Provider Abstraction & Disabled Production Config (Step 52.2)
+
+- **Scope.** Second sub-stage of Step 52: a MODEL-ONLY OIDC provider abstraction
+  + disabled-by-default production config. NO real IdP, NO discovery fetch, NO
+  JWKS fetch, NO authorization-code exchange, NO token validation, NO session,
+  NO production login, NO auth runtime change.
+- **SDK (shared/sdk/identity/, 6 files).** oidc_models (strict pydantic;
+  `SecretRef` carries no value; `client_secret` ref-only; `enabled`/
+  `production_allowed` default false; `unknown_user_behavior` const `deny`),
+  oidc_provider (`OidcProvider` — every live op raises `OidcDisabledError`),
+  oidc_config (read-only loader + fail-closed `validate_oidc_inputs`;
+  statuses disabled_unconfigured / disabled_missing_required_fields / invalid /
+  ready_for_future_enablement), oidc_policy (safety catalog loader),
+  oidc_redaction (secret/token-shape detection, no network), __init__. The SDK
+  imports NO HTTP client.
+- **Contracts (infra/identity/, 10 files).** oidc-provider-catalog,
+  production-oidc-disabled-config, oidc-discovery-contract,
+  jwks-reference-model, oidc-claim-contract, oidc-role-mapping-contract,
+  oidc-callback-boundary, oidc-state-nonce-pkce-contract,
+  oidc-token-validation-boundary, oidc-safety-policy-catalog. Provider
+  `production-oidc-placeholder`: enabled=false, productionAllowed=false,
+  configured=false, status=disabled_unconfigured, empty issuer/clientId/secretRef/
+  redirectUris, discovery+JWKS fetch off. Disabled config: enabled=false,
+  productionEnabled=false, testLocalFallbackAllowed=false, failClosed=true,
+  ready=false. Claim contract: sub/email/email_verified/groups required, role/
+  is_admin/platform_admin forbidden as authority, unknown user deny. Role mapping
+  not configured, defaultRole none, platform_admin forbidden auto-grant. Callback
+  disabled (no code exchange/session/role). Token validation inactive; alg none +
+  HS256 rejected; raw token never audited/persisted. State/nonce/PKCE(S256)
+  required, not implemented.
+- **Verifiers + tests.** verify_oidc_provider_abstraction (8/8,
+  OIDC_PROVIDER_ABSTRACTION_VERIFY), verify_oidc_fail_closed_config (12/12,
+  OIDC_FAIL_CLOSED_CONFIG_VERIFY), verify_oidc_no_secret_leak
+  (OIDC_NO_SECRET_LEAK_VERIFY; tests/ scan scoped to test_oidc_*.py to avoid
+  other stages' intentional redaction fixtures; oidc_redaction.py excluded),
+  combined verify_oidc_disabled_production_baseline.sh
+  (OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY — chains Step 52.1 baseline + the 3
+  OIDC verifiers + tests + no-HTTP-import scan + no-real-endpoint scan + safety
+  posture). 15 new pytest files (59 cases, 0 skipped).
+- **Verification (remote 10.0.1.31).** PENDING — to be recorded after remote run.
+- **Safety.** Production OIDC disabled_unconfigured; no real issuer/client ID/
+  secret/redirect; no discovery/JWKS fetch; no callback; no token validation; no
+  IdP connection; test-local fallback disallowed in production; unknown user
+  deny; platform_admin never auto-granted; token role claim not authoritative; no
+  secret/JWT/token committed; no production auth; no runtime write endpoint; Step
+  50 operator actions + Step 51 runtime read-only API + Step 52.1 boundaries
+  unchanged. production_executed_true_count remains 0. No full regression
+  (no core auth runtime code changed).
+- **Roadmap.** Step 52.1 closed; 52.2 closed (if verified); 52.3/52.4 pending;
+  Step 52 overall OPEN. NOT a production-identity readiness declaration.
