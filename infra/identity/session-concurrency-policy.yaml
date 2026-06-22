@@ -1,0 +1,22 @@
+# Step 52.3 -- Session Concurrency Policy (Stage 54C).
+# Current behaviour is recorded, not enforced. Production enforcement is
+# deferred to production auth. No automatic termination in this step.
+
+version: "1"
+
+sessionConcurrency:
+  currentBehavior: recorded_not_enforced
+  multipleSessionsAllowed: true
+  countedBy: identity_id_and_active_status
+  productionPolicy:
+    required: true
+    maxConcurrentSessions: null
+    enforcement: deferred_to_production_auth
+  suspiciousPatterns:
+    - excessive_active_sessions
+    - impossible_travel_future
+    - role_escalation_during_session
+
+status:
+  productionReady: false
+  reason: enforcement_deferred_to_production_auth

@@ -1,0 +1,27 @@
+# Step 52.3 -- Session Key Rotation Model (Stage 54C).
+# MODEL ONLY. The production keyring + secret store is Step 53. The current
+# runtime key file / ephemeral secret is NOT production-ready and is never
+# committed.
+
+version: "1"
+
+sessionKeyRotation:
+  required: true
+  currentSource: runtime_key_file_or_ephemeral
+  productionSecretStoreRequired: true
+  keyIdsRequired: true
+  multipleActiveVerificationKeysRequired: true
+  rotationWithoutMassLogout:
+    required: true
+    implemented: false
+  emergencyRotation:
+    required: true
+    implemented: false
+  status: model_only
+
+dependencies:
+  productionSecretStore: "53"
+
+constraints:
+  currentKeyProductionReady: false
+  keyFileCommitted: false

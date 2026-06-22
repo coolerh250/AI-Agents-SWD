@@ -32,6 +32,25 @@ from shared.sdk.identity.oidc_provider import (
     OidcProviderError,
 )
 from shared.sdk.identity.oidc_redaction import contains_secret_like, find_secret_like
+from shared.sdk.identity.identity_runtime_config import (
+    UNSAFE_CONDITIONS,
+    IdentityConfigResult,
+    validate_identity_runtime_config,
+)
+from shared.sdk.identity.role_mapping import (
+    is_wildcard_group,
+    load_policy,
+    load_rules,
+    load_safe_fixture,
+    map_identity_to_role,
+    validate_rules,
+)
+from shared.sdk.identity.role_mapping_models import (
+    IdentityClaims,
+    RoleMappingDecision,
+    RoleMappingRule,
+)
+from shared.sdk.identity.session_cleanup import CleanupPlan, plan_cleanup, run_cleanup
 
 __all__ = [
     "ALLOWED_ROLES",
@@ -50,4 +69,19 @@ __all__ = [
     "OidcDisabledError",
     "contains_secret_like",
     "find_secret_like",
+    "IdentityConfigResult",
+    "validate_identity_runtime_config",
+    "UNSAFE_CONDITIONS",
+    "IdentityClaims",
+    "RoleMappingDecision",
+    "RoleMappingRule",
+    "map_identity_to_role",
+    "validate_rules",
+    "is_wildcard_group",
+    "load_rules",
+    "load_policy",
+    "load_safe_fixture",
+    "CleanupPlan",
+    "plan_cleanup",
+    "run_cleanup",
 ]

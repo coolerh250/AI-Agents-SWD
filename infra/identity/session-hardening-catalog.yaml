@@ -1,0 +1,52 @@
+# Step 52.3 -- Session Hardening Catalog (Stage 54C).
+# Models the current + required-before-production session posture. No production
+# auth, no production secret store, no raw token persisted.
+
+version: "1"
+
+sessionHardening:
+  cookie:
+    httpOnly: true
+    sameSite: Strict
+    secureRequiredInProduction: true
+    secureConfigurableInDevTest: true
+
+  expiry:
+    absoluteTimeoutMinutes: 30
+    idleTimeoutMinutes:
+      configured: false
+      requiredBeforeProduction: true
+
+  persistence:
+    rawTokenPersisted: false
+    tokenHashAlgorithm: sha256
+    serverSideSession: true
+
+  cleanup:
+    required: true
+    implemented: true
+    mode: scheduled_or_on_access
+    expiredSessionPurgeRequired: true
+
+  concurrency:
+    policy: limited_or_recorded
+    maxConcurrentSessions:
+      configured: false
+      requiredBeforeProduction: true
+    currentBehavior: recorded_not_enforced
+
+  forcedLogout:
+    supported: true
+    productionReady: false
+    reason: break_glass_and_admin_identity_not_finalized
+
+  keyRotation:
+    required: true
+    implemented: model_only
+    activeKeyIdRequired: true
+    previousKeyVerificationWindowRequired: true
+    productionSecretStoreRequired: true
+
+status:
+  productionReady: false
+  reason: production_secret_store_and_idle_timeout_and_concurrency_pending

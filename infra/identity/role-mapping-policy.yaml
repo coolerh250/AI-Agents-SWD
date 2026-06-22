@@ -1,0 +1,39 @@
+# Step 52.3 -- Role Mapping Policy (Stage 54C).
+# Engine + policy exist; production mapping is NOT configured (rules empty).
+# Unknown user deny; default role none; no wildcard groups; no real group IDs.
+
+version: "1"
+
+roleMapping:
+  enabled: false
+  configured: false
+  providerRef: production-oidc-placeholder
+  sourceClaim: groups
+  unknownUserBehavior: deny
+  defaultRole: none
+  frontendRoleAuthority: false
+
+  rules: []
+
+  allowedRoles:
+    - viewer
+    - reviewer
+    - operator
+    - platform_admin
+
+  requiresExplicitMapping:
+    - viewer
+    - reviewer
+    - operator
+    - platform_admin
+
+  forbidden:
+    wildcardGroups: true
+    defaultOperator: true
+    defaultPlatformAdmin: true
+    tokenRoleClaimAuthority: true
+    autoProvisionUsers: true
+
+status:
+  productionReady: false
+  reason: no_real_group_mapping_configured

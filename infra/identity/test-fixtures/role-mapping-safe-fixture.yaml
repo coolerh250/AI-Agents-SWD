@@ -1,0 +1,23 @@
+# Step 52.3 -- SAFE non-production role mapping fixture (Stage 54C).
+# Placeholder groups ONLY. No real group IDs, no real tenant, no real users.
+# Exercises the engine's explicit-mapping path in tests; never used in production.
+
+nonProductionFixture: true
+providerRef: production-oidc-placeholder
+sourceClaim: groups
+unknownUserBehavior: deny
+defaultRole: none
+
+rules:
+  - ruleId: rule-viewer
+    matchGroup: group-viewer-placeholder
+    role: viewer
+  - ruleId: rule-reviewer
+    matchGroup: group-reviewer-placeholder
+    role: reviewer
+  - ruleId: rule-operator
+    matchGroup: group-operator-placeholder
+    role: operator
+  - ruleId: rule-platform-admin
+    matchGroup: group-platform-admin-placeholder
+    role: platform_admin

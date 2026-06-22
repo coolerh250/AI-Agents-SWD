@@ -1,0 +1,45 @@
+# Step 52.3 -- Identity Authorization Decision Model (Stage 54C).
+# The ordered, separated decision chain from authentication to a final
+# authorization result. Each stage is distinct; none short-circuits a later one.
+
+version: "1"
+
+decisionChain:
+  - stage: authentication
+    produces: authenticated_identity
+    note: test-local signed session today; production OIDC disabled
+  - stage: role_mapping
+    produces: role_mapping_decision
+    note: maps groups to a role via explicit rules; unknown user deny
+  - stage: rbac
+    produces: rbac_decision
+    note: backend-authoritative role -> allowed action set
+  - stage: policy_engine
+    produces: policy_decision
+    note: per-action policy gate (Step 50)
+  - stage: confirmation
+    produces: confirmation_decision
+    note: one-time confirmation; not a permission grant
+  - stage: idempotency
+    produces: idempotency_decision
+    note: client correlation key; not authorization
+  - stage: audit
+    produces: audit_record
+    note: records identity/role/action; production_executed false
+  - stage: final_authorization
+    produces: final_authorization_result
+
+separations:
+  roleMappingIsNotRbac: true
+  rbacIsNotPolicyApproval: true
+  confirmationIsNotPermission: true
+  humanAcceptanceIsNotDeploymentApproval: true
+  platformAdminIsNotInfrastructureAdmin: true
+
+productionActions:
+  requireFutureProductionApprovalGate: true
+  currentlyExecutable: false
+
+status:
+  productionReady: false
+  reason: production_approval_gate_not_implemented

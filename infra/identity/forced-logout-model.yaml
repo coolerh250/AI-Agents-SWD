@@ -1,0 +1,32 @@
+# Step 52.3 -- Forced Logout Model (Stage 54C).
+# Server-side session revocation exists today (store.revoke_session). Forced
+# logout at user level and on role change is MODELLED but not production-ready.
+# No frontend-only logout; revocation is always server-authoritative.
+
+version: "1"
+
+forcedLogout:
+  sessionLevelRevoke:
+    supported: true
+    serverAuthoritative: true
+    frontendOnlyLogout: false
+  userLevelForcedLogout:
+    supported: model_only
+    productionReady: false
+  roleChangeForcedLogout:
+    required: true
+    implemented: false
+    reason: role_mapping_not_configured
+  breakGlassForcedLogout:
+    required: true
+    implemented: false
+    reason: break_glass_disabled
+  productionAdminIdentityRequired: true
+  audit:
+    required: true
+    rawTokenRecorded: false
+    reasonRecorded: true
+
+status:
+  productionReady: false
+  reason: break_glass_and_admin_identity_not_finalized

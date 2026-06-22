@@ -1,0 +1,29 @@
+# Step 52.3 -- Unknown User Policy (Stage 54C).
+# Any unidentifiable, unverified, or unmapped user is denied. No default role,
+# no auto-provisioning, no just-in-time provisioning, no platform_admin fallback.
+
+version: "1"
+
+unknownUser:
+  denyRules:
+    missingSubject: deny
+    missingEmail: deny
+    emailNotVerified: deny
+    missingGroups: deny
+    noGroupMatch: deny
+  defaultRole: none
+  autoViewer: false
+  selfRegistration: false
+  justInTimeProvisioning: false
+  platformAdminFallback: false
+  tokenRoleClaimAuthority: false
+
+audit:
+  deniedAttemptRecorded: true
+  rawTokenRecorded: false
+  rawEmailRecorded: false
+  rawGroupsRecorded: false
+
+status:
+  productionReady: false
+  reason: real_role_mapping_not_configured

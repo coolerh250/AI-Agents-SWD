@@ -45,3 +45,28 @@ traceability:
 evidence:
   - "audit_events.safe_operator_action_refs emits opaque ids/labels/statuses only"
   - "confirmation.nonce_hash sha256; idempotency stores key hash"
+
+# Step 52.3 (Stage 54C) -- planned identity audit enrichment for a FUTURE
+# production OIDC + role-mapping flow. PLANNED ONLY; not emitted in this step.
+futureOidcEnrichment:
+  stage: "54C"
+  step: "52.3"
+  enabled: false
+  plannedFields:
+    providerKey: provider_key                 # opaque provider key (e.g. production-oidc-placeholder)
+    subjectHash: subject_hash                 # sha256(sub); never the raw subject
+    emailHash: email_hash                     # sha256(email); never a raw email or email list
+    groupMappingRuleId: group_mapping_rule_id # the matched rule id; never a raw group ID
+    roleMappingDecision: role_mapping_decision
+    unknownUserDenied: unknown_user_denied
+    sessionKeyId: session_key_id
+    sessionRevoked: session_revoked
+    forcedLogoutReason: forced_logout_reason
+  redactionRules:
+    rawEmailListPersisted: false   # emails are hashed or redacted, never listed
+    rawGroupIdsPersisted: false    # use mapping rule id, never raw group object IDs
+    rawTokenPersisted: false
+    rawOidcClaimsPersisted: false
+    csrfPersisted: false
+    noncePersisted: false
+    chainOfThoughtPersisted: false
