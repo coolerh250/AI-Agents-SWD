@@ -10542,9 +10542,20 @@ issues & blockers, and next-step suggestions.
   baselines). 23 new pytest files (105 cases incl. pre-existing provider tests,
   0 skipped). no-inline scanner scoped to infra + Step 53 surface (excludes
   detector modules + pre-existing secrets-provider/leak-scanner test fixtures).
-- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run
-  (combined baseline incl. Step 51/52; requires orchestrator rebuild). No full
-  regression this stage (foundation modeling only).
+- **Verification (remote 10.0.1.31, HEAD 46d3a4f, via .venv/bin/python; orchestrator rebuilt).**
+  Orchestrator image rebuilt + restarted (healthy) to pick up the new API +
+  catalogs. All markers PASS: SECRET_INVENTORY_VERIFY, SECRET_REFERENCE_SCHEMA_
+  VERIFY (5/5), SECRET_STORE_ABSTRACTION_VERIFY (5/5), SECRET_NO_INLINE_VALUES_
+  VERIFY (130 files), SECRET_ROTATION_MODEL_VERIFY (3/3),
+  SECRET_REDACTION_POLICY_VERIFY (4/4), SECRET_OPERATIONS_VISIBILITY_VERIFY
+  (4/4), ADMIN_CONSOLE_SECRET_POSTURE_VERIFY (3/3), SECRET_SAFETY_FIELDS_VERIFY
+  (4/4), and combined SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY: PASS -- which
+  chains the maintained KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY (Step 51) and
+  IDENTITY_FOUNDATION_BASELINE_VERIFY (Step 52). Targeted pytest: 105 passed, 0
+  skipped. Safety posture: secret production not ready; store disabled; no value
+  read; no inline value; production_executed_true_count=0 (`False False False
+  False 0`). No full regression this stage (foundation modeling only; no core
+  runtime code path changed besides the read-only API).
 - **Safety.** secrets_foundation_status=modeled_fail_closed_not_configured;
   secrets_production_ready=false; production store disabled; no value read/write/
   rotation; no inline value; every *_committed flag false; redaction enabled;
