@@ -10498,3 +10498,61 @@ issues & blockers, and next-step suggestions.
   closes: production identity & OIDC foundation modeled, fail-closed, NOT
   enabled** -- never production identity ready / OIDC enabled / production login
   ready.
+
+## Stage 55A — Production Secret Management Foundation (Step 53)
+
+- **Scope.** Secret management foundation: inventory/classification/ownership/
+  reference/store-abstraction/rotation/redaction model. NO real secret value, NO
+  secret store connection, NO production auth/deploy. Model/schema/catalog/
+  reference/verification only.
+- **infra/secrets/ (15 files).** secret-inventory (15 categories; production
+  secrets unconfigured, no value in repo, store required), secret-classification
+  (secret vs public-config), secret-ownership-catalog (roles only; production
+  approval; break-glass dual-approval modeled), production-secret-store-disabled-
+  config (provider=disabled, read/write/rotation/ready all false),
+  secret-lifecycle-model, secret-rotation-model (model_only; covers 11 critical
+  secrets), secret-access-boundary (value access disabled; operators/platform_
+  admin/break-glass cannot read), secret-audit-model (never records value),
+  secret-redaction-policy (enabled), secret-usage-mapping (16 usages),
+  identity/runtime/backup/gitops-secret-references (all store=disabled,
+  configured=false, productionReady=false), secret-foundation-summary
+  (committed, anti-drift tested).
+- **SDK shared/sdk/secrets_foundation/ (9 modules).** secret_ref (reference-only
+  SecretRef; no value field; rejects inline secrets), secret_store(+models)
+  (DisabledSecretStoreProvider.read_secret_value raises
+  SecretValueAccessDisabledError; SecretStoreProvider protocol), secret_redaction
+  (find_committed_secret + redact; reuses Step 52.2 detector + kubeconfig/db-url/
+  webhook/SA-token shapes), secret_policy, collector (posture; missing source ->
+  unknown; committed-secret/enabled-store -> failed), safety (21 flat fields),
+  report_builder (redacted views), __init__. Distinct from the runtime value-
+  holding shared/sdk/secrets.
+- **API + safety + Admin Console.** secret_posture_api.py: 13 GET-only
+  /operations/secrets/* endpoints (registered in main.py); no read-value/write/
+  rotate/configure-provider route. operations.py spreads 21 secret fields into
+  /operations/safety. Dockerfile copies infra/secrets/. Admin Console read-only
+  Secret Posture view (static renderSecrets + React SecretPosture.tsx + nav +
+  route + getSecretReport); no reveal/copy/upload/rotate/configure button.
+- **Verifiers + tests.** 9 verifiers (SECRET_INVENTORY_VERIFY,
+  SECRET_REFERENCE_SCHEMA_VERIFY, SECRET_STORE_ABSTRACTION_VERIFY,
+  SECRET_NO_INLINE_VALUES_VERIFY, SECRET_ROTATION_MODEL_VERIFY,
+  SECRET_REDACTION_POLICY_VERIFY, SECRET_OPERATIONS_VISIBILITY_VERIFY,
+  ADMIN_CONSOLE_SECRET_POSTURE_VERIFY, SECRET_SAFETY_FIELDS_VERIFY), combined
+  verify_secret_management_foundation_baseline.sh
+  (SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY -- chains Step 51 + Step 52
+  baselines). 23 new pytest files (105 cases incl. pre-existing provider tests,
+  0 skipped). no-inline scanner scoped to infra + Step 53 surface (excludes
+  detector modules + pre-existing secrets-provider/leak-scanner test fixtures).
+- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run
+  (combined baseline incl. Step 51/52; requires orchestrator rebuild). No full
+  regression this stage (foundation modeling only).
+- **Safety.** secrets_foundation_status=modeled_fail_closed_not_configured;
+  secrets_production_ready=false; production store disabled; no value read/write/
+  rotation; no inline value; every *_committed flag false; redaction enabled;
+  no Kubernetes Secret rendered; ArgoCD still forbids Secret; no production auth;
+  no deploy/sync/GitHub permission; no runtime write endpoint; Step 50/51/52
+  posture unchanged. production_executed_true_count=0.
+- **Roadmap.** Step 53 closed (if verified): production secret management
+  foundation modeled, fail-closed, NOT configured. Step 54 (Application Security
+  & Supply Chain Baseline), 55 (Non-production Kubernetes Runtime Smoke), 56
+  (Real ArgoCD Non-production Manual Sync) pending. NOT a production readiness
+  declaration.

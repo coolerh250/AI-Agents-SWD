@@ -20,3 +20,10 @@ and [oidc-disabled-production-config.md](oidc-disabled-production-config.md).
 All prerequisites above are still unconfigured; no discovery or JWKS fetch was
 performed; production OIDC is not ready. Role mapping + session hardening remain
 deferred to 52.3, production secret store to 53.
+
+**Step 53 (Stage 55A):** the OIDC client secret is now catalogued as a critical
+secret with a reference (`store=disabled`, `configured=false`) in the secret
+management foundation ([secret-inventory.md](secret-inventory.md),
+[secret-management-foundation.md](secret-management-foundation.md)). The client
+secret can only ever be a `SecretRef`; no real value is set and no production
+secret store is connected.

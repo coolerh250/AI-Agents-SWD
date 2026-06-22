@@ -2446,6 +2446,39 @@ the combined `scripts/verify_session_role_mapping_baseline.sh`
 production-ready**; Admin Console identity visibility + integrated Step 52
 verification (52.4) follow.
 
+## Production Secret Management Foundation (Stage 55A / Step 53)
+
+Establishes a **modeled, fail-closed, NOT-configured** secret management
+foundation — no real secret value, no secret store connection, no production
+auth/deploy. Under [infra/secrets/](infra/secrets/): a secret inventory (15
+categories), classification (secret vs public-config), ownership (roles only),
+lifecycle / rotation / access-boundary / audit / redaction models, a disabled
+production secret-store config, and four reference catalogs (identity / runtime /
+backup / gitops) where every reference is `store=disabled`, `configured=false`,
+`productionReady=false`. New SDK [shared/sdk/secrets_foundation/](shared/sdk/secrets_foundation/)
+(distinct from the runtime value-holding `shared/sdk/secrets`) provides a
+**reference-only** `SecretRef` (carries no value; rejects inline secrets), a
+disabled `SecretStoreProvider` whose `read_secret_value` raises
+`SecretValueAccessDisabledError`, a redaction helper, and a read-only posture
+collector + committed anti-drift summary
+([secret-foundation-summary.yaml](infra/secrets/secret-foundation-summary.yaml)).
+Thirteen GET-only `/operations/secrets/*` endpoints + 21 `/operations/safety`
+fields (`secrets_foundation_status=modeled_fail_closed_not_configured`,
+`secrets_production_ready=false`, `secrets_read_value_enabled=false`, every
+`secrets_*_committed=false`) surface it, plus an Admin Console read-only **Secret
+Posture** view with no reveal / copy / upload / rotate / configure control.
+Verify with `python scripts/verify_secret_inventory.py`,
+`verify_secret_reference_schema.py`, `verify_secret_store_abstraction.py`,
+`verify_secret_no_inline_values.py`, `verify_secret_rotation_model.py`,
+`verify_secret_redaction_policy.py`, `verify_secret_operations_visibility.py`,
+`verify_admin_console_secret_posture.py`, `verify_secret_safety_fields.py`, and
+the combined `scripts/verify_secret_management_foundation_baseline.sh`
+(`SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY`, which chains the Step 51 + Step
+52 baselines). Docs under [docs/security/](docs/security/) +
+[docs/operations/](docs/operations/). **No production secrets configured, no
+production secret store connected, no production readiness declared.** Next:
+Step 54 (Application Security & Supply Chain Baseline).
+
 ## Identity Visibility & Integrated Verification (Stage 54D / Step 52.4 — closes Step 52)
 
 Final sub-stage of **Step 52**: a **read-only** identity posture surface +

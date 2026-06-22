@@ -18,3 +18,10 @@ in-memory secret (`shared/sdk/operator_actions/session.py`). That source is
 Rotation-without-mass-logout and emergency rotation are **required but not
 implemented** here; they depend on the production secret store. This step only
 records the model and the dependency.
+
+**Step 53 (Stage 55A):** the session signing key is now catalogued as a
+critical secret with a reference (`store=disabled`) + a rotation plan in the
+secret management foundation — see
+[secret-rotation-model.md](secret-rotation-model.md) and
+[secret-inventory.md](secret-inventory.md). Still no production secret store; the
+key remains a non-production runtime key file / ephemeral secret.
