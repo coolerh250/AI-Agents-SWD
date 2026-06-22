@@ -10368,3 +10368,55 @@ issues & blockers, and next-step suggestions.
   (no core auth runtime code changed).
 - **Roadmap.** Step 52.1 closed; 52.2 closed (if verified); 52.3/52.4 pending;
   Step 52 overall OPEN. NOT a production-identity readiness declaration.
+
+## Stage 54C — Session Hardening & Role Mapping (Step 52.3)
+
+- **Scope.** Third sub-stage of Step 52: session hardening + a safe local role
+  mapping engine. NO real IdP, NO OIDC network call, NO production auth, NO
+  production login, break-glass DISABLED, NO runtime write endpoint, NO
+  deploy/sync/GitHub permission.
+- **SDK (shared/sdk/identity/, +4 modules).** session_cleanup (pure
+  plan_cleanup + async run_cleanup; dry-run default, never deletes, marks only
+  active-past-expiry as expired, references session_hash/status/expires_at only,
+  no raw token; uses the existing admin_console_sessions schema -> NO migration),
+  role_mapping + role_mapping_models (explicit-rule-only engine; denies missing
+  sub/email, unverified email, missing/unknown groups; IdentityClaims has no
+  role/is_admin field so a token role claim is structurally non-authoritative;
+  validate_rules rejects wildcard groups + disallowed roles),
+  identity_runtime_config (fail-closed validator over 11 unsafe production
+  conditions). __init__ exports updated.
+- **Models (infra/identity/, 9 files).** session-hardening-catalog,
+  session-concurrency-policy (recorded_not_enforced), forced-logout-model
+  (session revoke server-authoritative; user/role-change modelled),
+  session-key-rotation-model (model_only; productionSecretStoreRequired ->
+  Step 53), role-mapping-policy (enabled/configured false, rules empty,
+  defaultRole none, all roles explicit-mapping), test-fixtures/
+  role-mapping-safe-fixture (placeholder groups only, no real group IDs),
+  unknown-user-policy (all deny rules, no auto-provision), break-glass-model
+  (disabled, depends on Step 60), identity-authorization-decision-model
+  (role mapping != RBAC != policy approval; confirmation != permission; human
+  acceptance != deployment; platform_admin != infrastructure admin).
+  identity-audit-mapping enriched with planned (disabled) OIDC fields using
+  subject_hash/email_hash/group_mapping_rule_id (no raw email/group/token/claims).
+- **Verifiers + tests.** verify_session_hardening (SESSION_HARDENING_VERIFY),
+  verify_role_mapping_policy (ROLE_MAPPING_POLICY_VERIFY),
+  verify_unknown_user_policy (UNKNOWN_USER_POLICY_VERIFY),
+  verify_break_glass_model (BREAK_GLASS_MODEL_VERIFY),
+  verify_identity_authorization_model (IDENTITY_AUTHORIZATION_MODEL_VERIFY),
+  verify_identity_audit_enrichment (IDENTITY_AUDIT_ENRICHMENT_VERIFY),
+  verify_session_cleanup (SESSION_CLEANUP_VERIFY, pure/no-DB), combined
+  verify_session_role_mapping_baseline.sh (SESSION_ROLE_MAPPING_BASELINE_VERIFY
+  -- chains Step 52.1 + 52.2 baselines + the 6 verifiers + cleanup + tests +
+  secret scan + no-real-endpoint/no-HTTP-import scan + safety posture). 15 new
+  pytest files (82 cases, 0 skipped).
+- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run.
+- **Safety.** No production auth; OIDC still disabled_unconfigured; no IdP
+  connection / discovery / JWKS fetch; raw session token still not persisted;
+  unknown user deny; default role none; platform_admin not auto-granted; no
+  wildcard group; no real group IDs; token role claim not authoritative;
+  break-glass disabled; no deploy/sync/GitHub/K8s/ArgoCD permission added; no
+  runtime write endpoint; Step 50 operator actions + Step 51 runtime read-only
+  API + Step 52.1/52.2 boundaries unchanged. production_executed_true_count
+  remains 0. No full regression (no core auth runtime code changed).
+- **Roadmap.** Step 52.1/52.2 closed; 52.3 closed (if verified); 52.4 pending;
+  Step 52 overall OPEN. NOT a production-identity readiness declaration.

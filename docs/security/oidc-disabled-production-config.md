@@ -41,4 +41,11 @@ unknown user would be allowed, when the default role is privileged, when
 discovery/JWKS fetch or the callback is enabled, or when a secret-shaped literal
 is present. See [oidc-fail-closed-policy.md](oidc-fail-closed-policy.md).
 
+Step 52.3 adds a complementary identity runtime-config validator
+(`shared/sdk/identity/identity_runtime_config.py`) that fails closed on OIDC
+enabled without a configured role mapping, wildcard group mapping, frontend role
+authority, an ephemeral production session key, a missing production secret
+store, and session key rotation missing in production — see
+[role-mapping-policy.md](role-mapping-policy.md).
+
 Verifier marker: `OIDC_FAIL_CLOSED_CONFIG_VERIFY: PASS`.

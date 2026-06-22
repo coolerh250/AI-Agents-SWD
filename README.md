@@ -2413,6 +2413,39 @@ with `python scripts/verify_oidc_provider_abstraction.py`
 **not production-ready**; session hardening + role mapping (52.3) and identity
 visibility (52.4) follow.
 
+## Session Hardening & Role Mapping (Stage 54C / Step 52.3)
+
+Third sub-stage of **Step 52**: session hardening + a safe local role mapping
+engine, with **no real IdP, no production auth, and break-glass disabled**. New
+SDK modules under [shared/sdk/identity/](shared/sdk/identity/): `session_cleanup`
+(non-destructive — dry-run default, never deletes, marks only active-past-expiry
+sessions `expired`, references `session_hash`/`status`/`expires_at` only, no raw
+token; the Step 50 `admin_console_sessions` schema already supports it, so **no
+migration**), `role_mapping`/`role_mapping_models` (explicit-rule-only engine
+that denies missing/unverified/unmapped claims; `IdentityClaims` has no
+`role`/`is_admin` field so a token role claim is structurally non-authoritative),
+and `identity_runtime_config` (fail-closed validator over 11 unsafe production
+conditions). Models under [infra/identity/](infra/identity/): session hardening
+catalog, concurrency policy, forced-logout, key-rotation (model-only; production
+secret store deferred to Step 53), role-mapping policy, a SAFE placeholder-group
+fixture, unknown-user policy, break-glass model (disabled, depends on Step 60),
+and an authorization-decision model (role mapping ≠ RBAC ≠ policy approval;
+confirmation ≠ permission; human acceptance ≠ deployment; `platform_admin` ≠
+infrastructure admin). Default role is `none`, unknown users are denied,
+`platform_admin` requires an explicit mapping, wildcard groups are rejected, and
+no real group IDs are committed. Verify with
+`python scripts/verify_session_hardening.py` (`SESSION_HARDENING_VERIFY`),
+`verify_role_mapping_policy.py` (`ROLE_MAPPING_POLICY_VERIFY`),
+`verify_unknown_user_policy.py` (`UNKNOWN_USER_POLICY_VERIFY`),
+`verify_break_glass_model.py` (`BREAK_GLASS_MODEL_VERIFY`),
+`verify_identity_authorization_model.py` (`IDENTITY_AUTHORIZATION_MODEL_VERIFY`),
+`verify_identity_audit_enrichment.py` (`IDENTITY_AUDIT_ENRICHMENT_VERIFY`), and
+the combined `scripts/verify_session_role_mapping_baseline.sh`
+(`SESSION_ROLE_MAPPING_BASELINE_VERIFY`). Docs under
+[docs/security/](docs/security/). Production identity remains disabled and **not
+production-ready**; Admin Console identity visibility + integrated Step 52
+verification (52.4) follow.
+
 ## Runtime Visibility & Integrated Verification (Stage 53G / Step 51.4)
 
 Closes Step 51 with a **read-only** runtime visibility surface + integrated

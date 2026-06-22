@@ -27,3 +27,16 @@ privileged, or if discovery/JWKS fetch / the callback is enabled. A token's
 `role`/`is_admin`/`platform_admin` claim is never authoritative
 ([oidc-claim-contract.md](oidc-claim-contract.md)). Production auth remains
 disabled; no discovery/JWKS fetch; no real IdP.
+
+## Step 52.3 (Stage 54C) — session hardening + role mapping
+A local role mapping engine + policy now exist but stay **unconfigured**
+(placeholder fixtures only); unknown users are denied, the default role is
+`none`, and `platform_admin` requires an explicit mapping
+([role-mapping-policy.md](role-mapping-policy.md),
+[unknown-user-policy.md](unknown-user-policy.md)). Session hardening, cleanup,
+forced-logout, key-rotation, break-glass, and an authorization-decision model
+are added; the identity runtime-config validator fails closed on production
+auth without OIDC ready, test-local fallback in production, an ephemeral
+production session key, a missing production secret store, wildcard group
+mapping, a non-none default role, and frontend role authority. No production
+auth, no real IdP, no break-glass enabled.

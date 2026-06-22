@@ -15,3 +15,16 @@ Source: [session-inventory.yaml](../../infra/identity/session-inventory.yaml);
 **Gaps (deferred to 52.3):** periodic session cleanup job, concurrent-session
 cap, global forced-logout / key-rotation revocation sweep, production secret
 store + key rotation.
+
+## Update — Step 52.3 (Stage 54C)
+
+The session hardening model + a non-destructive cleanup utility now exist; see
+[session-hardening-model.md](session-hardening-model.md),
+[session-concurrency-policy.md](session-concurrency-policy.md),
+[forced-logout-model.md](forced-logout-model.md), and
+[session-key-rotation-model.md](session-key-rotation-model.md). Status: cleanup
+implemented (dry-run default, never deletes, no raw token); concurrency
+recorded-not-enforced; forced logout server-authoritative at session level
+(user/role-change modelled); key rotation **model only**. Idle timeout,
+concurrency enforcement, and the production secret store / key rotation backend
+(Step 53) remain required before production. Raw token still never persisted.

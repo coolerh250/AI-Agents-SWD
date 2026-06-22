@@ -14,3 +14,14 @@ key (not an auth token).
 
 Human acceptance and verification rerun are both traceable to an identity. A
 future OIDC subject field is planned (52.2/52.3) but **not** implemented here.
+
+## Step 52.3 (Stage 54C) — planned identity audit enrichment
+
+`futureOidcEnrichment` (enabled=false) reserves audit fields for a future
+production OIDC + role-mapping flow: `provider_key`, `subject_hash`,
+`email_hash`, `group_mapping_rule_id`, `role_mapping_decision`,
+`unknown_user_denied`, `session_key_id`, `session_revoked`,
+`forced_logout_reason`. Redaction rules forbid persisting a raw email list, raw
+group object IDs (use the mapping rule id), raw tokens, raw OIDC claims, CSRF,
+nonce, or chain-of-thought. Subject and email are recorded only as
+`sha256` hashes. Planned only — nothing is emitted in this step.
