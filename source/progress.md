@@ -10251,3 +10251,43 @@ issues & blockers, and next-step suggestions.
   verified); **Step 51 overall: closed — Kubernetes / Helm / ArgoCD static
   runtime baseline validated, not deployed** (if combined + full regression pass).
   NOT a production-readiness declaration.
+
+## Stage 54A — Identity Inventory & Auth Boundary Model (Step 52.1)
+
+- **Scope.** First sub-stage of Step 52 (Production Identity & OIDC Foundation):
+  evidence-backed inventory + boundary modeling of the CURRENT identity stack.
+  NO real OIDC, NO production auth, NO external IdP, NO auth runtime change.
+- **Inventories (infra/identity/, 13 files).** authentication-inventory,
+  session-inventory, csrf-inventory, rbac-inventory,
+  operator-action-authorization, identity-boundary-model, auth-boundary-policy,
+  identity-audit-mapping, human-acceptance-identity-boundary,
+  verification-rerun-identity-boundary, production-oidc-prerequisites,
+  identity-risk-register, identity-policy-catalog. Derived from the real
+  shared/sdk/operator_actions/* code (auth/session/rbac/csrf/action_catalog/
+  verification_runner/audit_events/confirmation/idempotency).
+- **Boundaries (verified against code).** test-local signed session is
+  non-production (dev/test only); production OIDC required-but-unconfigured +
+  disabled; auth fail-closed (unknown mode -> disabled; production mode without
+  OIDC -> operator actions off). Session stores sha256(token) only (no raw
+  token); cookie HttpOnly + SameSite=strict + Secure configurable; no
+  localStorage/URL token. CSRF HMAC-bound to session, X-CSRF-Token, reject-403,
+  GET unprotected. RBAC backend-authoritative; viewer read-only; reviewer
+  note/request-changes; operator+platform_admin accept/reject/allowlisted-rerun;
+  **platform_admin == operator action set (no infra/deploy authority)**. Human
+  acceptance != deployment; verification rerun allowlist-only (shell=False,
+  fixed argv, realpath-contained). Audit records identity/role/action +
+  controlled_only + production_executed=false; never raw token/CSRF/nonce/CoT.
+- **Verifiers + tests.** verify_identity_boundary_inventory (9/9),
+  verify_auth_rbac_boundary (6/6), verify_identity_audit_boundary (4/4), combined
+  verify_identity_auth_boundary_baseline.sh (chains Step 50 v1 + Step 51 baseline
+  + the 3 identity verifiers + tests + secret scan + production posture). 15 new
+  pytest files (59 cases); ruff/black/mypy clean.
+- **Verification (remote 10.0.1.31).** Pending — recorded after the remote run.
+- **Safety.** No production auth, no real OIDC, no OIDC discovery/JWKS fetch, no
+  client secret/token committed, no raw session token persisted, no localStorage
+  token, platform_admin has no infrastructure/deploy authority, no
+  deploy/sync/GitHub permission added, no runtime write endpoint added, Step 50
+  operator actions + Step 51 runtime read-only API unchanged.
+  production_executed_true_count remains 0.
+- **Roadmap.** Step 52.1 closed (if verified); 52.2/52.3/52.4 pending; Step 52
+  overall OPEN. NOT a production-identity readiness declaration.

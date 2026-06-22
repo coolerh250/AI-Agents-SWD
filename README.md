@@ -2356,6 +2356,33 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Identity Inventory & Auth Boundary Model (Stage 54A / Step 52.1)
+
+First sub-stage of **Step 52 — Production Identity & OIDC Foundation**: an
+evidence-backed inventory + boundary model of the current identity stack, with
+**no real OIDC, no production auth, and no external IdP**. Under
+[infra/identity/](infra/identity/): authentication / session / CSRF / RBAC /
+operator-action-authorization inventories, an identity trust boundary model, a
+test-vs-production auth boundary, identity-to-audit mapping, human-acceptance &
+verification-rerun boundaries, production OIDC prerequisites (all
+**unconfigured**), a risk register and a machine-readable policy catalog —
+derived from the real `shared/sdk/operator_actions/*` code (auth/session/rbac/
+csrf/action_catalog/verification_runner). Key boundaries: test-local signed
+session is **non-production** (dev/test only); production auth is **disabled and
+fail-closed**; the session stores only `sha256(token)` (no raw token, no
+localStorage/URL token); `platform_admin` has the **operator action set only**
+(no Kubernetes/ArgoCD/GitHub/deploy authority); **human acceptance is not
+deployment**; verification rerun is **allowlist-only**. Verify with
+`python scripts/verify_identity_boundary_inventory.py`
+(`IDENTITY_BOUNDARY_INVENTORY_VERIFY`),
+`verify_auth_rbac_boundary.py` (`AUTH_RBAC_BOUNDARY_VERIFY`),
+`verify_identity_audit_boundary.py` (`IDENTITY_AUDIT_BOUNDARY_VERIFY`), and the
+combined `scripts/verify_identity_auth_boundary_baseline.sh`
+(`IDENTITY_AUTH_BOUNDARY_BASELINE_VERIFY`). Docs under
+[docs/security/](docs/security/). No production identity readiness is declared;
+OIDC provider abstraction (52.2), session hardening + role mapping (52.3), and
+identity visibility (52.4) follow.
+
 ## Runtime Visibility & Integrated Verification (Stage 53G / Step 51.4)
 
 Closes Step 51 with a **read-only** runtime visibility surface + integrated
