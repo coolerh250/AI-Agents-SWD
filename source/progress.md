@@ -10471,9 +10471,23 @@ issues & blockers, and next-step suggestions.
   posture). 11 new pytest files (42 cases, 0 skipped). Refined the Step 52.3
   break-glass route scanner + test to flag only ACTIVATION/mutation break-glass
   routes (a read-only GET status endpoint is allowed) -- no strictness lowered.
-- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run
-  (combined Step 52 baseline + prior-stage verifiers + full regression; requires
-  orchestrator rebuild to pick up the new API + posture summary).
+- **Verification (remote 10.0.1.31, HEAD 86fe4d5, via .venv/bin/python; orchestrator rebuilt).**
+  Orchestrator image rebuilt + restarted (healthy) to pick up the new API +
+  posture summary. All markers PASS: IDENTITY_OPERATIONS_VISIBILITY_VERIFY (5/5),
+  ADMIN_CONSOLE_IDENTITY_POSTURE_VERIFY (3/3), IDENTITY_SAFETY_FIELDS_VERIFY
+  (4/4), and combined IDENTITY_FOUNDATION_BASELINE_VERIFY: PASS -- which chains
+  the maintained IDENTITY_AUTH_BOUNDARY_BASELINE_VERIFY (52.1),
+  OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY (52.2), and
+  SESSION_ROLE_MAPPING_BASELINE_VERIFY (52.3). Step 52.4 pytest: 42 passed, 0
+  skipped. Combined steps 8-10: no secret-like values in identity files; no HTTP
+  client import + identity API GET-only; safety posture `False False False 0`
+  (identity production not ready; OIDC + production auth disabled;
+  production_executed_true_count=0). Prior-stage: ADMIN_CONSOLE_V1_OPERATOR_
+  ACTIONS_VERIFY PASS, KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY PASS. Full
+  regression: FULL_REGRESSION_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS
+  (total=25, pass=21, skipped_pass=3, pass_with_non_production_limitations=1,
+  fail=0, env_fail=0, safety_fail=0, regression_fail=0,
+  audit_tamper_residue_failure=0, audit_lock_timeout=0).
 - **Safety.** identity_posture_status=modeled_fail_closed_not_enabled;
   identity_production_ready=false; production auth + OIDC disabled; no discovery/
   JWKS/callback/token-exchange; raw session token not persisted; unknown user
