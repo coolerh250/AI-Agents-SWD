@@ -66,3 +66,13 @@ build — the full platform regression remains unaffected.
 - `check_runtime_state.sh` smokes 230–242 cover service / build inputs / static
   serve / aggregate endpoints / read-only guard / no-secret / no-chain-of-thought
   / no-operator-action / no-write-API.
+
+## Step 52.4 — read-only identity posture (Stage 54D)
+
+13 GET-only `/operations/identity/*` endpoints + 35 `/operations/safety`
+identity fields surface the Step 52 identity foundation (modeled, fail-closed,
+not enabled). The Admin Console adds a read-only **Identity Posture** view
+(`/identity`). No login/callback/token/connect/role-mapping-mutation/break-glass
+endpoint or button; production identity not enabled. See
+[identity-operations-api.md](../security/identity-operations-api.md) and
+[identity-foundation-verification.md](identity-foundation-verification.md).

@@ -14,4 +14,14 @@ Source: [identity-risk-register.yaml](../../infra/identity/identity-risk-registe
 | no device posture | future | medium | later |
 | no production break-glass model | model added (52.3), disabled pending production approval | high | 60 |
 | session cleanup / concurrency / forced logout gaps | cleanup utility + models added (52.3); concurrency/forced-logout enforcement deferred | medium | production auth |
+
+## Step 52.4 (Stage 54D) — Step 52 closed
+
+Step 52 closes as **modeled, fail-closed, not enabled**. A read-only identity
+posture surface ([identity-posture-visibility.md](identity-posture-visibility.md))
+aggregates the risks above and exposes them via `/operations/identity/*` +
+`/operations/safety` + the Admin Console Identity Posture view — observation
+only, no mutation. All high/medium risks above remain open and gated on Step 53
+(production secret store) and Step 60 (production approval identity chain);
+production identity is not declared ready.
 | no production approval identity chain | absent | high | 60 |

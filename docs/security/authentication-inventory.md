@@ -27,3 +27,8 @@ IdP.** test-local auth is non-production. Source:
 `not_production_ready`: production OIDC not configured, production session secret
 store absent, cookie Secure not enforced, no group→role mapping. Deferred to
 Step 52.2/52.3/53. This stage declares **no** production identity readiness.
+
+**Step 52.4 (Stage 54D):** this inventory is now surfaced read-only via the
+identity posture API (`/operations/identity/*`) +
+[identity-posture-visibility.md](identity-posture-visibility.md). Step 52 closes
+as modeled, fail-closed, not enabled — still no production identity readiness.

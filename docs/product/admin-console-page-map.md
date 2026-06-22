@@ -29,3 +29,14 @@ The built React app uses client-side routing under `basename="/admin"`. The
 zero-build static fallback uses an in-page page switcher with a fixed subset of
 pages (Overview, Projects, Delivery Package, Safety, Regression, Cost/LLM,
 Incidents) calling the same aggregate endpoints.
+
+## Read-only baseline pages (Step 51.4 / Step 52.4)
+
+* **Runtime Baseline** (`/runtime`) — read-only Kubernetes/Helm/GitOps baseline
+  (`/operations/runtime/report`); no deploy/sync/apply/install control.
+* **Identity Posture** (`/identity`) — read-only Step 52 identity foundation
+  (`/operations/identity/report`); production identity NOT enabled, no OIDC
+  login/connect/configure button, no production auth toggle, no role-mapping
+  editor, no break-glass button, no token/secret display.
+
+Both pages are GET-only and present in the React app and the static fallback.

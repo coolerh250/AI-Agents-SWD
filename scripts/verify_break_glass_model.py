@@ -87,7 +87,10 @@ def main() -> int:
     else:
         ok("depends on future production approval model (Step 60)")
 
-    # No break-glass route/button anywhere in the app source.
+    # No break-glass ACTIVATION route anywhere in the app source. A read-only
+    # GET status endpoint (e.g. /operations/identity/break-glass) is allowed --
+    # it exposes the DISABLED state and grants nothing. Only flag a mutation verb
+    # or an activate/enable/login break-glass route.
     hits: list[str] = []
     for base in (ROOT / "apps", ROOT / "shared" / "sdk"):
         for p in base.rglob("*.py"):
@@ -95,17 +98,18 @@ def main() -> int:
                 continue
             for line in p.read_text(encoding="utf-8").splitlines():
                 low = line.lower()
-                if (
-                    "break" in low
-                    and "glass" in low
-                    and ("route" in low or "@router" in low or "@app." in low)
-                ):
+                if "break" not in low or "glass" not in low:
+                    continue
+                is_route = "@router" in low or "@app." in low
+                is_mutation = any(v in low for v in (".post", ".put", ".patch", ".delete"))
+                is_activation = any(w in low for w in ("activate", "enable", "login"))
+                if is_route and (is_mutation or is_activation):
                     hits.append(f"{p.relative_to(ROOT)}: {line.strip()[:70]}")
     if hits:
         for h in hits:
-            bad(f"possible break-glass route: {h}")
+            bad(f"break-glass activation route present: {h}")
     else:
-        ok("no break-glass route/endpoint in app or SDK source")
+        ok("no break-glass activation route in app or SDK source (read-only status allowed)")
 
     print(f"\n=== Summary: {len(passes)}/{len(passes) + len(failures)} checks passed ===")
     if failures:

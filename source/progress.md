@@ -10436,3 +10436,51 @@ issues & blockers, and next-step suggestions.
   remains 0. No full regression (no core auth runtime code changed).
 - **Roadmap.** Step 52.1/52.2 closed; 52.3 closed (if verified); 52.4 pending;
   Step 52 overall OPEN. NOT a production-identity readiness declaration.
+
+## Stage 54D — Identity Visibility & Integrated Verification (Step 52.4, closes Step 52)
+
+- **Scope.** Integration + acceptance stage for Step 52: a read-only identity
+  posture surface + integrated Step 52 verification + full regression. NO
+  production auth, NO real IdP, NO production login, NO mutation endpoint/button.
+- **SDK (shared/sdk/identity_posture/, 6 files).** collector (reads committed
+  Step 52.1/52.2/52.3 YAMLs -> posture; missing source => status unknown, never
+  fake PASS; build/load committed summary), models (status enum
+  modeled_fail_closed_not_enabled/failed/unknown; no production_ready value),
+  report_builder, safety (35 flat /operations/safety fields), redaction (secret/
+  token/raw-email/GUID guard reusing Step 52.2 detector), __init__. Committed
+  summary infra/identity/identity-posture-summary.yaml (anti-drift tested,
+  copied into image via Dockerfile).
+- **API.** apps/orchestrator/src/identity_posture_api.py -- 13 GET-only
+  /operations/identity/* endpoints (posture/authentication/session/csrf/rbac/
+  operator-actions/oidc/role-mapping/break-glass/audit-mapping/risks/readiness/
+  report); registered in main.py. No POST/PUT/PATCH/DELETE, no login/callback/
+  authorize/token/logout/connect, no role-mapping mutation, no break-glass
+  activation; break-glass endpoint is a read-only view of the disabled state.
+  operations.py adds _identity_posture_safety_summary spread into
+  /operations/safety.
+- **Admin Console.** Read-only Identity Posture view (static fallback index.html
+  renderIdentity + React IdentityPosture.tsx + Nav + App route + operations.ts
+  getIdentityReport). No OIDC login/connect/configure button, no production auth
+  toggle, no role-mapping editor, no break-glass button, no token/secret display.
+- **Verifiers + tests.** verify_identity_operations_visibility
+  (IDENTITY_OPERATIONS_VISIBILITY_VERIFY), verify_admin_console_identity_posture
+  (ADMIN_CONSOLE_IDENTITY_POSTURE_VERIFY), verify_identity_safety_fields
+  (IDENTITY_SAFETY_FIELDS_VERIFY), combined verify_identity_foundation_baseline.sh
+  (IDENTITY_FOUNDATION_BASELINE_VERIFY -- chains Step 52.1/52.2/52.3 baselines +
+  the 3 verifiers + tests + secret scan + no-HTTP/GET-only guard + safety
+  posture). 11 new pytest files (42 cases, 0 skipped). Refined the Step 52.3
+  break-glass route scanner + test to flag only ACTIVATION/mutation break-glass
+  routes (a read-only GET status endpoint is allowed) -- no strictness lowered.
+- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run
+  (combined Step 52 baseline + prior-stage verifiers + full regression; requires
+  orchestrator rebuild to pick up the new API + posture summary).
+- **Safety.** identity_posture_status=modeled_fail_closed_not_enabled;
+  identity_production_ready=false; production auth + OIDC disabled; no discovery/
+  JWKS/callback/token-exchange; raw session token not persisted; unknown user
+  deny; default role none; platform_admin no auto-grant + no infra authority;
+  break-glass disabled; no deploy/sync/GitHub permission; no runtime write
+  endpoint; no Admin Console identity mutation. production_executed_true_count=0.
+- **Roadmap.** Step 52.1/52.2/52.3/52.4 closed (if verified). **Step 52 overall
+  closes: production identity & OIDC foundation modeled, fail-closed, NOT
+  enabled** -- never production identity ready / OIDC enabled / production login
+  ready.

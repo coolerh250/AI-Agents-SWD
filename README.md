@@ -2446,6 +2446,37 @@ the combined `scripts/verify_session_role_mapping_baseline.sh`
 production-ready**; Admin Console identity visibility + integrated Step 52
 verification (52.4) follow.
 
+## Identity Visibility & Integrated Verification (Stage 54D / Step 52.4 — closes Step 52)
+
+Final sub-stage of **Step 52**: a **read-only** identity posture surface +
+integrated Step 52 verification — production identity **modeled, fail-closed,
+NOT enabled** (no real IdP, no production auth, no production login). New SDK
+[shared/sdk/identity_posture/](shared/sdk/identity_posture/) aggregates the
+committed Step 52.1/52.2/52.3 identity models into a redacted summary
+([identity-posture-summary.yaml](infra/identity/identity-posture-summary.yaml),
+anti-drift tested; status `modeled_fail_closed_not_enabled`, never
+`production_identity_ready`). Thirteen GET-only `/operations/identity/*`
+endpoints expose it (no POST/PUT/PATCH/DELETE, no login/callback/authorize/token/
+logout/connect, no role-mapping mutation, no break-glass activation; `unknown`
+when the summary is absent — never a fake PASS), and `/operations/safety` gains
+35 identity fields (`identity_production_ready=false`, `identity_oidc_enabled=false`,
+`identity_unknown_user_behavior=deny`, `identity_default_role=none`,
+`identity_break_glass_enabled=false`, `production_executed_true_count=0`). The
+Admin Console adds a read-only **Identity Posture** view (static fallback + React)
+with NO OIDC login / connect / configure button, no production auth toggle, no
+role-mapping editor, no break-glass button, and no token/secret display. Verify
+with `python scripts/verify_identity_operations_visibility.py`
+(`IDENTITY_OPERATIONS_VISIBILITY_VERIFY`),
+`verify_admin_console_identity_posture.py` (`ADMIN_CONSOLE_IDENTITY_POSTURE_VERIFY`),
+`verify_identity_safety_fields.py` (`IDENTITY_SAFETY_FIELDS_VERIFY`), and the
+combined `scripts/verify_identity_foundation_baseline.sh`
+(`IDENTITY_FOUNDATION_BASELINE_VERIFY`, which chains the Step 52.1/52.2/52.3
+baselines). Docs under [docs/security/](docs/security/) +
+[docs/operations/](docs/operations/). **Step 52 closes as: production identity
+and OIDC foundation modeled, fail-closed, not enabled** — never production
+identity ready. Production secret store (Step 53), production OIDC + real role
+mapping, and a production approval identity chain (Step 60) remain out of scope.
+
 ## Runtime Visibility & Integrated Verification (Stage 53G / Step 51.4)
 
 Closes Step 51 with a **read-only** runtime visibility surface + integrated
