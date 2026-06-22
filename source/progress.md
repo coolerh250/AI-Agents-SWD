@@ -10222,8 +10222,25 @@ issues & blockers, and next-step suggestions.
   suites green (409 kubernetes/helm/gitops/argocd/runtime/admin tests, 0
   skipped); frontend typecheck + build + 25 vitest cases pass; ruff/black/mypy
   clean; runtime baseline summary anti-drift verified.
-- **Verification (remote 10.0.1.31).** Pending — recorded after the remote
-  combined Step 51 verification + prior-stage verifiers + full regression.
+- **Verification (remote 10.0.1.31, HEAD acc614b).** Orchestrator rebuilt +
+  restarted to load the runtime endpoints + summary. All 27 markers PASS: the 23
+  prior + the 4 new (RUNTIME_OPERATIONS_VISIBILITY_VERIFY,
+  RUNTIME_SAFETY_FIELDS_VERIFY, ADMIN_CONSOLE_RUNTIME_BASELINE_VERIFY, and the
+  combined KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY which chains them all).
+  Targeted pytest: 409 passed, 0 skipped. **Full regression:
+  FULL_REGRESSION_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS** (total=25,
+  pass=21, skipped_pass=3, pass_with_non_production_limitations=1; fail=0,
+  env_fail=0, safety_fail=0, regression_fail=0, audit_tamper_residue_failure=0,
+  audit_lock_timeout=0; no pre/post tamper residue). `docker compose config
+  --quiet` OK; `git diff --check` clean. `/operations/safety`:
+  production_executed_true_count=0, deployment_environment_production_count=0,
+  workflow_production_executed_true_count=0, kubectl/helm-install/argocd-sync
+  executed=false, argocd_prod_application_enabled=false,
+  argocd_real_sync_performed=false, runtime_real_deploy_enabled=false,
+  runtime_production_ready=false, runtime_validated_not_deployed=true,
+  kubernetes_runtime_baseline_status=validated_not_deployed. One verifier fix
+  during remote validation: the visibility verifier's deploy/sync/apply/install
+  source scan matched its own docstring -> restricted to @router lines (acc614b).
 - **Safety.** No cluster connection, no kubectl, no argocd CLI/sync, no Helm
   install/upgrade, no production deploy, no GitHub write/PR, no real external
   integration, no runtime write endpoint, no secret/rendered-manifest committed.
