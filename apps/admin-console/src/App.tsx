@@ -14,6 +14,7 @@ import { CostLlmGovernance } from "./pages/CostLlmGovernance";
 import { Incidents } from "./pages/Incidents";
 import { OperatorConsole } from "./pages/OperatorConsole";
 import { RuntimeBaseline } from "./pages/RuntimeBaseline";
+import { IdentityPosture } from "./pages/IdentityPosture";
 
 export function App() {
   return (
@@ -33,6 +34,7 @@ export function App() {
         <Route path="/incidents" element={<Incidents />} />
         <Route path="/operator" element={<OperatorConsole />} />
         <Route path="/runtime" element={<RuntimeBaseline />} />
+        <Route path="/identity" element={<IdentityPosture />} />
       </Routes>
     </Layout>
   );

@@ -106,6 +106,7 @@
     { id:"cost", label:"Cost / LLM", render: renderCost },
     { id:"incidents", label:"Incidents", render: renderIncidents },
     { id:"runtime", label:"Runtime Baseline", render: renderRuntime },
+    { id:"identity", label:"Identity Posture", render: renderIdentity },
   ];
 
   async function renderOverview(el) {
@@ -208,6 +209,53 @@
       <h2 style="margin-top:20px">Safety facts</h2>${kvTable(facts)}
       <h2 style="margin-top:20px">Non-production limitations</h2>
       <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}</ul>`;
+  }
+
+  // Read-only identity posture. GET-only; NO OIDC login / connect / configure,
+  // NO production auth toggle, NO role-mapping editor, NO break-glass button,
+  // NO token/secret display, NO mutation control is rendered here.
+  async function renderIdentity(el) {
+    const d = await apiGet("/operations/identity/report");
+    const oidc = d.oidc || {};
+    const sess = d.session || {};
+    const rm = d.roleMapping || {};
+    const bg = d.breakGlass || {};
+    const az = d.authorization || {};
+    const limits = d.limitations || [];
+    el.innerHTML = `<h2>Production Identity & OIDC Foundation</h2>
+      <p class="note">Read-only identity posture — production identity is NOT enabled. No real IdP, no OIDC discovery/JWKS fetch, no callback, no token exchange, no production login. This view provides NO login / connect / configure / role-mapping / break-glass / mutation control.</p>
+      <div class="grid">
+        ${card("Posture status", badge(d.status))}
+        ${card("Production identity ready", badge(d.productionIdentityReady))}
+        ${card("Production auth enabled", badge((d.posture||{}).productionAuthEnabled))}
+        ${card("Test-local (non-production)", badge((d.posture||{}).testLocalEnabled))}
+        ${card("OIDC abstraction", badge(oidc.abstractionEnabled))}
+        ${card("OIDC enabled", badge(oidc.enabled))}
+        ${card("OIDC configured", badge(oidc.configured))}
+        ${card("Discovery fetched", badge(oidc.discoveryFetched))}
+        ${card("JWKS fetched", badge(oidc.jwksFetched))}
+        ${card("Callback enabled", badge(oidc.callbackEnabled))}
+        ${card("Token exchange", badge(oidc.tokenExchangeEnabled))}
+        ${card("Session hardened", badge(sess.hardened))}
+        ${card("Raw token persisted", badge(sess.rawTokenPersisted))}
+        ${card("Session cleanup", badge(sess.cleanupAvailable))}
+        ${card("Concurrency enforced", badge(sess.concurrencyEnforced))}
+        ${card("Forced logout supported", badge(sess.forcedLogoutSupported))}
+        ${card("Key rotation production-ready", badge(sess.keyRotationProductionReady))}
+        ${card("Role mapping engine", badge(rm.enginePresent))}
+        ${card("Role mapping configured", badge(rm.configured))}
+        ${card("Unknown user", badge(rm.unknownUserBehavior))}
+        ${card("Default role", badge(rm.defaultRole))}
+        ${card("platform_admin auto-grant", badge(rm.platformAdminAutoGrant))}
+        ${card("Break-glass enabled", badge(bg.enabled))}
+        ${card("platform_admin infra authority", badge(az.platformAdminInfrastructureAuthority))}
+        ${card("Human acceptance = deployment", badge(az.humanAcceptanceIsDeployment))}
+      </div>
+      <h2 style="margin-top:20px">Production identity caveat</h2>
+      <p class="note">Production identity is NOT ready. Real enablement still requires a production secret store (Step 53), a configured production OIDC provider + real group→role mapping, a production session key rotation backend, and a production approval identity chain (Step 60). Break-glass is disabled. platform_admin has no infrastructure authority.</p>
+      <h2 style="margin-top:20px">Production blockers / next required steps</h2>
+      <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
+          ${(d.nextRequiredSteps||[]).map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
   }
 
   async function refreshSafetyPill() {

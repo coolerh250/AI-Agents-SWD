@@ -14,6 +14,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/incidents", label: "Incidents" },
   { to: "/operator", label: "Operator Console" },
   { to: "/runtime", label: "Runtime Baseline" },
+  { to: "/identity", label: "Identity Posture" },
 ];
 
 export function Nav() {

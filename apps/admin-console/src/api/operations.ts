@@ -24,3 +24,7 @@ export const getRegressionSummary = () => apiGet<RegressionSummary>(`${BASE}/reg
 // Step 51.4 -- read-only Kubernetes/Helm/GitOps runtime baseline (GET only).
 export const getRuntimeReport = () =>
   apiGet<Record<string, unknown>>(`/operations/runtime/report`);
+
+// Step 52.4 -- read-only identity posture (GET only; no mutation client method).
+export const getIdentityReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/identity/report`);
