@@ -57,6 +57,12 @@ secrets/
 # secrets/ ignore above — unignore the Python sources only.
 !shared/sdk/secrets/
 !shared/sdk/secrets/*.py
+# Step 53: infra/secrets/ holds the secret management FOUNDATION catalogs
+# (inventory / classification / references / models) -- reference-only, NO real
+# secret bytes (enforced by SECRET_NO_INLINE_VALUES_VERIFY). The directory name
+# collided with the broader secrets/ ignore above — unignore the catalogs only.
+!infra/secrets/
+!infra/secrets/*.yaml
 *.secret
 *.key
 *.pem
