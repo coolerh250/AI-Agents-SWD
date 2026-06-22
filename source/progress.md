@@ -10409,7 +10409,23 @@ issues & blockers, and next-step suggestions.
   -- chains Step 52.1 + 52.2 baselines + the 6 verifiers + cleanup + tests +
   secret scan + no-real-endpoint/no-HTTP-import scan + safety posture). 15 new
   pytest files (82 cases, 0 skipped).
-- **Verification (remote 10.0.1.31).** PENDING -- to be recorded after remote run.
+- **Verification (remote 10.0.1.31, HEAD 42e9a57, via .venv/bin/python).** All
+  markers PASS: SESSION_HARDENING_VERIFY (6/6), ROLE_MAPPING_POLICY_VERIFY (5/5),
+  UNKNOWN_USER_POLICY_VERIFY (5/5), BREAK_GLASS_MODEL_VERIFY (5/5),
+  IDENTITY_AUTHORIZATION_MODEL_VERIFY (3/3), IDENTITY_AUDIT_ENRICHMENT_VERIFY
+  (4/4), SESSION_CLEANUP_VERIFY (2/2), and combined
+  SESSION_ROLE_MAPPING_BASELINE_VERIFY: PASS -- which chains the maintained
+  IDENTITY_AUTH_BOUNDARY_BASELINE_VERIFY (Step 52.1, incl. Step 50 + Step 51) and
+  OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY (Step 52.2). Step 52.3 pytest: 82
+  passed, 0 skipped. Combined steps 11-13: no secret-like values in identity
+  files; no real OIDC endpoint value + identity SDK performs no HTTP import;
+  `/operations/safety` admin_console_production_auth_enabled=false,
+  admin_console_oidc_enabled=false, production_executed_true_count=0
+  (`False False 0`). Verifier scripts import the identity SDK (pydantic) -> run
+  under the project venv on remote, not bare python3. No orchestrator rebuild
+  (no auth runtime code changed; new SDK is model/loader-only and not imported by
+  the running orchestrator path; no migration -- existing admin_console_sessions
+  schema reused).
 - **Safety.** No production auth; OIDC still disabled_unconfigured; no IdP
   connection / discovery / JWKS fetch; raw session token still not persisted;
   unknown user deny; default role none; platform_admin not auto-granted; no
