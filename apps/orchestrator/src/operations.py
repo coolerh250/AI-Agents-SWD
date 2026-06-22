@@ -1704,6 +1704,9 @@ async def operations_safety() -> dict:
     # Stage 49 -- delivery package & acceptance gate snapshot.
     delivery_package_summary = await _delivery_package_safety_summary()
 
+    # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime baseline.
+    runtime_baseline_safety = _runtime_baseline_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2093,6 +2096,9 @@ async def operations_safety() -> dict:
         # Stage 52 -- Admin Console v1 governed operator actions (auth/RBAC/CSRF/
         # policy/confirmation/idempotency/audit). High-risk actions hard-disabled.
         **operator_action_safety,
+        # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime
+        # baseline. Booleans/enums/counts only; no cluster, no deploy, no secret.
+        **runtime_baseline_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3915,6 +3921,23 @@ def _backup_dr_readiness_snapshot() -> dict[str, Any] | None:
             return json.load(fh)
     except (OSError, ValueError):
         return None
+
+
+def _runtime_baseline_safety_summary() -> dict[str, Any]:
+    """Step 51.4 -- read-only Kubernetes/Helm/GitOps runtime baseline safety
+    fields. File-based (reads the committed runtime-baseline-summary.yaml copied
+    into the image); never connects to a cluster, runs a verifier, or carries a
+    secret. Absent summary -> safe `unknown` posture, never a fake PASS.
+    """
+    from shared.sdk.runtime_baseline import (
+        load_runtime_baseline_summary,
+        runtime_baseline_safety_fields,
+    )
+
+    summary = load_runtime_baseline_summary(
+        Path("infra/kubernetes/runtime-baseline-summary.yaml")
+    )
+    return runtime_baseline_safety_fields(summary)
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:

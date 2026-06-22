@@ -17,6 +17,10 @@ COPY apps/admin-console/static/ ./admin_console_static/
 # verifications still require a runner with docker access (documented limitation).
 COPY scripts/ ./scripts/
 COPY migrations/ ./migrations/
+# Stage 53G (Step 51.4) -- committed read-only runtime baseline summary consumed
+# by the /operations/runtime/* read-only API + /operations/safety. Non-sensitive
+# (booleans/enums/counts/names only); no rendered manifests, no secrets.
+COPY infra/kubernetes/runtime-baseline-summary.yaml ./infra/kubernetes/runtime-baseline-summary.yaml
 
 EXPOSE 8000
 

@@ -17,6 +17,7 @@ from progress import build_audit_timeline, build_progress, build_retry_timeline
 from admin_console_api import router as admin_console_router
 from backup_dr_api import router as backup_dr_router
 from operator_actions_api import router as operator_actions_router
+from runtime_baseline_api import router as runtime_baseline_router
 from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
@@ -202,6 +203,8 @@ app.include_router(admin_console_router)
 app.include_router(backup_dr_router)
 # Stage 52: Admin Console v1 governed operator actions API.
 app.include_router(operator_actions_router)
+# Stage 53G (Step 51.4): read-only Kubernetes/Helm/GitOps runtime baseline API.
+app.include_router(runtime_baseline_router)
 app.include_router(approval_policy_router)
 
 # Stage 50: serve the read-only Admin Console v0 static UI at /admin. Prefers a
