@@ -10344,7 +10344,20 @@ issues & blockers, and next-step suggestions.
   (OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY — chains Step 52.1 baseline + the 3
   OIDC verifiers + tests + no-HTTP-import scan + no-real-endpoint scan + safety
   posture). 15 new pytest files (59 cases, 0 skipped).
-- **Verification (remote 10.0.1.31).** PENDING — to be recorded after remote run.
+- **Verification (remote 10.0.1.31, HEAD d744618, via .venv/bin/python).** All
+  markers PASS: OIDC_PROVIDER_ABSTRACTION_VERIFY (8/8),
+  OIDC_FAIL_CLOSED_CONFIG_VERIFY (12/12), OIDC_NO_SECRET_LEAK_VERIFY (49 files
+  scanned), and combined OIDC_DISABLED_PRODUCTION_BASELINE_VERIFY — whose step 1
+  re-confirms the maintained IDENTITY_AUTH_BOUNDARY_BASELINE_VERIFY (which itself
+  chains ADMIN_CONSOLE_V1_OPERATOR_ACTIONS_VERIFY + KUBERNETES_HELM_ARGOCD_
+  BASELINE_VERIFY). OIDC pytest: 59 passed, 0 skipped. Combined steps 6-8:
+  identity SDK performs no HTTP import; no real OIDC endpoint value (placeholders
+  only); `/operations/safety` admin_console_production_auth_enabled=false,
+  admin_console_oidc_enabled=false, production_executed_true_count=0
+  (`False False 0`). Note: verifier scripts now import the OIDC SDK (pydantic),
+  so they must run under the project venv on remote, not bare python3. No
+  orchestrator rebuild (no auth runtime code changed; SDK is read-only/model-only
+  and not imported by the running orchestrator path).
 - **Safety.** Production OIDC disabled_unconfigured; no real issuer/client ID/
   secret/redirect; no discovery/JWKS fetch; no callback; no token validation; no
   IdP connection; test-local fallback disallowed in production; unknown user
