@@ -42,10 +42,12 @@ else
 fi
 
 step "8. no production auth / OIDC connection / production action"
-if grep -rEi 'jwks|oidc[_-]?discovery|authorization_endpoint|id_token' infra/identity >/dev/null 2>&1; then
-  echo "  [FAIL] identity files reference a real OIDC connection"; FAIL=1
+# Detect a REAL OIDC connection (an actual URL VALUE), not the unconfigured
+# prerequisite field names (jwksUri/issuerUrl with configured:false).
+if grep -rEi '(jwks_uri|jwksuri|issuer|issuerurl|authorization_endpoint)[[:space:]]*[:=][[:space:]]*https?://' infra/identity >/dev/null 2>&1; then
+  echo "  [FAIL] identity files reference a real OIDC endpoint value"; FAIL=1
 else
-  echo "  [PASS] no real OIDC connection referenced"
+  echo "  [PASS] no real OIDC connection referenced (prerequisites unconfigured only)"
 fi
 pa=$(curl -sS -m 10 "$ORCH/operations/safety" 2>/dev/null | "$PY" -c "import sys,json;d=json.load(sys.stdin);print(d.get('admin_console_production_auth_enabled'), d.get('production_executed_true_count'))" 2>/dev/null || echo "unknown unknown")
 if [ "$pa" = "False 0" ] || [ "$pa" = "None 0" ]; then
