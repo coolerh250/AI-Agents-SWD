@@ -2356,6 +2356,33 @@ unset DISCORD_BOT_TOKEN DISCORD_TEST_GUILD_ID DISCORD_TEST_CHANNEL_ID RUN_REAL_D
 See [`docs/operations/real-integration-pilot.md`](docs/operations/real-integration-pilot.md)
 for the full operator runbook.
 
+## Runtime Visibility & Integrated Verification (Stage 53G / Step 51.4)
+
+Closes Step 51 with a **read-only** runtime visibility surface + integrated
+verification — **validated, not deployed** (no cluster, no Helm install, no
+ArgoCD sync, no production readiness). A new `shared/sdk/runtime_baseline`
+aggregates the committed Step 51 baseline into a redacted summary
+([runtime-baseline-summary.yaml](infra/kubernetes/runtime-baseline-summary.yaml),
+anti-drift tested; status `validated_not_deployed`, never `production_ready`).
+Twelve GET-only `/operations/runtime/*` endpoints expose it (no
+POST/PUT/PATCH/DELETE, no deploy/sync/apply/install, `unknown` when absent — never
+a fake PASS), and `/operations/safety` gains Kubernetes/Helm/GitOps fields
+(`kubernetes_cluster_connected=false`, `argocd_auto_sync_enabled=false`,
+`runtime_production_ready=false`, `runtime_validated_not_deployed=true`, per-area
+`*_status=passed`). The Admin Console adds a read-only **Runtime Baseline** view
+(static fallback + React) with **no** deploy/sync/apply/install control, no
+cluster-credential/kubeconfig/token input, and no mutation client method. The
+combined `scripts/verify_kubernetes_helm_argocd_baseline.sh` chains all 23 prior
+markers + the 3 runtime verifiers (`KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY`,
+`RUNTIME_OPERATIONS_VISIBILITY_VERIFY`, `RUNTIME_SAFETY_FIELDS_VERIFY`,
+`ADMIN_CONSOLE_RUNTIME_BASELINE_VERIFY`). See
+[`docs/platform/runtime-baseline-visibility.md`](docs/platform/runtime-baseline-visibility.md),
+[`kubernetes-helm-argocd-integrated-baseline.md`](docs/platform/kubernetes-helm-argocd-integrated-baseline.md),
+[`docs/operations/runtime-baseline-verification.md`](docs/operations/runtime-baseline-verification.md),
+and [`kubernetes-non-production-limitations.md`](docs/operations/kubernetes-non-production-limitations.md).
+**Step 51 overall: closed — Kubernetes / Helm / ArgoCD static runtime baseline
+validated, not deployed** (NOT a production-readiness declaration).
+
 ## ArgoCD & Environment GitOps Baseline (Stage 53F / Step 51.3)
 
 Adds a GitOps baseline under [infra/gitops/](infra/gitops/) — **manifests +

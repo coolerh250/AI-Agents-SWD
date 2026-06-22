@@ -10181,3 +10181,56 @@ issues & blockers, and next-step suggestions.
   audit canonicalization, Step 50 operator policy, or `/operations/safety`.
 - **Roadmap.** Step 51.1/51.2A/51.2B/51.2C1/51.2C2 closed; 51.3 closed (if
   verified); 51.4 pending; Step 51 overall OPEN.
+
+## Stage 53G — Runtime Visibility & Integrated Verification (Step 51.4)
+
+- **Scope.** Step 51 integration + acceptance. Read-only runtime visibility over
+  the validated static baseline + combined Step 51 verification + full
+  regression. NO cluster apply, NO Helm install/upgrade, NO ArgoCD sync, NO
+  production deployment. Step 51 is an integration stage, NOT a production deploy.
+- **Runtime baseline SDK.** `shared/sdk/runtime_baseline/` (collector + safety)
+  aggregates the committed Step 51 inventories/catalogs/chart values/GitOps
+  manifests into a redacted summary; committed to
+  `infra/kubernetes/runtime-baseline-summary.yaml` (anti-drift tested; copied
+  into the orchestrator image). Status enum validated_not_deployed /
+  passed_with_non_production_limitations / failed / unknown; never production_ready.
+- **Read-only API.** 12 GET `/operations/runtime/*` endpoints
+  (`runtime_baseline_api.py`, registered in main.py): kubernetes baseline/
+  components/security/network/storage/batch-jobs, helm/gitops/argocd status,
+  environments, readiness, report. No POST/PUT/PATCH/DELETE; no deploy/sync/apply/
+  install; reads only the committed summary (unknown when absent, never fake PASS).
+- **Safety fields.** `/operations/safety` gains the Kubernetes/Helm/GitOps
+  runtime fields via `_runtime_baseline_safety_summary()` spread:
+  kubernetes_cluster_connected=false, kubectl/helm-install/helm-upgrade/argocd-sync
+  executed=false, helm_*/kubernetes_*/gitops_* status=passed, default_deny=true,
+  external_egress=false, hostpath/privileged/cluster-admin/sa-token/embedded-secret
+  =false, argocd_auto_sync=false, prod_application=false, runtime_real_deploy=false,
+  runtime_production_ready=false, runtime_validated_not_deployed=true,
+  limitations non-empty.
+- **Admin Console.** Read-only Runtime Baseline view (static fallback
+  index.html + React `RuntimeBaseline.tsx` + nav + route; dist rebuilt) backed by
+  `/operations/runtime/report`. No deploy/sync/apply/install button, no
+  cluster-credential/kubeconfig/token input, no mutation client method; production
+  caveat + limitations shown. Step 50 operator actions unchanged.
+- **Verifiers.** combined `verify_kubernetes_helm_argocd_baseline.sh` (chains the
+  23 prior markers via the GitOps baseline + 3 runtime verifiers + secret scan +
+  no-rendered-tracked + production_executed=0) ->
+  KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY; plus
+  verify_runtime_operations_visibility.py, verify_runtime_safety_fields.py,
+  verify_admin_console_runtime_baseline.py.
+- **Local checks.** 11 new pytest files (72 runtime/admin cases) + full Step 51
+  suites green (409 kubernetes/helm/gitops/argocd/runtime/admin tests, 0
+  skipped); frontend typecheck + build + 25 vitest cases pass; ruff/black/mypy
+  clean; runtime baseline summary anti-drift verified.
+- **Verification (remote 10.0.1.31).** Pending — recorded after the remote
+  combined Step 51 verification + prior-stage verifiers + full regression.
+- **Safety.** No cluster connection, no kubectl, no argocd CLI/sync, no Helm
+  install/upgrade, no production deploy, no GitHub write/PR, no real external
+  integration, no runtime write endpoint, no secret/rendered-manifest committed.
+  Admin Console exposes no deploy/sync/apply. production_executed_true_count
+  remains 0. No change to HARD_SAFETY_ACTIONS, audit canonicalization, or Step 50
+  operator policy.
+- **Roadmap.** Step 51.1/51.2A/51.2B/51.2C1/51.2C2/51.3 closed; 51.4 closed (if
+  verified); **Step 51 overall: closed — Kubernetes / Helm / ArgoCD static
+  runtime baseline validated, not deployed** (if combined + full regression pass).
+  NOT a production-readiness declaration.
