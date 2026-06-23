@@ -1,0 +1,42 @@
+# Step 54.2 -- scan target catalog (Stage 56B).
+# Allowlisted include/exclude per scan type. Excluded paths are NOT treated as
+# safe -- exclusion only avoids false positives / heavy or irrelevant scans.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+
+targets:
+  secretScan:
+    include:
+      - apps
+      - agents
+      - shared
+      - scripts
+      - infra
+      - docs
+      - tests
+    exclude:
+      - .git
+      - .venv
+      - node_modules
+      - dist
+      - build
+      - .runtime
+
+  sast:
+    include:
+      - apps
+      - agents
+      - shared
+      - scripts
+    exclude:
+      - tests/fixtures
+      - generated
+
+  dependencyScan:
+    packageFiles:
+      - requirements.txt
+      - pyproject.toml
+      - package.json
+      - package-lock.json

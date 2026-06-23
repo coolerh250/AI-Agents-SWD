@@ -1,0 +1,41 @@
+# Step 54.2 -- security scan status summary model (Stage 56B).
+# Declares the per-scan-type status enum + the production-readiness rule the
+# normalized summary applies. Also records the static baseline configuration the
+# /operations/safety scan fields read (runtime last-status comes from the latest
+# redacted runtime report, or not_run when absent). NO production gate enabled.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+
+statusEnum:
+  - not_configured
+  - tool_unavailable
+  - not_run
+  - completed_no_findings
+  - completed_with_findings
+  - failed
+
+baselineConfiguration:
+  localScanBaselineEnabled: true
+  secretScanConfigured: configured            # custom_repo_secret_scan bundled
+  sastConfigured: limited_custom_baseline     # custom_static_checks only (no bandit/semgrep bundled)
+  dependencyScanConfigured: limited_manifest_baseline  # manifest/lockfile policy only, no CVE lookup
+  externalUploadEnabled: false
+  networkEnabled: false
+  tokenRequired: false
+  runEndpointEnabled: false
+  resultNormalizationEnabled: true
+  reportsCommitted: false
+  productionGateEnabled: false
+  productionReady: false
+
+productionReadinessRule:
+  anyNotConfigured: not_ready
+  anyToolUnavailable: not_ready
+  anyCritical: fail
+  anyHigh: fail_or_approval_required
+  missingDependencyLockfile: not_ready_before_production
+  missingSbom: not_ready_before_deployment
+  appliesTo: local_scan_baseline_only
+  productionGateEnabled: false

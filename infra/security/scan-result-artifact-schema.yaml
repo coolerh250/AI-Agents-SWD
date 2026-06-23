@@ -1,0 +1,46 @@
+# Step 54.2 -- scan result artifact schema (Stage 56B).
+# Shape of a single local scan report. Reports are written to .runtime/security/
+# (gitignored) -- never committed (except redacted sample fixtures under tests/).
+# tool_unavailable is NEVER PASS; completed_with_findings is NEVER clean;
+# productionReady is always false.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+
+scanResult:
+  schemaVersion: "1"
+  scanType: ""        # secret | sast | dependency
+  scanner: ""         # effective toolchain key(s)
+  localOnly: true
+  networkUsed: false
+  sourceUploaded: false
+  tokenUsed: false
+  startedAt: ""
+  finishedAt: ""
+  status: ""          # see statusEnum
+  targets: []
+  excludedTargets: []
+  findingsSummary:
+    critical: 0
+    high: 0
+    medium: 0
+    low: 0
+    informational: 0
+  findings: []        # SecurityFinding[] (evidence redacted, no secret value)
+  limitations: []
+  productionReady: false
+
+statusEnum:
+  - passed
+  - completed_with_findings
+  - tool_unavailable
+  - config_error
+  - failed
+
+invariants:
+  - tool_unavailable_is_not_passed
+  - completed_with_findings_is_not_clean
+  - production_ready_always_false
+  - no_secret_value_in_report
+  - runtime_reports_not_committed

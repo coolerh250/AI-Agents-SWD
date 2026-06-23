@@ -1,0 +1,35 @@
+# Step 54.2 -- scanner execution boundary (Stage 56B).
+# The hard limits every local scan runner operates within. Local-only, no network
+# by default, no token, no source upload, allowlisted targets, redacted output,
+# non-production report only. No production gate mutation.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+
+scannerExecution:
+  localOnly: true
+  externalUploadAllowed: false
+  networkAllowed: false
+  tokenAllowed: false
+  credentialAllowed: false
+  githubWriteAllowed: false
+  prCreationAllowed: false
+  imagePushAllowed: false
+  userProvidedPathAllowed: false
+  allowlistedTargetsOnly: true
+  allowedTargets:
+    - apps
+    - agents
+    - shared
+    - scripts
+    - infra
+    - tests
+    - docs
+  boundedRuntimeSeconds: 300
+  reportContainsSecretValues: false
+  reportRedacted: true
+  nonProductionReportOnly: true
+  productionGateMutationAllowed: false
+  runtimeReportDir: ".runtime/security"
+  runtimeReportsCommitted: false

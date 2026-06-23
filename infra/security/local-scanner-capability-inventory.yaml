@@ -1,0 +1,171 @@
+# Step 54.2 -- local scanner capability inventory (Stage 56B).
+# Static catalog of scanner TOOLS the platform's local baseline may use. Custom
+# repo scanners are bundled (installed=true). External tools are NOT bundled
+# (installed=false); the runners detect them at runtime via PATH and emit
+# tool_unavailable when absent -- never a fake PASS. No tool is installed, no
+# external network call, no token. Modeled, NOT production-enforced.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+  note: "local-only baseline; external tools runtime-detected"
+
+scanners:
+  # ---- secret scan ----
+  - key: custom_repo_secret_scan
+    category: secret
+    intendedUse: detect committed inline secret/token shapes in allowlisted targets
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: true
+    availableCommand: "python scripts/run_local_secret_scan.py"
+    versionCommand: ""
+    configured: true
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [apps, agents, shared, scripts, infra, docs, tests]
+    unavailableBehavior: not_applicable_bundled
+    blockers: [custom_baseline_not_a_full_secret_scanner]
+  - key: gitleaks
+    category: secret
+    intendedUse: git/file secret scanning (optional, runtime-detected)
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "gitleaks detect --no-git"
+    versionCommand: "gitleaks version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [repository]
+    unavailableBehavior: tool_unavailable
+    blockers: [not_bundled_runtime_detected]
+  - key: detect-secrets
+    category: secret
+    intendedUse: entropy + pattern secret scanning (optional, runtime-detected)
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "detect-secrets scan"
+    versionCommand: "detect-secrets --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [repository]
+    unavailableBehavior: tool_unavailable
+    blockers: [not_bundled_runtime_detected]
+
+  # ---- SAST ----
+  - key: custom_static_checks
+    category: sast
+    intendedUse: bounded local static checks for unsafe patterns (limited baseline)
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: true
+    availableCommand: "python scripts/run_local_sast_scan.py"
+    versionCommand: ""
+    configured: true
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [apps, agents, shared, scripts]
+    unavailableBehavior: not_applicable_bundled
+    blockers: [not_a_full_sast_engine]
+  - key: bandit
+    category: sast
+    intendedUse: Python SAST (optional, runtime-detected)
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "bandit -r -f json"
+    versionCommand: "bandit --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [apps, agents, shared, scripts]
+    unavailableBehavior: tool_unavailable
+    blockers: [not_bundled_runtime_detected]
+  - key: semgrep
+    category: sast
+    intendedUse: multi-language SAST, local rules only (optional, runtime-detected)
+    localOnly: true
+    externalNetworkRequired: true
+    tokenRequired: false
+    installed: false
+    availableCommand: "semgrep --config <local-rules> --offline"
+    versionCommand: "semgrep --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [apps, agents, shared, scripts]
+    unavailableBehavior: tool_unavailable
+    blockers: [not_bundled_runtime_detected, registry_rules_need_network]
+
+  # ---- dependency scan ----
+  - key: custom_dependency_inventory_check
+    category: dependency
+    intendedUse: manifest/lockfile policy checks (limited baseline, no CVE lookup)
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: true
+    availableCommand: "python scripts/run_local_dependency_scan.py"
+    versionCommand: ""
+    configured: true
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [requirements.txt, pyproject.toml, package.json, package-lock.json]
+    unavailableBehavior: not_applicable_bundled
+    blockers: [no_cve_lookup_manifest_policy_only]
+  - key: pip-audit
+    category: dependency
+    intendedUse: Python dependency CVE audit (optional, network/DB required)
+    localOnly: false
+    externalNetworkRequired: true
+    tokenRequired: false
+    installed: false
+    availableCommand: "pip-audit -r requirements.txt"
+    versionCommand: "pip-audit --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [requirements.txt, pyproject.toml]
+    unavailableBehavior: network_required
+    blockers: [not_bundled_runtime_detected, cve_db_needs_network]
+  - key: npm-audit
+    category: dependency
+    intendedUse: Node dependency audit (optional, network required)
+    localOnly: false
+    externalNetworkRequired: true
+    tokenRequired: false
+    installed: false
+    availableCommand: "npm audit --json"
+    versionCommand: "npm --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [package.json, package-lock.json]
+    unavailableBehavior: network_required
+    blockers: [cve_db_needs_network]
+  - key: osv-scanner
+    category: dependency
+    intendedUse: OSV dependency scanner (optional, network/DB required)
+    localOnly: false
+    externalNetworkRequired: true
+    tokenRequired: false
+    installed: false
+    availableCommand: "osv-scanner --lockfile"
+    versionCommand: "osv-scanner --version"
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    supportedScopes: [requirements.txt, package-lock.json]
+    unavailableBehavior: network_required
+    blockers: [not_bundled_runtime_detected, osv_db_needs_network]
+
+productionReady: false
+externalScannerUploadEnabled: false

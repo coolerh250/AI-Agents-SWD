@@ -1,0 +1,60 @@
+# Step 54.2 -- scan exclusion policy (Stage 56B).
+# Every exclusion is explicit + carries a reason. Exclusions may NOT hide
+# production code, secret-like files, Dockerfiles, requirements/package files, or
+# Helm/GitOps manifests. Reviewed before any production gate.
+version: "1"
+meta:
+  stage: 56B
+  step: "54.2"
+
+exclusionPolicy:
+  explicitOnly: true
+  reasonRequired: true
+  reviewedBeforeProductionGate: true
+  mustNotHide:
+    - production_code
+    - secret_like_files
+    - dockerfiles
+    - requirements_or_package_files
+    - helm_or_gitops_manifests
+    - generated_delivery_package_unless_separately_scanned
+
+  exclusions:
+    - path: .git
+      reason: version control metadata; not application content
+    - path: .venv
+      reason: third-party virtualenv; scanned via dependency manifests, not source
+    - path: node_modules
+      reason: installed node deps; scanned via package-lock, not source
+    - path: dist
+      reason: build output; regenerated from source
+    - path: build
+      reason: build output; regenerated from source
+    - path: .runtime
+      reason: runtime artifacts incl. redacted scan reports; may carry sensitive runtime data
+    - path: tests/fixtures
+      reason: SAST-only exclusion; intentional unsafe-pattern fixtures cause false positives
+      appliesTo: [sast]
+    - path: generated
+      reason: SAST-only exclusion; generated artifacts scanned separately when present
+      appliesTo: [sast]
+
+  # Secret-shaped matches in these files are INTENTIONAL test fixtures / detector
+  # patterns -- NOT real secrets. They are still scanned and REPORTED (not hidden);
+  # the local secret scanner classifies matches here as `informational`, while a
+  # match in any other file is a confirmed `critical`. Reviewed; no real secret.
+  secretFixtureClassification:
+    classifyAs: informational
+    reason: intentional secret-shaped test fixture or detector pattern; not a real secret
+    globs:
+      - "tests/**"
+      - "docs/**"
+      - "**/secret_redaction.py"
+      - "**/secret_ref.py"
+      - "shared/sdk/security_findings/redaction.py"
+      - "shared/sdk/security_findings/models.py"
+      - "shared/sdk/agent_discussion/safety.py"
+      - "shared/sdk/identity/**"
+      - "scripts/run_local_secret_scan.py"
+      - "scripts/verify_secret*.py"
+      - "scripts/verify_security*.py"
