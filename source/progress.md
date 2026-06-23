@@ -10620,8 +10620,23 @@ issues & blockers, and next-step suggestions.
 - **Quality.** ruff clean; black formatted; mypy clean (5 source files). Frontend
   (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
   (tsbuildinfo restored).
-- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
-  <pending remote combined baseline run>
+- **Verification (remote 10.0.1.31, HEAD d11dbe3, via .venv/bin/python; orchestrator rebuilt).**
+  Orchestrator image rebuilt + restarted (healthy) to pick up the new
+  /operations/security/* API + infra/security/ catalogs. All markers PASS:
+  SECURITY_ASSET_INVENTORY_VERIFY (5/5), SUPPLY_CHAIN_INVENTORY_VERIFY (7/7),
+  SECURITY_SCAN_POLICY_BASELINE_VERIFY (3/3), SECURITY_EVIDENCE_MODEL_VERIFY
+  (6/6), SECURITY_GATE_POLICY_VERIFY (5/5), SECURITY_OPERATIONS_VISIBILITY_VERIFY
+  (4/4), ADMIN_CONSOLE_SECURITY_POSTURE_VERIFY (3/3), SECURITY_SAFETY_FIELDS_VERIFY
+  (4/4), and combined SECURITY_SUPPLY_CHAIN_POLICY_BASELINE_VERIFY: PASS -- which
+  chains the maintained KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY (Step 51),
+  IDENTITY_FOUNDATION_BASELINE_VERIFY (Step 52), and
+  SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY (Step 53), all PASS. Targeted
+  pytest: 81 passed, 0 skipped. Safety posture: security not ready; no github
+  write / image push / external scanner upload; modeled_not_enforced;
+  production_executed_true_count=0 (`False False False False modeled_not_enforced
+  0`). No scanner run, no SBOM, no image push, no external upload, no GitHub
+  write, no production action. No full regression this stage (foundation modeling
+  only; no core runtime code path changed besides the read-only API).
 - **Safety.** security_foundation_status=modeled_not_enforced;
   security_production_ready=false; sast/dependency/secret/sbom scanners
   configured=false; github write/PR/image push/registry login/external scanner
