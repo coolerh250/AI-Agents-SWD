@@ -1,6 +1,6 @@
 import { AsyncView } from "../components/AsyncView";
 import { KeyValueTable } from "../components/KeyValueTable";
-import { getSecurityReport } from "../api/operations";
+import { getSecurityReport, getSecurityScanStatus } from "../api/operations";
 
 // Step 54.1 -- read-only application security & supply chain posture. GET-only;
 // this page renders NO run-scan / upload-source / connect-scanner / configure-
@@ -65,6 +65,52 @@ export function SecurityPosture() {
                 <li key={s}>{s}</li>
               ))}
             </ul>
+            <ScanPosture />
+          </>
+        );
+      }}
+    </AsyncView>
+  );
+}
+
+// Step 54.2 -- read-only local scan toolchain posture. NO run-scan / upload /
+// connect / configure control; status only, degrades to not_run when no local
+// scan has been run in this environment.
+function ScanPosture() {
+  return (
+    <AsyncView load={getSecurityScanStatus}>
+      {(d) => {
+        const data = d as Record<string, unknown>;
+        const bc = (data.baselineConfiguration as Record<string, unknown>) || {};
+        const sev = (k: string) =>
+          ((data[k] as Record<string, unknown>) || {}).status ?? "not_run";
+        return (
+          <>
+            <h2 style={{ marginTop: 20 }}>Local Scan Toolchain Baseline (Step 54.2)</h2>
+            <p className="note">
+              Local-only scan baseline — no external scanner, no source upload, no token, no
+              network, no run-scan control. Runtime scan reports are never committed; live
+              status is not_run when no local scan has run in this environment. Scans are NOT
+              production-enforced.
+            </p>
+            <KeyValueTable
+              data={{
+                local_scan_baseline_enabled: bc.localScanBaselineEnabled,
+                secret_scan_configured: bc.secretScanConfigured,
+                sast_configured: bc.sastConfigured,
+                dependency_scan_configured: bc.dependencyScanConfigured,
+                external_upload_enabled: bc.externalUploadEnabled,
+                network_enabled: bc.networkEnabled,
+                token_required: bc.tokenRequired,
+                result_normalization_enabled: bc.resultNormalizationEnabled,
+                reports_committed: bc.reportsCommitted,
+                production_gate_enabled: bc.productionGateEnabled,
+                production_ready: data.productionReady,
+                secret_scan_last_status: sev("secret"),
+                sast_last_status: sev("sast"),
+                dependency_scan_last_status: sev("dependency"),
+              }}
+            />
           </>
         );
       }}

@@ -297,6 +297,29 @@
     const f = d.foundation || {};
     const limits = f.limitations || [];
     const next = f.nextRequiredSteps || [];
+    let scans = null;
+    try { scans = await apiGet("/operations/security/scans/status"); } catch (_e) { scans = null; }
+    const bc = (scans && scans.baselineConfiguration) || {};
+    const sev = (k) => ((scans && scans[k]) || {}).status || "not_run";
+    const scanBlock = scans ? `
+      <h2 style="margin-top:20px">Local Scan Toolchain Baseline (Step 54.2)</h2>
+      <p class="note">Local-only scan baseline — no external scanner, no source upload, no token, no network, no run-scan control. Runtime scan reports are never committed; live status is not_run when no local scan has run in this environment. Scans are NOT production-enforced.</p>
+      <div class="grid">
+        ${card("Local scan baseline", badge(bc.localScanBaselineEnabled))}
+        ${card("Secret scan configured", badge(bc.secretScanConfigured))}
+        ${card("SAST configured", badge(bc.sastConfigured))}
+        ${card("Dependency scan configured", badge(bc.dependencyScanConfigured))}
+        ${card("External upload", badge(bc.externalUploadEnabled))}
+        ${card("Network", badge(bc.networkEnabled))}
+        ${card("Token required", badge(bc.tokenRequired))}
+        ${card("Result normalization", badge(bc.resultNormalizationEnabled))}
+        ${card("Reports committed", badge(bc.reportsCommitted))}
+        ${card("Production gate", badge(bc.productionGateEnabled))}
+        ${card("Production ready", badge(scans.productionReady))}
+        ${card("Secret scan last", badge(sev("secret")))}
+        ${card("SAST last", badge(sev("sast")))}
+        ${card("Dependency scan last", badge(sev("dependency")))}
+      </div>` : "";
     el.innerHTML = `<h2>Application Security & Supply Chain Baseline</h2>
       <p class="note">Read-only security posture — application security and supply chain baseline is modeled, NOT enforced for production. No scanner run, no SBOM generated, no image pushed, no GitHub write, no production gate. This view provides NO run-scan / upload-source / connect-scanner / configure-scanner / create-PR / push-image / production-gate control.</p>
       <div class="grid">
@@ -325,7 +348,8 @@
       <p class="note">Security scans are NOT production-ready. SBOM is NOT generated. Image supply chain is NOT production-ready. The release gate is NOT production-ready. Step 54.2 (scan toolchain), Step 54.3 (SBOM / image digest / container security), and Step 54.4 (threat model / release risk / integrated verification) are still required.</p>
       <h2 style="margin-top:20px">Limitations / next required steps</h2>
       <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
-          ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
+          ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
+      ${scanBlock}`;
   }
 
   async function refreshSafetyPill() {

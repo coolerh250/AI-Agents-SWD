@@ -21,6 +21,7 @@ from shared.sdk.security_foundation import (
     readiness_view,
     section,
 )
+from shared.sdk.security_findings import scan_posture
 
 router = APIRouter(prefix="/operations/security", tags=["security-foundation"])
 
@@ -114,6 +115,58 @@ def security_readiness() -> dict:
 @router.get("/report")
 def security_report() -> dict:
     return full_report(_summary())
+
+
+# ---------------------------------------------------------------------------
+# Step 54.2 -- read-only local scan toolchain posture. GET-only. NO run-scan /
+# upload / connect / configure endpoint. Runtime scan reports are NEVER committed
+# and are absent in the image, so live views degrade to not_run -- never clean.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/scans/status")
+def security_scans_status() -> dict:
+    return scan_posture.status_view()
+
+
+@router.get("/scans/capabilities")
+def security_scans_capabilities() -> dict:
+    return scan_posture.section("local-scanner-capability-inventory.yaml")
+
+
+@router.get("/scans/targets")
+def security_scans_targets() -> dict:
+    return scan_posture.section("scan-target-catalog.yaml")
+
+
+@router.get("/scans/exclusions")
+def security_scans_exclusions() -> dict:
+    return scan_posture.section("scan-exclusion-policy.yaml")
+
+
+@router.get("/scans/secret")
+def security_scans_secret() -> dict:
+    return scan_posture.scan_section("secret")
+
+
+@router.get("/scans/sast")
+def security_scans_sast() -> dict:
+    return scan_posture.scan_section("sast")
+
+
+@router.get("/scans/dependencies")
+def security_scans_dependencies() -> dict:
+    return scan_posture.scan_section("dependency")
+
+
+@router.get("/scans/summary")
+def security_scans_summary() -> dict:
+    return scan_posture.summary_view()
+
+
+@router.get("/scans/readiness")
+def security_scans_readiness() -> dict:
+    return scan_posture.readiness_view()
 
 
 __all__ = ["router"]

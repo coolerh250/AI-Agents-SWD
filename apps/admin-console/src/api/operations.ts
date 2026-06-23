@@ -36,3 +36,7 @@ export const getSecretReport = () =>
 // Step 54.1 -- read-only application security & supply chain (GET only).
 export const getSecurityReport = () =>
   apiGet<Record<string, unknown>>(`/operations/security/report`);
+
+// Step 54.2 -- read-only local scan toolchain status (GET only; no run-scan).
+export const getSecurityScanStatus = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/scans/status`);

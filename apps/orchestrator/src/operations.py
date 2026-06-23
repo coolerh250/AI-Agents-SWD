@@ -1716,6 +1716,9 @@ async def operations_safety() -> dict:
     # Stage 56A (Step 54.1) -- read-only application security & supply chain fields.
     security_foundation_safety = _security_foundation_safety_summary()
 
+    # Stage 56B (Step 54.2) -- read-only local scan toolchain fields.
+    security_scan_safety = _security_scan_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2118,6 +2121,10 @@ async def operations_safety() -> dict:
         # baseline. Booleans/enums only; modeled_not_enforced; no scanner run, no
         # SBOM, no image push, no GitHub write, no production gate.
         **security_foundation_safety,
+        # Stage 56B (Step 54.2) -- read-only local scan toolchain baseline.
+        # Booleans/enums only; local-only; no external upload, no network, no
+        # token, no run endpoint; reports never committed; production gate off.
+        **security_scan_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -4006,6 +4013,18 @@ def _security_foundation_safety_summary() -> dict[str, Any]:
         Path("infra/security/security-foundation-summary.yaml")
     )
     return security_safety_fields(summary)
+
+
+def _security_scan_safety_summary() -> dict[str, Any]:
+    """Step 54.2 -- read-only local scan toolchain safety fields. Reads the
+    committed scan status model + (if present) the latest redacted runtime scan
+    summary; the runtime summary is never committed and is absent in the image, so
+    last-status degrades to ``not_run`` -- never a fake clean/PASS. Never runs a
+    scanner, uploads source, uses a token, or enables a production gate.
+    """
+    from shared.sdk.security_findings import scan_safety_fields
+
+    return scan_safety_fields(Path("."))
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:
