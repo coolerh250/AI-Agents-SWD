@@ -2446,6 +2446,40 @@ the combined `scripts/verify_session_role_mapping_baseline.sh`
 production-ready**; Admin Console identity visibility + integrated Step 52
 verification (52.4) follow.
 
+## Application Security & Supply Chain Baseline (Stage 56A / Step 54.1)
+
+Establishes a **modeled, NOT-enforced-for-production** application security &
+supply chain baseline — no scanner run, no SBOM generated, no image push, no
+registry/scanner connection, no GitHub write, no production release gate. Under
+[infra/security/](infra/security/): application security asset inventory (26
+assets), supply chain inventory, dependency surface inventory, a scan policy
+catalog, SAST / dependency / secret / SBOM / container-image policy models, threat
+model & release risk input catalogs, an evidence model, a finding severity
+taxonomy, a fail-closed gate policy, and a committed anti-drift posture summary
+([security-foundation-summary.yaml](infra/security/security-foundation-summary.yaml)).
+New read-only SDK [shared/sdk/security_foundation/](shared/sdk/security_foundation/)
+aggregates them (reusing the Step 53 redaction; never runs a scanner or touches
+the network). Seventeen GET-only `/operations/security/*` endpoints + 20
+`/operations/safety` fields (`security_foundation_status=modeled_not_enforced`,
+`security_production_ready=false`, all scanner-configured / github-write /
+pr-creation / image-push / registry-login / external-scanner-upload flags
+`false`) surface it, plus an Admin Console read-only **Security / Supply Chain**
+view with no run-scan / upload-source / connect-scanner / configure-scanner /
+create-PR / push-image / production-gate control. Recorded blockers (modeled, not
+fixed): images not digest-pinned, Dockerfiles run as root, Python deps unpinned
+(no lockfile), no cluster runtime smoke. Verify with `python
+scripts/verify_security_asset_inventory.py`, `verify_supply_chain_inventory.py`,
+`verify_security_scan_policy_baseline.py`, `verify_security_evidence_model.py`,
+`verify_security_gate_policy.py`, `verify_security_operations_visibility.py`,
+`verify_admin_console_security_posture.py`, `verify_security_safety_fields.py`,
+and the combined `scripts/verify_security_supply_chain_policy_baseline.sh`
+(`SECURITY_SUPPLY_CHAIN_POLICY_BASELINE_VERIFY`, which chains the Step 51 + Step
+52 + Step 53 baselines). Docs under [docs/security/](docs/security/) +
+[docs/operations/](docs/operations/). **No scans run, no SBOM, no image supply
+chain, no release gate declared production-ready.** Next: Step 54.2 (scan
+toolchain), Step 54.3 (SBOM / image digest / container security), Step 54.4
+(threat model / release risk / integrated verification).
+
 ## Production Secret Management Foundation (Stage 55A / Step 53)
 
 Establishes a **modeled, fail-closed, NOT-configured** secret management

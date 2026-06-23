@@ -10567,3 +10567,71 @@ issues & blockers, and next-step suggestions.
   & Supply Chain Baseline), 55 (Non-production Kubernetes Runtime Smoke), 56
   (Real ArgoCD Non-production Manual Sync) pending. NOT a production readiness
   declaration.
+
+## Stage 56A — Security & Supply Chain Inventory / Policy Baseline (Step 54.1)
+
+- **Scope.** Application security & supply chain INVENTORY + POLICY + EVIDENCE
+  model + fail-closed verification baseline. NO scanner run, NO SBOM generation,
+  NO image build/push/scan, NO registry/scanner connection, NO source upload, NO
+  GitHub write/PR, NO production release gate, NO full regression. Modeled, NOT
+  enforced for production.
+- **infra/security/ (15 files).** application-security-asset-inventory (26 assets;
+  language/runtime/package/Dockerfile/handles-secrets/auth/network/persistence +
+  requiredScans + blockers; 24 production-relevant), supply-chain-inventory
+  (source control write=false/PR=false; 21 python requirements no-lockfile; node
+  package-lock present; 20 Dockerfiles; compose+helm images; scanners all
+  configured=false; image push/registry login/external upload=false), dependency-
+  surface-inventory (python/node/base-image/system-package surface + scan mapping;
+  lockfile gaps; unknowns not assumed safe), security-scan-policy-catalog (8
+  policies modeled_not_enforced), sast/dependency-scan/secret-scan/sbom/container-
+  image policy models (configured=false, productionReady=false; ruff/black/mypy
+  excluded as not-SAST; image gaps recorded), threat-model-input-catalog,
+  release-risk-input-catalog (16 inputs modeled_not_enforced, not gated),
+  security-evidence-model (10 evidence types; no secret value; hash/path/
+  generatedAt/tool/scope/status), security-finding-taxonomy (critical/high/medium/
+  low/informational; secret-leak/prod-credential-leak/unauth-deploy=critical),
+  security-gate-fail-closed-policy (missing evidence=>not ready; secret leak/
+  critical=>fail; production gate disabled), security-foundation-summary
+  (committed, anti-drift tested).
+- **SDK shared/sdk/security_foundation/ (4 modules).** collector (posture; missing
+  source -> unknown; github-write/pr/image-push/registry-login/external-upload/
+  committed-secret/production-gate -> failed; reuses Step 53 find_committed_secret),
+  safety (20 flat fields; security_production_ready always false; does NOT emit
+  production_executed_true_count), report_builder (redacted views; reuses Step 53
+  redact), __init__. Never runs a scanner or touches the network.
+- **API + safety + Admin Console.** security_posture_api.py: 17 GET-only
+  /operations/security/* endpoints (registered in main.py); no run-scan/connect/
+  upload/configure/create-PR/push-image/gate-toggle route; no subprocess/httpx.
+  operations.py spreads 20 security/supply-chain fields into /operations/safety.
+  Dockerfile copies infra/security/. Admin Console read-only Security / Supply
+  Chain view (static renderSecurity + React SecurityPosture.tsx + nav + route +
+  getSecurityReport); no run-scan/upload/connect/configure/create-PR/push-image/
+  production-gate control.
+- **Verifiers + tests.** 8 verifiers (SECURITY_ASSET_INVENTORY_VERIFY,
+  SUPPLY_CHAIN_INVENTORY_VERIFY, SECURITY_SCAN_POLICY_BASELINE_VERIFY,
+  SECURITY_EVIDENCE_MODEL_VERIFY, SECURITY_GATE_POLICY_VERIFY,
+  SECURITY_OPERATIONS_VISIBILITY_VERIFY, ADMIN_CONSOLE_SECURITY_POSTURE_VERIFY,
+  SECURITY_SAFETY_FIELDS_VERIFY), combined
+  verify_security_supply_chain_policy_baseline.sh
+  (SECURITY_SUPPLY_CHAIN_POLICY_BASELINE_VERIFY -- chains Step 51 + Step 52 + Step
+  53 baselines). 20 new pytest files (81 cases, 0 skipped) incl. summary anti-drift
+  + prior-baseline preservation. 'scan' kept as a legitimate read-only route noun
+  (scan-policies/dependency-scan/secret-scan); only mutating verbs forbidden.
+- **Quality.** ruff clean; black formatted; mypy clean (5 source files). Frontend
+  (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
+  (tsbuildinfo restored).
+- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
+  <pending remote combined baseline run>
+- **Safety.** security_foundation_status=modeled_not_enforced;
+  security_production_ready=false; sast/dependency/secret/sbom scanners
+  configured=false; github write/PR/image push/registry login/external scanner
+  upload all false; image digest/vulnerability/threat-model/release-risk/evidence/
+  taxonomy/fail-closed-gate policies defined=true; production gate disabled; no
+  scanner network call; no source upload; no secret committed; Step 50/51/52/53
+  posture unchanged. production_executed_true_count=0.
+- **Roadmap.** Step 54.1 closed (if verified): application security & supply chain
+  policy baseline modeled, NOT enforced. Step 54.2 (Secret Scan / SAST /
+  Dependency Scan toolchain), 54.3 (SBOM / Image Digest / Container Security),
+  54.4 (Threat Model / Release Risk Summary / Integrated Verification) pending;
+  Step 54 overall open. NOT a production readiness declaration; Claude Code does
+  not decide Production readiness.

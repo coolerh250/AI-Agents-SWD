@@ -30,7 +30,7 @@ zero-build static fallback uses an in-page page switcher with a fixed subset of
 pages (Overview, Projects, Delivery Package, Safety, Regression, Cost/LLM,
 Incidents) calling the same aggregate endpoints.
 
-## Read-only baseline pages (Step 51.4 / Step 52.4)
+## Read-only baseline pages (Step 51.4 / Step 52.4 / Step 53 / Step 54.1)
 
 * **Runtime Baseline** (`/runtime`) — read-only Kubernetes/Helm/GitOps baseline
   (`/operations/runtime/report`); no deploy/sync/apply/install control.
@@ -38,5 +38,12 @@ Incidents) calling the same aggregate endpoints.
   (`/operations/identity/report`); production identity NOT enabled, no OIDC
   login/connect/configure button, no production auth toggle, no role-mapping
   editor, no break-glass button, no token/secret display.
+* **Secret Posture** (`/secrets`) — read-only Step 53 secret management foundation
+  (`/operations/secrets/report`); production secret management NOT configured, no
+  reveal/copy/upload/rotate/configure control, no secret value displayed.
+* **Security / Supply Chain** (`/security`) — read-only Step 54.1 application
+  security & supply chain baseline (`/operations/security/report`); modeled, NOT
+  enforced for production, no run-scan/upload-source/connect-scanner/configure-
+  scanner/create-PR/push-image/production-gate control.
 
-Both pages are GET-only and present in the React app and the static fallback.
+All pages are GET-only and present in the React app and the static fallback.

@@ -37,3 +37,9 @@ The committed `infra/secrets/secret-foundation-summary.yaml` is anti-drift teste
 No production secrets configured, no production secret store connected, no
 production readiness declared. See
 [../operations/secret-management-non-production-limitations.md](../operations/secret-management-non-production-limitations.md).
+
+The Step 54.1 secret scan policy
+([secret-scan-policy-model.md](secret-scan-policy-model.md)) ties into this
+foundation's no-inline-secret + redaction controls and adds a (future) CI secret
+scanner requirement. See
+[application-security-supply-chain-baseline.md](application-security-supply-chain-baseline.md).

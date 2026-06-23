@@ -76,3 +76,10 @@ not enabled). The Admin Console adds a read-only **Identity Posture** view
 endpoint or button; production identity not enabled. See
 [identity-operations-api.md](../security/identity-operations-api.md) and
 [identity-foundation-verification.md](identity-foundation-verification.md).
+
+13 GET-only `/operations/secrets/*` endpoints back the read-only **Secret
+Posture** view (`/secrets`); 17 GET-only `/operations/security/*` endpoints + 20
+`/operations/safety` security/supply-chain fields back the read-only **Security /
+Supply Chain** view (`/security`, Step 54.1). Neither view renders any mutation
+control (no reveal/upload/run-scan/connect/configure/create-PR/push-image/gate).
+See [security-supply-chain-verification.md](security-supply-chain-verification.md).

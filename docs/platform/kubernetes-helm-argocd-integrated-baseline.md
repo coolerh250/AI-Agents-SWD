@@ -43,3 +43,9 @@ integration, no real production backup/restore, no real pager. See
 **closed — Kubernetes / Helm / ArgoCD static runtime baseline validated, not
 deployed.** This is NOT a production-readiness declaration. Claude Code reports
 observations only and does not decide Kubernetes, GitOps, or Production readiness.
+
+The Step 54.1 container image security policy
+([../security/container-image-security-policy.md](../security/container-image-security-policy.md))
+carries forward this baseline's image observations — first-party images require a
+non-root cluster smoke, and the migration/backup/restore jobs (`pg_dump` / `psql`)
+require a runtime smoke — as modeled (not yet fixed) supply-chain blockers.
