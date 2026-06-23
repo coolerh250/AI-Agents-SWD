@@ -1,0 +1,45 @@
+# Step 54.1 -- security scan policy catalog (Stage 56A).
+# Declares WHICH scans are required and WHEN. All policies are modeled and NOT
+# enforced for production. No scan is run; no production gate is wired.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+  note: "modeled_not_enforced; no production gate"
+
+policies:
+  - key: sast_required_before_pr
+    appliesTo: source_code
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.2"
+  - key: dependency_scan_required_before_release
+    appliesTo: dependencies
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.2"
+  - key: secret_scan_required_before_pr
+    appliesTo: repository
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.2"
+  - key: sbom_required_before_deployment
+    appliesTo: release_artifact
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.3"
+  - key: image_digest_required_before_cluster_smoke
+    appliesTo: container_image
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.3"
+  - key: image_vulnerability_policy_required_before_runtime
+    appliesTo: container_image
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.3"
+  - key: threat_model_required_before_production_gate
+    appliesTo: release
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.4"
+  - key: release_risk_summary_required_before_deployment_request
+    appliesTo: release
+    status: modeled_not_enforced
+    futureEnforcementStep: "54.4"
+
+productionEnforced: false
+nonProductionVerificationBlocked: false

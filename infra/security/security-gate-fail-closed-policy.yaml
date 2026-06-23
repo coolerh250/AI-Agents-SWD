@@ -1,0 +1,30 @@
+# Step 54.1 -- security gate fail-closed policy (Stage 56A).
+# Defines fail-closed gate behaviour. Missing evidence => not ready. The gate is
+# NOT wired to any release/deployment path this stage; the production gate stays
+# disabled. No non-production verification is blocked.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+gate:
+  failClosed: true
+  productionGateEnabled: false
+  releaseGateMutationEnabled: false
+  blocksNonProductionVerification: false
+  missingEvidenceBehavior:
+    sast_result: not_ready
+    dependency_scan_result: not_ready
+    secret_scan_result: not_ready
+    sbom: not_ready
+    image_digest: not_ready
+    image_vulnerability_result: not_ready
+    threat_model: not_ready
+    release_risk_summary: not_ready
+  findingBehavior:
+    confirmedSecretLeak: fail
+    criticalFinding: fail
+    highFinding: fail_or_explicit_approval
+  notes:
+    - "This stage models policy only; nothing here gates an actual release."
+    - "Production gate remains disabled (Claude Code must not decide production readiness)."
+  futureEnforcementStep: "54.4"

@@ -1,0 +1,53 @@
+# Step 54.1 -- security finding severity taxonomy (Stage 56A).
+# Severity definitions + gate behaviour. Modeled, not enforced; no gate wired.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+severities:
+  - key: critical
+    sla: immediate
+    gateBehavior: fail
+    approvalRequirement: not_overridable
+    productionBlocker: true
+    exceptionRequirement: not_allowed
+    auditRequirement: required
+  - key: high
+    sla: "7d"
+    gateBehavior: fail_or_explicit_approval
+    approvalRequirement: explicit_approval_required
+    productionBlocker: true
+    exceptionRequirement: documented_approval
+    auditRequirement: required
+  - key: medium
+    sla: "30d"
+    gateBehavior: approval_required
+    approvalRequirement: approval_required
+    productionBlocker: false
+    exceptionRequirement: documented
+    auditRequirement: required
+  - key: low
+    sla: "90d"
+    gateBehavior: record
+    approvalRequirement: none
+    productionBlocker: false
+    exceptionRequirement: none
+    auditRequirement: recommended
+  - key: informational
+    sla: none
+    gateBehavior: record
+    approvalRequirement: none
+    productionBlocker: false
+    exceptionRequirement: none
+    auditRequirement: optional
+specialClassifications:
+  - condition: secret_leak
+    severity: critical
+    productionBlocker: true
+  - condition: production_credential_leak
+    severity: critical
+    productionBlocker: true
+  - condition: unauthenticated_deploy_path
+    severity: critical
+    productionBlocker: true
+productionEnforced: false

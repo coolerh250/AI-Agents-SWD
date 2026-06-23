@@ -1,0 +1,32 @@
+# Step 54.1 -- SAST policy model (Stage 56A).
+# Models the static application security testing requirement. No tool installed,
+# no scan run, no external connection. ruff/black/mypy are NOT SAST.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+sast:
+  required: true
+  configured: false
+  toolchain:
+    selected: false
+    allowedTools:
+      - semgrep
+      - bandit
+      - ruff-security-rules-future
+  scanScope:
+    - apps
+    - agents
+    - shared
+    - scripts
+  failPolicy:
+    critical: fail
+    high: fail_or_approval_required
+    medium: approval_required
+    low: record
+  notSast:
+    - ruff
+    - black
+    - mypy
+  productionReady: false
+  futureEnforcementStep: "54.2"

@@ -1,0 +1,66 @@
+# Step 54.1 -- threat model input catalog (Stage 56A).
+# Enumerates the inputs a future threat model (Step 54.4) must cover. No threat
+# model is produced this stage.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+threatModel:
+  required: true
+  configured: false
+  assets:
+    - admin_console
+    - operator_actions
+    - identity_oidc
+    - secret_management
+    - runtime_operations
+    - gitops
+    - workspace_operator
+    - future_github_pr_flow
+    - future_kubernetes_runtime
+    - backup_restore
+    - llm_integration
+    - notification_slack_email
+    - future_google_drive_integration
+  trustBoundaries:
+    - operator_to_admin_console
+    - admin_console_to_orchestrator_operations_api
+    - orchestrator_to_sibling_services
+    - platform_to_external_idp_future
+    - platform_to_secret_store_future
+    - platform_to_github_future
+    - platform_to_kubernetes_cluster_future
+    - platform_to_llm_provider
+    - platform_to_notification_channels
+  entrypoints:
+    - operations_read_only_api
+    - operator_actions_governed_api
+    - alert_receiver
+    - communication_gateway
+    - discord_gateway
+    - github_automation_webhook_future
+  dataFlows:
+    - task_intake_to_pipeline
+    - audit_log_chain
+    - secret_reference_resolution_future
+    - deployment_request_future
+    - backup_dump_offhost_copy
+  secrets:
+    referenceCatalog: infra/secrets/secret-inventory.yaml
+    note: "Step 53 secret references; all store=disabled."
+  identity:
+    referenceCatalog: infra/identity/identity-posture-summary.yaml
+    note: "Step 52 identity; production auth not enabled."
+  runtime:
+    referenceCatalog: infra/kubernetes/runtime-baseline-summary.yaml
+    note: "Step 51 runtime baseline; no cluster connected."
+  deployment:
+    note: "No production deploy; GitOps modeled, ArgoCD not installed."
+  externalIntegrations:
+    - github
+    - discord
+    - slack_email_notifications
+    - llm_provider
+    - google_drive_future
+  requiredBeforeProductionGate: true
+  futureGenerationStep: "54.4"

@@ -1,0 +1,32 @@
+# Step 54.1 -- security evidence model (Stage 56A).
+# Defines the evidence types a future release will collect. Evidence must never
+# contain a secret value, must be referenceable by the delivery package, and must
+# carry hash/path/generatedAt/tool/scope/status. No evidence is generated here.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+securityEvidence:
+  required: true
+  configured: false
+  noSecretValueAllowed: true
+  deliveryPackageReferenceable: true
+  requiredEvidenceFields:
+    - hash
+    - path
+    - generatedAt
+    - tool
+    - scope
+    - status
+  evidenceTypes:
+    - key: sast_report
+    - key: dependency_scan_report
+    - key: secret_scan_report
+    - key: sbom
+    - key: image_digest_report
+    - key: image_vulnerability_report
+    - key: threat_model
+    - key: release_risk_summary
+    - key: qa_report
+    - key: audit_evidence
+  futureGenerationStep: "54.4"

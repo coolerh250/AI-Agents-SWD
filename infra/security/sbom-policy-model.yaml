@@ -1,0 +1,30 @@
+# Step 54.1 -- SBOM policy model (Stage 56A).
+# Models the software bill of materials requirement. No SBOM is generated this
+# stage; placeholder schema + future artifact paths only.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+sbom:
+  required: true
+  configured: false
+  formats:
+    - cyclonedx
+    - spdx
+  scopes:
+    - python
+    - node
+    - container
+  generationRequiredBefore:
+    - release_package
+    - deployment_request
+  storage:
+    committedToRepo: false
+    artifactStoreRequired: true
+    futureArtifactPath: "source/security-evidence/sbom/<release>/"
+  placeholderSchema:
+    bomFormat: CycloneDX
+    specVersion: "1.5"
+    components: []
+  productionReady: false
+  futureEnforcementStep: "54.3"

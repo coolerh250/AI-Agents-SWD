@@ -1,0 +1,39 @@
+# Step 54.1 -- container image security policy model (Stage 56A).
+# Models container image security requirements + records the CURRENT gaps. No
+# Dockerfile is modified, no image is built/pushed/scanned this stage.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+containerImageSecurity:
+  required: true
+  configured: false
+  requirements:
+    digestPinningRequired: true
+    latestTagProhibitedBeforeRuntimeSmoke: true
+    nonRootUserRequired: true
+    readOnlyRootFilesystemAlignment: true
+    minimalBaseImageDesired: true
+    imageVulnerabilityScanRequired: true
+    sbomRequired: true
+    signatureAttestationFuture: true
+    registryCredentialViaStep53SecretRefs: true
+    imagePushInThisStage: false
+  currentGaps:
+    - key: dockerfiles_missing_nonroot_user
+      detail: "All 20 first-party Dockerfiles run as root (no USER directive)."
+      severity: high
+    - key: helm_images_not_digest_pinned
+      detail: "Helm values carry empty digest fields for all images."
+      severity: high
+    - key: first_party_images_placeholder_tag
+      detail: "First-party Helm images use tag step-51-1-placeholder."
+      severity: medium
+    - key: third_party_images_tag_only
+      detail: "postgres:16 / redis:7 / vault:1.17 pinned by tag, not digest."
+      severity: medium
+  step51Observations:
+    - first_party_images_require_nonroot_cluster_smoke
+    - job_image_pg_dump_psql_runtime_smoke_required
+  productionReady: false
+  futureEnforcementStep: "54.3"

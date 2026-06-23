@@ -1,0 +1,45 @@
+# Step 54.1 -- release risk input catalog (Stage 56A).
+# Defines the inputs a future release risk summary (Step 54.4) will aggregate.
+# All inputs are modeled_not_enforced; none is wired to a production gate.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+releaseRisk:
+  required: true
+  configured: false
+  productionGateIntegrated: false
+  inputs:
+    - key: sast_result
+      status: modeled_not_enforced
+    - key: dependency_scan_result
+      status: modeled_not_enforced
+    - key: secret_scan_result
+      status: modeled_not_enforced
+    - key: sbom_presence
+      status: modeled_not_enforced
+    - key: image_digest_status
+      status: modeled_not_enforced
+    - key: image_vulnerability_result
+      status: modeled_not_enforced
+    - key: threat_model_status
+      status: modeled_not_enforced
+    - key: qa_verification
+      status: modeled_not_enforced
+    - key: security_findings
+      status: modeled_not_enforced
+    - key: human_acceptance
+      status: modeled_not_enforced
+    - key: approval_status
+      status: modeled_not_enforced
+    - key: rollback_plan
+      status: modeled_not_enforced
+    - key: backup_status
+      status: modeled_not_enforced
+    - key: production_identity_status
+      status: modeled_not_enforced
+    - key: secret_readiness
+      status: modeled_not_enforced
+    - key: runtime_readiness
+      status: modeled_not_enforced
+  futureGenerationStep: "54.4"
