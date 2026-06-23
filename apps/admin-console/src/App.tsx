@@ -16,6 +16,7 @@ import { OperatorConsole } from "./pages/OperatorConsole";
 import { RuntimeBaseline } from "./pages/RuntimeBaseline";
 import { IdentityPosture } from "./pages/IdentityPosture";
 import { SecretPosture } from "./pages/SecretPosture";
+import { SecurityPosture } from "./pages/SecurityPosture";
 
 export function App() {
   return (
@@ -37,6 +38,7 @@ export function App() {
         <Route path="/runtime" element={<RuntimeBaseline />} />
         <Route path="/identity" element={<IdentityPosture />} />
         <Route path="/secrets" element={<SecretPosture />} />
+        <Route path="/security" element={<SecurityPosture />} />
       </Routes>
     </Layout>
   );

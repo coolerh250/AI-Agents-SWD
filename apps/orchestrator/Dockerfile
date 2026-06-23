@@ -29,6 +29,10 @@ COPY infra/identity/identity-posture-summary.yaml ./infra/identity/identity-post
 # consumed by the /operations/secrets/* read-only API + /operations/safety.
 # References/metadata only (store=disabled); NO secret value, token, or key.
 COPY infra/secrets/ ./infra/secrets/
+# Stage 56A (Step 54.1) -- committed read-only application security & supply chain
+# catalogs consumed by the /operations/security/* read-only API + /operations/safety.
+# Inventory/policy metadata only; modeled_not_enforced; NO secret, token, or key.
+COPY infra/security/ ./infra/security/
 
 EXPOSE 8000
 

@@ -32,3 +32,7 @@ export const getIdentityReport = () =>
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
+
+// Step 54.1 -- read-only application security & supply chain (GET only).
+export const getSecurityReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/report`);

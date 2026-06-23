@@ -1713,6 +1713,9 @@ async def operations_safety() -> dict:
     # Stage 55A (Step 53) -- read-only secret management foundation fields.
     secret_foundation_safety = _secret_foundation_safety_summary()
 
+    # Stage 56A (Step 54.1) -- read-only application security & supply chain fields.
+    security_foundation_safety = _security_foundation_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2111,6 +2114,10 @@ async def operations_safety() -> dict:
         # Stage 55A (Step 53) -- read-only secret management foundation. Booleans/
         # enums only; no production store, no value access, no committed secret.
         **secret_foundation_safety,
+        # Stage 56A (Step 54.1) -- read-only application security & supply chain
+        # baseline. Booleans/enums only; modeled_not_enforced; no scanner run, no
+        # SBOM, no image push, no GitHub write, no production gate.
+        **security_foundation_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -3981,6 +3988,24 @@ def _secret_foundation_safety_summary() -> dict[str, Any]:
     root = Path(".")
     summary = load_secret_foundation_summary(root / "infra/secrets/secret-foundation-summary.yaml")
     return secret_safety_fields(summary, root)
+
+
+def _security_foundation_safety_summary() -> dict[str, Any]:
+    """Step 54.1 -- read-only application security & supply chain safety fields.
+    File-based (reads the committed infra/security catalogs copied into the image);
+    never runs a scanner, connects to a registry, uploads source, writes to GitHub,
+    pushes an image, or enables a production gate. Absent summary -> safe `unknown`
+    posture, never a fake PASS.
+    """
+    from shared.sdk.security_foundation import (
+        load_security_foundation_summary,
+        security_safety_fields,
+    )
+
+    summary = load_security_foundation_summary(
+        Path("infra/security/security-foundation-summary.yaml")
+    )
+    return security_safety_fields(summary)
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:

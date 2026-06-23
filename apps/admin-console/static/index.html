@@ -108,6 +108,7 @@
     { id:"runtime", label:"Runtime Baseline", render: renderRuntime },
     { id:"identity", label:"Identity Posture", render: renderIdentity },
     { id:"secrets", label:"Secret Posture", render: renderSecrets },
+    { id:"security", label:"Security / Supply Chain", render: renderSecurity },
   ];
 
   async function renderOverview(el) {
@@ -284,6 +285,45 @@
       <h2 style="margin-top:20px">Production secret readiness caveat</h2>
       <p class="note">Production secret management is NOT ready. A production secret store (this Step), production OIDC client secret, production session key rotation backend, and production backup key store are all still required. No secret value is stored in the repo or displayed here.</p>
       <h2 style="margin-top:20px">Production blockers / next required steps</h2>
+      <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
+          ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
+  }
+
+  // Read-only application security & supply chain posture. GET-only; NO run-scan,
+  // upload-source, connect-scanner, configure-scanner, create-PR, push-image, or
+  // production-gate control is rendered here. No mutation action exists.
+  async function renderSecurity(el) {
+    const d = await apiGet("/operations/security/report");
+    const f = d.foundation || {};
+    const limits = f.limitations || [];
+    const next = f.nextRequiredSteps || [];
+    el.innerHTML = `<h2>Application Security & Supply Chain Baseline</h2>
+      <p class="note">Read-only security posture — application security and supply chain baseline is modeled, NOT enforced for production. No scanner run, no SBOM generated, no image pushed, no GitHub write, no production gate. This view provides NO run-scan / upload-source / connect-scanner / configure-scanner / create-PR / push-image / production-gate control.</p>
+      <div class="grid">
+        ${card("Foundation status", badge(d.status))}
+        ${card("Production ready", badge(d.productionReady))}
+        ${card("SAST configured", badge(f.sastConfigured))}
+        ${card("Dependency scan configured", badge(f.dependencyScanConfigured))}
+        ${card("Secret scan configured", badge(f.secretScanConfigured))}
+        ${card("SBOM configured", badge(f.sbomConfigured))}
+        ${card("Image digest policy", badge(f.imageDigestPolicyDefined))}
+        ${card("Image vulnerability policy", badge(f.imageVulnerabilityPolicyDefined))}
+        ${card("Threat model required", badge(f.threatModelRequired))}
+        ${card("Release risk required", badge(f.releaseRiskSummaryRequired))}
+        ${card("Evidence model", badge(f.evidenceModelDefined))}
+        ${card("Finding taxonomy", badge(f.findingTaxonomyDefined))}
+        ${card("Fail-closed gate policy", badge(f.gateFailClosedPolicyDefined))}
+        ${card("GitHub write", badge(f.githubWriteEnabled))}
+        ${card("PR creation", badge(f.prCreationEnabled))}
+        ${card("Image push", badge(f.imagePushEnabled))}
+        ${card("Registry login", badge(f.registryLoginEnabled))}
+        ${card("External scanner upload", badge(f.externalScannerUploadEnabled))}
+        ${card("Assets inventoried", esc(f.assetCount))}
+        ${card("Production-relevant assets", esc(f.productionRelevantAssetCount))}
+      </div>
+      <h2 style="margin-top:20px">Production readiness caveat</h2>
+      <p class="note">Security scans are NOT production-ready. SBOM is NOT generated. Image supply chain is NOT production-ready. The release gate is NOT production-ready. Step 54.2 (scan toolchain), Step 54.3 (SBOM / image digest / container security), and Step 54.4 (threat model / release risk / integrated verification) are still required.</p>
+      <h2 style="margin-top:20px">Limitations / next required steps</h2>
       <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
           ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>`;
   }
