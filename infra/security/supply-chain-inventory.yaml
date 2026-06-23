@@ -1,0 +1,143 @@
+# Step 54.1 -- supply chain inventory (Stage 56A).
+# Source control, dependency, container, artifact, and scanner posture of the
+# ACTUAL repo. Reference/metadata only; NO secret, token, or credential.
+# Modeled, not enforced. No scanner claimed configured without committed tooling.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+  note: "modeled, not enforced for production"
+
+supplyChain:
+  sourceControl:
+    provider: github
+    writeEnabled: false
+    prCreationEnabled: false
+    protectedBranchPolicyConfigured: false
+    notes:
+      - "GitHub write is disabled platform-wide (GITHUB_DRY_RUN default true)."
+      - "No automated PR creation path is enabled."
+
+  dependencies:
+    python:
+      packageFiles:
+        - requirements.txt
+        - apps/orchestrator/requirements.txt
+        - apps/policy-engine/requirements.txt
+        - apps/approval-engine/requirements.txt
+        - apps/audit-service/requirements.txt
+        - apps/audit-worker/requirements.txt
+        - apps/communication-gateway/requirements.txt
+        - apps/discord-gateway/requirements.txt
+        - apps/github-automation/requirements.txt
+        - apps/notification-worker/requirements.txt
+        - apps/retry-scheduler/requirements.txt
+        - agents/intake-agent/requirements.txt
+        - agents/requirement-agent/requirements.txt
+        - agents/development-agent/requirements.txt
+        - agents/qa-agent/requirements.txt
+        - agents/devops-agent/requirements.txt
+        - agents/project-planner-agent/requirements.txt
+        - agents/design-review-agent/requirements.txt
+        - agents/workspace-operator-agent/requirements.txt
+        - agents/mini-delivery-pilot-agent/requirements.txt
+        - agents/delivery-package-agent/requirements.txt
+      lockFiles: []
+      lockStatus: unpinned_no_lockfile
+      limitations:
+        - "requirements.txt files list package names without pinned versions or hashes."
+        - "No pip lockfile (requirements with hashes / pip-tools / poetry.lock) present."
+    node:
+      packageFiles:
+        - apps/admin-console/package.json
+      lockFiles:
+        - apps/admin-console/package-lock.json
+      lockStatus: locked
+      limitations: []
+
+  containers:
+    dockerfiles:
+      - apps/orchestrator/Dockerfile
+      - apps/policy-engine/Dockerfile
+      - apps/approval-engine/Dockerfile
+      - apps/audit-service/Dockerfile
+      - apps/audit-worker/Dockerfile
+      - apps/communication-gateway/Dockerfile
+      - apps/discord-gateway/Dockerfile
+      - apps/github-automation/Dockerfile
+      - apps/notification-worker/Dockerfile
+      - apps/retry-scheduler/Dockerfile
+      - agents/intake-agent/Dockerfile
+      - agents/requirement-agent/Dockerfile
+      - agents/development-agent/Dockerfile
+      - agents/qa-agent/Dockerfile
+      - agents/devops-agent/Dockerfile
+      - agents/project-planner-agent/Dockerfile
+      - agents/design-review-agent/Dockerfile
+      - agents/workspace-operator-agent/Dockerfile
+      - agents/mini-delivery-pilot-agent/Dockerfile
+      - agents/delivery-package-agent/Dockerfile
+    dockerfileCount: 20
+    composeImages:
+      - postgres:16
+      - redis:7
+      - hashicorp/vault:1.17
+      - prom/prometheus:v2.55.1
+      - prom/alertmanager:v0.27.0
+      - grafana/grafana:11.3.0
+      - grafana/tempo:2.6.1
+    helmImages:
+      firstParty:
+        - aiagents/orchestrator
+        - aiagents/policy-engine
+        - aiagents/approval-engine
+        - aiagents/audit-service
+        - aiagents/audit-worker
+        - aiagents/communication-gateway
+        - aiagents/discord-gateway
+        - aiagents/github-automation
+        - aiagents/notification-worker
+        - aiagents/retry-scheduler
+        - aiagents/intake-agent
+        - aiagents/requirement-agent
+        - aiagents/development-agent
+        - aiagents/qa-agent
+        - aiagents/devops-agent
+        - aiagents/project-planner-agent
+        - aiagents/design-review-agent
+        - aiagents/workspace-operator-agent
+        - aiagents/mini-delivery-pilot-agent
+        - aiagents/delivery-package-agent
+      thirdParty:
+        - postgres:16
+        - redis:7
+        - hashicorp/vault:1.17
+    imageDigestPinned: false
+    latestTagAllowed: false
+    blockers:
+      - dockerfiles_missing_nonroot_user
+      - helm_images_not_digest_pinned
+      - first_party_images_use_placeholder_tag
+      - no_cluster_runtime_smoke
+
+  artifacts:
+    sbomGenerated: false
+    attestationGenerated: false
+    signingConfigured: false
+
+  scanners:
+    sastConfigured: false
+    dependencyScanConfigured: false
+    secretScanConfigured: false
+    imageScanConfigured: false
+    notes:
+      - "No SAST / dependency / image scanner toolchain is committed or wired (Step 54.2/54.3)."
+      - "A custom repo secret-shape scanner exists (scripts/verify_secret_no_inline_values.py,"
+      - "tests/test_secret_leak_scanner.py) but is NOT a configured CI secret scanner."
+
+  imagePush:
+    enabled: false
+  registryLogin:
+    enabled: false
+  externalScannerUpload:
+    enabled: false

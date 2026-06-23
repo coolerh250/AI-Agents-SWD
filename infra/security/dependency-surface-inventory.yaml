@@ -1,0 +1,137 @@
+# Step 54.1 -- dependency surface inventory (Stage 56A).
+# Surface inventory + scan-requirement mapping only. NO CVE judgement, NO scan
+# execution. Reference/metadata only; NO secret value. Unknown sources are marked
+# unknown -- never assumed safe.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+  note: "surface inventory only; no CVE analysis"
+
+dependencySurface:
+  python:
+    runtimeDependencies:
+      - fastapi
+      - uvicorn
+      - pydantic
+      - redis
+      - httpx
+      - asyncpg
+      - langgraph
+      - prometheus_client
+      - opentelemetry-api
+      - opentelemetry-sdk
+      - opentelemetry-exporter-otlp
+      - opentelemetry-exporter-otlp-proto-grpc
+      - opentelemetry-instrumentation-fastapi
+      - opentelemetry-instrumentation-httpx
+      - opentelemetry-instrumentation-redis
+      - opentelemetry-instrumentation-asyncpg
+      - PyYAML
+      - jsonschema
+    devOrTestDependencies:
+      - pytest
+      - pytest-asyncio
+      - ruff
+      - black
+      - mypy
+    securityCritical:
+      - fastapi
+      - pydantic
+      - httpx
+      - asyncpg
+      - PyYAML
+    lockfileMissing: true
+    scanRequirement: dependency_scan
+    notes:
+      - "Versions are unpinned (no ==, no hashes); pip resolves latest at build time."
+
+  node:
+    runtimeDependencies:
+      - react
+      - react-dom
+      - react-router-dom
+    devOrTestDependencies:
+      - vite
+      - typescript
+      - vitest
+      - "@testing-library/react"
+      - eslint
+    securityCritical:
+      - react
+      - react-router-dom
+    lockfileMissing: false
+    scanRequirement: dependency_scan
+    notes:
+      - "package-lock.json present; exact dependency versions are inspectable there."
+      - "Full transitive list deferred to Step 54.2 dependency-scan toolchain."
+
+  dockerBaseImages:
+    - image: python:3.12-slim
+      usedBy: all_first_party_python_services_and_agents
+      digestPinned: false
+      scanRequirement: image_scan
+    - image: node
+      usedBy: admin-console-build-only
+      digestPinned: unknown
+      scanRequirement: image_scan
+
+  helmAndComposeImages:
+    thirdParty:
+      - image: postgres:16
+        digestPinned: false
+        scanRequirement: image_scan
+      - image: redis:7
+        digestPinned: false
+        scanRequirement: image_scan
+      - image: hashicorp/vault:1.17
+        digestPinned: false
+        scanRequirement: image_scan
+        note: "vault dev mode is local/test only -- never production"
+      - image: prom/prometheus:v2.55.1
+        digestPinned: false
+        scanRequirement: image_scan
+      - image: prom/alertmanager:v0.27.0
+        digestPinned: false
+        scanRequirement: image_scan
+      - image: grafana/grafana:11.3.0
+        digestPinned: false
+        scanRequirement: image_scan
+      - image: grafana/tempo:2.6.1
+        digestPinned: false
+        scanRequirement: image_scan
+
+  systemPackages:
+    - package: postgresql-client
+      providesTools: [psql, pg_dump, pg_restore]
+      usedBy: migration-backup-restore-jobs
+      source: debian-slim-apt
+      scanRequirement: image_scan
+      note: "Installed inside job images; pg_dump/psql runtime smoke required (Step 51 observation)."
+
+  jobDependencies:
+    - job: migration-job
+      tools: [psql]
+      scanRequirement: image_scan
+    - job: backup-cronjob
+      tools: [pg_dump, gzip, openssl]
+      scanRequirement: image_scan
+    - job: restore-job
+      tools: [psql, gunzip, openssl]
+      scanRequirement: image_scan
+
+  githubActions:
+    present: false
+    note: "No .github/workflows present; CI/CD scan integration deferred to Step 54.2+."
+
+  unknowns:
+    - "Python transitive dependency set (unresolved without a lockfile)."
+    - "Node transitive dependency set beyond package-lock direct entries (Step 54.2)."
+    - "node build base image digest (build-time only)."
+
+  lockfileGaps:
+    - "Python: no lockfile across 21 requirements.txt files."
+
+  limitations:
+    - "Surface only -- no vulnerability/CVE assessment performed this stage."
+    - "No external scanner contacted; no dependency tree resolved."

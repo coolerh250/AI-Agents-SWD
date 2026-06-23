@@ -1,0 +1,530 @@
+# Step 54.1 -- application security asset inventory (Stage 56A).
+# First-party components and their security-relevant surface. Reference/metadata
+# only; NO secret value, token, or credential. Inventory of the ACTUAL repo
+# state -- not an assumption of what should exist.
+version: "1"
+meta:
+  stage: 56A
+  step: "54.1"
+  note: "modeled, not enforced for production"
+
+assets:
+  - key: orchestrator
+    name: orchestrator
+    type: service
+    path: apps/orchestrator
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/orchestrator/requirements.txt]
+    dockerfiles: [apps/orchestrator/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: policy-engine
+    name: policy-engine
+    type: service
+    path: apps/policy-engine
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/policy-engine/requirements.txt]
+    dockerfiles: [apps/policy-engine/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: approval-engine
+    name: approval-engine
+    type: service
+    path: apps/approval-engine
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/approval-engine/requirements.txt]
+    dockerfiles: [apps/approval-engine/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: audit-service
+    name: audit-service
+    type: service
+    path: apps/audit-service
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/audit-service/requirements.txt]
+    dockerfiles: [apps/audit-service/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: audit-worker
+    name: audit-worker
+    type: worker
+    path: apps/audit-worker
+    owner: platform-team
+    language: python
+    framework: none
+    runtime: python:3.12-slim
+    packageFiles: [apps/audit-worker/requirements.txt]
+    dockerfiles: [apps/audit-worker/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: communication-gateway
+    name: communication-gateway
+    type: service
+    path: apps/communication-gateway
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/communication-gateway/requirements.txt]
+    dockerfiles: [apps/communication-gateway/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: discord-gateway
+    name: discord-gateway
+    type: service
+    path: apps/discord-gateway
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/discord-gateway/requirements.txt]
+    dockerfiles: [apps/discord-gateway/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: false
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, external_integration_discord]
+
+  - key: github-automation
+    name: github-automation
+    type: service
+    path: apps/github-automation
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [apps/github-automation/requirements.txt]
+    dockerfiles: [apps/github-automation/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, external_integration_github]
+
+  - key: notification-worker
+    name: notification-worker
+    type: worker
+    path: apps/notification-worker
+    owner: platform-team
+    language: python
+    framework: none
+    runtime: python:3.12-slim
+    packageFiles: [apps/notification-worker/requirements.txt]
+    dockerfiles: [apps/notification-worker/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: retry-scheduler
+    name: retry-scheduler
+    type: worker
+    path: apps/retry-scheduler
+    owner: platform-team
+    language: python
+    framework: none
+    runtime: python:3.12-slim
+    packageFiles: [apps/retry-scheduler/requirements.txt]
+    dockerfiles: [apps/retry-scheduler/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: intake-agent
+    name: intake-agent
+    type: agent
+    path: agents/intake-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/intake-agent/requirements.txt]
+    dockerfiles: [agents/intake-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: requirement-agent
+    name: requirement-agent
+    type: agent
+    path: agents/requirement-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/requirement-agent/requirements.txt]
+    dockerfiles: [agents/requirement-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: development-agent
+    name: development-agent
+    type: agent
+    path: agents/development-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/development-agent/requirements.txt]
+    dockerfiles: [agents/development-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input, generates_code]
+
+  - key: qa-agent
+    name: qa-agent
+    type: agent
+    path: agents/qa-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/qa-agent/requirements.txt]
+    dockerfiles: [agents/qa-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: devops-agent
+    name: devops-agent
+    type: agent
+    path: agents/devops-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/devops-agent/requirements.txt]
+    dockerfiles: [agents/devops-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_deploy_path]
+
+  - key: project-planner-agent
+    name: project-planner-agent
+    type: agent
+    path: agents/project-planner-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/project-planner-agent/requirements.txt]
+    dockerfiles: [agents/project-planner-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: design-review-agent
+    name: design-review-agent
+    type: agent
+    path: agents/design-review-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/design-review-agent/requirements.txt]
+    dockerfiles: [agents/design-review-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: workspace-operator-agent
+    name: workspace-operator-agent
+    type: agent
+    path: agents/workspace-operator-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/workspace-operator-agent/requirements.txt]
+    dockerfiles: [agents/workspace-operator-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, writes_generated_workspaces]
+
+  - key: mini-delivery-pilot-agent
+    name: mini-delivery-pilot-agent
+    type: agent
+    path: agents/mini-delivery-pilot-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/mini-delivery-pilot-agent/requirements.txt]
+    dockerfiles: [agents/mini-delivery-pilot-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned, handles_llm_input]
+
+  - key: delivery-package-agent
+    name: delivery-package-agent
+    type: agent
+    path: agents/delivery-package-agent
+    owner: platform-team
+    language: python
+    framework: fastapi
+    runtime: python:3.12-slim
+    packageFiles: [agents/delivery-package-agent/requirements.txt]
+    dockerfiles: [agents/delivery-package-agent/Dockerfile]
+    deploymentTargets: [docker-compose, helm]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom, image_scan]
+    blockers: [dockerfile_no_nonroot_user, python_dependencies_unpinned]
+
+  - key: backend-agent
+    name: backend-agent
+    type: agent
+    path: agents/backend-agent
+    owner: platform-team
+    language: unknown
+    framework: none
+    runtime: none
+    packageFiles: []
+    dockerfiles: []
+    deploymentTargets: []
+    handlesSecrets: false
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: false
+    handlesPersistence: false
+    productionRelevant: false
+    requiredScans: [secret_scan]
+    blockers: [scaffold_only_not_built]
+
+  - key: frontend-agent
+    name: frontend-agent
+    type: agent
+    path: agents/frontend-agent
+    owner: platform-team
+    language: unknown
+    framework: none
+    runtime: none
+    packageFiles: []
+    dockerfiles: []
+    deploymentTargets: []
+    handlesSecrets: false
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: false
+    handlesPersistence: false
+    productionRelevant: false
+    requiredScans: [secret_scan]
+    blockers: [scaffold_only_not_built]
+
+  - key: admin-console
+    name: admin-console
+    type: frontend
+    path: apps/admin-console
+    owner: platform-team
+    language: typescript
+    framework: react-vite
+    runtime: node
+    packageFiles: [apps/admin-console/package.json, apps/admin-console/package-lock.json]
+    dockerfiles: []
+    deploymentTargets: [orchestrator-static-bundle]
+    handlesSecrets: false
+    handlesUserInput: true
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: false
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom]
+    blockers: [served_as_static_bundle_via_orchestrator]
+
+  - key: shared-sdk
+    name: shared-sdk
+    type: library
+    path: shared/sdk
+    owner: platform-team
+    language: python
+    framework: none
+    runtime: python:3.12-slim
+    packageFiles: [requirements.txt]
+    dockerfiles: []
+    deploymentTargets: [embedded-in-all-python-images]
+    handlesSecrets: true
+    handlesUserInput: true
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [sast, dependency_scan, secret_scan, sbom]
+    blockers: [python_dependencies_unpinned]
+
+  - key: kubernetes-helm-gitops
+    name: kubernetes-helm-gitops-manifests
+    type: infrastructure
+    path: infra/kubernetes
+    owner: platform-team
+    language: yaml
+    framework: helm-argocd
+    runtime: kubernetes
+    packageFiles: []
+    dockerfiles: []
+    deploymentTargets: [helm, argocd]
+    handlesSecrets: true
+    handlesUserInput: false
+    handlesAuth: true
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [secret_scan, image_scan, sbom]
+    blockers: [image_digest_not_pinned, no_cluster_runtime_smoke]
+
+  - key: migration-backup-restore-jobs
+    name: migration-backup-restore-jobs
+    type: job
+    path: infra/kubernetes/charts/ai-agents-platform/templates
+    owner: platform-team
+    language: sql-and-shell
+    framework: none
+    runtime: postgres-client
+    packageFiles: [migrations/]
+    dockerfiles: []
+    deploymentTargets: [helm-job, helm-cronjob]
+    handlesSecrets: true
+    handlesUserInput: false
+    handlesAuth: false
+    handlesNetwork: true
+    handlesPersistence: true
+    productionRelevant: true
+    requiredScans: [secret_scan, image_scan, sbom]
+    blockers: [pg_dump_psql_runtime_smoke_required, image_digest_not_pinned]
