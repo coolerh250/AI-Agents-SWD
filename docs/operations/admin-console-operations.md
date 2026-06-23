@@ -83,3 +83,9 @@ Posture** view (`/secrets`); 17 GET-only `/operations/security/*` endpoints + 20
 Supply Chain** view (`/security`, Step 54.1). Neither view renders any mutation
 control (no reveal/upload/run-scan/connect/configure/create-PR/push-image/gate).
 See [security-supply-chain-verification.md](security-supply-chain-verification.md).
+
+The Security view also renders a read-only **Local Scan Toolchain Baseline** section (Step
+54.2) backed by `GET /operations/security/scans/status` (9 GET-only scan endpoints + 16
+`/operations/safety` scan fields); no run-scan / upload / connect / configure control. Live scan
+status degrades to `not_run` (runtime reports are never committed / not in the image). See
+[security-scan-toolchain-verification.md](security-scan-toolchain-verification.md).

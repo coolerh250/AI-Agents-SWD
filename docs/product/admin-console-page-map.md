@@ -44,6 +44,9 @@ Incidents) calling the same aggregate endpoints.
 * **Security / Supply Chain** (`/security`) — read-only Step 54.1 application
   security & supply chain baseline (`/operations/security/report`); modeled, NOT
   enforced for production, no run-scan/upload-source/connect-scanner/configure-
-  scanner/create-PR/push-image/production-gate control.
+  scanner/create-PR/push-image/production-gate control. Includes the Step 54.2
+  read-only **Local Scan Toolchain Baseline** section
+  (`/operations/security/scans/status`); local-only, no run-scan control, scan
+  status degrades to not_run when no local scan has run in this environment.
 
 All pages are GET-only and present in the React app and the static fallback.

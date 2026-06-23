@@ -2446,6 +2446,40 @@ the combined `scripts/verify_session_role_mapping_baseline.sh`
 production-ready**; Admin Console identity visibility + integrated Step 52
 verification (52.4) follow.
 
+## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
+
+Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
+toolchain — **modeled and locally executable, NOT production-enforced**. No external
+scanner, no source upload, no token, no network call, no GitHub write/PR, no image
+push, no production release gate. Under [infra/security/](infra/security/): a local
+scanner capability inventory (custom baselines bundled; gitleaks/bandit/semgrep/
+pip-audit/osv runtime-detected), a scanner execution boundary, scan target catalog,
+scan exclusion policy, scan result artifact schema, and scan status summary model. New
+SDK [shared/sdk/security_findings/](shared/sdk/security_findings/) provides a normalized
+`SecurityFinding` / `ScanResult` (evidence redacted, no secret value), a result
+normalizer, and read-only scan posture loaders. Local runners
+(`scripts/run_local_secret_scan.py`, `run_local_sast_scan.py`,
+`run_local_dependency_scan.py`, `normalize_security_scan_results.py`) write redacted
+reports to `.runtime/security/` (gitignored — **never committed**). Nine GET-only
+`/operations/security/scans/*` endpoints + 16 `/operations/safety` scan fields
+(`security_scan_production_ready=false`, external upload / network / token / run-endpoint
+/ reports-committed / production-gate all false; last-status degrades to `not_run` in the
+image) surface it, plus an Admin Console read-only scan posture section. A
+`tool_unavailable` scan is never a PASS; a missing scan is never clean; the dependency
+scan performs **no CVE lookup**. Verify with `python
+scripts/verify_local_scanner_capabilities.py`, `verify_scanner_execution_boundary.py`,
+`verify_scan_target_catalog.py`, `verify_local_secret_scan_baseline.py`,
+`verify_local_sast_baseline.py`, `verify_local_dependency_scan_baseline.py`,
+`verify_security_scan_result_normalization.py`,
+`verify_security_scan_operations_visibility.py`, `verify_admin_console_scan_posture.py`,
+`verify_security_scan_safety_fields.py`, and the combined
+`scripts/verify_security_scan_toolchain_baseline.sh`
+(`SECURITY_SCAN_TOOLCHAIN_BASELINE_VERIFY`, which chains Step 51 + 52 + 53 + 54.1). Docs
+under [docs/security/](docs/security/) + [docs/operations/](docs/operations/). **No
+external scan, no SBOM, no production scan gate declared.** Next: Step 54.3 (SBOM / image
+digest / container security), Step 54.4 (threat model / release risk / integrated
+verification).
+
 ## Application Security & Supply Chain Baseline (Stage 56A / Step 54.1)
 
 Establishes a **modeled, NOT-enforced-for-production** application security &

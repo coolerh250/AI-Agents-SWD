@@ -18,3 +18,7 @@ Declares **which** scans are required and **when**. Every policy is `modeled_not
 
 Verified by `scripts/verify_security_scan_policy_baseline.py`
 (`SECURITY_SCAN_POLICY_BASELINE_VERIFY`).
+
+Step 54.2 makes the SAST / dependency / secret scan policies **partially executable** via a
+local offline toolchain — see
+[security-scan-toolchain-baseline.md](security-scan-toolchain-baseline.md).

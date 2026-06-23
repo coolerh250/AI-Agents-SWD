@@ -52,7 +52,8 @@ Read-only surfaces:
 
 ## Deferred
 
-- **Step 54.2** — Secret Scan / SAST / Dependency Scan toolchain baseline.
+- **Step 54.2** — Secret Scan / SAST / Dependency Scan toolchain baseline. **Done** — see
+  [security-scan-toolchain-baseline.md](security-scan-toolchain-baseline.md).
 - **Step 54.3** — SBOM / Image Digest / Container Security baseline.
 - **Step 54.4** — Threat Model / Release Risk Summary / Integrated Verification.
 

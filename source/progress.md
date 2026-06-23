@@ -10650,3 +10650,74 @@ issues & blockers, and next-step suggestions.
   54.4 (Threat Model / Release Risk Summary / Integrated Verification) pending;
   Step 54 overall open. NOT a production readiness declaration; Claude Code does
   not decide Production readiness.
+
+## Stage 56B — Secret Scan / SAST / Dependency Scan Toolchain Baseline (Step 54.2)
+
+- **Scope.** Make the Step 54.1 scan policies partially executable with a LOCAL,
+  OFFLINE toolchain. NO external scanner, NO source upload, NO token, NO network
+  call, NO GitHub write/PR, NO image push/registry login, NO SBOM, NO production
+  release gate, NO full regression. Local-only, non-production.
+- **infra/security/ (6 new files).** local-scanner-capability-inventory (custom
+  baselines bundled installed=true; gitleaks/detect-secrets/bandit/semgrep/
+  pip-audit/npm-audit/osv-scanner runtime-detected installed=false; no source
+  upload; no productionReady), scanner-execution-boundary (local-only; no upload/
+  network/token/credential/github/pr/image/path/gate; allowlisted targets;
+  bounded 300s; redacted; reports not committed), scan-target-catalog (per-type
+  include/exclude; .git/.venv/node_modules excluded; production code/package files
+  not hidden), scan-exclusion-policy (explicit+reasoned; mustNotHide production/
+  secret/dockerfile/package/manifests; secretFixtureClassification=informational),
+  scan-result-artifact-schema (status enum + invariants: tool_unavailable!=passed,
+  with_findings!=clean, productionReady always false, runtime reports not
+  committed), security-scan-status-summary-model (status enum + baseline config +
+  production readiness rule; gate disabled).
+- **SDK shared/sdk/security_findings/ (5 modules).** models (SecurityFinding:
+  evidence redacted, file_path repo-relative only, deterministic finding_id;
+  ScanResult: production_ready forced False; FindingsSummary), redaction
+  (redact_evidence blanks credential shapes incl. standalone BEGIN/END PRIVATE KEY
+  marker; reuses Step 53 detector), normalizer (unified summary; missing scan ->
+  not_run NEVER clean; tool_unavailable preserved; standing non-production
+  reasons), scan_posture (read-only loaders + scan_safety_fields + views;
+  runtime summary absent -> not_run), __init__.
+- **Runners + normalize (scripts/).** run_local_secret_scan (high-confidence
+  credential -> critical; keyword heuristics -> low; reviewed fixtures ->
+  informational; exit 0/1/2; report .runtime/security/, gitignored),
+  run_local_sast_scan (custom_static_checks: eval/exec/shell/yaml.load/verify=False
+  high, subprocess/bind low, TODO-bypass/broad-except medium; fixture-proven;
+  bandit/semgrep runtime-detected), run_local_dependency_scan (manifest policy
+  only, NO CVE lookup; python lockfile gap + node lockfile status),
+  normalize_security_scan_results (unified redacted summary; --run).
+- **API + safety + Admin Console.** security_posture_api.py: 9 GET-only
+  /operations/security/scans/* endpoints (status/capabilities/targets/exclusions/
+  secret/sast/dependencies/summary/readiness); no run/connect/upload/configure
+  route. operations.py spreads 16 scan fields into /operations/safety. Admin
+  Console Security view gains a read-only Local Scan Toolchain Baseline section
+  (static + React); no run-scan/upload/connect/configure button. infra/security/
+  already copied into the image by the Step 54.1 Dockerfile COPY; .runtime not
+  copied so live scan status degrades to not_run.
+- **Verifiers + tests.** 10 verifiers (LOCAL_SCANNER_CAPABILITIES_VERIFY,
+  SCANNER_EXECUTION_BOUNDARY_VERIFY, SCAN_TARGET_CATALOG_VERIFY,
+  LOCAL_SECRET_SCAN_BASELINE_VERIFY, LOCAL_SAST_BASELINE_VERIFY,
+  LOCAL_DEPENDENCY_SCAN_BASELINE_VERIFY, SECURITY_SCAN_RESULT_NORMALIZATION_VERIFY,
+  SECURITY_SCAN_OPERATIONS_VISIBILITY_VERIFY, ADMIN_CONSOLE_SCAN_POSTURE_VERIFY,
+  SECURITY_SCAN_SAFETY_FIELDS_VERIFY), combined
+  verify_security_scan_toolchain_baseline.sh (SECURITY_SCAN_TOOLCHAIN_BASELINE_
+  VERIFY -- chains Step 51 + 52 + 53 + 54.1). 19 new pytest files (63 cases, 0
+  skipped) incl. redaction (no raw credential incl. private-key marker), missing
+  scan not clean, tool_unavailable not passed, prior-baseline preservation.
+- **Quality.** ruff clean; black formatted; mypy clean (10 source files). Frontend
+  (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
+  (tsbuildinfo restored).
+- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
+  <pending remote combined baseline run>
+- **Safety.** security_local_scan_baseline_enabled=true; secret scan configured;
+  sast=limited_custom_baseline; dependency=limited_manifest_baseline;
+  security_scan_external_upload_enabled/network/token/run-endpoint/reports-committed/
+  production-gate/production-ready all false; last-status not_run in image; no
+  scanner network call; no source upload; no secret committed; Step 50/51/52/53/
+  54.1 posture unchanged. production_executed_true_count=0.
+- **Roadmap.** Step 54.2 closed (if verified): local secret scan / SAST /
+  dependency scan baseline modeled and locally executable, NOT production-enforced.
+  Step 54.3 (SBOM / Image Digest / Container Security), 54.4 (Threat Model /
+  Release Risk Summary / Integrated Verification) pending; Step 54 overall open.
+  NOT a production readiness declaration; Claude Code does not decide Production
+  readiness.

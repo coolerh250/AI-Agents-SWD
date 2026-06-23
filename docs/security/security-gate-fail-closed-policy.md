@@ -14,4 +14,8 @@ this stage; the production gate stays disabled and no non-production verificatio
 
 **Claude Code must not decide Production readiness.** Enforcement deferred to **Step 54.4**.
 
+Step 54.2 applies the fail-closed rule to the **local scan baseline only** (a missing scan is
+never clean; tool_unavailable is never ready), without wiring any production gate — see
+[security-scan-status-summary-model.md](security-scan-status-summary-model.md).
+
 Verified by `scripts/verify_security_gate_policy.py` (`SECURITY_GATE_POLICY_VERIFY`).

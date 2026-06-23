@@ -14,3 +14,7 @@ Defines the evidence types a future release will collect. `required: true`,
 
 Generation deferred to **Step 54.4**. Verified by
 `scripts/verify_security_evidence_model.py` (`SECURITY_EVIDENCE_MODEL_VERIFY`).
+
+Step 54.2 produces the first concrete evidence inputs (local secret/SAST/dependency scan
+reports + normalized summary), redacted and written to `.runtime/security/` (never committed) —
+see [security-finding-normalization.md](security-finding-normalization.md).
