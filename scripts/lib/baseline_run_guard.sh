@@ -8,9 +8,10 @@
 #
 # This guard makes each baseline run fully exactly ONCE per top-level run. The first
 # invocation (reached via the deepest chain) executes in full; later invocations
-# reached via overlapping chains are skipped with a PASS exit. Strictness is
-# preserved -- every baseline still runs once, completely; only redundant identical
-# re-runs are removed.
+# reached via overlapping chains are skipped. A skip replays the first run's actual
+# exit code, so a baseline that FAILED on its first run still fails its re-chains --
+# dedup removes duplicate work, it never masks a failure. Strictness is preserved:
+# every baseline still runs once, completely, and its real pass/fail propagates.
 #
 # Scope: keyed off BASELINE_GUARD_RUNDIR, exported by the first baseline that runs
 # and inherited by all chained children. A baseline invoked standalone (no rundir
@@ -21,16 +22,31 @@ if [ -z "${BASELINE_GUARD_RUNDIR:-}" ]; then
   export BASELINE_GUARD_RUNDIR
 fi
 
+# EXIT trap (registered for the first run only) records the script's real exit code.
+_baseline_guard_record() {
+  local ec=$?
+  [ -n "${_BASELINE_GUARD_MARKER:-}" ] && printf '%s' "$ec" > "${_BASELINE_GUARD_MARKER}"
+}
+
 # baseline_run_once <key>
-#   return 0 -> caller is the first to run this baseline; proceed.
-#   return 1 -> already verified in this run; caller should skip (exit 0).
+#   first invocation this run -> register the EXIT trap, return 0, caller proceeds.
+#   later invocation         -> print a DEDUP line and EXIT with the first run's
+#                               recorded exit code (RUNNING => cycle guard, exit 0).
 baseline_run_once() {
   local key="$1"
-  local marker="$BASELINE_GUARD_RUNDIR/${key}.done"
+  local marker="${BASELINE_GUARD_RUNDIR}/${key}.status"
   if [ -e "$marker" ]; then
-    echo "########## DEDUP: ${key} already verified in this run -- skipping re-chain ##########"
-    return 1
+    local prev
+    prev="$(cat "$marker" 2>/dev/null || true)"
+    if [ "$prev" = "RUNNING" ]; then
+      echo "########## DEDUP: ${key} already in progress this run (cycle guard) -- skipping ##########"
+      exit 0
+    fi
+    echo "########## DEDUP: ${key} already verified this run (exit ${prev}) -- skipping re-chain ##########"
+    exit "${prev:-0}"
   fi
-  : > "$marker"
+  printf 'RUNNING' > "$marker"
+  _BASELINE_GUARD_MARKER="$marker"
+  trap '_baseline_guard_record' EXIT
   return 0
 }
