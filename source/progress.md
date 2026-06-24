@@ -10796,8 +10796,34 @@ issues & blockers, and next-step suggestions.
 - **Quality.** ruff clean; black formatted; mypy clean (5 source files). Frontend
   (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
   (tsbuildinfo restored).
-- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
-  <pending remote combined baseline run>
+- **Verification (remote 10.0.1.31, HEAD 7f00a9b, via .venv/bin/python; orchestrator
+  built at e1d4fa9 + healthy).** verify_sbom_container_security_baseline.sh ->
+  SBOM_CONTAINER_SECURITY_BASELINE_VERIFY: PASS (exit 0, 1274s). All 5 chained
+  prior-stage baselines PASS (KUBERNETES_HELM_ARGOCD, IDENTITY_FOUNDATION,
+  SECRET_MANAGEMENT_FOUNDATION, SECURITY_SUPPLY_CHAIN_POLICY,
+  SECURITY_SCAN_TOOLCHAIN); all 12 Step 54.3 verifiers PASS (SBOM_CAPABILITY_INVENTORY,
+  SBOM_GENERATION_BOUNDARY, LOCAL_SBOM_BASELINE, CONTAINER_IMAGE_INVENTORY,
+  IMAGE_DIGEST_POLICY, DOCKERFILE_SECURITY_INVENTORY, CONTAINER_RUNTIME_SECURITY_ALIGNMENT,
+  LOCAL_IMAGE_POLICY_BASELINE, IMAGE_SIGNING_ATTESTATION_MODEL,
+  CONTAINER_SECURITY_OPERATIONS_VISIBILITY, ADMIN_CONSOLE_CONTAINER_SECURITY,
+  CONTAINER_SECURITY_SAFETY_FIELDS); 64 targeted tests passed (0 skipped, 2.06s);
+  live /operations/safety posture = "False False False False True 0"
+  (no registry login / image push / signing; container not production ready; sbom
+  baseline enabled; production_executed_true_count=0). Post-run audit tamper residue
+  detector PASS (residue_count=0).
+- **Verification-infra fixes needed during validation (committed separately):** the
+  combined baseline shell chains overlapped, re-running the same heavy prior-stage
+  baselines (and the full platform regression) up to ~8x per run (~5h). Added a
+  per-run dedup guard scripts/lib/baseline_run_guard.sh wired into all 14
+  verify_*_baseline.sh (a6cb622) so each baseline runs once per top-level run
+  (~5h -> ~21min); fixed the guard to replay each first run's real exit code on skip
+  so a failed re-chain cannot be masked (edb2e1d, strictness preserved). Separately,
+  the Step 39 verify_audit_direct_post_integrity.sh full-chain verify-chain call used
+  curl -m 15, but the audit chain has grown to 436,320 records (~14.7s verify) and
+  intermittently timed out (empty status -> FAIL) although the chain is valid
+  (status=passed, 0 failed, 0 residue); raised that timeout to -m 90 (7f00a9b). Known
+  related latent risk (not changed): check_runtime_state.sh smoke #94 still uses -m 15
+  on a full permissive verify-chain (only reached via platform_observability).
 - **Safety.** security_sbom_baseline_enabled=true; sbom local-only; no external
   upload; runtime reports not committed; image inventory present; digest policy
   defined; digest pinning incomplete; no latest tag; dockerfile inventory present;
@@ -10806,7 +10832,7 @@ issues & blockers, and next-step suggestions.
   attestation disabled; no registry login; no image push; container production
   ready false; Step 50/51/52/53/54.1/54.2 posture unchanged.
   production_executed_true_count=0.
-- **Roadmap.** Step 54.3 closed (if verified): SBOM / image digest / container
+- **Roadmap.** Step 54.3 closed (verified on 10.0.1.31, HEAD 7f00a9b): SBOM / image digest / container
   security baseline modeled and locally verifiable, NOT production-enforced. Step
   54.4 (Threat Model / Release Risk Summary / Integrated Verification) pending;
   Step 55 (non-production cluster smoke) pending; Step 54 overall open. NOT a
