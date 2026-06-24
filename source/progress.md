@@ -10707,8 +10707,27 @@ issues & blockers, and next-step suggestions.
 - **Quality.** ruff clean; black formatted; mypy clean (10 source files). Frontend
   (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
   (tsbuildinfo restored).
-- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
-  <pending remote combined baseline run>
+- **Verification (remote 10.0.1.31, HEAD 45b4aae, via .venv/bin/python; orchestrator rebuilt).**
+  Orchestrator image rebuilt + restarted (healthy) to pick up the new
+  /operations/security/scans/* routes. `docker compose config` valid. All markers
+  PASS: LOCAL_SCANNER_CAPABILITIES_VERIFY (5/5), SCANNER_EXECUTION_BOUNDARY_VERIFY
+  (4/4), SCAN_TARGET_CATALOG_VERIFY (5/5), LOCAL_SECRET_SCAN_BASELINE_VERIFY (6/6),
+  LOCAL_SAST_BASELINE_VERIFY (6/6), LOCAL_DEPENDENCY_SCAN_BASELINE_VERIFY (7/7),
+  SECURITY_SCAN_RESULT_NORMALIZATION_VERIFY (6/6),
+  SECURITY_SCAN_OPERATIONS_VISIBILITY_VERIFY (4/4), ADMIN_CONSOLE_SCAN_POSTURE_VERIFY
+  (2/2), SECURITY_SCAN_SAFETY_FIELDS_VERIFY (6/6), and combined
+  SECURITY_SCAN_TOOLCHAIN_BASELINE_VERIFY: PASS -- which chains the maintained
+  KUBERNETES_HELM_ARGOCD_BASELINE_VERIFY (Step 51), IDENTITY_FOUNDATION_BASELINE_VERIFY
+  (Step 52), SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY (Step 53), and
+  SECURITY_SUPPLY_CHAIN_POLICY_BASELINE_VERIFY (Step 54.1), all PASS. Targeted pytest:
+  63 passed, 0 skipped. Safety posture: local scan baseline enabled; no external
+  upload / network / run-endpoint; not production ready; production_executed_true_count=0
+  (`False False False False True 0`). The runner verifiers executed the local
+  secret/SAST/dependency scanners on the server (custom baselines available; external
+  tools runtime-detected as unavailable). No external scanner call, no source upload,
+  no token, no GitHub write, no image push, no production action. No full regression
+  this stage (local scan baseline only; no core runtime code path changed besides the
+  read-only API).
 - **Safety.** security_local_scan_baseline_enabled=true; secret scan configured;
   sast=limited_custom_baseline; dependency=limited_manifest_baseline;
   security_scan_external_upload_enabled/network/token/run-endpoint/reports-committed/
