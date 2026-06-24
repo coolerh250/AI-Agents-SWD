@@ -1,0 +1,39 @@
+# Step 54.3 -- SBOM artifact schema (Stage 56C).
+# Shape of a local SBOM report. Runtime SBOMs are written to
+# .runtime/security/sbom/ and are NEVER committed (only this schema + redacted
+# sample fixtures). The custom manifest baseline is LIMITED, not a production SBOM.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+sbomArtifact:
+  schemaVersion: "1"
+  sbomType: ""        # manifest | container | aggregate
+  format: ""          # internal-manifest-baseline | cyclonedx | spdx
+  scope: ""           # python_manifest | node_manifest | container_image_inventory
+  generator: ""
+  localOnly: true
+  networkUsed: false
+  sourceUploaded: false
+  registryLoginUsed: false
+  generatedAt: ""
+  components: []
+  metadata:
+    packageFiles: []
+    imageRefs: []
+  limitations: []
+  productionReady: false
+
+supportedFormats:
+  - cyclonedx-like
+  - spdx-like
+  - internal-manifest-baseline
+
+invariants:
+  - production_ready_always_false
+  - no_secret_value
+  - no_token
+  - no_registry_credential
+  - runtime_sbom_not_committed
+  - custom_manifest_baseline_is_limited

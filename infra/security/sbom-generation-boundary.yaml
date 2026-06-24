@@ -1,0 +1,25 @@
+# Step 54.3 -- SBOM generation boundary (Stage 56C).
+# Hard limits for the local SBOM runner. Local-only, no network, no token, no
+# registry login, no image push, no production attestation. Runtime SBOM output
+# goes to .runtime/security/sbom/ (gitignored, never committed).
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+sbomGeneration:
+  localOnly: true
+  externalUploadAllowed: false
+  networkAllowed: false
+  tokenAllowed: false
+  registryLoginAllowed: false
+  imagePushAllowed: false
+  imagePullAllowed: false
+  productionAttestationAllowed: false
+  committedRuntimeReportsAllowed: false
+  allowedScopes:
+    - python_manifest
+    - node_manifest
+    - container_image_inventory
+  runtimeReportDir: ".runtime/security/sbom"
+  productionReady: false

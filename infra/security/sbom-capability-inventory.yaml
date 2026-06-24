@@ -1,0 +1,98 @@
+# Step 54.3 -- SBOM capability inventory (Stage 56C).
+# Static catalog of SBOM tools the local baseline may use. The custom
+# manifest-based SBOM is bundled (installed=true). External tools (syft,
+# cyclonedx-*) are NOT bundled (installed=false); the runner detects them at
+# runtime and falls back to the custom baseline -- never a fake production SBOM.
+# No tool installed, no external network, no token, no SBOM upload.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+  note: "local-only manifest SBOM baseline; external tools runtime-detected"
+
+sbomTools:
+  - key: custom_manifest_sbom
+    category: manifest
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: true
+    availableCommand: "python scripts/run_local_sbom_baseline.py"
+    supportedFormats: [internal-manifest-baseline]
+    supportedScopes: [python_manifest, node_manifest, container_image_inventory]
+    configured: true
+    productionReady: false
+    sourceUpload: false
+    limitations:
+      - custom_baseline_not_a_full_sbom_generator
+      - no_transitive_dependency_resolution
+  - key: custom_container_image_inventory_sbom
+    category: container
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: true
+    availableCommand: "python scripts/run_local_sbom_baseline.py"
+    supportedFormats: [internal-manifest-baseline]
+    supportedScopes: [container_image_inventory]
+    configured: true
+    productionReady: false
+    sourceUpload: false
+    limitations:
+      - image_refs_only_no_layer_introspection
+      - no_image_pull
+  - key: syft
+    category: sbom_generator
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "syft <dir-or-image> -o cyclonedx-json"
+    supportedFormats: [cyclonedx, spdx]
+    supportedScopes: [python_manifest, node_manifest, container_image]
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    limitations: [not_bundled_runtime_detected]
+  - key: cyclonedx-py
+    category: sbom_generator
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "cyclonedx-py requirements"
+    supportedFormats: [cyclonedx]
+    supportedScopes: [python_manifest]
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    limitations: [not_bundled_runtime_detected]
+  - key: cyclonedx-npm
+    category: sbom_generator
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "cyclonedx-npm"
+    supportedFormats: [cyclonedx]
+    supportedScopes: [node_manifest]
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    limitations: [not_bundled_runtime_detected]
+  - key: npm-sbom
+    category: sbom_generator
+    localOnly: true
+    externalNetworkRequired: false
+    tokenRequired: false
+    installed: false
+    availableCommand: "npm sbom --sbom-format cyclonedx"
+    supportedFormats: [cyclonedx, spdx]
+    supportedScopes: [node_manifest]
+    configured: false
+    productionReady: false
+    sourceUpload: false
+    limitations: [not_bundled_runtime_detected]
+
+productionReady: false
+externalUploadEnabled: false
