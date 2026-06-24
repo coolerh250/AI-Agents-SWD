@@ -60,7 +60,10 @@ if [ "$mi" != "0" ]; then
 fi
 echo "  missing_integrity_records=0"
 
-mode_ok=$(curl -sS -m 15 -X POST "$ORCH/operations/audit/verify-chain?mode=permissive" || echo '{}')
+# Full-chain verification scales with chain size (~30k records/s); the audit
+# chain has grown past 400k records, so allow generous headroom over the older
+# 15s cap that began intermittently timing out (the chain itself stays valid).
+mode_ok=$(curl -sS -m 90 -X POST "$ORCH/operations/audit/verify-chain?mode=permissive" || echo '{}')
 status=$(echo "$mode_ok" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))' 2>/dev/null || echo '')
 case "$status" in
   passed|partial)
