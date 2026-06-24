@@ -1719,6 +1719,9 @@ async def operations_safety() -> dict:
     # Stage 56B (Step 54.2) -- read-only local scan toolchain fields.
     security_scan_safety = _security_scan_safety_summary()
 
+    # Stage 56C (Step 54.3) -- read-only SBOM / container security fields.
+    container_security_safety = _container_security_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2125,6 +2128,10 @@ async def operations_safety() -> dict:
         # Booleans/enums only; local-only; no external upload, no network, no
         # token, no run endpoint; reports never committed; production gate off.
         **security_scan_safety,
+        # Stage 56C (Step 54.3) -- read-only SBOM / image digest / container
+        # security baseline. Booleans/enums only; local-only; no registry login,
+        # no image push, no signing, no attestation; production not ready.
+        **container_security_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -4025,6 +4032,16 @@ def _security_scan_safety_summary() -> dict[str, Any]:
     from shared.sdk.security_findings import scan_safety_fields
 
     return scan_safety_fields(Path("."))
+
+
+def _container_security_safety_summary() -> dict[str, Any]:
+    """Step 54.3 -- read-only SBOM / container security safety fields. Reads the
+    committed infra/security image/SBOM catalogs; never logs into a registry, pulls/
+    pushes an image, signs, attests, uploads an SBOM, or enables a production gate.
+    """
+    from shared.sdk.container_security import container_safety_fields
+
+    return container_safety_fields(Path("."))
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:

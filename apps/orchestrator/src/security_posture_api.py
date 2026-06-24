@@ -22,6 +22,7 @@ from shared.sdk.security_foundation import (
     section,
 )
 from shared.sdk.security_findings import scan_posture
+from shared.sdk.container_security import posture as container_posture
 
 router = APIRouter(prefix="/operations/security", tags=["security-foundation"])
 
@@ -167,6 +168,79 @@ def security_scans_summary() -> dict:
 @router.get("/scans/readiness")
 def security_scans_readiness() -> dict:
     return scan_posture.readiness_view()
+
+
+# ---------------------------------------------------------------------------
+# Step 54.3 -- read-only SBOM / container security posture. GET-only. NO
+# generate-SBOM / scan-image / registry-login / image-push / sign / attest
+# endpoint, NO arbitrary image ref / path. Runtime SBOM + image-policy reports are
+# NEVER committed and absent in the image, so live views degrade to not_run.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/sbom/status")
+def security_sbom_status() -> dict:
+    return container_posture.sbom_status_view()
+
+
+@router.get("/sbom/capabilities")
+def security_sbom_capabilities() -> dict:
+    return container_posture.section("sbom-capability-inventory.yaml")
+
+
+@router.get("/sbom/report")
+def security_sbom_report() -> dict:
+    return container_posture.sbom_status_view()
+
+
+@router.get("/images/inventory")
+def security_images_inventory() -> dict:
+    return container_posture.section("container-image-inventory.yaml")
+
+
+@router.get("/images/digest-policy")
+def security_images_digest_policy() -> dict:
+    return container_posture.section("image-digest-policy.yaml")
+
+
+@router.get("/images/tag-policy")
+def security_images_tag_policy() -> dict:
+    return container_posture.section("image-tag-policy.yaml")
+
+
+@router.get("/images/dockerfiles")
+def security_images_dockerfiles() -> dict:
+    return container_posture.section("dockerfile-security-inventory.yaml")
+
+
+@router.get("/images/runtime-alignment")
+def security_images_runtime_alignment() -> dict:
+    return container_posture.section("container-runtime-security-alignment.yaml")
+
+
+@router.get("/images/vulnerability-capability")
+def security_images_vulnerability_capability() -> dict:
+    return container_posture.section("image-vulnerability-scan-capability.yaml")
+
+
+@router.get("/images/policy-report")
+def security_images_policy_report() -> dict:
+    return container_posture.image_policy_view()
+
+
+@router.get("/images/signing-attestation")
+def security_images_signing_attestation() -> dict:
+    return container_posture.section("image-signing-attestation-model.yaml")
+
+
+@router.get("/images/registry-boundary")
+def security_images_registry_boundary() -> dict:
+    return container_posture.section("registry-credential-boundary.yaml")
+
+
+@router.get("/images/readiness")
+def security_images_readiness() -> dict:
+    return container_posture.readiness_view()
 
 
 __all__ = ["router"]

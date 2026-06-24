@@ -40,3 +40,9 @@ export const getSecurityReport = () =>
 // Step 54.2 -- read-only local scan toolchain status (GET only; no run-scan).
 export const getSecurityScanStatus = () =>
   apiGet<Record<string, unknown>>(`/operations/security/scans/status`);
+
+// Step 54.3 -- read-only SBOM / container security posture (GET only).
+export const getSbomStatus = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/sbom/status`);
+export const getImageReadiness = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/images/readiness`);

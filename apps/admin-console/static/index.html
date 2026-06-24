@@ -299,6 +299,26 @@
     const next = f.nextRequiredSteps || [];
     let scans = null;
     try { scans = await apiGet("/operations/security/scans/status"); } catch (_e) { scans = null; }
+    let sbom = null, imgReady = null;
+    try { sbom = await apiGet("/operations/security/sbom/status"); } catch (_e) { sbom = null; }
+    try { imgReady = await apiGet("/operations/security/images/readiness"); } catch (_e) { imgReady = null; }
+    const sbomLatest = (sbom && sbom.latest) || {};
+    const imgBlockers = (imgReady && imgReady.blockers) || [];
+    const containerBlock = sbom ? `
+      <h2 style="margin-top:20px">SBOM / Image Digest / Container Security (Step 54.3)</h2>
+      <p class="note">Read-only SBOM + container security baseline — local-only, modeled and locally verifiable, NOT production-enforced. No registry login, no image pull/push, no signing, no attestation, no SBOM upload, no production gate. This view provides NO generate-SBOM / scan-image / login-registry / push-image / sign / attest control. Runtime reports are never committed (status not_run here).</p>
+      <div class="grid">
+        ${card("SBOM baseline", badge(sbom.baselineEnabled))}
+        ${card("SBOM local-only", badge(sbom.localOnly))}
+        ${card("SBOM external upload", badge(sbom.externalUploadEnabled))}
+        ${card("SBOM reports committed", badge(sbom.runtimeReportsCommitted))}
+        ${card("SBOM last status", badge(sbomLatest.status || "not_run"))}
+        ${card("Container production ready", badge(imgReady && imgReady.productionReady))}
+        ${card("Production gate", badge(imgReady && imgReady.productionGateEnabled))}
+      </div>
+      <h2 style="margin-top:20px">Production readiness caveat / blockers</h2>
+      <p class="note">Production SBOM, production image supply chain, and the production image vulnerability gate are NOT ready. Digest pinning, non-root images, an external CVE scan, signing/attestation, and a non-production cluster smoke (Step 55) are still required.</p>
+      <ul>${imgBlockers.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : "";
     const bc = (scans && scans.baselineConfiguration) || {};
     const sev = (k) => ((scans && scans[k]) || {}).status || "not_run";
     const scanBlock = scans ? `
@@ -349,7 +369,8 @@
       <h2 style="margin-top:20px">Limitations / next required steps</h2>
       <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
           ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
-      ${scanBlock}`;
+      ${scanBlock}
+      ${containerBlock}`;
   }
 
   async function refreshSafetyPill() {
