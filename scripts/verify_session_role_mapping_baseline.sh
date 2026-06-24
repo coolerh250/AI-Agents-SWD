@@ -10,6 +10,8 @@
 # Marker: SESSION_ROLE_MAPPING_BASELINE_VERIFY: PASS | FAIL
 set -uo pipefail
 cd "$(dirname "$0")/.."
+source scripts/lib/baseline_run_guard.sh
+baseline_run_once "$(basename "$0")" || exit 0
 
 PY="${PYTHON:-python3}"
 ORCH="${ORCHESTRATOR_URL:-http://localhost:8000}"
