@@ -18,3 +18,7 @@ Generation deferred to **Step 54.4**. Verified by
 Step 54.2 produces the first concrete evidence inputs (local secret/SAST/dependency scan
 reports + normalized summary), redacted and written to `.runtime/security/` (never committed) —
 see [security-finding-normalization.md](security-finding-normalization.md).
+
+Step 54.3 adds container security evidence (local SBOM, image inventory/digest status, Dockerfile
+security inventory, runtime alignment, image policy report) — see
+[container-security-evidence-model.md](container-security-evidence-model.md).

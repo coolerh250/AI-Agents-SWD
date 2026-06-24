@@ -47,6 +47,9 @@ Incidents) calling the same aggregate endpoints.
   scanner/create-PR/push-image/production-gate control. Includes the Step 54.2
   read-only **Local Scan Toolchain Baseline** section
   (`/operations/security/scans/status`); local-only, no run-scan control, scan
-  status degrades to not_run when no local scan has run in this environment.
+  status degrades to not_run when no local scan has run in this environment. Also
+  includes the Step 54.3 read-only **SBOM / Image Digest / Container Security**
+  section (`/operations/security/sbom/status`, `/operations/security/images/readiness`);
+  no generate-SBOM / pull / scan / login / push / sign / attest control.
 
 All pages are GET-only and present in the React app and the static fallback.

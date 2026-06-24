@@ -2446,6 +2446,42 @@ the combined `scripts/verify_session_role_mapping_baseline.sh`
 production-ready**; Admin Console identity visibility + integrated Step 52
 verification (52.4) follow.
 
+## SBOM / Image Digest / Container Security Baseline (Stage 56C / Step 54.3)
+
+Adds a **local, offline** SBOM + container security baseline on top of Step 54.1/54.2 —
+**modeled and locally verifiable, NOT production-enforced**. No registry login, no
+image pull/push, no image signing, no production attestation, no external upload, no
+production gate. Under [infra/security/](infra/security/): SBOM capability inventory /
+generation boundary / artifact schema, a container image inventory (27 images; no digest
+pinned, no `:latest`), image digest + tag policies, a Dockerfile security inventory (20
+Dockerfiles, all root), container runtime security alignment (maps Step 51
+securityContext vs the root-image reality), an image vulnerability scan capability +
+result schema (policy-only, no CVE verdict), a signing/attestation model (disabled), a
+registry credential boundary (Step 53 secret store only), and a container security
+evidence model. New SDK [shared/sdk/container_security/](shared/sdk/container_security/)
+exposes read-only posture loaders + safety fields. Local runners
+(`scripts/run_local_sbom_baseline.py`, `scripts/run_local_image_policy_scan.py`) write
+redacted reports to `.runtime/security/` (gitignored — **never committed**). 13 GET-only
+`/operations/security/{sbom,images}/*` endpoints + container/SBOM `/operations/safety`
+fields (`security_container_production_ready=false`, `security_image_digest_pinning_complete=false`,
+`security_dockerfile_non_root_complete=false`, `security_image_vulnerability_cve_scan_performed=false`,
+registry-login / image-push / signing all false) surface it, plus an Admin Console
+read-only SBOM / container security section. A missing/unavailable CVE scan is never
+clean; missing digests are never production-safe. Verify with `python
+scripts/verify_sbom_capability_inventory.py`, `verify_sbom_generation_boundary.py`,
+`verify_local_sbom_baseline.py`, `verify_container_image_inventory.py`,
+`verify_image_digest_policy.py`, `verify_dockerfile_security_inventory.py`,
+`verify_container_runtime_security_alignment.py`, `verify_local_image_policy_baseline.py`,
+`verify_image_signing_attestation_model.py`,
+`verify_container_security_operations_visibility.py`,
+`verify_admin_console_container_security.py`, `verify_container_security_safety_fields.py`,
+and the combined `scripts/verify_sbom_container_security_baseline.sh`
+(`SBOM_CONTAINER_SECURITY_BASELINE_VERIFY`, which chains Step 51 + 52 + 53 + 54.1 + 54.2).
+Docs under [docs/security/](docs/security/) + [docs/operations/](docs/operations/). **No
+registry login, no image push/sign/attest, no production SBOM/image gate declared.**
+Next: Step 54.4 (threat model / release risk summary / integrated verification), Step 55
+(non-production cluster smoke).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

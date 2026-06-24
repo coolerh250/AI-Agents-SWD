@@ -18,4 +18,9 @@ Step 54.2 applies the fail-closed rule to the **local scan baseline only** (a mi
 never clean; tool_unavailable is never ready), without wiring any production gate — see
 [security-scan-status-summary-model.md](security-scan-status-summary-model.md).
 
+Step 54.3 extends the same fail-closed posture to SBOM / image security: a missing or
+unavailable image vulnerability scan is never clean, missing digests are never production-safe,
+and the production gate stays disabled — see
+[sbom-container-security-baseline.md](sbom-container-security-baseline.md).
+
 Verified by `scripts/verify_security_gate_policy.py` (`SECURITY_GATE_POLICY_VERIFY`).

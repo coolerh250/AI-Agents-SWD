@@ -89,3 +89,9 @@ The Security view also renders a read-only **Local Scan Toolchain Baseline** sec
 `/operations/safety` scan fields); no run-scan / upload / connect / configure control. Live scan
 status degrades to `not_run` (runtime reports are never committed / not in the image). See
 [security-scan-toolchain-verification.md](security-scan-toolchain-verification.md).
+
+13 GET-only `/operations/security/{sbom,images}/*` endpoints + container/SBOM `/operations/safety`
+fields back the read-only **SBOM / Image Digest / Container Security** section (Step 54.3) in the
+Security view; no generate-SBOM / pull / scan / login / push / sign / attest control; SBOM /
+image-policy status degrades to `not_run`. See
+[sbom-container-security-verification.md](sbom-container-security-verification.md).

@@ -10740,3 +10740,74 @@ issues & blockers, and next-step suggestions.
   Release Risk Summary / Integrated Verification) pending; Step 54 overall open.
   NOT a production readiness declaration; Claude Code does not decide Production
   readiness.
+
+## Stage 56C — SBOM / Image Digest / Container Security Baseline (Step 54.3)
+
+- **Scope.** Local SBOM + container image security baseline on top of Step
+  54.1/54.2. NO registry login, NO image pull/push, NO image signing, NO
+  production attestation, NO external/SBOM upload, NO production gate, NO full
+  regression. Local-only, non-production.
+- **infra/security/ (13 new files).** sbom-capability-inventory (custom manifest
+  SBOM bundled; syft/cyclonedx-* runtime-detected), sbom-generation-boundary
+  (local-only; no network/upload/registry-login/image-push-pull/attestation;
+  runtime reports not committed), sbom-artifact-schema, container-image-inventory
+  (27 images: 20 first-party + batch + 6 third-party; all digest empty, no latest;
+  placeholder tag; batch image lacks pg_dump/psql), image-digest-policy (digest
+  required before cluster smoke; latest prohibited; anyDigestPinned=false;
+  registryLoginConfigured=false), image-tag-policy, dockerfile-security-inventory
+  (20 Dockerfiles, all python:3.12-slim, all root/no USER, generated from actual
+  repo), container-runtime-security-alignment (Step 51 securityContext vs
+  root-image reality; static context != image runtime compatibility; cluster smoke
+  Step 55), image-vulnerability-scan-capability (custom policy check; trivy/grype/
+  scout runtime-detected; cveScanPerformed=false), image-vulnerability-result-
+  schema (missing/unavailable scan != clean), image-signing-attestation-model
+  (model_only; all disabled; no key), registry-credential-boundary (Step 53 store
+  only; no login/push/pull), container-security-evidence-model.
+- **SDK shared/sdk/container_security/ (2 modules).** posture (loaders for the 13
+  catalogs + runtime report loaders + container_safety_fields [21 fields;
+  production_ready forced false] + sbom_status/image_policy/readiness views;
+  reuses Step 53 redact), __init__.
+- **Runners (scripts/).** run_local_sbom_baseline (internal manifest SBOM from
+  requirements/package files + image refs; 336 components; no transitive/no pull;
+  python lockfile + unpinned digest limitations; report .runtime/security/sbom/,
+  gitignored), run_local_image_policy_scan (policy findings: IMG-NO-DIGEST,
+  IMG-LATEST-TAG, IMG-DOCKERFILE-ROOT, IMG-JOB-NO-PGCLIENT; no CVE/registry/pull;
+  report .runtime/security/images/, gitignored).
+- **API + safety + Admin Console.** security_posture_api.py: 13 GET-only
+  /operations/security/{sbom,images}/* endpoints; no generate/scan/login/push/sign/
+  attest route. operations.py spreads 21 container/SBOM fields into
+  /operations/safety. Admin Console Security view gains a read-only SBOM / Image
+  Digest / Container Security section (static + React); no generate-SBOM/pull/scan/
+  login/push/sign/attest button. infra/security/ already copied into the image by
+  the Step 54.1 Dockerfile COPY; .runtime not copied so SBOM/image-policy live
+  views degrade to not_run.
+- **Verifiers + tests.** 12 verifiers (SBOM_CAPABILITY_INVENTORY_VERIFY,
+  SBOM_GENERATION_BOUNDARY_VERIFY, LOCAL_SBOM_BASELINE_VERIFY,
+  CONTAINER_IMAGE_INVENTORY_VERIFY, IMAGE_DIGEST_POLICY_VERIFY,
+  DOCKERFILE_SECURITY_INVENTORY_VERIFY, CONTAINER_RUNTIME_SECURITY_ALIGNMENT_VERIFY,
+  LOCAL_IMAGE_POLICY_BASELINE_VERIFY, IMAGE_SIGNING_ATTESTATION_MODEL_VERIFY,
+  CONTAINER_SECURITY_OPERATIONS_VISIBILITY_VERIFY,
+  ADMIN_CONSOLE_CONTAINER_SECURITY_VERIFY, CONTAINER_SECURITY_SAFETY_FIELDS_VERIFY),
+  combined verify_sbom_container_security_baseline.sh
+  (SBOM_CONTAINER_SECURITY_BASELINE_VERIFY -- chains Step 51 + 52 + 53 + 54.1 +
+  54.2). 21 new pytest files (64 cases, 0 skipped) incl. no-raw-credential, missing
+  scan not clean, non-root not falsely claimed, no signing key committed,
+  prior-baseline preservation.
+- **Quality.** ruff clean; black formatted; mypy clean (5 source files). Frontend
+  (local node v24): npm typecheck clean, vitest 25 passed, vite build OK
+  (tsbuildinfo restored).
+- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
+  <pending remote combined baseline run>
+- **Safety.** security_sbom_baseline_enabled=true; sbom local-only; no external
+  upload; runtime reports not committed; image inventory present; digest policy
+  defined; digest pinning incomplete; no latest tag; dockerfile inventory present;
+  non-root NOT complete; runtime alignment present; image vuln scan
+  limited_policy_baseline; no CVE scan; image policy findings present; signing/
+  attestation disabled; no registry login; no image push; container production
+  ready false; Step 50/51/52/53/54.1/54.2 posture unchanged.
+  production_executed_true_count=0.
+- **Roadmap.** Step 54.3 closed (if verified): SBOM / image digest / container
+  security baseline modeled and locally verifiable, NOT production-enforced. Step
+  54.4 (Threat Model / Release Risk Summary / Integrated Verification) pending;
+  Step 55 (non-production cluster smoke) pending; Step 54 overall open. NOT a
+  production readiness declaration; Claude Code does not decide Production readiness.

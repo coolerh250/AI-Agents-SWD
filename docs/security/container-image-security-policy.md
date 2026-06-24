@@ -24,4 +24,9 @@ secret refs; **no image push in this stage**.
 - First-party images require a non-root cluster smoke.
 - Job images (`pg_dump` / `psql`) require a runtime smoke.
 
-Enforcement deferred to **Step 54.3**.
+Enforcement deferred to **Step 54.3** — **done** (modeled + locally verifiable): see the
+container image inventory, [image-digest-policy.md](image-digest-policy.md),
+[dockerfile-security-inventory.md](dockerfile-security-inventory.md),
+[container-runtime-security-alignment.md](container-runtime-security-alignment.md), and
+[sbom-container-security-baseline.md](sbom-container-security-baseline.md). The recorded gaps
+(no digest pinned, root Dockerfiles, job pg-client) are surfaced by the local image policy scan.

@@ -57,3 +57,7 @@ always false.
 
 See [security-scan-toolchain-verification](../operations/security-scan-toolchain-verification.md)
 and [non-production limitations](../operations/security-scan-non-production-limitations.md).
+
+Step 54.3 adds the SBOM / image digest / container security baseline (local SBOM + image policy)
+on top of this scan toolchain — see
+[sbom-container-security-baseline.md](sbom-container-security-baseline.md).

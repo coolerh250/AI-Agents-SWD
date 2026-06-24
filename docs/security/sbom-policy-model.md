@@ -12,4 +12,7 @@ artifact path only.
 - **Storage:** not committed to repo; artifact store required; future path
   `source/security-evidence/sbom/<release>/`.
 
-Enforcement / generation deferred to **Step 54.3**.
+Enforcement / generation deferred to **Step 54.3** — **done**: a local manifest SBOM baseline is
+now generated (not a production SBOM, never uploaded). See
+[local-sbom-baseline.md](local-sbom-baseline.md) and
+[sbom-container-security-baseline.md](sbom-container-security-baseline.md).
