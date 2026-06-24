@@ -1,0 +1,42 @@
+# Step 54.3 -- container runtime security alignment (Stage 56C).
+# Maps the Step 51 Helm securityContext baseline against the image (Dockerfile)
+# reality. A static manifest securityContext is NOT image runtime compatibility:
+# the first-party images run as root (no USER), so runAsNonRoot / read-only-root
+# cannot be confirmed without a non-production cluster smoke (Step 55).
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+  source: infra/kubernetes/workload-security-inventory.yaml
+
+runtimeAlignment:
+  helmSecurityContextBaseline:
+    runAsNonRoot: true            # Helm sets runAsUser/runAsGroup 10001 (Step 51)
+    runAsUser: 10001
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilitiesDropAll: true
+    seccompProfile: RuntimeDefault
+    automountServiceAccountToken: false
+    writableTmpEmptyDir: true
+  imageReality:
+    firstPartyImageUser: root      # python:3.12-slim, no USER directive
+    dockerfileUserPresent: false
+    dockerfileNonRootComplete: false
+  gap:
+    staticContextNotEqualImageRuntimeCompatibility: true
+    nonRootStartUnconfirmed: true
+    readOnlyRootStartUnconfirmed: true
+  thirdPartyExceptions:
+    - component: postgres
+      note: official image; own UID/GID + writable paths
+    - component: redis
+      note: official image; own UID/GID
+    - component: vault
+      note: dev mode local/test only; never production
+  jobContainers:
+    - component: migration-backup-restore-jobs
+      note: reuses orchestrator image; pg_dump/psql NOT installed -> runtime smoke required
+  clusterSmokeRequired: true
+  clusterSmokeStep: "55"
+  productionReady: false

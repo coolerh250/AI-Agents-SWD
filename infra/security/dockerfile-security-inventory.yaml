@@ -1,0 +1,390 @@
+# Step 54.3 -- Dockerfile security inventory (Stage 56C).
+# Evidence-backed per-Dockerfile security surface. Reflects the ACTUAL repo;
+# Dockerfiles are NOT modified this stage. Non-root readiness is NOT claimed.
+version: '1'
+meta:
+  stage: 56C
+  step: '54.3'
+  dockerfileCount: 20
+  note: all first-party Dockerfiles; root gap recorded, NOT modified
+dockerfiles:
+- path: agents/delivery-package-agent/Dockerfile
+  component: delivery-package-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8020
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/design-review-agent/Dockerfile
+  component: design-review-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8017
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/development-agent/Dockerfile
+  component: development-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8012
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/devops-agent/Dockerfile
+  component: devops-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8014
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/intake-agent/Dockerfile
+  component: intake-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8010
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/mini-delivery-pilot-agent/Dockerfile
+  component: mini-delivery-pilot-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8019
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/project-planner-agent/Dockerfile
+  component: project-planner-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8016
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/qa-agent/Dockerfile
+  component: qa-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8013
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/requirement-agent/Dockerfile
+  component: requirement-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8011
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: agents/workspace-operator-agent/Dockerfile
+  component: workspace-operator-agent
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8018
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/approval-engine/Dockerfile
+  component: approval-engine
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8002
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/audit-service/Dockerfile
+  component: audit-service
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8003
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/audit-worker/Dockerfile
+  component: audit-worker
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8006
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/communication-gateway/Dockerfile
+  component: communication-gateway
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8004
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/discord-gateway/Dockerfile
+  component: discord-gateway
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8007
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/github-automation/Dockerfile
+  component: github-automation
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8005
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/notification-worker/Dockerfile
+  component: notification-worker
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8008
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/orchestrator/Dockerfile
+  component: orchestrator
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8000
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/policy-engine/Dockerfile
+  component: policy-engine
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8001
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent
+- path: apps/retry-scheduler/Dockerfile
+  component: retry-scheduler
+  baseImage: python:3.12-slim
+  hasUserInstruction: false
+  user: ''
+  runsAsRootByDefault: true
+  exposesPorts:
+  - 8015
+  usesShell: false
+  installsPackages: true
+  usesAdd: false
+  curlPipeShell: false
+  copiesSecrets: false
+  healthcheckPresent: false
+  multiStage: false
+  productionRelevant: true
+  blockers:
+  - no_user_runs_as_root
+  - healthcheck_absent

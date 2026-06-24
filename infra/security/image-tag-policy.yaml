@@ -1,0 +1,24 @@
+# Step 54.3 -- image tag policy baseline (Stage 56C).
+# Tag rules; modeled, not enforced. No tag is rewritten this stage.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+imageTagPolicy:
+  latestTagProhibited: true
+  floatingTagProhibitedBeforeRuntimeSmoke: true
+  semanticVersionPreferred: true
+  digestRequiredBeforeClusterSmoke: true
+  testLocalTagsAllowedForLocalDevOnly: true
+  productionPlaceholderTagsNotDeployable: true
+  tagMutationRequiresApproval: true
+  autoTagRewriteAllowed: false
+  productionReady: false
+  currentState:
+    latestTagDetected: false
+    placeholderTagInUse: true        # step-51-1-placeholder on first-party images
+    placeholderTagDeployable: false
+  notes:
+    - "First-party images use the non-deployable placeholder tag step-51-1-placeholder."
+    - "Third-party images use pinned semantic-ish tags (16, 7, 1.17, vX.Y.Z) but no digest."

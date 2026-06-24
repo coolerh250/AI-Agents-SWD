@@ -1,0 +1,452 @@
+# Step 54.3 -- container image inventory (Stage 56C).
+# Normalized inventory of every image referenced by compose / Helm / Dockerfiles /
+# jobs. Reflects the ACTUAL repo. No image was pulled to resolve a digest; missing
+# digests / latest tags are RECORDED, not fixed. Reference/metadata only.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+  note: "inventory + policy only; no image pull/push/registry login"
+  firstPartyTag: step-51-1-placeholder
+  baseImage: python:3.12-slim
+
+images:
+  # ---- first-party (Helm; tag placeholder, digest empty -> not pinned) ----
+  - key: orchestrator
+    source: helm
+    component: orchestrator
+    image: aiagents/orchestrator:step-51-1-placeholder
+    registry: ""
+    repository: aiagents/orchestrator
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/orchestrator/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm, job]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user, also_used_as_batch_job_image_lacks_pg_client]
+  - key: policy-engine
+    source: helm
+    component: policy-engine
+    image: aiagents/policy-engine:step-51-1-placeholder
+    repository: aiagents/policy-engine
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/policy-engine/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: approval-engine
+    source: helm
+    component: approval-engine
+    image: aiagents/approval-engine:step-51-1-placeholder
+    repository: aiagents/approval-engine
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/approval-engine/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: audit-service
+    source: helm
+    component: audit-service
+    image: aiagents/audit-service:step-51-1-placeholder
+    repository: aiagents/audit-service
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/audit-service/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: audit-worker
+    source: helm
+    component: audit-worker
+    image: aiagents/audit-worker:step-51-1-placeholder
+    repository: aiagents/audit-worker
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/audit-worker/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: communication-gateway
+    source: helm
+    component: communication-gateway
+    image: aiagents/communication-gateway:step-51-1-placeholder
+    repository: aiagents/communication-gateway
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/communication-gateway/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: discord-gateway
+    source: helm
+    component: discord-gateway
+    image: aiagents/discord-gateway:step-51-1-placeholder
+    repository: aiagents/discord-gateway
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/discord-gateway/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: github-automation
+    source: helm
+    component: github-automation
+    image: aiagents/github-automation:step-51-1-placeholder
+    repository: aiagents/github-automation
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/github-automation/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: notification-worker
+    source: helm
+    component: notification-worker
+    image: aiagents/notification-worker:step-51-1-placeholder
+    repository: aiagents/notification-worker
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/notification-worker/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: retry-scheduler
+    source: helm
+    component: retry-scheduler
+    image: aiagents/retry-scheduler:step-51-1-placeholder
+    repository: aiagents/retry-scheduler
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/retry-scheduler/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: intake-agent
+    source: helm
+    component: intake-agent
+    image: aiagents/intake-agent:step-51-1-placeholder
+    repository: aiagents/intake-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/intake-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: requirement-agent
+    source: helm
+    component: requirement-agent
+    image: aiagents/requirement-agent:step-51-1-placeholder
+    repository: aiagents/requirement-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/requirement-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: development-agent
+    source: helm
+    component: development-agent
+    image: aiagents/development-agent:step-51-1-placeholder
+    repository: aiagents/development-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/development-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: qa-agent
+    source: helm
+    component: qa-agent
+    image: aiagents/qa-agent:step-51-1-placeholder
+    repository: aiagents/qa-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/qa-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: devops-agent
+    source: helm
+    component: devops-agent
+    image: aiagents/devops-agent:step-51-1-placeholder
+    repository: aiagents/devops-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/devops-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: project-planner-agent
+    source: helm
+    component: project-planner-agent
+    image: aiagents/project-planner-agent:step-51-1-placeholder
+    repository: aiagents/project-planner-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/project-planner-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: design-review-agent
+    source: helm
+    component: design-review-agent
+    image: aiagents/design-review-agent:step-51-1-placeholder
+    repository: aiagents/design-review-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/design-review-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: workspace-operator-agent
+    source: helm
+    component: workspace-operator-agent
+    image: aiagents/workspace-operator-agent:step-51-1-placeholder
+    repository: aiagents/workspace-operator-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/workspace-operator-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: mini-delivery-pilot-agent
+    source: helm
+    component: mini-delivery-pilot-agent
+    image: aiagents/mini-delivery-pilot-agent:step-51-1-placeholder
+    repository: aiagents/mini-delivery-pilot-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/mini-delivery-pilot-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+  - key: delivery-package-agent
+    source: helm
+    component: delivery-package-agent
+    image: aiagents/delivery-package-agent:step-51-1-placeholder
+    repository: aiagents/delivery-package-agent
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: agents/delivery-package-agent/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user]
+
+  # ---- batch job image (reuses orchestrator image; lacks pg client) ----
+  - key: batch-jobs
+    source: job
+    component: migration-backup-restore-jobs
+    image: aiagents/orchestrator:step-51-1-placeholder
+    repository: aiagents/orchestrator
+    tag: step-51-1-placeholder
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: true
+    dockerfile: apps/orchestrator/Dockerfile
+    baseImage: python:3.12-slim
+    usedIn: [job]
+    productionRelevant: true
+    blockers: [digest_not_pinned, placeholder_tag, dockerfile_no_nonroot_user, pg_dump_psql_not_installed_runtime_smoke_required]
+
+  # ---- third-party (Helm + compose) ----
+  - key: postgres
+    source: helm
+    component: postgres
+    image: postgres:16
+    repository: postgres
+    tag: "16"
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: postgres:16
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned]
+  - key: redis
+    source: helm
+    component: redis
+    image: redis:7
+    repository: redis
+    tag: "7"
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: redis:7
+    usedIn: [compose, helm]
+    productionRelevant: true
+    blockers: [digest_not_pinned]
+  - key: vault
+    source: helm
+    component: vault
+    image: hashicorp/vault:1.17
+    repository: hashicorp/vault
+    tag: "1.17"
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: hashicorp/vault:1.17
+    usedIn: [compose, helm]
+    productionRelevant: false
+    blockers: [digest_not_pinned, vault_dev_mode_local_test_only_never_production]
+  - key: prometheus
+    source: compose
+    component: prometheus
+    image: prom/prometheus:v2.55.1
+    repository: prom/prometheus
+    tag: v2.55.1
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: prom/prometheus:v2.55.1
+    usedIn: [compose]
+    productionRelevant: false
+    blockers: [digest_not_pinned]
+  - key: alertmanager
+    source: compose
+    component: alertmanager
+    image: prom/alertmanager:v0.27.0
+    repository: prom/alertmanager
+    tag: v0.27.0
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: prom/alertmanager:v0.27.0
+    usedIn: [compose]
+    productionRelevant: false
+    blockers: [digest_not_pinned]
+  - key: grafana
+    source: compose
+    component: grafana
+    image: grafana/grafana:11.3.0
+    repository: grafana/grafana
+    tag: 11.3.0
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: grafana/grafana:11.3.0
+    usedIn: [compose]
+    productionRelevant: false
+    blockers: [digest_not_pinned]
+  - key: tempo
+    source: compose
+    component: tempo
+    image: grafana/tempo:2.6.1
+    repository: grafana/tempo
+    tag: 2.6.1
+    digest: ""
+    digestPinned: false
+    latestTag: false
+    firstParty: false
+    dockerfile: ""
+    baseImage: grafana/tempo:2.6.1
+    usedIn: [compose]
+    productionRelevant: false
+    blockers: [digest_not_pinned]
+
+baseImages:
+  - image: python:3.12-slim
+    usedBy: all_20_first_party_dockerfiles
+    digestPinned: false
+  - image: node
+    usedBy: admin-console-build-only
+    digestPinned: unknown
+
+notes:
+  - "Admin Console ships as a static bundle served by the orchestrator image; it has no own image."
+  - "No :latest tag is used anywhere (Step 51 verified). Digests are empty across all images."
+  - "No image was pulled; digests are recorded as unresolved, not fetched."

@@ -1,0 +1,29 @@
+# Step 54.3 -- image digest policy baseline (Stage 56C).
+# Digest pinning is REQUIRED before any cluster smoke / sync / deploy. No registry
+# is queried and no digest is written this stage -- the policy is modeled and the
+# current gaps are recorded. Not production-enforced.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+imageDigestPolicy:
+  requiredBefore:
+    - non_production_cluster_smoke
+    - argocd_manual_sync
+    - deployment_request
+  digestRequired: true
+  mutableTagsAllowedBeforeRuntimeSmoke: false
+  latestTagAllowed: false
+  digestResolutionMode: manual_or_future_registry_query
+  registryLoginRequiredForPrivateImages: true
+  registryLoginConfigured: false
+  productionReady: false
+  currentState:
+    firstPartyDigestPinned: false
+    thirdPartyDigestPinned: false
+    anyDigestPinned: false
+  blockers:
+    - first_party_images_no_digest_placeholder_tag
+    - third_party_images_tag_only_no_digest
+    - digest_resolution_requires_registry_query_not_performed
