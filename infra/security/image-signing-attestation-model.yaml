@@ -1,0 +1,26 @@
+# Step 54.3 -- image signing / attestation model (Stage 56C).
+# Model only. No key is generated, no image is signed, no attestation is produced
+# or uploaded. Signing is required before production but NOT configured.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+signingAttestation:
+  requiredBeforeProduction: true
+  signingConfigured: false
+  attestationConfigured: false
+  allowedTools:
+    - cosign
+    - sigstore
+    - notation
+  keylessPreferred: true
+  privateKeyCommitted: false
+  signingPerformed: false
+  attestationGenerated: false
+  attestationUploaded: false
+  productionReady: false
+  status: model_only
+  dependsOn:
+    - step_54_4_release_risk_summary
+    - production_registry_and_key_management_future

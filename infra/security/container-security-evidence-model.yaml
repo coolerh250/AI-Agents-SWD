@@ -1,0 +1,32 @@
+# Step 54.3 -- container security evidence model (Stage 56C).
+# Evidence types the Step 54.4 release risk summary will reference. Evidence
+# carries no secret value; runtime reports are never committed. No production claim.
+version: "1"
+meta:
+  stage: 56C
+  step: "54.3"
+
+containerSecurityEvidence:
+  required: true
+  configured: false
+  noSecretValueAllowed: true
+  runtimeReportsCommitted: false
+  releaseRiskReferenceable: true
+  evidenceTypes:
+    - key: local_sbom_baseline
+      runtime: true
+    - key: image_inventory_report
+      runtime: false
+    - key: image_digest_status
+      runtime: false
+    - key: dockerfile_security_inventory
+      runtime: false
+    - key: runtime_security_alignment
+      runtime: false
+    - key: image_policy_report
+      runtime: true
+    - key: image_vulnerability_scan_report_future
+      runtime: true
+    - key: signing_attestation_future
+      runtime: false
+  productionReady: false
