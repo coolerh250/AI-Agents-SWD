@@ -10945,8 +10945,24 @@ NOT executed and NOT faked.
 - **Tests + quality.** 10 pytest files (27 cases, 0 skipped). ruff clean; black formatted;
   mypy clean (shared/). Frontend (local node): npm typecheck clean, vitest 25 passed, vite
   build OK (tsbuildinfo restored).
-- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
-  <pending remote combined runtime smoke run>
+- **Verification (remote 10.0.1.31, HEAD 872072d, via .venv/bin/python; orchestrator rebuilt + healthy).**
+  `verify_nonproduction_kubernetes_runtime_smoke.sh` ->
+  NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY: BLOCKED_NO_SAFE_CLUSTER (exit 0;
+  classification FAILS=0 BLOCKED=10). Prior baselines all PASS (KUBERNETES_HELM_ARGOCD,
+  IDENTITY_FOUNDATION, SECRET_MANAGEMENT_FOUNDATION, SECURITY_SUPPLY_CHAIN_POLICY,
+  SECURITY_SCAN_TOOLCHAIN, SBOM_CONTAINER_SECURITY via APPLICATION_SECURITY_SUPPLY_CHAIN_
+  BASELINE_VERIFY: PASS, which runs the full regression PASS_WITH_NON_PRODUCTION_LIMITATIONS
+  once). 4 Step 55 verifiers PASS (NONPROD_NAMESPACE_PLAN, NONPROD_RUNTIME_OPERATIONS_
+  VISIBILITY, ADMIN_CONSOLE_NONPROD_RUNTIME_SMOKE, NONPROD_RUNTIME_SAFETY_FIELDS); 10
+  cluster-dependent verifiers honestly BLOCKED_NO_SAFE_CLUSTER (preflight, helm, pod-startup,
+  service-health, connectivity, networkpolicy, storage, securitycontext, batch-job, report).
+  27 targeted tests passed (0 skipped). Runtime safety posture = "True False False False 0"
+  (smoke enabled; not production ready; no deploy; no ArgoCD sync; production_executed=0).
+  Live /operations/safety smoke fields + 12 nonprod-smoke endpoints confirmed (namespace
+  aiagents-smoke-dev). NOTE: a Step 51 visibility verifier did a blunt `kubectl in src`
+  substring check that tripped on a new comment; reworded the comment (no kubectl/subprocess
+  in the API; verifier strictness unchanged). Orchestrator Dockerfile now copies the whole
+  infra/kubernetes/ so the smoke plans are in-image.
 - **Safety.** no kubeconfig / token / cert committed; no production cluster / namespace; no
   production deploy / ArgoCD sync / GitHub write / image push / registry login / public
   ingress / LoadBalancer / destructive job / restore; `nonprod_runtime_smoke_production_
