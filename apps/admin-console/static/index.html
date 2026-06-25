@@ -319,6 +319,36 @@
       <h2 style="margin-top:20px">Production readiness caveat / blockers</h2>
       <p class="note">Production SBOM, production image supply chain, and the production image vulnerability gate are NOT ready. Digest pinning, non-root images, an external CVE scan, signing/attestation, and a non-production cluster smoke (Step 55) are still required.</p>
       <ul>${imgBlockers.map(b => `<li>${esc(b)}</li>`).join("")}</ul>` : "";
+    let step54 = null, risk = null, evidence = null, readiness = null;
+    try { step54 = await apiGet("/operations/security/step54/status"); } catch (_e) { step54 = null; }
+    try { risk = await apiGet("/operations/security/release-risk/summary"); } catch (_e) { risk = null; }
+    try { evidence = await apiGet("/operations/security/evidence/package"); } catch (_e) { evidence = null; }
+    try { readiness = await apiGet("/operations/security/readiness/report"); } catch (_e) { readiness = null; }
+    const tmPresent = (step54 && step54.threatModelsPresent) || {};
+    const intBlockers = (risk && risk.blockers) || (step54 && step54.blockers) || [];
+    const intNext = (step54 && step54.requiredNextSteps) || [];
+    const integratedBlock = step54 ? `
+      <h2 style="margin-top:20px">Threat Model / Release Risk / Evidence (Step 54.4)</h2>
+      <p class="note">Read-only Step 54 integrated security posture — threat model, release risk summary, security evidence package and readiness report are modeled and locally verifiable, NOT production-enforced. A release risk summary is NOT a production approval. No generate-evidence / approve-release / enable-gate / deploy / create-PR / sync-ArgoCD control. Runtime evidence / risk / readiness artifacts are never committed (status not_run here).</p>
+      <div class="grid">
+        ${card("Step54 integrated", badge(step54.step54Integrated))}
+        ${card("Threat model baseline", badge(tmPresent.baseline))}
+        ${card("Agent threats", badge(tmPresent.agent))}
+        ${card("Supply chain threats", badge(tmPresent.supplyChain))}
+        ${card("Runtime/GitOps threats", badge(tmPresent.runtimeGitops))}
+        ${card("Release risk status", badge((risk && risk.status) || "not_run"))}
+        ${card("Risk score", esc((risk && risk.riskScore) != null ? risk.riskScore : "not_run"))}
+        ${card("Production approval", badge(risk && risk.productionApproval))}
+        ${card("Deployment approval", badge(risk && risk.deploymentApproval))}
+        ${card("Evidence status", badge((evidence && evidence.status) || "present_runtime_only"))}
+        ${card("Readiness status", badge((readiness && (readiness.releaseRiskStatus || readiness.status)) || "not_run"))}
+        ${card("Step54 production ready", badge(step54.productionReady))}
+        ${card("Release gate", badge(step54.releaseGateEnabled))}
+      </div>
+      <h2 style="margin-top:20px">Production blockers / dependencies</h2>
+      <p class="note">Step 55 (non-production cluster smoke), Step 56 (real ArgoCD manual sync) and Step 60 (production readiness review) are still required. Claude Code does not decide Production readiness.</p>
+      <ul>${intBlockers.map(b => `<li>${esc(b)}</li>`).join("")}
+          ${intNext.map(s => `<li>${esc(s)}</li>`).join("")}</ul>` : "";
     const bc = (scans && scans.baselineConfiguration) || {};
     const sev = (k) => ((scans && scans[k]) || {}).status || "not_run";
     const scanBlock = scans ? `
@@ -370,7 +400,8 @@
       <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}
           ${next.map(s => `<li>${esc(s)}</li>`).join("")}</ul>
       ${scanBlock}
-      ${containerBlock}`;
+      ${containerBlock}
+      ${integratedBlock}`;
   }
 
   async function refreshSafetyPill() {

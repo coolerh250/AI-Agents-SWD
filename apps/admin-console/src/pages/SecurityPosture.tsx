@@ -2,9 +2,13 @@ import { AsyncView } from "../components/AsyncView";
 import { KeyValueTable } from "../components/KeyValueTable";
 import {
   getImageReadiness,
+  getReleaseRiskSummary,
   getSbomStatus,
+  getSecurityEvidencePackage,
+  getSecurityReadinessReport,
   getSecurityReport,
   getSecurityScanStatus,
+  getSecurityStep54Status,
 } from "../api/operations";
 
 // Step 54.1 -- read-only application security & supply chain posture. GET-only;
@@ -72,6 +76,102 @@ export function SecurityPosture() {
             </ul>
             <ScanPosture />
             <ContainerPosture />
+            <IntegratedSecurityPosture />
+          </>
+        );
+      }}
+    </AsyncView>
+  );
+}
+
+// Step 54.4 -- read-only integrated security posture (threat model / release risk
+// / evidence package / readiness). NO generate-evidence / approve-release /
+// enable-gate / deploy / create-PR / sync-ArgoCD control; status only. Runtime
+// evidence / risk / readiness artifacts are never committed (not_run here).
+function IntegratedSecurityPosture() {
+  return (
+    <AsyncView
+      load={async () => ({
+        step54: await getSecurityStep54Status(),
+        risk: await getReleaseRiskSummary(),
+        evidence: await getSecurityEvidencePackage(),
+        readiness: await getSecurityReadinessReport(),
+      })}
+    >
+      {(d) => {
+        const data = d as {
+          step54: Record<string, unknown>;
+          risk: Record<string, unknown>;
+          evidence: Record<string, unknown>;
+          readiness: Record<string, unknown>;
+        };
+        const step54 = data.step54 || {};
+        const risk = data.risk || {};
+        const evidence = data.evidence || {};
+        const readiness = data.readiness || {};
+        const tm = (step54.threatModelsPresent as Record<string, unknown>) || {};
+        const blockers =
+          (risk.blockers as string[]) || (step54.blockers as string[]) || [];
+        const nextSteps = (step54.requiredNextSteps as string[]) || [];
+        return (
+          <>
+            <h2 style={{ marginTop: 20 }}>
+              Threat Model / Release Risk / Evidence (Step 54.4)
+            </h2>
+            <p className="note">
+              Read-only Step 54 integrated security posture — threat model, release risk summary,
+              security evidence package and readiness report are modeled and locally verifiable,
+              NOT production-enforced. A release risk summary is NOT a production approval. No
+              generate-evidence, no approve-release, no enable-gate, no deploy, no create-PR, no
+              ArgoCD sync control. Runtime evidence / risk / readiness artifacts are never
+              committed (status not_run here).
+            </p>
+            <h2 style={{ marginTop: 16 }}>Threat Model Summary</h2>
+            <KeyValueTable
+              data={{
+                step54_status: step54.status,
+                step54_integrated: step54.step54Integrated,
+                threat_model_baseline: tm.baseline,
+                agent_threats: tm.agent,
+                supply_chain_threats: tm.supplyChain,
+                runtime_gitops_threats: tm.runtimeGitops,
+                production_ready: step54.productionReady,
+                release_gate_enabled: step54.releaseGateEnabled,
+              }}
+            />
+            <h2 style={{ marginTop: 16 }}>Release Risk Summary</h2>
+            <KeyValueTable
+              data={{
+                release_risk_status: risk.status ?? "not_run",
+                risk_score: risk.riskScore ?? "not_run",
+                production_approval: risk.productionApproval ?? false,
+                deployment_approval: risk.deploymentApproval ?? false,
+                production_ready: risk.productionReady ?? false,
+              }}
+            />
+            <h2 style={{ marginTop: 16 }}>Security Evidence Package</h2>
+            <KeyValueTable
+              data={{
+                evidence_status: evidence.status ?? "present_runtime_only",
+                evidence_production_ready: evidence.productionReady ?? false,
+                readiness_status: readiness.releaseRiskStatus ?? readiness.status ?? "not_run",
+                readiness_production_ready: readiness.productionReady ?? false,
+              }}
+            />
+            <h2 style={{ marginTop: 16 }}>Production blockers / dependencies</h2>
+            <p className="note">
+              Step 55 (non-production cluster smoke), Step 56 (real ArgoCD manual sync) and Step 60
+              (production readiness review) are still required. Claude Code does not decide
+              Production readiness.
+            </p>
+            <ul>
+              {blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+              {nextSteps.map((s) => (
+                <li key={s}>{s}</li>
+              ))}
+            </ul>
           </>
         );
       }}

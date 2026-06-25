@@ -46,3 +46,14 @@ export const getSbomStatus = () =>
   apiGet<Record<string, unknown>>(`/operations/security/sbom/status`);
 export const getImageReadiness = () =>
   apiGet<Record<string, unknown>>(`/operations/security/images/readiness`);
+
+// Step 54.4 -- read-only integrated security (threat model / release risk /
+// evidence / readiness). GET only; no generate / approve / gate / deploy method.
+export const getSecurityStep54Status = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/step54/status`);
+export const getReleaseRiskSummary = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/release-risk/summary`);
+export const getSecurityEvidencePackage = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/evidence/package`);
+export const getSecurityReadinessReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/security/readiness/report`);

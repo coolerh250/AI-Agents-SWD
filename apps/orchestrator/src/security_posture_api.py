@@ -23,6 +23,7 @@ from shared.sdk.security_foundation import (
 )
 from shared.sdk.security_findings import scan_posture
 from shared.sdk.container_security import posture as container_posture
+from shared.sdk.security_integrated import posture as integrated_posture
 
 router = APIRouter(prefix="/operations/security", tags=["security-foundation"])
 
@@ -241,6 +242,60 @@ def security_images_registry_boundary() -> dict:
 @router.get("/images/readiness")
 def security_images_readiness() -> dict:
     return container_posture.readiness_view()
+
+
+# ---------------------------------------------------------------------------
+# Step 54.4 -- read-only integrated security posture (threat model / release risk
+# / evidence package / readiness). GET-only. NO generate-evidence, NO
+# approve-release, NO production-gate, NO deploy endpoint, NO arbitrary path.
+# Runtime evidence/risk/readiness artifacts are NEVER committed and are absent in
+# the image, so those live views degrade to not_run -- never a fake approval.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/threat-model/baseline")
+def security_threat_model_baseline() -> dict:
+    return integrated_posture.section("threat-model-baseline.yaml")
+
+
+@router.get("/threat-model/agent")
+def security_threat_model_agent() -> dict:
+    return integrated_posture.section("agent-threat-model.yaml")
+
+
+@router.get("/threat-model/supply-chain")
+def security_threat_model_supply_chain() -> dict:
+    return integrated_posture.section("supply-chain-threat-model.yaml")
+
+
+@router.get("/threat-model/runtime-gitops")
+def security_threat_model_runtime_gitops() -> dict:
+    return integrated_posture.section("runtime-gitops-threat-model.yaml")
+
+
+@router.get("/release-risk/model")
+def security_release_risk_model() -> dict:
+    return integrated_posture.section("release-risk-summary-model.yaml")
+
+
+@router.get("/release-risk/summary")
+def security_release_risk_summary() -> dict:
+    return integrated_posture.release_risk_summary_view()
+
+
+@router.get("/evidence/package")
+def security_evidence_package() -> dict:
+    return integrated_posture.evidence_package_view()
+
+
+@router.get("/readiness/report")
+def security_readiness_report() -> dict:
+    return integrated_posture.readiness_report_view()
+
+
+@router.get("/step54/status")
+def security_step54_status() -> dict:
+    return integrated_posture.step54_status_view()
 
 
 __all__ = ["router"]

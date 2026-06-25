@@ -1722,6 +1722,10 @@ async def operations_safety() -> dict:
     # Stage 56C (Step 54.3) -- read-only SBOM / container security fields.
     container_security_safety = _container_security_safety_summary()
 
+    # Stage 56D (Step 54.4) -- read-only integrated security (threat model /
+    # release risk / evidence / readiness) fields.
+    security_integrated_safety = _security_integrated_safety_summary()
+
     result = safety["result"]
     if warnings and result == "safe":
         # Warnings degrade the verdict to "warning" but only an actual
@@ -2132,6 +2136,7 @@ async def operations_safety() -> dict:
         # security baseline. Booleans/enums only; local-only; no registry login,
         # no image push, no signing, no attestation; production not ready.
         **container_security_safety,
+        **security_integrated_safety,
         "production_deploy_enabled": False,
         "vault_mode_note": "vault dev mode is local/test only — never repurpose for production",
         "postgres_auth_note": (
@@ -4042,6 +4047,18 @@ def _container_security_safety_summary() -> dict[str, Any]:
     from shared.sdk.container_security import container_safety_fields
 
     return container_safety_fields(Path("."))
+
+
+def _security_integrated_safety_summary() -> dict[str, Any]:
+    """Step 54.4 -- read-only integrated security (threat model / release risk /
+    evidence package / readiness) safety fields. Reads the committed infra/security
+    integrated summary + threat-model/risk/evidence catalogs; never enables a
+    release gate, approves a release, deploys, or marks the baseline production
+    ready. Runtime evidence/risk/readiness artifacts are never committed.
+    """
+    from shared.sdk.security_integrated import integrated_safety_fields
+
+    return integrated_safety_fields(Path("."))
 
 
 def _backup_dr_safety_summary() -> dict[str, Any]:
