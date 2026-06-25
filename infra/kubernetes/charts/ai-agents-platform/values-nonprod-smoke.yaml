@@ -1,0 +1,39 @@
+# Step 55 (Stage 57A) -- NON-PRODUCTION runtime smoke values.
+# Used ONLY for a non-production cluster smoke into an aiagents-smoke-* namespace
+# (see infra/kubernetes/nonproduction-namespace-plan.yaml), and only when the
+# preflight confirms a safe cluster. Schema-valid subset (values.schema.json).
+#
+# Guardrails (all OFF): production, real deploy, production auth, OIDC, GitHub
+# write, PR creation, deployment integration, real LLM, external delivery,
+# production backup schedule. No production registry / secret / DB. No public
+# ingress / LoadBalancer / ArgoCD sync (those are not chart values and are refused
+# by the runner). Persistence uses non-production PVCs only.
+global:
+  environment: test
+  production: false
+  realDeployEnabled: false
+
+defaults:
+  replicas: 1
+
+platform:
+  adminConsole:
+    enabled: true
+    authMode: test_local_signed_session
+    testAuthEnabled: true
+    productionAuthEnabled: false
+    oidcEnabled: false
+    operatorActionsEnabled: true
+    operatorActionsControlledOnly: true
+  integrations:
+    githubWrite: false
+    prCreation: false
+    deployment: false
+    realLlm: false
+    externalDelivery: false
+    productionBackupSchedule: false
+
+components:
+  postgres: {enabled: true}
+  redis: {enabled: true}
+  vault: {enabled: true}        # test-only dev Vault; no production Vault

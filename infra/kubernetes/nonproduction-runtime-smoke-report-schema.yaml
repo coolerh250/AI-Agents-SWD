@@ -1,0 +1,53 @@
+# Step 55 (Stage 57A) -- non-production runtime smoke report schema.
+# Schema for the redacted runtime smoke report written to
+# .runtime/kubernetes/nonproduction-runtime-smoke-report.json (NEVER committed).
+# No kubeconfig / token / cert / secret / rendered-manifest content; cluster
+# context is recorded as a redacted hash only. productionReady / productionExecuted
+# always false.
+version: "1"
+meta:
+  stage: "57A"
+  step: "55"
+
+nonProductionRuntimeSmokeReportSchema:
+  status: modeled
+  productionReady: false
+  schemaVersion: "1"
+  committedRuntimeReportAllowed: false
+
+  fields:
+    reportId: string
+    generatedAt: iso8601
+    blocked: bool
+    blockedReason: string_or_null
+    clusterContextHash: redacted_sha256_or_null
+    namespace: string_or_null
+    helmRelease: string_or_null
+    chartVersion: string_or_null
+    imageRefs: list
+    podStatus: object          # {running, completed, failed, pending, crashloop, imagepull}
+    serviceHealth: object
+    connectivity: object
+    networkPolicy: object
+    pvc: object
+    securityContext: object
+    batchJobs: object
+    eventsSummary: object      # counts only, redacted
+    limitations: list
+    productionReady: false
+    productionExecuted: false
+
+  redaction:
+    noKubeconfig: true
+    noToken: true
+    noCert: true
+    noSecret: true
+    noRenderedManifest: true
+    clusterContextHashedOnly: true
+
+  statusEnum:
+    - passed
+    - failed
+    - blocked
+    - not_run
+    - skipped

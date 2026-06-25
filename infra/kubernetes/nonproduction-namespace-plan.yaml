@@ -1,0 +1,41 @@
+# Step 55 (Stage 57A) -- non-production namespace plan.
+# The smoke deploys ONLY into an explicitly non-production namespace, and only when
+# the preflight confirms a safe cluster. Forbidden namespaces are rejected by the
+# runner + verifier.
+version: "1"
+meta:
+  stage: "57A"
+  step: "55"
+
+nonProductionNamespacePlan:
+  status: framework_ready
+  productionReady: false
+
+  namespace: aiagents-smoke-dev
+  alternativeAllowed:
+    - aiagents-smoke-dev
+    - aiagents-smoke-test
+
+  labels:
+    aiagents.openai.local/environment: non-production
+    aiagents.openai.local/purpose: runtime-smoke
+    aiagents.openai.local/production: "false"
+
+  forbiddenNamespaces:
+    - default
+    - kube-system
+    - argocd
+    - production
+    - prod
+    - staging-prod
+
+  # A namespace is rejected if its name contains any of these substrings.
+  forbiddenSubstrings:
+    - prod
+    - production
+
+  createPolicy:
+    createIfMissing: true
+    onlyWhenPreflightSafe: true
+    neverDefaultNamespace: true
+    neverClusterScoped: true
