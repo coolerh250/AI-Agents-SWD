@@ -29,6 +29,15 @@ export const getRuntimeReport = () =>
 export const getIdentityReport = () =>
   apiGet<Record<string, unknown>>(`/operations/identity/report`);
 
+// Step 55 -- read-only non-production runtime smoke posture (GET only; no deploy /
+// helm-install / cleanup / exec / sync client method).
+export const getNonprodSmokeReadiness = () =>
+  apiGet<Record<string, unknown>>(`/operations/runtime/nonprod-smoke/readiness`);
+export const getNonprodSmokePreflight = () =>
+  apiGet<Record<string, unknown>>(`/operations/runtime/nonprod-smoke/preflight`);
+export const getNonprodSmokeReport = () =>
+  apiGet<Record<string, unknown>>(`/operations/runtime/nonprod-smoke/report`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);

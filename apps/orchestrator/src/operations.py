@@ -1707,6 +1707,9 @@ async def operations_safety() -> dict:
     # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime baseline.
     runtime_baseline_safety = _runtime_baseline_safety_summary()
 
+    # Stage 57A (Step 55) -- read-only non-production Kubernetes runtime smoke fields.
+    nonprod_runtime_smoke_safety = _nonprod_runtime_smoke_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2118,6 +2121,7 @@ async def operations_safety() -> dict:
         # Stage 53G (Step 51.4) -- read-only Kubernetes/Helm/GitOps runtime
         # baseline. Booleans/enums/counts only; no cluster, no deploy, no secret.
         **runtime_baseline_safety,
+        **nonprod_runtime_smoke_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -3976,6 +3980,18 @@ def _runtime_baseline_safety_summary() -> dict[str, Any]:
         Path("infra/kubernetes/runtime-baseline-summary.yaml")
     )
     return runtime_baseline_safety_fields(summary)
+
+
+def _nonprod_runtime_smoke_safety_summary() -> dict[str, Any]:
+    """Step 55 -- read-only non-production Kubernetes runtime smoke safety fields.
+    File-based (reads the committed smoke/namespace plans); never connects to a
+    cluster, runs kubectl/helm, deploys, or syncs ArgoCD. Runtime smoke artifacts
+    are never committed and are absent in the image, so with no report the smoke
+    fields default to the blocked/non-production posture -- never a fake PASS.
+    """
+    from shared.sdk.runtime_smoke import nonprod_runtime_safety_fields
+
+    return nonprod_runtime_safety_fields(Path("."))
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

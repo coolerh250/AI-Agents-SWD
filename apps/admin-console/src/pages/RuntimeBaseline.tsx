@@ -1,6 +1,11 @@
 import { AsyncView } from "../components/AsyncView";
 import { KeyValueTable } from "../components/KeyValueTable";
-import { getRuntimeReport } from "../api/operations";
+import {
+  getNonprodSmokePreflight,
+  getNonprodSmokeReadiness,
+  getNonprodSmokeReport,
+  getRuntimeReport,
+} from "../api/operations";
 
 // Step 51.4 -- read-only Kubernetes / Helm / GitOps runtime baseline view.
 // GET-only; this page renders NO deploy / sync / apply / install control and no
@@ -55,6 +60,74 @@ export function RuntimeBaseline() {
             <ul>
               {limits.map((l) => (
                 <li key={l}>{l}</li>
+              ))}
+            </ul>
+            <NonprodRuntimeSmoke />
+          </>
+        );
+      }}
+    </AsyncView>
+  );
+}
+
+// Step 55 -- read-only non-production Kubernetes runtime smoke posture. NO deploy /
+// helm-install / cleanup / kubectl-exec / ArgoCD-sync control, no namespace / secret
+// input, no production-ready toggle, no mutation action. Runtime smoke artifacts are
+// never committed (status not_run here); when no safe cluster exists the smoke is
+// blocked, never faked.
+function NonprodRuntimeSmoke() {
+  return (
+    <AsyncView
+      load={async () => ({
+        readiness: await getNonprodSmokeReadiness(),
+        preflight: await getNonprodSmokePreflight(),
+        report: await getNonprodSmokeReport(),
+      })}
+    >
+      {(d) => {
+        const data = d as {
+          readiness: Record<string, unknown>;
+          preflight: Record<string, unknown>;
+          report: Record<string, unknown>;
+        };
+        const readiness = data.readiness || {};
+        const preflight = data.preflight || {};
+        const report = data.report || {};
+        const blockers = (readiness.blockers as string[]) || [];
+        const nextSteps = (readiness.requiredNextSteps as string[]) || [];
+        return (
+          <>
+            <h2 style={{ marginTop: 20 }}>Non-production Runtime Smoke (Step 55)</h2>
+            <p className="note">
+              Read-only non-production Kubernetes runtime smoke — framework ready, NOT
+              production-enforced. No deploy, no Helm install, no cleanup, no kubectl exec, no
+              ArgoCD sync control; no namespace / secret input; no production-ready toggle. When
+              no safe non-production cluster exists the smoke is BLOCKED (never faked). Runtime
+              smoke reports are never committed (status not_run here).
+            </p>
+            <KeyValueTable
+              data={{
+                smoke_status: readiness.status,
+                cluster_access_detected: readiness.clusterAccessDetected,
+                namespace: readiness.namespace,
+                preflight_status: preflight.status ?? "not_run",
+                preflight_blocked: preflight.blocked,
+                helm_smoke_status: report.status ?? "not_run",
+                pod_startup: report.status ?? "not_run",
+                production_ready: readiness.productionReady,
+              }}
+            />
+            <h2 style={{ marginTop: 16 }}>Blockers / Step 56 dependency</h2>
+            <p className="note">
+              Step 56 (real ArgoCD non-production manual sync) and Step 60 (production readiness
+              review) are still required. Claude Code does not decide Production readiness.
+            </p>
+            <ul>
+              {blockers.map((b) => (
+                <li key={b}>{b}</li>
+              ))}
+              {nextSteps.map((s) => (
+                <li key={s}>{s}</li>
               ))}
             </ul>
           </>

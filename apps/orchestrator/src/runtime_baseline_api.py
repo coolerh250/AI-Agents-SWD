@@ -18,6 +18,7 @@ from shared.sdk.runtime_baseline import (
     load_runtime_baseline_summary,
     runtime_baseline_safety_fields,
 )
+from shared.sdk.runtime_smoke import posture as smoke_posture
 
 router = APIRouter(prefix="/operations/runtime", tags=["runtime-baseline"])
 
@@ -166,6 +167,75 @@ def runtime_report() -> dict:
         "nextRequiredSteps": s.get("nextRequiredSteps", []),
         "safety": runtime_baseline_safety_fields(None if s.get("status") == "unknown" else s),
     }
+
+
+# ---------------------------------------------------------------------------
+# Step 55 -- read-only non-production Kubernetes runtime smoke posture. GET-only.
+# NO deploy / helm-install / cleanup / kubectl-exec / ArgoCD-sync endpoint, NO
+# arbitrary namespace / command. Runtime smoke artifacts are NEVER committed and
+# are absent in the image, so live views degrade to not_run. No kubeconfig / token
+# / cert / secret / rendered manifest is ever returned.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/nonprod-smoke/preflight")
+def nonprod_smoke_preflight() -> dict:
+    return smoke_posture.preflight_view()
+
+
+@router.get("/nonprod-smoke/namespace")
+def nonprod_smoke_namespace() -> dict:
+    return smoke_posture.namespace_view()
+
+
+@router.get("/nonprod-smoke/helm")
+def nonprod_smoke_helm() -> dict:
+    return smoke_posture.helm_view()
+
+
+@router.get("/nonprod-smoke/pods")
+def nonprod_smoke_pods() -> dict:
+    return smoke_posture._report_section_view("podStatus")
+
+
+@router.get("/nonprod-smoke/services")
+def nonprod_smoke_services() -> dict:
+    return smoke_posture._report_section_view("serviceHealth")
+
+
+@router.get("/nonprod-smoke/connectivity")
+def nonprod_smoke_connectivity() -> dict:
+    return smoke_posture._report_section_view("connectivity")
+
+
+@router.get("/nonprod-smoke/networkpolicy")
+def nonprod_smoke_networkpolicy() -> dict:
+    return smoke_posture._report_section_view("networkPolicy")
+
+
+@router.get("/nonprod-smoke/storage")
+def nonprod_smoke_storage() -> dict:
+    return smoke_posture._report_section_view("pvc")
+
+
+@router.get("/nonprod-smoke/securitycontext")
+def nonprod_smoke_securitycontext() -> dict:
+    return smoke_posture._report_section_view("securityContext")
+
+
+@router.get("/nonprod-smoke/batch-jobs")
+def nonprod_smoke_batch_jobs() -> dict:
+    return smoke_posture._report_section_view("batchJobs")
+
+
+@router.get("/nonprod-smoke/report")
+def nonprod_smoke_report() -> dict:
+    return smoke_posture.report_view()
+
+
+@router.get("/nonprod-smoke/readiness")
+def nonprod_smoke_readiness() -> dict:
+    return smoke_posture.readiness_view()
 
 
 __all__ = ["router"]

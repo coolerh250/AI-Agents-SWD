@@ -186,6 +186,27 @@
     const envRows = envs.map(e => `<tr><td>${esc(e.name)}</td><td>${badge(e.active)}</td>
       <td>${badge(e.disabled)}</td><td>${badge(e.production)}</td>
       <td>${badge(e.automatedSync)}</td><td>${esc(e.valuesFile)}</td></tr>`).join("");
+    let smokeReadiness = null, smokePreflight = null, smokeReport = null;
+    try { smokeReadiness = await apiGet("/operations/runtime/nonprod-smoke/readiness"); } catch (_e) { smokeReadiness = null; }
+    try { smokePreflight = await apiGet("/operations/runtime/nonprod-smoke/preflight"); } catch (_e) { smokePreflight = null; }
+    try { smokeReport = await apiGet("/operations/runtime/nonprod-smoke/report"); } catch (_e) { smokeReport = null; }
+    const smokeBlockers = (smokeReadiness && smokeReadiness.blockers) || [];
+    const smokeNext = (smokeReadiness && smokeReadiness.requiredNextSteps) || [];
+    const smokeBlock = smokeReadiness ? `
+      <h2 style="margin-top:20px">Non-production Runtime Smoke (Step 55)</h2>
+      <p class="note">Read-only non-production Kubernetes runtime smoke — framework ready, NOT production-enforced. No deploy / Helm install / cleanup / kubectl exec / ArgoCD sync control; no namespace / secret input; no production-ready toggle. When no safe non-production cluster exists the smoke is BLOCKED (never faked). Runtime smoke reports are never committed (status not_run here).</p>
+      <div class="grid">
+        ${card("Smoke status", badge(smokeReadiness.status))}
+        ${card("Cluster access detected", badge(smokeReadiness.clusterAccessDetected))}
+        ${card("Namespace", esc(smokeReadiness.namespace))}
+        ${card("Preflight", badge((smokePreflight && smokePreflight.status) || "not_run"))}
+        ${card("Helm smoke", badge((smokeReport && smokeReport.status) || "not_run"))}
+        ${card("Production ready", badge(smokeReadiness.productionReady))}
+      </div>
+      <h2 style="margin-top:20px">Blockers / Step 56 dependency</h2>
+      <p class="note">Step 56 (real ArgoCD non-production manual sync) and Step 60 (production readiness review) are still required. Claude Code does not decide Production readiness.</p>
+      <ul>${smokeBlockers.map(b => `<li>${esc(b)}</li>`).join("")}
+          ${smokeNext.map(s => `<li>${esc(s)}</li>`).join("")}</ul>` : "";
     el.innerHTML = `<h2>Kubernetes / Helm / GitOps Runtime Baseline</h2>
       <p class="note">Read-only static baseline — no cluster connected, no deploy, no Helm install, no ArgoCD sync. This view provides NO deploy / sync / apply / install control.</p>
       <div class="grid">
@@ -210,7 +231,8 @@
       <table><tr><th>Environment</th><th>Active</th><th>Disabled</th><th>Production</th><th>Auto-sync</th><th>Values</th></tr>${envRows}</table>
       <h2 style="margin-top:20px">Safety facts</h2>${kvTable(facts)}
       <h2 style="margin-top:20px">Non-production limitations</h2>
-      <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}</ul>`;
+      <ul>${limits.map(l => `<li>${esc(l)}</li>`).join("")}</ul>
+      ${smokeBlock}`;
   }
 
   // Read-only identity posture. GET-only; NO OIDC login / connect / configure,
