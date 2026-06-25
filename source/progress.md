@@ -10882,14 +10882,28 @@ production-enforced.
   deduped via `scripts/lib/baseline_run_guard.sh`). 17 pytest files (58 cases, 0 skipped).
 - **Quality.** ruff clean; black formatted; mypy clean (shared/). Frontend (local node):
   npm typecheck clean, vitest 25 passed, vite build OK (tsbuildinfo restored).
-- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
-  <pending remote integrated baseline + full regression run>
+- **Verification (remote 10.0.1.31, HEAD ab5e294, via .venv/bin/python; orchestrator rebuilt + healthy).**
+  `verify_application_security_supply_chain_baseline.sh` -> 
+  APPLICATION_SECURITY_SUPPLY_CHAIN_BASELINE_VERIFY: PASS (exit 0, 1271s). All 6 chained
+  prior baselines PASS (KUBERNETES_HELM_ARGOCD, IDENTITY_FOUNDATION,
+  SECRET_MANAGEMENT_FOUNDATION, SECURITY_SUPPLY_CHAIN_POLICY, SECURITY_SCAN_TOOLCHAIN,
+  SBOM_CONTAINER_SECURITY). All 11 Step 54.4 verifiers PASS (THREAT_MODEL_BASELINE,
+  AGENT_THREAT_MODEL, SUPPLY_CHAIN_THREAT_MODEL, RUNTIME_GITOPS_THREAT_MODEL,
+  RELEASE_RISK_SUMMARY_MODEL, SECURITY_EVIDENCE_PACKAGE, RELEASE_RISK_SUMMARY,
+  SECURITY_READINESS_REPORT, SECURITY_INTEGRATED_OPERATIONS_VISIBILITY,
+  ADMIN_CONSOLE_SECURITY_INTEGRATED, SECURITY_INTEGRATED_SAFETY_FIELDS). 58 targeted tests
+  passed (0 skipped). Integrated safety posture = "True False False True True 0" (step54
+  integrated; no release gate; not production ready; fail-closed; production_executed=0).
+  Full regression: `run_full_regression.sh --full --json-report` ->
+  FULL_REGRESSION_VERIFY: PASS_WITH_NON_PRODUCTION_LIMITATIONS (exit 0, 1033s; total=25,
+  pass=21, fail=0, audit_serialization_failure=0, audit_tamper_residue_failure=0,
+  audit_lock_timeout=0). Post-run audit tamper residue detector PASS.
 - **Safety.** threat models present; evidence/risk/readiness generation wired; missing
   evidence + critical finding block production; release gate disabled; step54 not production
   ready; release risk summary is NOT an approval; no external upload / source upload / GitHub
   write / PR / registry login / image push / signing / attestation / production gate / deploy /
   sync; `security_step54_production_ready=false`, `production_executed_true_count=0`.
-- **Roadmap.** Step 54.4 closed (if verified) -> **Step 54 overall closed: application
+- **Roadmap.** Step 54.4 closed (verified on 10.0.1.31, HEAD ab5e294) -> **Step 54 overall closed: application
   security and supply chain baseline modeled, locally verifiable, not production-enforced**
   (NOT production security gate ready / release approved / deployment ready / all risks
   remediated). Step 55 (non-production cluster smoke) and Step 56 (real ArgoCD manual sync)
