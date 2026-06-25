@@ -171,10 +171,11 @@ def runtime_report() -> dict:
 
 # ---------------------------------------------------------------------------
 # Step 55 -- read-only non-production Kubernetes runtime smoke posture. GET-only.
-# NO deploy / helm-install / cleanup / kubectl-exec / ArgoCD-sync endpoint, NO
-# arbitrary namespace / command. Runtime smoke artifacts are NEVER committed and
-# are absent in the image, so live views degrade to not_run. No kubeconfig / token
-# / cert / secret / rendered manifest is ever returned.
+# NO deploy / helm-install / cleanup / pod-exec / ArgoCD-sync endpoint, NO arbitrary
+# namespace / command. This module only reads committed plans + the redacted runtime
+# report; it never shells out to a cluster. Runtime smoke artifacts are NEVER
+# committed and are absent in the image, so live views degrade to not_run. No
+# kubeconfig / token / cert / secret / rendered manifest is ever returned.
 # ---------------------------------------------------------------------------
 
 
