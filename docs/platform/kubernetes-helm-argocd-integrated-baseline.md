@@ -49,3 +49,7 @@ The Step 54.1 container image security policy
 carries forward this baseline's image observations — first-party images require a
 non-root cluster smoke, and the migration/backup/restore jobs (`pg_dump` / `psql`)
 require a runtime smoke — as modeled (not yet fixed) supply-chain blockers.
+
+Step 55 takes this baseline to a non-production cluster runtime smoke (framework ready,
+BLOCKED_NO_SAFE_CLUSTER on 10.0.1.31; never faked) — see
+[../operations/nonproduction-kubernetes-smoke-plan.md](../operations/nonproduction-kubernetes-smoke-plan.md).

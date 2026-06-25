@@ -35,3 +35,7 @@ tests and a safety-posture check. Marker:
 verifiable, not production-enforced.** NOT a production security gate, NOT a
 production release approval, NOT production deployment ready, NOT "all security
 risks remediated". Step 55 (cluster smoke) and Step 56 (ArgoCD sync) remain.
+
+Step 55 takes this baseline to a non-production cluster runtime smoke (framework ready,
+BLOCKED_NO_SAFE_CLUSTER on 10.0.1.31; never faked) — see
+[../operations/nonproduction-kubernetes-smoke-plan.md](../operations/nonproduction-kubernetes-smoke-plan.md).

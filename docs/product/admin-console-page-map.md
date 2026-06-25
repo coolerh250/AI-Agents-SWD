@@ -33,7 +33,12 @@ Incidents) calling the same aggregate endpoints.
 ## Read-only baseline pages (Step 51.4 / Step 52.4 / Step 53 / Step 54.1)
 
 * **Runtime Baseline** (`/runtime`) — read-only Kubernetes/Helm/GitOps baseline
-  (`/operations/runtime/report`); no deploy/sync/apply/install control.
+  (`/operations/runtime/report`); no deploy/sync/apply/install control. Includes the
+  Step 55 read-only **Non-production Runtime Smoke** section
+  (`/operations/runtime/nonprod-smoke/readiness`, `/preflight`, `/report`); framework
+  ready, BLOCKED when no safe non-production cluster exists; no deploy / helm-install /
+  cleanup / kubectl-exec / ArgoCD-sync control, no namespace/secret input, no
+  production-ready toggle.
 * **Identity Posture** (`/identity`) — read-only Step 52 identity foundation
   (`/operations/identity/report`); production identity NOT enabled, no OIDC
   login/connect/configure button, no production auth toggle, no role-mapping

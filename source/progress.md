@@ -10908,3 +10908,52 @@ production-enforced.
   (NOT production security gate ready / release approved / deployment ready / all risks
   remediated). Step 55 (non-production cluster smoke) and Step 56 (real ArgoCD manual sync)
   pending. Claude Code does not decide Production readiness.
+
+## Stage 57A — Non-production Kubernetes Runtime Smoke (Step 55)
+
+Takes the Step 51 static Kubernetes/Helm baseline toward a real non-production cluster
+runtime smoke. **Outcome: PASS_WITH_GAPS / BLOCKED_NO_SAFE_CLUSTER** -- the test server
+10.0.1.31 has no kubectl / helm / kubeconfig (the platform runs on docker compose), so no
+safe non-production cluster exists. The smoke framework is built and verified; the smoke is
+NOT executed and NOT faked.
+
+- **Infra (infra/kubernetes/, 4).** `nonproduction-cluster-smoke-plan.yaml` (preflight gate
+  + ordered steps + forbidden actions), `nonproduction-namespace-plan.yaml`
+  (aiagents-smoke-dev, non-prod labels, forbidden namespaces),
+  `nonproduction-runtime-smoke-report-schema.yaml` (redacted, cluster-context-hash only,
+  never committed), `charts/ai-agents-platform/values-nonprod-smoke.yaml` (production / auth
+  / OIDC / GitHub / deploy / external all OFF; schema-valid).
+- **SDK + runner.** `shared/sdk/runtime_smoke` (loaders, `nonprod_runtime_safety_fields`,
+  report views -> not_run, readiness). `scripts/run_nonproduction_helm_smoke.sh`
+  (`--dry-run-only` + `--namespace`; refuses production/default/`*prod*` namespaces +
+  production values; refuses Ingress / LoadBalancer / ClusterRole / CRD render; no ArgoCD
+  sync / image push / registry login; emits BLOCKED_NO_SAFE_CLUSTER without kubectl/helm).
+  `scripts/lib/nonprod_cluster_detect.py` (credential-safe cluster detection).
+- **Verifiers + combined (14 + 1).** preflight / namespace / helm / pod-startup /
+  service-health / connectivity / networkpolicy / storage / securitycontext / batch-job /
+  report / operations-visibility / admin-console / safety-fields; combined
+  `verify_nonproduction_kubernetes_runtime_smoke.sh`
+  (`NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY`; chains Step 51/52/53/54 deduped;
+  classifies FAIL > BLOCKED > PASS). Cluster-dependent verifiers honestly emit
+  BLOCKED_NO_SAFE_CLUSTER.
+- **API + safety.** 12 GET `/operations/runtime/nonprod-smoke/*` (GET-only; no deploy /
+  install / cleanup / exec / sync); 17 `/operations/safety` smoke fields via
+  `_nonprod_runtime_smoke_safety_summary()`.
+- **Admin Console.** Read-only **Non-production Runtime Smoke** section (React + static); no
+  deploy / helm-install / cleanup / kubectl-exec / ArgoCD-sync button; no namespace/secret
+  input; no production-ready toggle.
+- **Tests + quality.** 10 pytest files (27 cases, 0 skipped). ruff clean; black formatted;
+  mypy clean (shared/). Frontend (local node): npm typecheck clean, vitest 25 passed, vite
+  build OK (tsbuildinfo restored).
+- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
+  <pending remote combined runtime smoke run>
+- **Safety.** no kubeconfig / token / cert committed; no production cluster / namespace; no
+  production deploy / ArgoCD sync / GitHub write / image push / registry login / public
+  ingress / LoadBalancer / destructive job / restore; `nonprod_runtime_smoke_production_
+  ready=false`, `kubernetes_production_deploy_performed=false`, `argocd_sync_performed=false`,
+  `production_executed_true_count=0`.
+- **Roadmap.** Step 55 PASS_WITH_GAPS (BLOCKED_NO_SAFE_CLUSTER): runtime smoke framework
+  ready, blocked by a missing safe non-production cluster. Provide a safe non-production
+  cluster (kind/k3s/managed non-prod) to run the real smoke, then Step 56 (Real ArgoCD
+  Non-production Manual Sync). Must NOT enter Step 56 until the runtime smoke is PASS on a
+  real cluster. Claude Code does not decide Production readiness.

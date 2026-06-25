@@ -103,3 +103,10 @@ generate-evidence / approve-release / enable-gate / deploy / create-PR / sync-Ar
 evidence / risk / readiness runtime artifacts are never committed (views degrade to `not_run`). See
 [application-security-supply-chain-verification.md](application-security-supply-chain-verification.md)
 and [application-security-supply-chain-non-production-limitations.md](application-security-supply-chain-non-production-limitations.md).
+
+12 GET-only `/operations/runtime/nonprod-smoke/*` endpoints + 17 `/operations/safety` runtime
+smoke fields back the read-only **Non-production Runtime Smoke** section (Step 55) in the Runtime
+view; framework ready, BLOCKED when no safe non-production cluster exists; no deploy / helm-install
+/ cleanup / kubectl-exec / ArgoCD-sync control; runtime smoke report degrades to `not_run`. See
+[nonproduction-kubernetes-runtime-smoke-verification.md](nonproduction-kubernetes-runtime-smoke-verification.md)
+and [nonproduction-kubernetes-runtime-smoke-limitations.md](nonproduction-kubernetes-runtime-smoke-limitations.md).

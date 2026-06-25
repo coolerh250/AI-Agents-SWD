@@ -2501,6 +2501,24 @@ create-PR / sync-ArgoCD control). 11 verifiers + combined
 as a local, modeled baseline (NOT production security gate / release approval / deployment
 ready / all-risks-remediated).** Step 55 (cluster smoke) and Step 56 (ArgoCD sync) remain.
 
+## Non-production Kubernetes Runtime Smoke (Stage 57A / Step 55)
+
+Takes the Step 51 static Kubernetes/Helm baseline toward a **real non-production cluster**
+runtime smoke — **framework ready, NOT production-enforced**. Under
+[infra/kubernetes/](infra/kubernetes/): a cluster smoke plan, namespace plan, runtime smoke
+report schema, and `values-nonprod-smoke.yaml`. A Helm smoke runner
+(`scripts/run_nonproduction_helm_smoke.sh`, `--dry-run-only` + guardrails: refuses
+production/default/`*prod*` namespaces + production values, no Ingress/LoadBalancer/
+ClusterRole/CRD, no ArgoCD sync), the `runtime_smoke` SDK, 14 verifiers (cluster-dependent
+ones honestly emit `BLOCKED_NO_SAFE_CLUSTER`), a combined
+`NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY` (chains Step 51/52/53/54, deduped), 12 GET
+`/operations/runtime/nonprod-smoke/*` endpoints + 17 `/operations/safety` smoke fields, an
+Admin Console **Non-production Runtime Smoke** section (no deploy/helm-install/cleanup/exec/
+sync), and 10 tests. **On 10.0.1.31 there is no kubectl/helm/kubeconfig, so the smoke is
+BLOCKED_NO_SAFE_CLUSTER (PASS_WITH_GAPS) — never faked**; `nonprod_runtime_smoke_production_
+ready=false`, no production deploy / ArgoCD sync, `production_executed_true_count=0`. A safe
+non-production cluster is required before Step 56 (real ArgoCD manual sync).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

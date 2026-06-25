@@ -72,3 +72,7 @@ and [non-production limitations](../operations/sbom-container-security-non-produ
 Step 54.4 integrates Steps 54.1–54.3 into a threat model, release risk summary,
 security evidence package and readiness report (modeled, not production-enforced) — see
 [application-security-supply-chain-integrated-baseline.md](application-security-supply-chain-integrated-baseline.md).
+
+Step 55 takes this baseline to a non-production cluster runtime smoke (framework ready,
+BLOCKED_NO_SAFE_CLUSTER on 10.0.1.31; never faked) — see
+[../operations/nonproduction-kubernetes-smoke-plan.md](../operations/nonproduction-kubernetes-smoke-plan.md).
