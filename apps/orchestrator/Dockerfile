@@ -17,10 +17,11 @@ COPY apps/admin-console/static/ ./admin_console_static/
 # verifications still require a runner with docker access (documented limitation).
 COPY scripts/ ./scripts/
 COPY migrations/ ./migrations/
-# Stage 53G (Step 51.4) -- committed read-only runtime baseline summary consumed
-# by the /operations/runtime/* read-only API + /operations/safety. Non-sensitive
-# (booleans/enums/counts/names only); no rendered manifests, no secrets.
-COPY infra/kubernetes/runtime-baseline-summary.yaml ./infra/kubernetes/runtime-baseline-summary.yaml
+# Stage 53G (Step 51.4) / Stage 57A (Step 55) -- committed read-only runtime baseline
+# summary + non-production runtime smoke plans consumed by the /operations/runtime/*
+# read-only API + /operations/safety. Non-sensitive (booleans/enums/counts/names/plan
+# metadata only); no rendered manifests, no kubeconfig, no secrets.
+COPY infra/kubernetes/ ./infra/kubernetes/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.
