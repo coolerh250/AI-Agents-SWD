@@ -1,0 +1,48 @@
+# Step 54.4 (Stage 56D) -- release risk summary model.
+# Defines what a release risk summary aggregates. Modeled, NOT a gate, NOT an
+# approval. A summary is NEVER a production approval or deployment approval.
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+releaseRiskSummaryModel:
+  status: modeled_not_production_enforced
+  productionReady: false
+  productionGateIntegrated: false
+
+  # Inputs the generator aggregates (see scripts/generate_release_risk_summary.py).
+  inputs:
+    - delivery_package_metadata
+    - security_asset_inventory
+    - local_secret_scan_summary
+    - local_sast_summary
+    - local_dependency_scan_summary
+    - sbom_baseline_summary
+    - image_policy_findings
+    - dockerfile_security_findings
+    - threat_model_status
+    - qa_status
+    - human_acceptance_status
+    - secret_readiness
+    - identity_readiness
+    - runtime_readiness
+    - backup_readiness
+    - rollback_readiness
+    - production_blockers
+    - approval_requirements
+
+  # Status enum -- production_ready / production_approved are NOT permitted.
+  statusEnum:
+    - not_ready
+    - ready_for_non_production_review
+    - ready_for_operator_review
+    - blocked
+  forbiddenStatuses:
+    - production_ready
+    - production_approved
+
+  approval:
+    producesProductionApproval: false
+    producesDeploymentApproval: false
+    humanApprovalStillRequired: true

@@ -1,0 +1,111 @@
+# Step 54.4 (Stage 56D) -- threat model baseline.
+# Modeled, NOT production-enforced. No production gate, no approval, no deploy.
+# Builds on infra/security/threat-model-input-catalog.yaml (Step 54.1).
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+threatModel:
+  status: modeled_not_production_enforced
+  methodology:
+    - stride_inspired
+    - agentic_ai_specific
+    - supply_chain_specific
+  productionReady: false
+
+  assets:
+    - {id: admin_console, surface: ui, sensitivity: medium}
+    - {id: operator_actions, surface: governed_api, sensitivity: high}
+    - {id: identity_oidc, surface: identity, sensitivity: high}
+    - {id: session_rbac, surface: identity, sensitivity: high}
+    - {id: secret_management, surface: secret, sensitivity: critical}
+    - {id: audit_integrity, surface: audit, sensitivity: critical}
+    - {id: runtime_operations, surface: runtime, sensitivity: high}
+    - {id: kubernetes_helm_gitops_baseline, surface: runtime, sensitivity: high}
+    - {id: workspace_operator, surface: agent, sensitivity: high}
+    - {id: agent_execution_pipeline, surface: agent, sensitivity: high}
+    - {id: delivery_package, surface: delivery, sensitivity: medium}
+    - {id: local_scan_toolchain, surface: supply_chain, sensitivity: medium}
+    - {id: sbom_image_baseline, surface: supply_chain, sensitivity: medium}
+    - {id: backup_restore, surface: data, sensitivity: high}
+    - {id: future_github_pr_flow, surface: future, sensitivity: high}
+    - {id: future_argocd_sync, surface: future, sensitivity: high}
+    - {id: future_production_deployment, surface: future, sensitivity: critical}
+    - {id: llm_integration, surface: external, sensitivity: medium}
+    - {id: notification_slack_email, surface: external, sensitivity: low}
+    - {id: future_google_drive_integration, surface: future, sensitivity: medium}
+
+  trustBoundaries:
+    - operator_to_admin_console
+    - admin_console_to_orchestrator_operations_api
+    - orchestrator_to_sibling_services
+    - platform_to_external_idp_future
+    - platform_to_secret_store_future
+    - platform_to_github_future
+    - platform_to_kubernetes_cluster_future
+    - platform_to_llm_provider
+    - platform_to_notification_channels
+
+  entrypoints:
+    - operations_read_only_api
+    - operator_actions_governed_api
+    - alert_receiver
+    - communication_gateway
+    - discord_gateway
+    - github_automation_webhook_future
+
+  dataFlows:
+    - task_intake_to_pipeline
+    - audit_log_chain
+    - secret_reference_resolution_future
+    - deployment_request_future
+    - backup_dump_offhost_copy
+
+  # Threats reference categories from threat-category-taxonomy.yaml. Each threat
+  # is modeled with existing mitigations; productionBlocker=true items remain open
+  # until the named future step.
+  threats:
+    - {id: TM-001, category: spoofing, surface: identity_oidc, description: "Forged operator identity without production OIDC", severity: high, mitigations: [identity_boundary, production_auth_not_enabled], status: open, productionBlocker: true}
+    - {id: TM-002, category: tampering, surface: audit_integrity, description: "Audit log tampering", severity: critical, mitigations: [tamper_evident_audit, hmac_chain, audit_trail], status: mitigated, productionBlocker: false}
+    - {id: TM-003, category: repudiation, surface: operator_actions, description: "Operator denies a governed action", severity: medium, mitigations: [audit_trail, operator_action_allowlist], status: mitigated, productionBlocker: false}
+    - {id: TM-004, category: information_disclosure, surface: secret_management, description: "Secret value leakage in API / reports", severity: critical, mitigations: [secret_redaction, no_secret_value_display, store_disabled], status: mitigated, productionBlocker: false}
+    - {id: TM-005, category: denial_of_service, surface: runtime_operations, description: "Operation flooding", severity: medium, mitigations: [read_only_visibility, governed_operator_actions], status: partially_mitigated, productionBlocker: false}
+    - {id: TM-006, category: elevation_of_privilege, surface: operator_actions, description: "Privilege escalation beyond allowlist", severity: high, mitigations: [operator_action_allowlist, hard_safety_actions, human_approval], status: mitigated, productionBlocker: false}
+    - {id: TM-007, category: prompt_injection, surface: agent_execution_pipeline, description: "Malicious task content steers an agent", severity: high, mitigations: [human_approval_for_production, no_deploy, no_github_write], status: partially_mitigated, productionBlocker: true}
+    - {id: TM-008, category: tool_misuse, surface: workspace_operator, description: "Agent misuses a tool to act outside scope", severity: high, mitigations: [hard_safety_actions, operator_action_allowlist, no_registry_login], status: partially_mitigated, productionBlocker: true}
+    - {id: TM-009, category: agent_goal_drift, surface: agent_execution_pipeline, description: "Agent goal drift produces unintended changes", severity: medium, mitigations: [human_approval, audit_trail, verification_gates], status: partially_mitigated, productionBlocker: true}
+    - {id: TM-010, category: supply_chain_compromise, surface: sbom_image_baseline, description: "Compromised dependency or base image", severity: high, mitigations: [dependency_inventory, sbom_baseline, image_policy_baseline], status: partially_mitigated, productionBlocker: true}
+    - {id: TM-011, category: secret_leakage, surface: local_scan_toolchain, description: "Secret committed to repo", severity: critical, mitigations: [secret_scan_baseline, scan_exclusion_policy, redaction], status: partially_mitigated, productionBlocker: true}
+    - {id: TM-012, category: deployment_boundary_bypass, surface: future_production_deployment, description: "Bypass of the production deployment boundary", severity: critical, mitigations: [no_deploy, no_argocd_sync, no_helm_install, production_executed_flag], status: open, productionBlocker: true}
+    - {id: TM-013, category: audit_integrity_failure, surface: audit_integrity, description: "Audit chain integrity failure", severity: critical, mitigations: [verify_chain, tamper_residue_detector, audit_verification_lock], status: mitigated, productionBlocker: false}
+    - {id: TM-014, category: human_approval_bypass, surface: operator_actions, description: "Production action without human approval", severity: critical, mitigations: [human_approval_required, hard_safety_actions, production_executed_flag], status: mitigated, productionBlocker: false}
+
+  mitigations:
+    - {id: M-human-approval, description: "Production changes require human approval", implemented: true}
+    - {id: M-production-executed-flag, description: "production_executed flag tracked; count must stay 0", implemented: true}
+    - {id: M-hard-safety-actions, description: "HARD_SAFETY_ACTIONS enforced", implemented: true}
+    - {id: M-operator-allowlist, description: "Operator action allowlist", implemented: true}
+    - {id: M-audit-trail, description: "Tamper-evident audit trail", implemented: true}
+    - {id: M-identity-boundary, description: "Identity boundary; production auth not enabled", implemented: true}
+    - {id: M-secret-redaction, description: "Secret redaction; no secret value display", implemented: true}
+    - {id: M-runtime-read-only, description: "Runtime read-only visibility", implemented: true}
+    - {id: M-no-github-write, description: "No GitHub write / no PR creation", implemented: true}
+    - {id: M-no-deploy, description: "No deploy / no ArgoCD sync / no Helm install", implemented: true}
+    - {id: M-no-external-upload, description: "No external scanner upload / no source upload", implemented: true}
+
+  residualRisks:
+    - {id: RR-001, description: "Production identity (OIDC) not validated", relatedThreats: [TM-001], blocksProduction: true}
+    - {id: RR-002, description: "Real SAST / dependency CVE scan not run (tool_unavailable)", relatedThreats: [TM-010], blocksProduction: true}
+    - {id: RR-003, description: "Image digests not pinned; non-root not complete", relatedThreats: [TM-010], blocksProduction: true}
+    - {id: RR-004, description: "Kubernetes runtime not validated on a real cluster", relatedThreats: [TM-012], blocksProduction: true}
+    - {id: RR-005, description: "Prompt injection / agent goal drift only partially mitigated", relatedThreats: [TM-007, TM-009], blocksProduction: true}
+
+  blockers:
+    - production_identity_not_validated
+    - real_cve_dependency_scan_not_run
+    - image_digest_pinning_incomplete
+    - dockerfile_non_root_incomplete
+    - kubernetes_runtime_smoke_required_step_55
+    - argocd_manual_sync_required_step_56
+    - production_release_gate_not_enabled

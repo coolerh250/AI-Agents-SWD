@@ -1,0 +1,40 @@
+# Step 54.4 (Stage 56D) -- supply-chain threat model.
+# Modeled, NOT production-enforced. Links to Step 54.1-54.3 blockers.
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+supplyChainThreatModel:
+  status: modeled_not_production_enforced
+  productionReady: false
+
+  threats:
+    - {id: SC-001, scenario: dependency_compromise, category: supply_chain_compromise, severity: high, mitigations: [dependency_surface_inventory, dependency_scan_baseline], status: partially_mitigated, relatedBlocker: real_cve_dependency_scan_not_run, productionBlocker: true}
+    - {id: SC-002, scenario: missing_python_lockfile, category: supply_chain_compromise, severity: medium, mitigations: [dependency_inventory_records_gap], status: open, relatedBlocker: python_lockfile_missing, productionBlocker: true}
+    - {id: SC-003, scenario: malicious_package, category: supply_chain_compromise, severity: high, mitigations: [dependency_scan_baseline, sbom_baseline], status: partially_mitigated, relatedBlocker: real_cve_dependency_scan_not_run, productionBlocker: true}
+    - {id: SC-004, scenario: docker_base_image_compromise, category: supply_chain_compromise, severity: high, mitigations: [container_image_inventory, image_policy_baseline], status: partially_mitigated, relatedBlocker: image_cve_scan_not_performed, productionBlocker: true}
+    - {id: SC-005, scenario: mutable_tag, category: supply_chain_compromise, severity: medium, mitigations: [image_tag_policy, image_digest_policy], status: partially_mitigated, relatedBlocker: image_digest_pinning_incomplete, productionBlocker: true}
+    - {id: SC-006, scenario: missing_image_digest, category: supply_chain_compromise, severity: medium, mitigations: [image_digest_policy], status: open, relatedBlocker: image_digest_pinning_incomplete, productionBlocker: true}
+    - {id: SC-007, scenario: root_container, category: elevation_of_privilege, severity: medium, mitigations: [dockerfile_security_inventory, runtime_security_alignment], status: open, relatedBlocker: dockerfile_non_root_incomplete, productionBlocker: true}
+    - {id: SC-008, scenario: missing_sbom, category: supply_chain_compromise, severity: medium, mitigations: [sbom_capability_inventory, local_sbom_baseline], status: partially_mitigated, relatedBlocker: production_sbom_not_generated, productionBlocker: true}
+    - {id: SC-009, scenario: missing_image_vulnerability_scan, category: supply_chain_compromise, severity: high, mitigations: [image_vulnerability_scan_capability], status: open, relatedBlocker: image_cve_scan_not_performed, productionBlocker: true}
+    - {id: SC-010, scenario: missing_signing_attestation, category: tampering, severity: medium, mitigations: [image_signing_attestation_model], status: open, relatedBlocker: image_signing_not_configured, productionBlocker: true}
+    - {id: SC-011, scenario: scanner_tool_compromise, category: supply_chain_compromise, severity: medium, mitigations: [scanner_execution_boundary, custom_scanners_bundled], status: partially_mitigated, relatedBlocker: external_scanner_not_integrated, productionBlocker: true}
+    - {id: SC-012, scenario: secret_leakage_in_reports, category: secret_leakage, severity: critical, mitigations: [redact_evidence, runtime_reports_not_committed], status: mitigated, relatedBlocker: none, productionBlocker: false}
+    - {id: SC-013, scenario: registry_credential_compromise, category: information_disclosure, severity: high, mitigations: [registry_credential_boundary, no_registry_login, no_image_push], status: mitigated, relatedBlocker: none, productionBlocker: false}
+    - {id: SC-014, scenario: future_github_pr_manipulation, category: tampering, severity: high, mitigations: [no_github_write, no_pr_creation], status: open, relatedBlocker: github_pr_flow_not_implemented, productionBlocker: true}
+
+  linkedBaselineBlockers:
+    step_54_1:
+      - real_external_sast_not_integrated
+      - real_cve_dependency_scan_not_run
+    step_54_2:
+      - scanners_tool_unavailable_not_clean
+      - secret_scan_findings_require_review
+    step_54_3:
+      - image_digest_pinning_incomplete
+      - dockerfile_non_root_incomplete
+      - image_cve_scan_not_performed
+      - image_signing_not_configured
+      - production_sbom_not_generated

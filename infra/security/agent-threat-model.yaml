@@ -1,0 +1,46 @@
+# Step 54.4 (Stage 56D) -- agent-specific (agentic AI) threat model.
+# Modeled, NOT production-enforced.
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+agentThreatModel:
+  status: modeled_not_production_enforced
+  productionReady: false
+
+  threats:
+    - {id: AG-001, scenario: agent_modifies_workspace, category: tool_misuse, severity: high, mitigations: [workspace_operator_scoped, human_approval, audit_trail], status: partially_mitigated, productionBlocker: true}
+    - {id: AG-002, scenario: agent_generates_code, category: agent_goal_drift, severity: medium, mitigations: [verification_gates, qa_auto_fix_loop, human_approval], status: partially_mitigated, productionBlocker: true}
+    - {id: AG-003, scenario: agent_generates_deployment_recommendation, category: deployment_boundary_bypass, severity: high, mitigations: [no_deploy, no_argocd_sync, human_approval], status: mitigated, productionBlocker: true}
+    - {id: AG-004, scenario: agent_runs_verification, category: repudiation, severity: low, mitigations: [audit_trail, verifier_strictness], status: mitigated, productionBlocker: false}
+    - {id: AG-005, scenario: agent_produces_delivery_package, category: tampering, severity: medium, mitigations: [delivery_package_schema, human_acceptance], status: mitigated, productionBlocker: false}
+    - {id: AG-006, scenario: agent_misjudges_approval, category: human_approval_bypass, severity: critical, mitigations: [human_approval_required, hard_safety_actions, production_executed_flag], status: mitigated, productionBlocker: true}
+    - {id: AG-007, scenario: agent_references_wrong_context, category: agent_goal_drift, severity: medium, mitigations: [context_scoping, audit_trail], status: partially_mitigated, productionBlocker: true}
+    - {id: AG-008, scenario: prompt_injection, category: prompt_injection, severity: high, mitigations: [human_approval_for_production, no_autonomous_production, no_github_write], status: partially_mitigated, productionBlocker: true}
+    - {id: AG-009, scenario: tool_misuse, category: tool_misuse, severity: high, mitigations: [hard_safety_actions, operator_action_allowlist], status: partially_mitigated, productionBlocker: true}
+    - {id: AG-010, scenario: unauthorized_production_action, category: deployment_boundary_bypass, severity: critical, mitigations: [no_deploy, production_executed_flag, human_approval], status: mitigated, productionBlocker: true}
+    - {id: AG-011, scenario: human_approval_bypass, category: human_approval_bypass, severity: critical, mitigations: [human_approval_required, hard_safety_actions], status: mitigated, productionBlocker: true}
+    - {id: AG-012, scenario: audit_omission, category: audit_integrity_failure, severity: high, mitigations: [audit_trail, verify_chain], status: mitigated, productionBlocker: false}
+    - {id: AG-013, scenario: secret_exfiltration, category: secret_leakage, severity: critical, mitigations: [secret_redaction, store_disabled, no_external_upload], status: mitigated, productionBlocker: true}
+    - {id: AG-014, scenario: github_write_future_risk, category: tampering, severity: high, mitigations: [no_github_write, no_pr_creation], status: open, productionBlocker: true}
+    - {id: AG-015, scenario: argocd_sync_future_risk, category: deployment_boundary_bypass, severity: high, mitigations: [no_argocd_sync, no_helm_install], status: open, productionBlocker: true}
+
+  existingMitigations:
+    - production_changes_require_human_approval
+    - production_executed_flag
+    - hard_safety_actions
+    - operator_action_allowlist
+    - audit_trail
+    - identity_boundary
+    - secret_redaction
+    - runtime_read_only_visibility
+    - no_github_write
+    - no_deploy_or_sync
+    - no_external_scanner_upload
+
+  remainingBlockers:
+    - prompt_injection_only_partially_mitigated
+    - agent_goal_drift_only_partially_mitigated
+    - github_pr_flow_not_implemented_safely
+    - argocd_sync_not_validated

@@ -1,0 +1,34 @@
+# Step 54.4 (Stage 56D) -- runtime / Kubernetes / GitOps threat model.
+# Modeled, NOT production-enforced. Step 51 is a STATIC baseline, not a real
+# cluster validation: Step 55 (non-production cluster smoke) and Step 56 (real
+# ArgoCD manual sync) are required before any cluster trust.
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+runtimeGitopsThreatModel:
+  status: modeled_not_production_enforced
+  productionReady: false
+
+  staticBaselineCaveat:
+    - "Step 51 static baseline != real cluster validation"
+    - "Step 55 required for non-production cluster smoke"
+    - "Step 56 required for real ArgoCD manual sync"
+
+  threats:
+    - {id: RG-001, scenario: kubernetes_manifest_drift, category: tampering, severity: high, mitigations: [gitops_desired_state_model, no_argocd_sync], status: open, productionBlocker: true}
+    - {id: RG-002, scenario: argocd_sync_misuse, category: deployment_boundary_bypass, severity: critical, mitigations: [no_argocd_sync, manual_sync_required_step_56], status: open, productionBlocker: true}
+    - {id: RG-003, scenario: helm_values_secret_leakage, category: information_disclosure, severity: high, mitigations: [secret_redaction, no_real_secret_in_values, store_disabled], status: partially_mitigated, productionBlocker: true}
+    - {id: RG-004, scenario: networkpolicy_bypass, category: elevation_of_privilege, severity: high, mitigations: [kubernetes_network_baseline], status: open, productionBlocker: true}
+    - {id: RG-005, scenario: privilege_escalation, category: elevation_of_privilege, severity: high, mitigations: [kubernetes_security_rbac_baseline, runtime_security_alignment], status: open, productionBlocker: true}
+    - {id: RG-006, scenario: serviceaccount_token_misuse, category: spoofing, severity: high, mitigations: [kubernetes_security_rbac_baseline], status: open, productionBlocker: true}
+    - {id: RG-007, scenario: pvc_data_exposure, category: information_disclosure, severity: medium, mitigations: [kubernetes_storage_baseline], status: open, productionBlocker: true}
+    - {id: RG-008, scenario: migration_backup_job_misuse, category: tool_misuse, severity: medium, mitigations: [kubernetes_batch_jobs_baseline, no_production_action], status: open, productionBlocker: true}
+    - {id: RG-009, scenario: runtime_non_root_incompatibility, category: elevation_of_privilege, severity: medium, mitigations: [container_runtime_security_alignment], status: open, productionBlocker: true}
+    - {id: RG-010, scenario: pg_dump_psql_job_missing_runtime_dependency, category: denial_of_service, severity: low, mitigations: [container_image_inventory_records_gap], status: open, productionBlocker: true}
+    - {id: RG-011, scenario: production_placeholder_accidentally_deployed, category: deployment_boundary_bypass, severity: critical, mitigations: [no_deploy, placeholder_tag_documented, production_executed_flag], status: open, productionBlocker: true}
+
+  requiredFutureSteps:
+    - step_55_non_production_cluster_smoke
+    - step_56_real_argocd_manual_sync

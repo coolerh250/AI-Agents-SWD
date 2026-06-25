@@ -1,0 +1,109 @@
+# Step 54.4 (Stage 56D) -- threat category taxonomy.
+# STRIDE-inspired + agentic-AI + supply-chain categories. Modeled, not enforced.
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+threatCategories:
+  status: modeled_not_production_enforced
+  productionReady: false
+  categories:
+    - id: spoofing
+      description: "Impersonation of an operator, service, or identity."
+      affectedSurfaces: [identity_oidc, session_rbac, admin_console]
+      defaultSeverity: high
+      requiredMitigations: [identity_boundary, production_auth_when_enabled]
+      productionBlocker: true
+      evidenceRequirement: identity_readiness
+    - id: tampering
+      description: "Unauthorized modification of data, manifests, or audit records."
+      affectedSurfaces: [audit_integrity, kubernetes_helm_gitops_baseline, workspace_operator]
+      defaultSeverity: high
+      requiredMitigations: [tamper_evident_audit, verify_chain]
+      productionBlocker: false
+      evidenceRequirement: audit_evidence
+    - id: repudiation
+      description: "Denial of having performed an action."
+      affectedSurfaces: [operator_actions]
+      defaultSeverity: medium
+      requiredMitigations: [audit_trail]
+      productionBlocker: false
+      evidenceRequirement: audit_evidence
+    - id: information_disclosure
+      description: "Leakage of secrets, tokens, or sensitive data."
+      affectedSurfaces: [secret_management, local_scan_toolchain]
+      defaultSeverity: critical
+      requiredMitigations: [secret_redaction, no_secret_value_display]
+      productionBlocker: true
+      evidenceRequirement: secret_scan_summary
+    - id: denial_of_service
+      description: "Resource exhaustion or availability degradation."
+      affectedSurfaces: [runtime_operations]
+      defaultSeverity: medium
+      requiredMitigations: [read_only_visibility, governed_operator_actions]
+      productionBlocker: false
+      evidenceRequirement: runtime_readiness
+    - id: elevation_of_privilege
+      description: "Gaining privileges beyond the allowlist."
+      affectedSurfaces: [operator_actions, kubernetes_helm_gitops_baseline]
+      defaultSeverity: high
+      requiredMitigations: [operator_action_allowlist, hard_safety_actions]
+      productionBlocker: true
+      evidenceRequirement: operator_action_policy
+    - id: prompt_injection
+      description: "Adversarial input that steers agent behavior."
+      affectedSurfaces: [agent_execution_pipeline, workspace_operator]
+      defaultSeverity: high
+      requiredMitigations: [human_approval_for_production, no_autonomous_production]
+      productionBlocker: true
+      evidenceRequirement: threat_model_status
+    - id: tool_misuse
+      description: "Agent invokes a tool outside its intended scope."
+      affectedSurfaces: [workspace_operator, agent_execution_pipeline]
+      defaultSeverity: high
+      requiredMitigations: [hard_safety_actions, operator_action_allowlist]
+      productionBlocker: true
+      evidenceRequirement: threat_model_status
+    - id: agent_goal_drift
+      description: "Agent pursues an unintended goal over time."
+      affectedSurfaces: [agent_execution_pipeline]
+      defaultSeverity: medium
+      requiredMitigations: [human_approval, verification_gates]
+      productionBlocker: true
+      evidenceRequirement: qa_evidence
+    - id: supply_chain_compromise
+      description: "Compromise of a dependency, base image, or build input."
+      affectedSurfaces: [sbom_image_baseline, local_scan_toolchain]
+      defaultSeverity: high
+      requiredMitigations: [dependency_inventory, sbom_baseline, image_policy_baseline]
+      productionBlocker: true
+      evidenceRequirement: sbom_summary
+    - id: secret_leakage
+      description: "Exposure of a secret in code, logs, or reports."
+      affectedSurfaces: [local_scan_toolchain, secret_management]
+      defaultSeverity: critical
+      requiredMitigations: [secret_scan_baseline, redaction]
+      productionBlocker: true
+      evidenceRequirement: secret_scan_summary
+    - id: deployment_boundary_bypass
+      description: "Crossing the no-production-deploy boundary."
+      affectedSurfaces: [future_production_deployment, future_argocd_sync]
+      defaultSeverity: critical
+      requiredMitigations: [no_deploy, no_argocd_sync, production_executed_flag]
+      productionBlocker: true
+      evidenceRequirement: runtime_readiness
+    - id: audit_integrity_failure
+      description: "Failure or break of the audit chain."
+      affectedSurfaces: [audit_integrity]
+      defaultSeverity: critical
+      requiredMitigations: [verify_chain, tamper_residue_detector]
+      productionBlocker: false
+      evidenceRequirement: audit_evidence
+    - id: human_approval_bypass
+      description: "A production action taken without human approval."
+      affectedSurfaces: [operator_actions, future_production_deployment]
+      defaultSeverity: critical
+      requiredMitigations: [human_approval_required, hard_safety_actions]
+      productionBlocker: true
+      evidenceRequirement: operator_action_policy
