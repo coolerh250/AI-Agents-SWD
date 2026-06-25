@@ -68,3 +68,7 @@ Read-only surfaces:
 
 See [sbom-container-security-verification](../operations/sbom-container-security-verification.md)
 and [non-production limitations](../operations/sbom-container-security-non-production-limitations.md).
+
+Step 54.4 integrates Steps 54.1–54.3 into a threat model, release risk summary,
+security evidence package and readiness report (modeled, not production-enforced) — see
+[application-security-supply-chain-integrated-baseline.md](application-security-supply-chain-integrated-baseline.md).

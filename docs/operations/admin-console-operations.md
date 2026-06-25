@@ -95,3 +95,11 @@ fields back the read-only **SBOM / Image Digest / Container Security** section (
 Security view; no generate-SBOM / pull / scan / login / push / sign / attest control; SBOM /
 image-policy status degrades to `not_run`. See
 [sbom-container-security-verification.md](sbom-container-security-verification.md).
+
+9 GET-only `/operations/security/{threat-model,release-risk,evidence,readiness,step54}/*` endpoints +
+14 integrated `/operations/safety` fields back the read-only **Threat Model / Release Risk /
+Evidence** section (Step 54.4) in the Security view; a release risk summary is NOT an approval; no
+generate-evidence / approve-release / enable-gate / deploy / create-PR / sync-ArgoCD control;
+evidence / risk / readiness runtime artifacts are never committed (views degrade to `not_run`). See
+[application-security-supply-chain-verification.md](application-security-supply-chain-verification.md)
+and [application-security-supply-chain-non-production-limitations.md](application-security-supply-chain-non-production-limitations.md).

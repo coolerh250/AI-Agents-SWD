@@ -10837,3 +10837,60 @@ issues & blockers, and next-step suggestions.
   54.4 (Threat Model / Release Risk Summary / Integrated Verification) pending;
   Step 55 (non-production cluster smoke) pending; Step 54 overall open. NOT a
   production readiness declaration; Claude Code does not decide Production readiness.
+
+## Stage 56D — Threat Model / Release Risk Summary / Integrated Verification (Step 54.4)
+
+Closes Step 54. Integrates Steps 54.1 (security & supply-chain policy), 54.2 (local scan
+toolchain) and 54.3 (SBOM / image / container) into a threat model, release risk summary,
+security evidence package and security readiness report — modeled, locally verifiable, NOT
+production-enforced.
+
+- **Threat model catalogs (infra/security/, 5).** `threat-model-baseline.yaml` (STRIDE +
+  agentic + supply-chain; 20 assets, trust boundaries, entrypoints, data flows, 14 threats
+  `TM-001..TM-014`, mitigations, residual risks, blockers), `threat-category-taxonomy.yaml`
+  (14 categories incl. prompt_injection / tool_misuse / agent_goal_drift /
+  supply_chain_compromise / deployment_boundary_bypass / human_approval_bypass),
+  `agent-threat-model.yaml` (15 agentic scenarios + existing mitigations), 
+  `supply-chain-threat-model.yaml` (14 threats linked to Step 54.1-54.3 blockers),
+  `runtime-gitops-threat-model.yaml` (11 threats + Step 51-static-baseline caveat: Step 55
+  smoke / Step 56 ArgoCD required). All `productionReady: false`.
+- **Risk + evidence catalogs (infra/security/, 4).** `release-risk-summary-model.yaml`
+  (status enum excludes production_ready/approved; produces no approval),
+  `release-risk-scoring-policy.yaml` (modeled, not enforced; score!=approval; missing
+  evidence->not_ready; gate disabled), `security-evidence-package-schema.yaml` (status enum
+  has no `clean`; redaction rules; no committed runtime package),
+  `security-integrated-summary.yaml` (committed, drives the live safety fields).
+- **SDK + generators.** `shared/sdk/security_integrated` (loaders, `integrated_safety_fields`,
+  runtime views degrade to `not_run`, `step54_status_view`). Three generators ->
+  gitignored `.runtime/security/` (NEVER committed): `generate_security_evidence_package.py`
+  (missing evidence recorded as not_run/missing_evidence, never clean; references + sha256 +
+  safe counts only; no secret/raw finding/chain-of-thought),
+  `generate_release_risk_summary.py` (status not_ready/blocked; no production/deployment
+  approval), `generate_security_readiness_report.py` (blockers + next steps Step 55/56/60).
+- **API + safety.** 9 GET `/operations/security/{threat-model,release-risk,evidence,
+  readiness,step54}/*` endpoints (GET-only; no generate/approve/gate/deploy); 14
+  `/operations/safety` integrated fields via `_security_integrated_safety_summary()`.
+- **Admin Console.** Read-only **Threat Model / Release Risk / Evidence** section (React +
+  static); no generate-evidence/approve-release/enable-gate/deploy/create-PR/sync-ArgoCD.
+- **Verifiers + tests.** 11 verifiers (markers THREAT_MODEL_BASELINE / AGENT_THREAT_MODEL /
+  SUPPLY_CHAIN_THREAT_MODEL / RUNTIME_GITOPS_THREAT_MODEL / RELEASE_RISK_SUMMARY_MODEL /
+  SECURITY_EVIDENCE_PACKAGE / RELEASE_RISK_SUMMARY / SECURITY_READINESS_REPORT /
+  SECURITY_INTEGRATED_OPERATIONS_VISIBILITY / ADMIN_CONSOLE_SECURITY_INTEGRATED /
+  SECURITY_INTEGRATED_SAFETY_FIELDS) + combined
+  `verify_application_security_supply_chain_baseline.sh`
+  (`APPLICATION_SECURITY_SUPPLY_CHAIN_BASELINE_VERIFY`; chains Step 51/52/53/54.1/54.2/54.3
+  deduped via `scripts/lib/baseline_run_guard.sh`). 17 pytest files (58 cases, 0 skipped).
+- **Quality.** ruff clean; black formatted; mypy clean (shared/). Frontend (local node):
+  npm typecheck clean, vitest 25 passed, vite build OK (tsbuildinfo restored).
+- **Verification (remote 10.0.1.31, HEAD <pending>, via .venv/bin/python; orchestrator rebuilt).**
+  <pending remote integrated baseline + full regression run>
+- **Safety.** threat models present; evidence/risk/readiness generation wired; missing
+  evidence + critical finding block production; release gate disabled; step54 not production
+  ready; release risk summary is NOT an approval; no external upload / source upload / GitHub
+  write / PR / registry login / image push / signing / attestation / production gate / deploy /
+  sync; `security_step54_production_ready=false`, `production_executed_true_count=0`.
+- **Roadmap.** Step 54.4 closed (if verified) -> **Step 54 overall closed: application
+  security and supply chain baseline modeled, locally verifiable, not production-enforced**
+  (NOT production security gate ready / release approved / deployment ready / all risks
+  remediated). Step 55 (non-production cluster smoke) and Step 56 (real ArgoCD manual sync)
+  pending. Claude Code does not decide Production readiness.

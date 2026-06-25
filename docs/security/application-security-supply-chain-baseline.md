@@ -59,3 +59,7 @@ Read-only surfaces:
 
 See [security-supply-chain-verification.md](../operations/security-supply-chain-verification.md)
 and [security-supply-chain-non-production-limitations.md](../operations/security-supply-chain-non-production-limitations.md).
+
+Step 54.4 integrates Steps 54.1–54.3 into a threat model, release risk summary,
+security evidence package and readiness report (modeled, not production-enforced) — see
+[application-security-supply-chain-integrated-baseline.md](application-security-supply-chain-integrated-baseline.md).

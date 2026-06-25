@@ -22,3 +22,7 @@ see [security-finding-normalization.md](security-finding-normalization.md).
 Step 54.3 adds container security evidence (local SBOM, image inventory/digest status, Dockerfile
 security inventory, runtime alignment, image policy report) — see
 [container-security-evidence-model.md](container-security-evidence-model.md).
+
+Step 54.4 integrates Steps 54.1–54.3 into a threat model, release risk summary,
+security evidence package and readiness report (modeled, not production-enforced) — see
+[application-security-supply-chain-integrated-baseline.md](application-security-supply-chain-integrated-baseline.md).

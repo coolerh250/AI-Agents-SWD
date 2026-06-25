@@ -24,3 +24,7 @@ and the production gate stays disabled — see
 [sbom-container-security-baseline.md](sbom-container-security-baseline.md).
 
 Verified by `scripts/verify_security_gate_policy.py` (`SECURITY_GATE_POLICY_VERIFY`).
+
+Step 54.4 integrates Steps 54.1–54.3 into a threat model, release risk summary,
+security evidence package and readiness report (modeled, not production-enforced) — see
+[application-security-supply-chain-integrated-baseline.md](application-security-supply-chain-integrated-baseline.md).

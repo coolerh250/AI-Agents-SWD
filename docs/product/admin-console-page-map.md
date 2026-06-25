@@ -50,6 +50,12 @@ Incidents) calling the same aggregate endpoints.
   status degrades to not_run when no local scan has run in this environment. Also
   includes the Step 54.3 read-only **SBOM / Image Digest / Container Security**
   section (`/operations/security/sbom/status`, `/operations/security/images/readiness`);
-  no generate-SBOM / pull / scan / login / push / sign / attest control.
+  no generate-SBOM / pull / scan / login / push / sign / attest control. Also
+  includes the Step 54.4 read-only **Threat Model / Release Risk / Evidence**
+  section (`/operations/security/step54/status`, `/release-risk/summary`,
+  `/evidence/package`, `/readiness/report`); a release risk summary is NOT an
+  approval; no generate-evidence / approve-release / enable-gate / deploy /
+  create-PR / sync-ArgoCD control. Runtime evidence/risk/readiness artifacts are
+  never committed (status not_run here).
 
 All pages are GET-only and present in the React app and the static fallback.

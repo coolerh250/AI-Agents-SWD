@@ -2482,6 +2482,25 @@ registry login, no image push/sign/attest, no production SBOM/image gate declare
 Next: Step 54.4 (threat model / release risk summary / integrated verification), Step 55
 (non-production cluster smoke).
 
+## Threat Model / Release Risk / Integrated Verification (Stage 56D / Step 54.4)
+
+Integrates Steps 54.1–54.3 into a **threat model**, **release risk summary**, **security
+evidence package** and **security readiness report** — **modeled, locally verifiable, NOT
+production-enforced**. Under [infra/security/](infra/security/): threat-model baseline +
+category taxonomy + agent / supply-chain / runtime-gitops threat models + release-risk
+summary model + scoring policy + evidence-package schema + committed integrated summary.
+The `security_integrated` SDK + three generators (evidence package / release risk summary /
+readiness report) write to gitignored `.runtime/security/` (never committed). 9 GET
+`/operations/security/{threat-model,release-risk,evidence,readiness,step54}/*` endpoints +
+14 `/operations/safety` integrated fields back the Admin Console **Threat Model / Release
+Risk / Evidence** section (no generate-evidence / approve-release / enable-gate / deploy /
+create-PR / sync-ArgoCD control). 11 verifiers + combined
+`APPLICATION_SECURITY_SUPPLY_CHAIN_BASELINE_VERIFY` (chains Step 51 + 52 + 53 + 54.1 + 54.2
++ 54.3, deduped via `scripts/lib/baseline_run_guard.sh`) + 17 tests + full regression.
+**A release risk summary is NOT an approval; no production release gate; Step 54 is closed
+as a local, modeled baseline (NOT production security gate / release approval / deployment
+ready / all-risks-remediated).** Step 55 (cluster smoke) and Step 56 (ArgoCD sync) remain.
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
