@@ -1,0 +1,44 @@
+# Step 54.4 (Stage 56D) -- security evidence package schema.
+# Defines the redacted evidence package produced by
+# scripts/generate_security_evidence_package.py. The package contains NO secret,
+# NO raw token, NO raw source snippet, NO chain-of-thought; it references runtime
+# report path / hash / summary only. productionReady is always false. Runtime
+# packages are NEVER committed (only a redacted sample fixture may be).
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+securityEvidencePackageSchema:
+  status: modeled_not_production_enforced
+  productionReady: false
+  schemaVersion: "1"
+  fields:
+    packageId: string
+    generatedAt: iso8601
+    scope: object
+    evidence:
+      sast: {status: enum, summaryRef: optional}
+      dependencyScan: {status: enum, summaryRef: optional}
+      secretScan: {status: enum, summaryRef: optional}
+      sbom: {status: enum, summaryRef: optional}
+      imagePolicy: {status: enum, summaryRef: optional}
+      dockerfileSecurity: {status: enum, summaryRef: optional}
+      threatModel: {status: enum, summaryRef: optional}
+      releaseRisk: {status: enum, summaryRef: optional}
+      audit: {status: enum, summaryRef: optional}
+      qa: {status: enum, summaryRef: optional}
+    limitations: list
+    productionReady: false
+  evidenceStatusEnum:
+    - present
+    - not_run
+    - missing_evidence
+    - tool_unavailable
+  redaction:
+    noSecret: true
+    noRawToken: true
+    noRawSourceWithSecret: true
+    noChainOfThought: true
+    referencesOnly: true
+  committedRuntimePackageAllowed: false

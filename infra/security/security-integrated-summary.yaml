@@ -1,0 +1,36 @@
+# Step 54.4 (Stage 56D) -- committed integrated security summary.
+# Drives the read-only /operations/safety Step 54 integrated fields (this file is
+# copied into the orchestrator image; the .runtime/security/*.json artifacts are
+# NEVER committed and are absent in the image, so the live evidence/risk/readiness
+# ENDPOINT views degrade to not_run -- the booleans below describe the committed
+# baseline + wired generators, never a production approval).
+version: "1"
+meta:
+  stage: "56D"
+  step: "54.4"
+
+securityIntegrated:
+  status: modeled_locally_verifiable_not_production_enforced
+  productionReady: false
+  releaseGateEnabled: false
+  step54Integrated: true
+
+  # Threat-model / risk-model / evidence-schema artifacts committed this stage.
+  threatModelPresent: true
+  agentThreatModelPresent: true
+  supplyChainThreatModelPresent: true
+  runtimeGitopsThreatModelPresent: true
+  releaseRiskSummaryModelPresent: true
+  evidencePackageSchemaPresent: true
+
+  # The integrated baseline verifier runs these generators (committed + wired);
+  # the produced .runtime artifacts are redacted and never committed.
+  evidencePackageGenerated: true
+  releaseRiskSummaryGenerated: true
+  readinessReportGenerated: true
+
+  # Fail-closed posture (see security-gate-fail-closed-policy.yaml +
+  # release-risk-scoring-policy.yaml). Missing evidence / critical finding never
+  # pass to production; the production release gate stays disabled.
+  missingEvidenceBlocksProduction: true
+  criticalFindingBlocksProduction: true
