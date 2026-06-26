@@ -35,6 +35,11 @@ batchJobs:
     repository: aiagents/orchestrator
     tag: smoke-local
     digest: ""
+  migration:
+    # Keep the completed (no-op) migration Job observable for a full day so the
+    # batch smoke / report regeneration is not raced by Job TTL garbage-collection.
+    # Execution stays fail-closed (executionEnabled inherits false from the chart).
+    ttlSecondsAfterFinished: 86400
 
 components:
   orchestrator:
