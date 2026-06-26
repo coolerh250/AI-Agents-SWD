@@ -18,6 +18,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/secrets", label: "Secret Posture" },
   { to: "/security", label: "Security / Supply Chain" },
   { to: "/delivery", label: "Multi-project Delivery" },
+  { to: "/metrics", label: "Operational Metrics" },
 ];
 
 export function Nav() {

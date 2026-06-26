@@ -293,6 +293,10 @@ services:
       - ../../source/dr-reports:/app/source/dr-reports
       # Stage 42 -- mount audit forensic + repair reports (read-only views).
       - ../../source/audit-forensics:/app/source/audit-forensics
+      # Stage 60A (Step 58) -- read-only mount of runtime evidence so the operational
+      # metrics API can read Step 55/56 reports + the metrics snapshot. READ-ONLY; the
+      # orchestrator never writes here and never mutates a cluster.
+      - ../../.runtime:/app/.runtime:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 10s

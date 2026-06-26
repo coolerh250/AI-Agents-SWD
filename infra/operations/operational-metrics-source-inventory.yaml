@@ -1,0 +1,27 @@
+# Step 58 (Stage 60A) -- operational metrics source inventory.
+# Every source is read-only. Runtime reports are NEVER committed; when absent the
+# metric is marked missing/stale, never clean. productionReady=false everywhere.
+operationalMetricsSourceInventory:
+  productionReady: false
+  sources:
+    - {name: projects, type: db_table, freshness: live, availability: required, redaction: none_needed, secretExposureRisk: false}
+    - {name: project_work_items, type: db_table, freshness: live, availability: required, redaction: none_needed, secretExposureRisk: false}
+    - {name: work_item_dispatches, type: db_table, freshness: live, availability: required, redaction: none_needed, secretExposureRisk: false}
+    - {name: work_item_events, type: db_table, freshness: live, availability: required, redaction: none_needed, secretExposureRisk: false}
+    - {name: project_delivery_states, type: db_table, freshness: live, availability: required, redaction: none_needed, secretExposureRisk: false}
+    - {name: project_delivery_packages, type: db_table, freshness: live, availability: optional, redaction: none_needed, secretExposureRisk: false}
+    - {name: agent_executions, type: db_table, freshness: live, availability: optional, redaction: redact_errors, secretExposureRisk: false}
+    - {name: workflow_states, type: db_table, freshness: live, availability: optional, redaction: none_needed, secretExposureRisk: false}
+    - {name: approval_requests, type: db_table, freshness: live, availability: optional, redaction: none_needed, secretExposureRisk: false}
+    - {name: audit_logs, type: db_table, freshness: live, availability: optional, redaction: none_needed, secretExposureRisk: false}
+    - {name: nonproduction-runtime-smoke-report, type: runtime_report, path: .runtime/kubernetes/nonproduction-runtime-smoke-report.json, freshness: report_timestamp, availability: optional, redaction: redacted, secretExposureRisk: false, committed: false}
+    - {name: nonproduction-argocd-manual-sync-report, type: runtime_report, path: .runtime/gitops/nonproduction-argocd-manual-sync-report.json, freshness: report_timestamp, availability: optional, redaction: redacted, secretExposureRisk: false, committed: false}
+    - {name: security-integrated-summary, type: committed_summary, path: infra/security, freshness: committed, availability: optional, redaction: redacted, secretExposureRisk: false}
+    - {name: argocd-manual-sync-summary, type: committed_summary, path: infra/gitops/nonproduction-argocd-manual-sync-summary.yaml, freshness: committed, availability: optional, redaction: redacted, secretExposureRisk: false}
+    - {name: operations_safety, type: in_process, freshness: live, availability: required, redaction: redacted, secretExposureRisk: false}
+  rules:
+    missingRuntimeReportShownAsStale: true
+    runtimeReportsNeverCommitted: true
+    noArbitraryPath: true
+    onlyAllowlistedPaths: true
+    noSecretExposure: true

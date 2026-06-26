@@ -28,6 +28,10 @@ COPY infra/kubernetes/ ./infra/kubernetes/
 # Non-sensitive (statuses/enums/names/public git revision only); no kubeconfig,
 # token, admin password, secret, or rendered manifest.
 COPY infra/gitops/ ./infra/gitops/
+# Stage 60A (Step 58) -- committed read-only operational metrics model + source
+# inventory + delivery policies consumed by the read-only /operations/metrics/* API.
+# Non-sensitive (model/enums/source descriptors only); no secret/token/kubeconfig.
+COPY infra/operations/ ./infra/operations/
 # Stage 59A (Step 57) -- committed multi-project / work-item delivery policies consumed
 # by the work_items + projects SDK (lifecycle / dispatch / decomposition / assignment /
 # delivery-state / linkage / audit / notification) + /operations/safety. Non-sensitive

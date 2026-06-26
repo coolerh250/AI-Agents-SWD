@@ -11124,3 +11124,42 @@ Strategy note recorded as a future design reference at
 change to Step 58 / Step 59. No runtime implementation added.** The platform stays tenant-ready,
 not tenant-enabled; Step 57 remains a completed multi-project baseline (not multi-tenant);
 `production_executed_true_count=0`. This is NOT a scheduled stage.
+
+## Stage 60A — Admin Console v2 Operational Metrics (Step 58)
+
+Aggregates existing platform state into read-only operational metrics + an Admin Console v2
+dashboard. **Outcome: PASS.** Visibility only -- NOT production readiness / SLA-SLO /
+multi-tenant.
+
+- **Model + sources.** `infra/operations/operational-metrics-model.yaml` (11 domains:
+  delivery/work_items/dispatch/agents/workflows/runtime/gitops/security/approval/audit/safety;
+  visibility-only rules; productionReady=false) + `operational-metrics-source-inventory.yaml`
+  (read-only allowlisted sources; runtime reports never committed; missing-as-stale).
+- **SDK.** `shared/sdk/operations_metrics` (collectors -- read-only DB counts + runtime/committed
+  report reads + config safety; aggregator -> redacted snapshot; redaction; freshness; safety
+  fields). No mutation / sync / deploy / external call.
+- **Snapshot.** `scripts/generate_operational_metrics_snapshot.py` ->
+  `.runtime/operations/operational-metrics-snapshot.json` (gitignored, never committed;
+  production_ready=false; blockers/unavailable explicit; redacted).
+- **API.** 14 GET `/operations/metrics/*` (overview/delivery/work-items/dispatch/agents/workflows/
+  runtime/gitops/security/approval/audit/safety/freshness/snapshot); GET-only, no generate/refresh/
+  sync/deploy/PR/external-send; live redacted aggregation; orchestrator reads `.runtime` read-only
+  (compose mount) -- never mutates a cluster. 10 `/operations/safety` Step 58 fields.
+- **Admin Console v2.** Read-only Operational Metrics dashboard (route `/metrics` + static fallback);
+  no deploy/sync/PR/external-send/production-approve/production-ready/connector control; stale/
+  unavailable shown explicitly.
+- **Verifiers + combined (6 + 1).** model/sources/snapshot/api/admin-console/safety-fields; combined
+  `verify_admin_console_v2_operational_metrics_baseline.sh`
+  (`ADMIN_CONSOLE_V2_OPERATIONAL_METRICS_BASELINE_VERIFY`; chains Step 52-57 + tenant note + the 6
+  verifiers + tests + safety posture).
+- **Tests + quality.** 10 pytest files (22 cases, 0 skipped). ruff/black/mypy clean. Frontend (local):
+  typecheck clean, 25 vitest, build OK.
+- **kind/ArgoCD.** Left running (read-only); Step 58 only reads Step 55/56 evidence -- no teardown, no
+  re-sync, no Helm, no kubectl mutation.
+- **Safety.** No ArgoCD sync / Kubernetes mutation / GitHub write / external send / production action;
+  no secret/token/kubeconfig exposed; `operational_metrics_production_ready=false`,
+  `production_executed_true_count=0`.
+- **Roadmap.** Step 58 closed -- Admin Console v2 operational metrics baseline completed. NOT production
+  operations center / SLA guaranteed / multi-tenant metrics ready. Step 59 (Sandbox GitHub Draft PR
+  Flow) pending. Tenant strategy note recorded only, not scheduled. Claude Code does not decide
+  Production readiness.

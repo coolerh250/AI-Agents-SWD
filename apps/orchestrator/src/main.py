@@ -20,6 +20,7 @@ from operator_actions_api import router as operator_actions_router
 from runtime_baseline_api import router as runtime_baseline_router
 from gitops_argocd_api import router as gitops_argocd_router
 from multi_project_api import router as multi_project_router
+from operational_metrics_api import router as operational_metrics_router
 from identity_posture_api import router as identity_posture_router
 from secret_posture_api import router as secret_posture_router
 from security_posture_api import router as security_posture_router
@@ -214,6 +215,8 @@ app.include_router(runtime_baseline_router)
 app.include_router(gitops_argocd_router)
 # Stage 59A (Step 57): multi-project delivery + work-item dispatch API.
 app.include_router(multi_project_router)
+# Stage 60A (Step 58): read-only Admin Console v2 operational metrics API.
+app.include_router(operational_metrics_router)
 # Stage 54D (Step 52.4): read-only identity posture API.
 app.include_router(identity_posture_router)
 # Stage 55A (Step 53): read-only secret management foundation API.

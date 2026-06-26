@@ -123,3 +123,8 @@ production deploy / GitHub PR / ArgoCD sync / external send / production-approve
 control; a `production_effect` work item routes to waiting_approval (never dispatched). Backed by
 `/operations/delivery/*` (7 GET reads + 3 writes). See
 [multi-project-delivery-dispatch-verification.md](multi-project-delivery-dispatch-verification.md).
+
+Step 58 adds a read-only **Operational Metrics (Admin Console v2)** dashboard backed by 14 GET
+`/operations/metrics/*` endpoints (visibility only — no generate/refresh/sync/deploy/PR/external-send;
+no production-ready/approve control; stale/unavailable shown explicitly). See
+[admin-console-v2-operational-metrics-verification.md](admin-console-v2-operational-metrics-verification.md).

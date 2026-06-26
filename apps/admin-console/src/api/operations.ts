@@ -64,6 +64,34 @@ export const getDeliveryWorkItemDispatches = (id: string) =>
 export const getProjectDeliveryState = (id: string) =>
   apiGet<Record<string, unknown>>(`/operations/delivery/projects/${id}/delivery-state`);
 
+// Step 58 -- read-only Admin Console v2 operational metrics.
+export const getMetricsOverview = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/overview`);
+export const getMetricsDelivery = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/delivery`);
+export const getMetricsWorkItems = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/work-items`);
+export const getMetricsDispatch = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/dispatch`);
+export const getMetricsAgents = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/agents`);
+export const getMetricsWorkflows = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/workflows`);
+export const getMetricsRuntime = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/runtime`);
+export const getMetricsGitops = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/gitops`);
+export const getMetricsSecurity = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/security`);
+export const getMetricsApproval = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/approval`);
+export const getMetricsAudit = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/audit`);
+export const getMetricsSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/safety`);
+export const getMetricsFreshness = () =>
+  apiGet<Record<string, unknown>>(`/operations/metrics/freshness`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);

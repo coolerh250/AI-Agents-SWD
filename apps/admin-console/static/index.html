@@ -110,6 +110,7 @@
     { id:"secrets", label:"Secret Posture", render: renderSecrets },
     { id:"security", label:"Security / Supply Chain", render: renderSecurity },
     { id:"multiproject", label:"Multi-project Delivery", render: renderMultiProject },
+    { id:"metrics", label:"Operational Metrics", render: renderMetrics },
   ];
 
   async function renderOverview(el) {
@@ -154,6 +155,30 @@
       </div>
       <h2 style="margin-top:20px">Projects</h2>
       ${rows ? `<table><tr><th>Key</th><th>Name</th><th>Status</th><th>Env</th><th>Production allowed</th></tr>${rows}</table>` : emptyState("No delivery projects yet")}`;
+  }
+
+  // Step 58 -- read-only Operational Metrics (Admin Console v2). No deploy / sync /
+  // PR / external send / production approve / production-ready control. Stale /
+  // unavailable sources shown explicitly.
+  async function renderMetrics(el) {
+    let ov = null, rt = null, go = null;
+    try { ov = await apiGet("/operations/metrics/overview"); } catch (_e) { ov = null; }
+    try { rt = await apiGet("/operations/metrics/runtime"); } catch (_e) { rt = null; }
+    try { go = await apiGet("/operations/metrics/gitops"); } catch (_e) { go = null; }
+    el.innerHTML = `<h2>Operational Metrics (Admin Console v2, Step 58)</h2>
+      <p class="note">Read-only operational metrics. Visibility only — NOT production readiness, NOT SLA/SLO, NOT multi-tenant. No deploy / ArgoCD sync / GitHub PR / external send / production approve / production-ready control. Stale / unavailable sources are shown explicitly. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Metrics status", esc(ov && ov.status || "unavailable"))}
+        ${card("Production ready", badge(ov ? ov.production_ready : false))}
+        ${card("Projects total", esc(ov && ov.project_count_total))}
+        ${card("Work items total", esc(ov && ov.work_item_count_total))}
+        ${card("Dispatches total", esc(ov && ov.dispatch_count_total))}
+        ${card("production_executed_true_count", esc(ov && ov.production_executed_true_count))}
+        ${card("Runtime smoke", esc(rt && rt.nonprod_service_health_status || "unavailable"))}
+        ${card("ArgoCD sync", esc(go && go.argocd_last_manual_sync_status || "unavailable"))}
+      </div>
+      <h2 style="margin-top:20px">Blockers / unavailable sources</h2>
+      <ul>${((ov && ov.blockers) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
   }
   async function renderProjects(el) {
     const d = await apiGet("/operations/admin-console/projects");

@@ -1,0 +1,41 @@
+# Step 58 (Stage 60A) -- Admin Console v2 operational metrics model.
+# Visibility only. NOT production readiness, NOT SLA/SLO, NOT multi-tenant.
+operationalMetrics:
+  schemaVersion: "1"
+  status: modeled_not_production_ready
+  productionReady: false
+
+  domains:
+    - delivery
+    - work_items
+    - dispatch
+    - agents
+    - workflows
+    - runtime
+    - gitops
+    - security
+    - approval
+    - audit
+    - safety
+
+  metricTypes:
+    - count
+    - rate
+    - duration
+    - status
+    - freshness
+    - readiness
+    - blocker
+
+  rules:
+    # Metrics are visibility only -- never an approval / readiness signal.
+    metricsAreVisibilityOnly: true
+    metricsAreNotProductionApproval: true
+    metricsMayShowStaleOrUnavailable: true
+    missingDataMustNotBeHidden: true
+    noSecretOutput: true
+    noChainOfThoughtOutput: true
+    doesNotClaimProductionReadiness: true
+    doesNotClaimSlaGuarantee: true
+    deliveryCompletedIsNotProductionApproved: true
+    securityBaselinePassIsNotAllRisksRemediated: true

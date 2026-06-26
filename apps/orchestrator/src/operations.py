@@ -1716,6 +1716,9 @@ async def operations_safety() -> dict:
     # Stage 59A (Step 57) -- multi-project delivery + work-item dispatch fields.
     multi_project_safety = _multi_project_safety_summary()
 
+    # Stage 60A (Step 58) -- Admin Console v2 operational metrics fields.
+    operational_metrics_safety = _operational_metrics_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2130,6 +2133,7 @@ async def operations_safety() -> dict:
         **nonprod_runtime_smoke_safety,
         **nonprod_argocd_safety,
         **multi_project_safety,
+        **operational_metrics_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4019,6 +4023,16 @@ def _multi_project_safety_summary() -> dict[str, Any]:
     from shared.sdk.work_items.safety import multi_project_safety_fields
 
     return multi_project_safety_fields()
+
+
+def _operational_metrics_safety_summary() -> dict[str, Any]:
+    """Step 58 -- Admin Console v2 operational metrics safety fields. Config-driven
+    (visibility-only capability); no DB, no cluster, no production action. Every
+    side-effect / production toggle is off.
+    """
+    from shared.sdk.operations_metrics import operational_metrics_safety_fields
+
+    return operational_metrics_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

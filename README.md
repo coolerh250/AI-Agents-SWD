@@ -2589,6 +2589,23 @@ delivery-package-ready ≠ production approval; work-item completed ≠ human ac
 > Step 58 / Step 59, no runtime implementation added.** The platform is tenant-ready, not
 > tenant-enabled; Step 57 remains a completed multi-project baseline (not multi-tenant).
 
+## Admin Console v2 Operational Metrics (Stage 60A / Step 58)
+
+Read-only operational metrics aggregating existing platform state across 11 domains
+(delivery, work items, dispatch, agents, workflows, runtime smoke, ArgoCD manual sync,
+security readiness, approval, audit, safety) into a redacted snapshot
+([model](infra/operations/operational-metrics-model.yaml) +
+[source inventory](infra/operations/operational-metrics-source-inventory.yaml) +
+`shared/sdk/operations_metrics`), 14 GET `/operations/metrics/*` endpoints, an Admin
+Console v2 dashboard (route `/metrics`), and 10 `/operations/safety` fields. **Visibility
+only — NOT production readiness, NOT an SLA/SLO guarantee, NOT multi-tenant.** Runtime/
+GitOps metrics read the Step 55/56 evidence read-only and show stale/unavailable honestly
+when absent; missing data is never reported clean. No deploy / ArgoCD sync / GitHub PR /
+external send / production approve / production-ready / connector control; no Kubernetes
+mutation; `operational_metrics_production_ready=false`, `production_executed_true_count=0`.
+6 verifiers + combined `ADMIN_CONSOLE_V2_OPERATIONAL_METRICS_BASELINE_VERIFY`, 10 tests, 7
+docs. Next: Step 59 (Sandbox GitHub Draft PR Flow).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
