@@ -1,0 +1,23 @@
+# Step 57 (Stage 59A) -- delivery-package <-> project/work-item linkage.
+deliveryPackageProjectLinkage:
+  productionReady: false
+  linkFields:
+    - project_id
+    - work_item_id
+    - work_item_key
+    - dispatch_id
+    - delivery_package_id
+    - acceptance_status
+    - evidence_references
+  acceptanceStatuses: [pending, operator_review, accepted_nonproduction, rejected]
+  invariants:
+    # These distinctions are load-bearing safety semantics.
+    deliveryPackageReadyIsNotProductionApproval: true
+    workItemCompletedIsNotHumanAcceptance: true
+    humanAcceptanceIsNotDeploymentApproval: true
+    projectCompletedIsNotProductionRelease: true
+    productionReady: false
+  nonProductionLimitations:
+    - non-production evidence only
+    - no production deploy / release gate
+    - operator review is a non-production acceptance, not a deployment approval

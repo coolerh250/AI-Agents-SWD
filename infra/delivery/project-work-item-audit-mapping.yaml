@@ -1,0 +1,31 @@
+# Step 57 (Stage 59A) -- project / work-item audit mapping.
+projectWorkItemAuditMapping:
+  productionReady: false
+  events:
+    - project_created
+    - project_updated
+    - work_item_created
+    - work_item_triaged
+    - work_item_dispatched
+    - work_item_blocked
+    - work_item_completed
+    - work_item_failed
+    - delivery_package_linked
+    - project_delivery_state_updated
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - project_id
+    - work_item_id
+    - correlation_id
+  forbiddenMetadata:
+    - secret
+    - token
+    - password
+    - chain_of_thought
+    - raw_reasoning
+  rules:
+    productionExecuted: false
+    secretInAudit: false
+    chainOfThoughtInAudit: false

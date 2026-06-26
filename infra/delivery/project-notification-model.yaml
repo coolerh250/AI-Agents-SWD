@@ -1,0 +1,24 @@
+# Step 57 (Stage 59A) -- project notification model (mock events only).
+projectNotificationModel:
+  productionReady: false
+  externalSendEnabled: false
+  channels:
+    mock_event: {enabled: true, external: false}
+    slack: {enabled: false, external: true, requiresApproval: true}
+    email: {enabled: false, external: true, requiresApproval: true}
+    webhook: {enabled: false, external: true, requiresApproval: true}
+  events:
+    - project_created
+    - work_item_created
+    - work_item_dispatched
+    - work_item_blocked
+    - work_item_completed
+    - delivery_package_linked
+    - project_delivery_state_updated
+  payloadIncludes: [project_id, work_item_id, dispatch_id, correlation_id]
+  rules:
+    externalSend: false
+    slackSend: false
+    emailSend: false
+    webhookSend: false
+    futureSlackRequiresApproval: true

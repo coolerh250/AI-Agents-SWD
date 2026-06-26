@@ -36,10 +36,88 @@ class IntakeRequest(BaseModel):
     publish_to_stream: bool = False
 
 
+class ProjectWorkItemIntake(BaseModel):
+    project_key: str | None = None
+    project_name: str | None = None
+    title: str
+    description: str | None = None
+    work_type: str = "task"
+    environment_scope: str = "dev"
+    create_project_if_missing: bool = True
+
+
 class TestNotification(BaseModel):
     task_id: str = "gateway-test"
     event_type: str = "test"
     message: str = "test notification"
+
+
+# Step 57 -- MOCK project-scoped work-item intake. Creates a non-production project
+# (if allowed) + a work item in the delivery domain. No Slack/email real send, no
+# production action, no GitHub write. The work item starts at lifecycle `created`.
+@app.post("/intake/mock/project-work-item")
+async def intake_mock_project_work_item(payload: ProjectWorkItemIntake) -> dict:
+    from shared.sdk.projects import ProjectStore
+    from shared.sdk.work_items import WorkItemStore
+    from shared.sdk.work_items.events import build_audit_metadata
+
+    projects = ProjectStore()
+    items = WorkItemStore()
+    existing = await projects.list_projects()
+    match = next((p for p in existing if p["project_key"] == payload.project_key), None)
+    if match is None:
+        if not payload.create_project_if_missing:
+            raise HTTPException(status_code=404, detail="project_not_found")
+        env = (
+            payload.environment_scope
+            if payload.environment_scope in ("dev", "test", "nonprod")
+            else "dev"
+        )
+        match = await projects.create_project(
+            name=payload.project_name or payload.project_key or "Mock Project",
+            description="mock intake project",
+            environment_scope=env,
+            requester="mock-intake",
+        )
+    wi = await items.create_work_item(
+        project_id=match["project_id"],
+        title=payload.title,
+        description=payload.description,
+        work_type=payload.work_type,
+        priority="medium",
+        item_source="mock_intake",
+        requested_by="mock-intake",
+        requires_human_approval=False,
+        production_effect=False,
+    )
+    await items.record_event(
+        project_id=match["project_id"],
+        work_item_id=wi["id"],
+        event_type="work_item_created",
+        from_state=None,
+        to_state="created",
+        actor="mock-intake",
+        role="intake",
+        reason="mock intake",
+        correlation_id=wi["id"],
+        metadata=build_audit_metadata(
+            event_type="work_item_created",
+            actor="mock-intake",
+            role="intake",
+            reason="mock intake",
+            project_id=match["project_id"],
+            work_item_id=wi["id"],
+            correlation_id=wi["id"],
+        ),
+    )
+    return {
+        "status": "created",
+        "mode": "mock",
+        "project": match,
+        "work_item": wi,
+        "production_executed": False,
+        "external_send_performed": False,
+    }
 
 
 @app.get("/health")

@@ -17,6 +17,7 @@ import { RuntimeBaseline } from "./pages/RuntimeBaseline";
 import { IdentityPosture } from "./pages/IdentityPosture";
 import { SecretPosture } from "./pages/SecretPosture";
 import { SecurityPosture } from "./pages/SecurityPosture";
+import { MultiProjectDelivery } from "./pages/MultiProjectDelivery";
 
 export function App() {
   return (
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/identity" element={<IdentityPosture />} />
         <Route path="/secrets" element={<SecretPosture />} />
         <Route path="/security" element={<SecurityPosture />} />
+        <Route path="/delivery" element={<MultiProjectDelivery />} />
       </Routes>
     </Layout>
   );

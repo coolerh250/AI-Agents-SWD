@@ -1,0 +1,29 @@
+# Step 57 (Stage 59A) -- project delivery-state rollup model.
+projectDeliveryStateModel:
+  productionReady: false
+  states:
+    - not_started
+    - intake_active
+    - planning_active
+    - implementation_active
+    - qa_active
+    - packaging_active
+    - operator_review
+    - completed_nonproduction
+    - blocked
+    - cancelled
+  rollup:
+    # Computed from work-item lifecycle states (highest-precedence rule wins).
+    - {when: anyWorkItem.lifecycle_state == blocked, state: blocked}
+    - {when: anyWorkItem.lifecycle_state == waiting_approval, state: operator_review}
+    - {when: anyWorkItem.workType == qa AND in_progress, state: qa_active}
+    - {when: anyWorkItem.workType == delivery_package AND in_progress, state: packaging_active}
+    - {when: anyWorkItem.workType == implementation AND in_progress, state: implementation_active}
+    - {when: anyWorkItem.workType == planning AND in_progress, state: planning_active}
+    - {when: anyWorkItem.workType == requirement AND in_progress, state: intake_active}
+    - {when: allWorkItems.terminal AND any.completed, state: completed_nonproduction}
+    - {when: noWorkItems, state: not_started}
+  rules:
+    productionReady: false
+    autoReleaseForbidden: true
+    completedNonproductionIsNotProductionRelease: true

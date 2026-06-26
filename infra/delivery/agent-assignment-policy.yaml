@@ -1,0 +1,27 @@
+# Step 57 (Stage 59A) -- agent assignment policy.
+agentAssignmentPolicy:
+  productionReady: false
+  strategy: capability-based-with-role-fallback
+  capabilities:
+    requirement-agent: [requirement, research_task]
+    project-planner: [planning, architecture, epic]
+    design-review: [design_review]
+    development-agent: [implementation, backend, frontend, feature, task, bug, security_task]
+    qa-agent: [qa, verification, verification_task]
+    devops-agent: [deployment_simulation, devops, ops_task]
+    delivery-package: [delivery_package, release_task]
+    communication-gateway: [notification]
+  roleFallback:
+    requirement: requirement-agent
+    planning: project-planner
+    implementation: development-agent
+    qa: qa-agent
+    devops: devops-agent
+    delivery_package: delivery-package
+  rules:
+    blockedWhenNoAgentAvailable: true
+    autonomousProductionAction: false
+    directProductionDeploy: false
+    githubWrite: false
+    externalSend: false
+    manualReassignment: future

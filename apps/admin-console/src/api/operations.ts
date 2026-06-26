@@ -48,6 +48,22 @@ export const getNonprodArgocdApplication = () =>
 export const getNonprodArgocdReadiness = () =>
   apiGet<Record<string, unknown>>(`/operations/gitops/nonprod-argocd/readiness`);
 
+// Step 57 -- multi-project delivery + work-item dispatch (GET reads only).
+export const getDeliveryProjects = () =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/projects`);
+export const getDeliveryProject = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/projects/${id}`);
+export const getDeliveryWorkItems = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/projects/${id}/work-items`);
+export const getDeliveryWorkItem = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/work-items/${id}`);
+export const getDeliveryWorkItemEvents = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/work-items/${id}/events`);
+export const getDeliveryWorkItemDispatches = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/work-items/${id}/dispatches`);
+export const getProjectDeliveryState = (id: string) =>
+  apiGet<Record<string, unknown>>(`/operations/delivery/projects/${id}/delivery-state`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);

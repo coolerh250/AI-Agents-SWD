@@ -119,6 +119,20 @@ export const operatorActions = {
   listReruns(): Promise<unknown> {
     return getJson(`${ADMIN}/verifications/reruns`);
   },
+  // Step 57 -- multi-project delivery mutations (project/work-item domain only;
+  // reason required, CSRF + session enforced server-side, audited). No production
+  // deploy / GitHub PR / ArgoCD sync / external send action here.
+  createProject(name: string, reason: string, environmentScope = "dev"): Promise<unknown> {
+    return post(`${OPS}/delivery/projects`,
+      { name, reason, environment_scope: environmentScope }, "mpproj");
+  },
+  createWorkItem(projectId: string, title: string, reason: string, workType = "task"): Promise<unknown> {
+    return post(`${OPS}/delivery/projects/${projectId}/work-items`,
+      { title, reason, work_type: workType }, "mpwi");
+  },
+  dispatchWorkItem(workItemId: string, reason: string): Promise<unknown> {
+    return post(`${OPS}/delivery/work-items/${workItemId}/dispatch`, { reason }, "mpdsp");
+  },
 };
 
 export { setCsrf };

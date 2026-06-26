@@ -109,6 +109,7 @@
     { id:"identity", label:"Identity Posture", render: renderIdentity },
     { id:"secrets", label:"Secret Posture", render: renderSecrets },
     { id:"security", label:"Security / Supply Chain", render: renderSecurity },
+    { id:"multiproject", label:"Multi-project Delivery", render: renderMultiProject },
   ];
 
   async function renderOverview(el) {
@@ -128,6 +129,31 @@
       ${card("Backup gaps", esc((d.backup_readiness_gaps||[]).join(", ") || "none"))}
     </div>
     <p class="note">Operator actions are disabled in Admin Console v0.</p>`;
+  }
+  // Step 57 -- read-only multi-project delivery & work-item dispatch fallback view.
+  // The static fallback is read-only; mutations (create/dispatch) are in the React app.
+  // NO production deploy / GitHub PR / ArgoCD sync / external send / production-ready control.
+  async function renderMultiProject(el) {
+    let projects = null, safety = null;
+    try { projects = await apiGet("/operations/delivery/projects"); } catch (_e) { projects = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    const list = (projects && projects.projects) || [];
+    const rows = list.map(p => `<tr><td>${esc(p.project_key)}</td><td>${esc(p.name)}</td>
+      <td>${badge(p.registry_status)}</td><td>${esc(p.environment_scope)}</td>
+      <td>${badge(p.production_allowed)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Multi-project Delivery &amp; Work-item Dispatch (Step 57)</h2>
+      <p class="note">Non-production multi-project delivery and work-item dispatch. Dispatch never triggers GitHub write, ArgoCD sync, external notification send, or any production action; production_effect work items route to waiting_approval. This fallback view is read-only and has NO production deploy / GitHub PR / ArgoCD sync / external send / production-ready control. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Multi-project enabled", badge(safety && safety.multi_project_enabled))}
+        ${card("Work-item dispatch enabled", badge(safety && safety.work_item_dispatch_enabled))}
+        ${card("Dispatch GitHub write", badge(safety && safety.work_item_dispatch_github_write_enabled))}
+        ${card("Dispatch ArgoCD sync", badge(safety && safety.work_item_dispatch_argocd_sync_enabled))}
+        ${card("Dispatch production action", badge(safety && safety.work_item_dispatch_production_action_enabled))}
+        ${card("Notification external send", badge(safety && safety.work_item_notification_external_send_enabled))}
+        ${card("Production ready", badge(safety && safety.multi_project_production_ready))}
+      </div>
+      <h2 style="margin-top:20px">Projects</h2>
+      ${rows ? `<table><tr><th>Key</th><th>Name</th><th>Status</th><th>Env</th><th>Production allowed</th></tr>${rows}</table>` : emptyState("No delivery projects yet")}`;
   }
   async function renderProjects(el) {
     const d = await apiGet("/operations/admin-console/projects");

@@ -1,0 +1,78 @@
+# Step 57 (Stage 59A) -- work-item decomposition policy (deterministic; no LLM).
+workItemDecompositionPolicy:
+  productionReady: false
+  deterministicOnly: true
+  llmUsed: false
+  types:
+    epic:
+      allowedTargets: [project-planner]
+      requiredInput: [title]
+      requiredOutput: [child_work_items]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    feature:
+      allowedTargets: [project-planner, development-agent]
+      requiredInput: [title, description]
+      requiredOutput: [implementation_summary]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    task:
+      allowedTargets: [development-agent, qa-agent, devops-agent]
+      requiredInput: [title]
+      requiredOutput: [result_summary]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    bug:
+      allowedTargets: [development-agent, qa-agent]
+      requiredInput: [title, description]
+      requiredOutput: [fix_summary]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    security_task:
+      allowedTargets: [development-agent, qa-agent]
+      requiredInput: [title, description]
+      requiredOutput: [remediation_summary]
+      defaultApprovalRequired: true
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    ops_task:
+      allowedTargets: [devops-agent]
+      requiredInput: [title]
+      requiredOutput: [ops_summary]
+      defaultApprovalRequired: true
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    research_task:
+      allowedTargets: [requirement-agent, project-planner]
+      requiredInput: [title]
+      requiredOutput: [findings]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    verification_task:
+      allowedTargets: [qa-agent]
+      requiredInput: [title]
+      requiredOutput: [verification_result]
+      defaultApprovalRequired: false
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false
+      deliveryPackageLinkageRequired: false
+    release_task:
+      allowedTargets: [delivery-package, devops-agent]
+      requiredInput: [title]
+      requiredOutput: [delivery_package_reference]
+      defaultApprovalRequired: true       # release-type work needs operator review
+      allowedEnvironments: [dev, test, nonprod]
+      productionEffectDefault: false      # still no production action in this stage
+      deliveryPackageLinkageRequired: true

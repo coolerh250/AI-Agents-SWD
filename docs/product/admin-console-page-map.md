@@ -68,4 +68,12 @@ Incidents) calling the same aggregate endpoints.
   self-heal button; no namespace / secret input; no production-ready toggle. Backed by 8 GET
   `/operations/gitops/nonprod-argocd/*` endpoints.
 
-All pages are GET-only and present in the React app and the static fallback.
+- **/delivery — Multi-project Delivery (Step 57):** read views (projects, work items,
+  event timeline, delivery state) + **audited** create-project / create-work-item /
+  dispatch (operator session + CSRF + reason). No production deploy / GitHub PR / ArgoCD
+  sync / external send / production-approve / production-ready button; production_effect
+  work items route to waiting_approval. Backed by `/operations/delivery/*`.
+
+Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
+pages additionally perform controlled, audited, CSRF-protected mutations within their own
+domain; both are present in the React app, and the static fallback renders read-only views.

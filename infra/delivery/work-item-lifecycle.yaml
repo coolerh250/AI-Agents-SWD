@@ -1,0 +1,37 @@
+# Step 57 (Stage 59A) -- work-item delivery lifecycle.
+# Enforced by shared/sdk/work_items/lifecycle.py. NOT production automation.
+workItemLifecycle:
+  productionReady: false
+  initialState: created
+  states:
+    - created
+    - triaged
+    - ready_for_dispatch
+    - dispatched
+    - in_progress
+    - waiting_approval
+    - blocked
+    - completed
+    - cancelled
+    - failed
+    - archived
+  terminalStates: [completed, cancelled, archived]
+  transitions:
+    created: [triaged, blocked, cancelled]
+    triaged: [ready_for_dispatch, blocked, cancelled]
+    ready_for_dispatch: [dispatched, waiting_approval, blocked, cancelled]
+    dispatched: [in_progress, blocked, cancelled, failed]
+    in_progress: [completed, waiting_approval, blocked, cancelled, failed]
+    waiting_approval: [in_progress, completed, blocked, cancelled]
+    blocked: [triaged, ready_for_dispatch, in_progress, cancelled]
+    failed: [ready_for_dispatch, cancelled]      # manual re-dispatch only
+    completed: [archived]                        # cannot re-dispatch; create a new item
+    cancelled: [archived]
+    archived: []
+  rules:
+    # production_effect work items must wait for human approval, never dispatch directly.
+    productionEffectRequiresApproval: true
+    devTestNonprodDirectDispatchAllowed: true
+    productionActionExecuted: false
+    humanAcceptanceIsNotDeploymentApproval: true
+    completedRequiresNewItemToRedispatch: true

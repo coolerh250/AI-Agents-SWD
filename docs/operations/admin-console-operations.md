@@ -115,3 +115,11 @@ Step 56 adds a read-only **Non-production ArgoCD Manual Sync** section to the Ru
 backed by 8 GET `/operations/gitops/nonprod-argocd/*` endpoints. No sync / install / delete /
 rollback / promote / prune / self-heal control; no namespace / secret input; no production-ready
 toggle. See [nonproduction-argocd-verification.md](nonproduction-argocd-verification.md).
+
+Step 57 adds a **Multi-project Delivery** page (route `/delivery`) with read views + **audited**
+create-project / create-work-item / dispatch mutations (operator test-local auth + CSRF + reason).
+Writes go through the CSRF-bearing operator action client (not the GET-only read client). No
+production deploy / GitHub PR / ArgoCD sync / external send / production-approve / production-ready
+control; a `production_effect` work item routes to waiting_approval (never dispatched). Backed by
+`/operations/delivery/*` (7 GET reads + 3 writes). See
+[multi-project-delivery-dispatch-verification.md](multi-project-delivery-dispatch-verification.md).

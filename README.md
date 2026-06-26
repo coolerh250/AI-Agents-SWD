@@ -2561,6 +2561,28 @@ GitOps / ArgoCD / auto-sync ready**; no production cluster/namespace/sync, no Gi
 push/registry login, no public ingress/LoadBalancer, `production_executed_true_count=0`. Step 57
 (Multi-project Delivery Capability & Work-item Dispatch) is next.
 
+## Multi-project Delivery & Work-item Dispatch (Stage 59A / Step 57)
+
+Extends the platform from a single delivery flow to **multi-project, project-scoped work
+items with tracked dispatch** — a **non-production** baseline, NOT fully autonomous /
+production delivery automation / multi-tenant production ready. Migration `024` extends
+the Step 17 planner tables (registry semantics + a work-item delivery lifecycle) and adds
+dispatch / events / delivery-state / members / package-linkage tables. `shared/sdk/projects`
++ `shared/sdk/work_items` provide a deterministic lifecycle state machine, a dispatch
+resolver (refuses GitHub-write / ArgoCD-sync / production-executor / external-send targets),
+a redacted audit/event builder, and the safety fields. `multi_project_api.py` exposes 7 GET
+reads + 3 **audited** writes under `/operations/delivery/*` (reusing the operator test-local
+auth + CSRF + audit, reason required); a `production_effect` work item routes to
+`waiting_approval` and is **never dispatched directly**. The Admin Console **Multi-project
+Delivery** page offers read views + audited create/dispatch with no production deploy /
+GitHub PR / ArgoCD sync / external send / production-approve / production-ready control. 11
+`/operations/safety` fields, 10 verifiers + combined
+`MULTI_PROJECT_DELIVERY_DISPATCH_BASELINE_VERIFY`, 16 tests (46 cases), 11 docs. No GitHub
+write / image push / registry login / ArgoCD sync / external send / production deploy;
+delivery-package-ready ≠ production approval; work-item completed ≠ human acceptance;
+`multi_project_production_ready=false`, `production_executed_true_count=0`. Next: Step 58
+(Admin Console v2 Operational Metrics), Step 59 (Sandbox GitHub Draft PR Flow).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

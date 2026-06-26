@@ -11074,3 +11074,44 @@ guard-railed **manual** sync of the scoped app into `aiagents-smoke-dev`. **Outc
 - **Roadmap.** Step 56 closed -- real ArgoCD non-production manual sync passed, auto-sync disabled. NOT
   production GitOps / ArgoCD / auto-sync ready. Step 57 (Multi-project Delivery Capability & Work-item
   Dispatch) pending. Claude Code does not decide Production readiness.
+
+## Stage 59A — Multi-project Delivery Capability & Work-item Dispatch (Step 57)
+
+Extends the platform from a single delivery flow to multi-project, project-scoped work items
+with tracked dispatch. **Outcome: PASS.** NOT fully autonomous project management / production
+delivery automation / multi-tenant production ready.
+
+- **Schema (migration 024).** Extends the existing project-planner tables (017) -- adds
+  `project_key` / `environment_scope` / `production_allowed` / `registry_status` to `projects` and
+  `lifecycle_state` / `production_effect` / `requires_human_approval` / `assigned_agent` /
+  `delivery_package_id` to `project_work_items`; adds new tables `work_item_dispatches`,
+  `work_item_events`, `project_delivery_states`, `project_members`, `project_delivery_packages`
+  (UUID PKs, FKs, indexes, production_effect default false). Does NOT recreate existing tables.
+- **SDK.** `shared/sdk/projects` (registry rules, delivery-state rollup, asyncpg store) +
+  `shared/sdk/work_items` (lifecycle state machine, dispatch resolver, audit/event builder, store,
+  safety fields). 8 policy YAMLs under `infra/delivery/` (lifecycle / decomposition / dispatch /
+  agent-assignment / delivery-state / package-linkage / audit-mapping / notification).
+- **API.** `apps/orchestrator/src/multi_project_api.py` -- 7 GET reads + 3 audited writes under
+  `/operations/delivery/*`; writes reuse the operator-actions test-local auth + CSRF + audit and
+  require a reason; dispatch is policy-checked (forbidden targets refused; production_effect ->
+  waiting_approval, never dispatched). communication-gateway `POST /intake/mock/project-work-item`
+  (mock only). 11 `/operations/safety` fields via `_multi_project_safety_summary()`.
+- **Admin Console.** New **Multi-project Delivery** page (route /delivery + nav) with read views +
+  audited create-project / create-work-item / dispatch (via the CSRF-bearing actionClient, not the
+  GET-only client) + a read-only static fallback section. No production deploy / GitHub PR / ArgoCD
+  sync / external send / production-approve / production-ready control.
+- **Verifiers + combined (10 + 1).** schema / lifecycle / dispatch-policy / dispatch-runtime (live) /
+  delivery-state / package-linkage / audit-mapping / operations-visibility / admin-console /
+  safety-fields (live); combined `verify_multi_project_delivery_dispatch_baseline.sh`
+  (`MULTI_PROJECT_DELIVERY_DISPATCH_BASELINE_VERIFY`; chains Step 51-56 via the Step 56 combined).
+- **Tests + quality.** 16 pytest files (46 cases, 0 skipped). ruff / black / mypy clean. Frontend
+  (local): typecheck clean, 25 vitest pass, vite build OK (tsbuildinfo restored). 11 new docs.
+- **Safety.** No GitHub write / PR / image push / registry login; no ArgoCD sync / auto-sync; no
+  external notification send; no production deploy; production_effect work items never dispatched
+  directly; delivery-package-ready != production approval; work-item completed != human acceptance;
+  human acceptance != deployment approval; `multi_project_production_ready=false`,
+  `production_executed_true_count=0`.
+- **Roadmap.** Step 57 closed -- multi-project delivery and work-item dispatch baseline completed.
+  NOT fully autonomous / production delivery automation / multi-tenant production ready. Step 58
+  (Admin Console v2 Operational Metrics) and Step 59 (Sandbox GitHub Draft PR Flow) pending. Claude
+  Code does not decide Production readiness.

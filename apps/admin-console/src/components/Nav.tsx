@@ -17,6 +17,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/identity", label: "Identity Posture" },
   { to: "/secrets", label: "Secret Posture" },
   { to: "/security", label: "Security / Supply Chain" },
+  { to: "/delivery", label: "Multi-project Delivery" },
 ];
 
 export function Nav() {

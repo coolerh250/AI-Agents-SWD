@@ -1713,6 +1713,9 @@ async def operations_safety() -> dict:
     # Stage 58A (Step 56) -- read-only non-production ArgoCD manual-sync fields.
     nonprod_argocd_safety = _nonprod_argocd_safety_summary()
 
+    # Stage 59A (Step 57) -- multi-project delivery + work-item dispatch fields.
+    multi_project_safety = _multi_project_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2126,6 +2129,7 @@ async def operations_safety() -> dict:
         **runtime_baseline_safety,
         **nonprod_runtime_smoke_safety,
         **nonprod_argocd_safety,
+        **multi_project_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -3980,9 +3984,7 @@ def _runtime_baseline_safety_summary() -> dict[str, Any]:
         runtime_baseline_safety_fields,
     )
 
-    summary = load_runtime_baseline_summary(
-        Path("infra/kubernetes/runtime-baseline-summary.yaml")
-    )
+    summary = load_runtime_baseline_summary(Path("infra/kubernetes/runtime-baseline-summary.yaml"))
     return runtime_baseline_safety_fields(summary)
 
 
@@ -4007,6 +4009,16 @@ def _nonprod_argocd_safety_summary() -> dict[str, Any]:
     from shared.sdk.argocd_sync import nonprod_argocd_safety_fields
 
     return nonprod_argocd_safety_fields(Path("."))
+
+
+def _multi_project_safety_summary() -> dict[str, Any]:
+    """Step 57 -- multi-project / work-item dispatch safety fields. File-based (reads
+    the committed dispatch + notification policies); no DB, no cluster, no production
+    action. Dangerous side-effect toggles read straight from the policy.
+    """
+    from shared.sdk.work_items.safety import multi_project_safety_fields
+
+    return multi_project_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

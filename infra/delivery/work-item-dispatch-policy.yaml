@@ -1,0 +1,52 @@
+# Step 57 (Stage 59A) -- work-item dispatch policy.
+# Maps work-item types to internal agent targets/streams. NO production executor,
+# NO GitHub write, NO ArgoCD sync, NO external notification send by default.
+workItemDispatchPolicy:
+  productionReady: false
+  targetAgents:
+    - intake-agent
+    - requirement-agent
+    - project-planner
+    - design-review
+    - development-agent
+    - qa-agent
+    - devops-agent
+    - delivery-package
+    - communication-gateway
+  rules:
+    - {workType: requirement, target: requirement-agent, stream: stream.work_items}
+    - {workType: planning, target: project-planner, stream: stream.work_items}
+    - {workType: architecture, target: project-planner, stream: stream.work_items}
+    - {workType: design_review, target: design-review, stream: stream.work_items}
+    - {workType: implementation, target: development-agent, stream: stream.work_items}
+    - {workType: backend, target: development-agent, stream: stream.work_items}
+    - {workType: frontend, target: development-agent, stream: stream.work_items}
+    - {workType: qa, target: qa-agent, stream: stream.work_items}
+    - {workType: verification, target: qa-agent, stream: stream.work_items}
+    - {workType: deployment_simulation, target: devops-agent, stream: stream.dispatches}
+    - {workType: devops, target: devops-agent, stream: stream.dispatches}
+    - {workType: delivery_package, target: delivery-package, stream: stream.dispatches}
+    - {workType: notification, target: communication-gateway, stream: stream.dispatches}
+  forbiddenTargets:
+    - github-write
+    - github-pr
+    - argocd-sync
+    - production-executor
+    - external-notification-send
+  requirements:
+    correlationIdRequired: true
+    targetStreamRequired: true
+    payloadRequired:
+      - project_id
+      - project_key
+      - work_item_id
+      - work_item_key
+      - dispatch_key
+      - target_agent
+      - correlation_id
+      - production_effect
+  externalSideEffect:
+    githubWrite: false
+    argocdSync: false
+    externalNotificationSend: false
+    productionAction: false
