@@ -1,0 +1,54 @@
+# Step 56 (Stage 58A) -- NON-PRODUCTION ArgoCD manual-sync plan.
+#
+# Declares the ordered, guard-railed plan for a real ArgoCD manual sync on the local
+# kind cluster. NOT a production GitOps / auto-sync / production-readiness claim.
+nonProductionArgocdManualSyncPlan:
+  productionReady: false
+  cluster: local-kind (kind-aiagents-smoke)
+  argocdNamespace: argocd-nonprod
+  destinationNamespace: aiagents-smoke-dev
+  project: aiagents-nonprod
+  application: aiagents-smoke
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git   # public, read-only
+    path: infra/kubernetes/charts/ai-agents-platform
+    valueFiles: [values-nonprod-smoke-local.yaml]
+    externalRepoCredentialUsed: false
+  syncPolicy:
+    automated: false
+    prune: false
+    selfHeal: false
+    manualOnly: true
+  steps:
+    - preflight (safe context + namespace + Step 55 smoke still PASS)
+    - install/verify non-production ArgoCD (argocd-nonprod, ClusterIP only)
+    - apply restricted AppProject
+    - apply non-production Application (manual sync)
+    - confirm automated sync disabled
+    - trigger ONE manual sync
+    - wait for sync status + health status
+    - collect redacted sync report (.runtime/gitops/, not committed)
+    - confirm no production namespace / no auto-sync / no prune / no selfHeal
+  forbidden:
+    productionCluster: true
+    productionNamespace: true
+    defaultNamespace: true
+    kubeSystemNamespace: true
+    existingProductionArgocd: true
+    autoSync: true
+    prune: true
+    selfHeal: true
+    productionApplication: true
+    wildcardDestination: true
+    clusterWideUnrestrictedResources: true
+    publicIngress: true
+    loadBalancer: true
+    externalArgocdExposure: true
+    githubWrite: true
+    imagePush: true
+    registryLogin: true
+    productionSecret: true
+  safetyInvariants:
+    argocdProductionSyncPerformed: false
+    kubernetesProductionDeployPerformed: false
+    productionExecuted: false

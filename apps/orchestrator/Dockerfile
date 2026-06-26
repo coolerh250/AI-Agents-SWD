@@ -22,6 +22,12 @@ COPY migrations/ ./migrations/
 # read-only API + /operations/safety. Non-sensitive (booleans/enums/counts/names/plan
 # metadata only); no rendered manifests, no kubeconfig, no secrets.
 COPY infra/kubernetes/ ./infra/kubernetes/
+# Stage 58A (Step 56) -- committed read-only non-production ArgoCD manual-sync
+# summary / plan / boundary / project policy + manifests consumed by the
+# /operations/gitops/nonprod-argocd/* read-only API + /operations/safety.
+# Non-sensitive (statuses/enums/names/public git revision only); no kubeconfig,
+# token, admin password, secret, or rendered manifest.
+COPY infra/gitops/ ./infra/gitops/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.

@@ -62,5 +62,10 @@ Incidents) calling the same aggregate endpoints.
   approval; no generate-evidence / approve-release / enable-gate / deploy /
   create-PR / sync-ArgoCD control. Runtime evidence/risk/readiness artifacts are
   never committed (status not_run here).
+- **Runtime → Non-production ArgoCD Manual Sync (Step 56):** read-only ArgoCD manual-sync
+  posture (install / project / application / sync status / health / auto-sync off / no prod
+  namespace / no ingress / no LB). No sync / install / delete / rollback / promote / prune /
+  self-heal button; no namespace / secret input; no production-ready toggle. Backed by 8 GET
+  `/operations/gitops/nonprod-argocd/*` endpoints.
 
 All pages are GET-only and present in the React app and the static fallback.

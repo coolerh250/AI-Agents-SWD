@@ -38,6 +38,16 @@ export const getNonprodSmokePreflight = () =>
 export const getNonprodSmokeReport = () =>
   apiGet<Record<string, unknown>>(`/operations/runtime/nonprod-smoke/report`);
 
+// Step 56 -- read-only non-production ArgoCD manual-sync posture (GET only).
+export const getNonprodArgocdSync = () =>
+  apiGet<Record<string, unknown>>(`/operations/gitops/nonprod-argocd/sync`);
+export const getNonprodArgocdSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/gitops/nonprod-argocd/safety`);
+export const getNonprodArgocdApplication = () =>
+  apiGet<Record<string, unknown>>(`/operations/gitops/nonprod-argocd/application`);
+export const getNonprodArgocdReadiness = () =>
+  apiGet<Record<string, unknown>>(`/operations/gitops/nonprod-argocd/readiness`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);

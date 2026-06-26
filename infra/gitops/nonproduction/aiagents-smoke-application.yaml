@@ -1,0 +1,28 @@
+# Step 56 (Stage 58A) -- NON-PRODUCTION ArgoCD Application (manual sync only).
+#
+# Targets ONLY the aiagents-smoke-dev namespace on the local kind cluster, sourcing
+# the committed non-production Helm chart + smoke values from this public repo
+# (read-only, no credential). Sync policy is MANUAL: there is no `automated` block,
+# so auto-sync / prune / self-heal are all disabled. NO production namespace, NO
+# production values, NO external repo credential, NO namespace creation.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: aiagents-smoke
+  namespace: argocd-nonprod
+spec:
+  project: aiagents-nonprod
+  source:
+    repoURL: https://github.com/coolerh250/AI-Agents-SWD.git
+    targetRevision: main
+    path: infra/kubernetes/charts/ai-agents-platform
+    helm:
+      valueFiles:
+        - values-nonprod-smoke-local.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: aiagents-smoke-dev
+  # Manual sync only. NO `automated:` block => no auto-sync, no prune, no self-heal.
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=false

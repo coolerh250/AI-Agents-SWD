@@ -190,6 +190,28 @@
     try { smokeReadiness = await apiGet("/operations/runtime/nonprod-smoke/readiness"); } catch (_e) { smokeReadiness = null; }
     try { smokePreflight = await apiGet("/operations/runtime/nonprod-smoke/preflight"); } catch (_e) { smokePreflight = null; }
     try { smokeReport = await apiGet("/operations/runtime/nonprod-smoke/report"); } catch (_e) { smokeReport = null; }
+    let argocdSafety = null, argocdSync = null;
+    try { argocdSafety = await apiGet("/operations/gitops/nonprod-argocd/safety"); } catch (_e) { argocdSafety = null; }
+    try { argocdSync = await apiGet("/operations/gitops/nonprod-argocd/sync"); } catch (_e) { argocdSync = null; }
+    const argocdBlock = argocdSafety ? `
+      <h2 style="margin-top:20px">Non-production ArgoCD Manual Sync (Step 56)</h2>
+      <p class="note">Read-only non-production ArgoCD manual sync — NOT production GitOps / ArgoCD ready. NO sync / install / delete / rollback / promote control, no auto-sync / prune / self-heal toggle, no namespace / secret input, no production-ready toggle. Manual sync only; the live runtime sync report is never committed.</p>
+      <div class="grid">
+        ${card("ArgoCD installed", badge(argocdSafety.nonprod_argocd_installed))}
+        ${card("ArgoCD namespace", esc(argocdSafety.nonprod_argocd_namespace))}
+        ${card("Destination namespace", esc(argocdSafety.nonprod_argocd_destination_namespace))}
+        ${card("Manual sync succeeded", badge(argocdSafety.nonprod_argocd_manual_sync_succeeded))}
+        ${card("Last sync status", esc((argocdSync && argocdSync.lastSyncStatus) || "not_run"))}
+        ${card("Last health status", esc((argocdSync && argocdSync.lastHealthStatus) || "not_run"))}
+        ${card("Auto-sync enabled", badge(argocdSafety.nonprod_argocd_auto_sync_enabled))}
+        ${card("Prune enabled", badge(argocdSafety.nonprod_argocd_prune_enabled))}
+        ${card("Self-heal enabled", badge(argocdSafety.nonprod_argocd_self_heal_enabled))}
+        ${card("Production namespace touched", badge(argocdSafety.nonprod_argocd_production_namespace_touched))}
+        ${card("Public ingress enabled", badge(argocdSafety.nonprod_argocd_public_ingress_enabled))}
+        ${card("LoadBalancer enabled", badge(argocdSafety.nonprod_argocd_loadbalancer_enabled))}
+        ${card("Production ready", badge(false))}
+      </div>
+      <p class="note">Non-production manual sync only; auto-sync disabled. NOT production GitOps / ArgoCD readiness. Step 57 (Multi-project Delivery Capability &amp; Work-item Dispatch) is still required. Claude Code does not decide Production readiness.</p>` : "";
     const smokeBlockers = (smokeReadiness && smokeReadiness.blockers) || [];
     const smokeNext = (smokeReadiness && smokeReadiness.requiredNextSteps) || [];
     const smokeBlock = smokeReadiness ? `
@@ -206,7 +228,7 @@
       <h2 style="margin-top:20px">Blockers / Step 56 dependency</h2>
       <p class="note">Step 56 (real ArgoCD non-production manual sync) and Step 60 (production readiness review) are still required. Claude Code does not decide Production readiness.</p>
       <ul>${smokeBlockers.map(b => `<li>${esc(b)}</li>`).join("")}
-          ${smokeNext.map(s => `<li>${esc(s)}</li>`).join("")}</ul>` : "";
+          ${smokeNext.map(s => `<li>${esc(s)}</li>`).join("")}</ul>${argocdBlock}` : argocdBlock;
     el.innerHTML = `<h2>Kubernetes / Helm / GitOps Runtime Baseline</h2>
       <p class="note">Read-only static baseline — no cluster connected, no deploy, no Helm install, no ArgoCD sync. This view provides NO deploy / sync / apply / install control.</p>
       <div class="grid">

@@ -11027,3 +11027,50 @@ then came up cleanly. The smoke is real and not faked.
 - **Roadmap.** Step 55 -> real **PASS (scoped)**; Step 55.1 closed. Step 56 (Real ArgoCD
   Non-production Manual Sync) remains BLOCKED and must NOT begin from automation; it requires
   an explicit operator decision. Claude Code does not decide Production readiness.
+
+## Stage 58A — Real ArgoCD Non-production Manual Sync (Step 56)
+
+Installs a non-production ArgoCD on the Step 55 local kind cluster and performs a real,
+guard-railed **manual** sync of the scoped app into `aiagents-smoke-dev`. **Outcome: PASS**
+(operator-authorized). This is NOT production GitOps / ArgoCD / auto-sync ready.
+
+- **ArgoCD install.** Official ArgoCD v2.13.3 install manifest into `argocd-nonprod` via
+  `kubectl apply -k` (kustomize namespace override) + ClusterRoleBinding subject patch (kustomize
+  does not rewrite CRB subject namespaces). ClusterIP only -- no ingress / LoadBalancer / NodePort;
+  server not exposed. dex / applicationset / notifications scaled to 0 (no SSO). No admin
+  password / token / kubeconfig committed.
+- **Restricted project + application.** `infra/gitops/nonproduction/aiagents-nonprod-project.yaml`
+  (single destination aiagents-smoke-dev, single source repo, `clusterResourceWhitelist: []`,
+  namespaced kinds only) + `aiagents-smoke-application.yaml` (project aiagents-nonprod, manual sync
+  -- no `automated` block, source = public repo chart path + values-nonprod-smoke-local.yaml, read-only
+  clone, no credential). Step 55 helm release uninstalled so ArgoCD is sole owner; the out-of-band
+  non-secret aiagents-runtime-secrets persists.
+- **Manual sync.** Triggered via `kubectl patch` of the Application `.operation` (no exposed server,
+  no admin password) -> **Synced + Healthy + Succeeded**; ArgoCD deployed 8 kinds (ConfigMap, CronJob,
+  Deployment, Job, NetworkPolicy, PVC, Service, ServiceAccount) into aiagents-smoke-dev only; 6/6 pods
+  Ready + migration Job Complete; Step 55 runtime smoke still PASS against the ArgoCD-managed resources.
+- **Plans / runner / report.** `infra/gitops/nonproduction-argocd-{manual-sync-plan,install-boundary,
+  project-policy,manual-sync-summary}.yaml`; `scripts/run_nonproduction_argocd_manual_sync.sh` (idempotent;
+  refuses production context/namespace/auto-sync, no ingress/LB, never prints token/password, never commits
+  the report); `scripts/run_nonproduction_argocd_manual_sync_report.py` -> redacted
+  `.runtime/gitops/nonproduction-argocd-manual-sync-report.json` (gitignored, never committed).
+- **SDK + API + safety.** `shared/sdk/argocd_sync` (`nonprod_argocd_safety_fields`, posture views);
+  `gitops_argocd_api.py` 8 GET `/operations/gitops/nonprod-argocd/*` (no sync/install/delete/rollback/
+  promote); 15 `/operations/safety` ArgoCD fields via `_nonprod_argocd_safety_summary()`. Dockerfile now
+  copies `infra/gitops/` into the image.
+- **Admin Console.** Read-only **Non-production ArgoCD Manual Sync (Step 56)** section (React + static); no
+  sync / install / delete / rollback / promote / prune / self-heal button; no namespace/secret input; no
+  production-ready toggle.
+- **Verifiers + combined (9 + 1).** preflight / install-boundary / project-policy / application / manual-sync /
+  safety / operations-visibility / admin-console / safety-fields; combined
+  `verify_nonproduction_argocd_manual_sync_baseline.sh` (`NONPRODUCTION_ARGOCD_MANUAL_SYNC_BASELINE_VERIFY`;
+  chains Step 51-55 deduped + the 9 verifiers + tests + safety posture).
+- **Tests + quality.** 11 pytest files (28 cases, 0 skipped). ruff / black / mypy clean. 8 new docs.
+- **Safety.** No production cluster / namespace; no auto-sync / prune / self-heal; no public ingress /
+  LoadBalancer / NodePort; no ArgoCD server exposure; no production AppProject / Application; no GitHub
+  write / image push / registry login; no committed token / password / kubeconfig / secret;
+  `argocd_production_sync_performed=false`, `kubernetes_production_deploy_performed=false`,
+  `production_executed_true_count=0`.
+- **Roadmap.** Step 56 closed -- real ArgoCD non-production manual sync passed, auto-sync disabled. NOT
+  production GitOps / ArgoCD / auto-sync ready. Step 57 (Multi-project Delivery Capability & Work-item
+  Dispatch) pending. Claude Code does not decide Production readiness.

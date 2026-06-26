@@ -1710,6 +1710,9 @@ async def operations_safety() -> dict:
     # Stage 57A (Step 55) -- read-only non-production Kubernetes runtime smoke fields.
     nonprod_runtime_smoke_safety = _nonprod_runtime_smoke_safety_summary()
 
+    # Stage 58A (Step 56) -- read-only non-production ArgoCD manual-sync fields.
+    nonprod_argocd_safety = _nonprod_argocd_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2122,6 +2125,7 @@ async def operations_safety() -> dict:
         # baseline. Booleans/enums/counts only; no cluster, no deploy, no secret.
         **runtime_baseline_safety,
         **nonprod_runtime_smoke_safety,
+        **nonprod_argocd_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -3992,6 +3996,17 @@ def _nonprod_runtime_smoke_safety_summary() -> dict[str, Any]:
     from shared.sdk.runtime_smoke import nonprod_runtime_safety_fields
 
     return nonprod_runtime_safety_fields(Path("."))
+
+
+def _nonprod_argocd_safety_summary() -> dict[str, Any]:
+    """Step 56 -- read-only non-production ArgoCD manual-sync safety fields.
+    File-based (reads the committed nonproduction-argocd-manual-sync-summary.yaml);
+    never connects to a cluster, runs kubectl, installs ArgoCD, or triggers a sync.
+    No token / admin password / kubeconfig is ever read or returned.
+    """
+    from shared.sdk.argocd_sync import nonprod_argocd_safety_fields
+
+    return nonprod_argocd_safety_fields(Path("."))
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

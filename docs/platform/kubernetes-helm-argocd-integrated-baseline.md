@@ -50,6 +50,11 @@ carries forward this baseline's image observations — first-party images requir
 non-root cluster smoke, and the migration/backup/restore jobs (`pg_dump` / `psql`)
 require a runtime smoke — as modeled (not yet fixed) supply-chain blockers.
 
-Step 55 takes this baseline to a non-production cluster runtime smoke (framework ready,
-BLOCKED_NO_SAFE_CLUSTER on 10.0.1.31; never faked) — see
+Step 55 / 55.1 take this baseline to a real non-production cluster runtime smoke on a local
+kind cluster (PASS, scoped) — see
 [../operations/nonproduction-kubernetes-smoke-plan.md](../operations/nonproduction-kubernetes-smoke-plan.md).
+Step 56 then performs a real non-production ArgoCD **manual** sync (auto-sync disabled) into
+`aiagents-smoke-dev` — see
+[../operations/nonproduction-argocd-manual-sync.md](../operations/nonproduction-argocd-manual-sync.md)
+and [../operations/nonproduction-argocd-limitations.md](../operations/nonproduction-argocd-limitations.md).
+Not production GitOps / ArgoCD ready.

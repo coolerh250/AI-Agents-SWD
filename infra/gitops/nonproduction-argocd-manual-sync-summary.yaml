@@ -1,0 +1,50 @@
+# Step 56 (Stage 58A) -- committed NON-PRODUCTION ArgoCD manual-sync summary.
+#
+# A redacted, committed record of the VERIFIED non-production ArgoCD manual sync on
+# the local kind cluster. Read by the orchestrator `/operations/safety` +
+# `/operations/gitops/nonprod-argocd/*` read-only API (the live runtime report under
+# .runtime/gitops/ is gitignored and absent in the image). Non-sensitive: statuses /
+# enums / names / the public git revision only -- NO kubeconfig, token, admin
+# password, or secret value. This is NOT a production-readiness claim.
+nonProductionArgocdManualSyncSummary:
+  productionReady: false
+  argocdEnabled: true
+  argocdNamespace: argocd-nonprod
+  argocdInstalled: true
+  argocdVersion: v2.13.3
+  argocdSource: official install manifest (kustomize namespace override)
+  cluster: local-kind
+  projectCreated: true
+  project: aiagents-nonprod
+  applicationCreated: true
+  application: aiagents-smoke
+  destinationNamespace: aiagents-smoke-dev
+  destinationServer: https://kubernetes.default.svc
+  syncedRevision: f320ddc155b7f9ad96cabe547a0e19c20d3ecacb
+  manualSyncPerformed: true
+  manualSyncSucceeded: true
+  lastSyncStatus: Synced
+  lastHealthStatus: Healthy
+  # Manual-only: no automated block on the Application.
+  autoSyncEnabled: false
+  pruneEnabled: false
+  selfHealEnabled: false
+  syncedResourceKinds:
+    - ConfigMap
+    - CronJob
+    - Deployment
+    - Job
+    - NetworkPolicy
+    - PersistentVolumeClaim
+    - Service
+    - ServiceAccount
+  # Safety invariants (all enforced + verified).
+  productionNamespaceTouched: false
+  publicIngressEnabled: false
+  loadBalancerEnabled: false
+  nodePortEnabled: false
+  argocdServerExposed: false
+  argocdProductionSyncPerformed: false
+  kubernetesProductionDeployPerformed: false
+  externalRepoCredentialUsed: false   # public repo, read-only clone
+  productionExecuted: false

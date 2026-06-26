@@ -41,3 +41,9 @@ real cluster; an absent report is BLOCKED, never a faked PASS. New Step 55.1 mar
 `NONPROD_KUBERNETES_TOOLING_VERIFY`, `KIND_NONPROD_CLUSTER_VERIFY`,
 `NONPROD_CLUSTER_BOOTSTRAP_VERIFY`, `NONPROD_CLUSTER_SAFETY_VERIFY`, and the combined
 `NONPROD_CLUSTER_READY_FOR_RUNTIME_SMOKE_VERIFY`.
+
+## Step 56 — real ArgoCD non-production manual sync
+Step 56 performs a real non-production ArgoCD **manual** sync of the same scoped app into
+`aiagents-smoke-dev` (auto-sync disabled). See
+[nonproduction-argocd-verification.md](nonproduction-argocd-verification.md) and
+[nonproduction-argocd-limitations.md](nonproduction-argocd-limitations.md).

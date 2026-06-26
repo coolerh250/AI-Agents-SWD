@@ -110,3 +110,8 @@ view; framework ready, BLOCKED when no safe non-production cluster exists; no de
 / cleanup / kubectl-exec / ArgoCD-sync control; runtime smoke report degrades to `not_run`. See
 [nonproduction-kubernetes-runtime-smoke-verification.md](nonproduction-kubernetes-runtime-smoke-verification.md)
 and [nonproduction-kubernetes-runtime-smoke-limitations.md](nonproduction-kubernetes-runtime-smoke-limitations.md).
+
+Step 56 adds a read-only **Non-production ArgoCD Manual Sync** section to the Runtime view,
+backed by 8 GET `/operations/gitops/nonprod-argocd/*` endpoints. No sync / install / delete /
+rollback / promote / prune / self-heal control; no namespace / secret input; no production-ready
+toggle. See [nonproduction-argocd-verification.md](nonproduction-argocd-verification.md).

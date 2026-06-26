@@ -1,0 +1,39 @@
+# Step 56 (Stage 58A) -- NON-PRODUCTION ArgoCD installation boundary.
+#
+# The hard limits for the local non-production ArgoCD install. NOT production ArgoCD.
+nonProductionArgocdInstallBoundary:
+  productionReady: false
+  namespace: argocd-nonprod          # never the production-like `argocd` namespace
+  cluster: local-kind-only
+  version: v2.13.3
+  source: official ArgoCD install manifest (https://raw.githubusercontent.com/argoproj/argo-cd)
+  installMethod: kustomize namespace override + ClusterRoleBinding subject patch
+  # Exposure (all disabled / ClusterIP only).
+  publicIngress: false
+  loadBalancer: false
+  nodePort: false
+  serverExposedExternally: false
+  serverServiceType: ClusterIP
+  # SSO / external identity (disabled; dex scaled to zero).
+  ssoEnabled: false
+  externalOidcEnabled: false
+  dexReplicas: 0
+  applicationsetControllerReplicas: 0
+  notificationsControllerReplicas: 0
+  # Credentials / secrets (never committed; never exposed).
+  adminPasswordCommitted: false
+  adminTokenCommitted: false
+  kubeconfigCommitted: false
+  registryCredentialCommitted: false
+  productionRepoCredential: false
+  productionSecret: false
+  # Scope (no production objects).
+  productionAppProject: false
+  productionApplication: false
+  autoSyncEnabled: false
+  forbiddenNamespaces:
+    - argocd            # production-like ArgoCD namespace
+    - default
+    - kube-system
+    - production
+    - prod

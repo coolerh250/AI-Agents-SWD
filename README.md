@@ -2537,8 +2537,29 @@ report → BLOCKED — never faked). 4 new verifiers + combined
 `NONPROD_CLUSTER_READY_FOR_RUNTIME_SMOKE_VERIFY`, 5 tests, 5 docs. Known gaps (honest):
 scoped subset only; kindnet does not enforce NetworkPolicy; chart migration execution is
 fail-closed. No production cluster/namespace, no registry login/push, no public
-ingress/LoadBalancer/NodePort, no ArgoCD sync, `production_executed_true_count=0`. **Step 56
-(real ArgoCD manual sync) remains out of scope and must not begin from automation.**
+ingress/LoadBalancer/NodePort, no ArgoCD sync, `production_executed_true_count=0`. Step 56
+(real ArgoCD manual sync) is now done — see below.
+
+## Real ArgoCD Non-production Manual Sync (Stage 58A / Step 56)
+
+A non-production ArgoCD (`v2.13.3`, namespace `argocd-nonprod`, ClusterIP only, no ingress/LB,
+no SSO) is installed on the Step 55 local kind cluster and performs a real, guard-railed
+**manual** sync of the `aiagents-smoke` Application into `aiagents-smoke-dev` → **Synced +
+Healthy** (8 resource kinds, 6/6 pods Ready). A restricted AppProject
+([infra/gitops/nonproduction/aiagents-nonprod-project.yaml](infra/gitops/nonproduction/aiagents-nonprod-project.yaml))
+confines it to a single non-production destination, a single source repo (public, read-only,
+no credential), no cluster-scoped resources, and the Application has **no `automated` block** so
+auto-sync / prune / self-heal are all off. The sync is triggered via `kubectl patch` (no exposed
+server, no admin password). [scripts/run_nonproduction_argocd_manual_sync.sh](scripts/run_nonproduction_argocd_manual_sync.sh)
+is idempotent and refuses production context/namespace/auto-sync; the redacted sync report
+(`.runtime/gitops/…json`) is never committed (the committed
+[summary](infra/gitops/nonproduction-argocd-manual-sync-summary.yaml) drives the safety fields).
+8 GET `/operations/gitops/nonprod-argocd/*` endpoints + 15 `/operations/safety` ArgoCD fields, a
+read-only Admin Console section (no sync/install/delete/rollback/promote button), 9 verifiers +
+combined `NONPRODUCTION_ARGOCD_MANUAL_SYNC_BASELINE_VERIFY`, 11 tests, 8 docs. **Not production
+GitOps / ArgoCD / auto-sync ready**; no production cluster/namespace/sync, no GitHub write/image
+push/registry login, no public ingress/LoadBalancer, `production_executed_true_count=0`. Step 57
+(Multi-project Delivery Capability & Work-item Dispatch) is next.
 
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
