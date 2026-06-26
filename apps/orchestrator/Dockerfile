@@ -37,6 +37,11 @@ COPY infra/operations/ ./infra/operations/
 # delivery-state / linkage / audit / notification) + /operations/safety. Non-sensitive
 # (deterministic policy metadata only); no secret, token, or customer data.
 COPY infra/delivery/ ./infra/delivery/
+# Stage 61A (Step 59) -- committed sandbox GitHub draft-PR policies consumed by the
+# sandbox_github SDK (policy / allowlist / branch / metadata / credential boundary /
+# audit mapping) + /operations/safety. Non-sensitive (deterministic policy metadata
+# only); NO token, secret, or credential -- the sandbox token comes from the env only.
+COPY infra/github/ ./infra/github/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.

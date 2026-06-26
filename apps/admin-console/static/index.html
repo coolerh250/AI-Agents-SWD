@@ -111,6 +111,7 @@
     { id:"security", label:"Security / Supply Chain", render: renderSecurity },
     { id:"multiproject", label:"Multi-project Delivery", render: renderMultiProject },
     { id:"metrics", label:"Operational Metrics", render: renderMetrics },
+    { id:"sandboxgithub", label:"Sandbox GitHub Draft PR", render: renderSandboxGithub },
   ];
 
   async function renderOverview(el) {
@@ -179,6 +180,46 @@
       </div>
       <h2 style="margin-top:20px">Blockers / unavailable sources</h2>
       <ul>${((ov && ov.blockers) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
+  }
+
+  // Step 59 -- read-only Sandbox GitHub Draft PR (visibility only). Sandbox-only;
+  // NO create / merge / ready-for-review / workflow-dispatch / production-deploy control,
+  // NO arbitrary repo input, NO token input. Draft PR created is not merge/review/prod.
+  async function renderSandboxGithub(el) {
+    let pol = null, allow = null, rdy = null, safety = null, reqs = null;
+    try { pol = await apiGet("/operations/github/sandbox-draft-pr/policy"); } catch (_e) { pol = null; }
+    try { allow = await apiGet("/operations/github/sandbox-draft-pr/allowlist"); } catch (_e) { allow = null; }
+    try { rdy = await apiGet("/operations/github/sandbox-draft-pr/readiness"); } catch (_e) { rdy = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    try { reqs = await apiGet("/operations/github/sandbox-draft-pr/requests"); } catch (_e) { reqs = null; }
+    const repos = (allow && allow.repositories) || [];
+    const reprows = repos.map(r => `<tr><td>${esc(r.key)}</td><td>${esc(r.owner)}/${esc(r.repo)}</td>
+      <td>${badge(r.allow_draft_pr)}</td><td>${badge(r.allow_merge)}</td>
+      <td>${esc((r.allowed_base_branches||[]).join(", "))}</td></tr>`).join("");
+    const list = (reqs && reqs.requests) || [];
+    const reqrows = list.map(q => `<tr><td>${esc(q.repository_key)}</td><td>${badge(q.mode)}</td>
+      <td>${badge(q.status)}</td><td>${esc(q.branch_name||"")}</td>
+      <td>${esc(q.draft_pr_number||"")}</td></tr>`).join("");
+    el.innerHTML = `<h2>Sandbox GitHub Draft PR (Step 59)</h2>
+      <p class="note">Sandbox-only draft pull request flow. Visibility only — NOT production GitHub automation, NOT merge automation, NOT a customer-repo flow. Default mode is dry_run; live_sandbox is blocked unless explicitly enabled with a credential. NO create / merge / ready-for-review / workflow-dispatch / production-deploy control, NO arbitrary repo input, NO token input here. Draft PR created is not merge, review, or production approved. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Enabled", badge(safety && safety.sandbox_github_draft_pr_enabled))}
+        ${card("Default mode", esc(pol && pol.default_mode || "dry_run"))}
+        ${card("Live mode effective", badge(rdy && rdy.live_mode_effective))}
+        ${card("Credential present", badge(rdy && rdy.credential_present))}
+        ${card("Arbitrary repo allowed", badge(safety && safety.sandbox_github_arbitrary_repo_allowed))}
+        ${card("Merge enabled", badge(safety && safety.sandbox_github_merge_enabled))}
+        ${card("Ready-for-review enabled", badge(safety && safety.sandbox_github_ready_for_review_enabled))}
+        ${card("Workflow dispatch enabled", badge(safety && safety.sandbox_github_workflow_dispatch_enabled))}
+        ${card("Token exposed", badge(safety && safety.sandbox_github_token_exposed))}
+        ${card("Non-sandbox write performed", badge(safety && safety.sandbox_github_non_sandbox_repo_write_performed))}
+        ${card("Draft PR created count", esc(safety && safety.sandbox_github_draft_pr_created_count))}
+        ${card("Production ready", badge(safety && safety.sandbox_github_production_ready))}
+      </div>
+      <h2 style="margin-top:20px">Repository allowlist</h2>
+      ${reprows ? `<table><tr><th>Key</th><th>Owner/Repo</th><th>Draft PR</th><th>Merge</th><th>Base branches</th></tr>${reprows}</table>` : emptyState("No allowlisted repositories")}
+      <h2 style="margin-top:20px">Draft PR requests</h2>
+      ${reqrows ? `<table><tr><th>Repo key</th><th>Mode</th><th>Status</th><th>Branch</th><th>PR #</th></tr>${reqrows}</table>` : emptyState("No sandbox draft PR requests yet")}`;
   }
   async function renderProjects(el) {
     const d = await apiGet("/operations/admin-console/projects");

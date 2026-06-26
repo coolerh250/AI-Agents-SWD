@@ -1719,6 +1719,9 @@ async def operations_safety() -> dict:
     # Stage 60A (Step 58) -- Admin Console v2 operational metrics fields.
     operational_metrics_safety = _operational_metrics_safety_summary()
 
+    # Stage 61A (Step 59) -- sandbox GitHub draft PR flow fields.
+    sandbox_github_safety = _sandbox_github_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2134,6 +2137,10 @@ async def operations_safety() -> dict:
         **nonprod_argocd_safety,
         **multi_project_safety,
         **operational_metrics_safety,
+        # Stage 61A (Step 59) -- sandbox GitHub draft PR flow. Booleans/enums/counts
+        # only; sandbox-only; no merge, no ready-for-review, no workflow dispatch, no
+        # non-sandbox write, no token exposure, no production action.
+        **sandbox_github_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4033,6 +4040,17 @@ def _operational_metrics_safety_summary() -> dict[str, Any]:
     from shared.sdk.operations_metrics import operational_metrics_safety_fields
 
     return operational_metrics_safety_fields()
+
+
+def _sandbox_github_safety_summary() -> dict[str, Any]:
+    """Step 59 -- sandbox GitHub draft PR safety fields. Config-driven (reads the
+    committed sandbox policy); no DB, no cluster, no GitHub call, no token read.
+    Every dangerous toggle (merge / ready-for-review / workflow dispatch / non-sandbox
+    write / production branch) reads straight from the policy so it cannot drift true.
+    """
+    from shared.sdk.sandbox_github import sandbox_github_safety_fields
+
+    return sandbox_github_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

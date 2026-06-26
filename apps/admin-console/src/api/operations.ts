@@ -92,6 +92,18 @@ export const getMetricsSafety = () =>
 export const getMetricsFreshness = () =>
   apiGet<Record<string, unknown>>(`/operations/metrics/freshness`);
 
+// Step 59 -- read-only sandbox GitHub draft PR visibility (GET only).
+export const getSandboxGithubPolicy = () =>
+  apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/policy`);
+export const getSandboxGithubAllowlist = () =>
+  apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/allowlist`);
+export const getSandboxGithubRequests = () =>
+  apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/requests`);
+export const getSandboxGithubSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/safety`);
+export const getSandboxGithubReadiness = () =>
+  apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/readiness`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
