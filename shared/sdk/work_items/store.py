@@ -45,11 +45,11 @@ class WorkItemStore:
             row = await conn.fetchrow(
                 """
                 INSERT INTO project_work_items
-                  (project_id, work_item_key, title, description, work_type, priority,
+                  (project_id, work_item_key, title, description, delivery_work_type, priority,
                    item_source, requested_by, requires_human_approval, production_effect,
                    lifecycle_state, status)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'created','pending')
-                RETURNING id, project_id, work_item_key, title, description, work_type,
+                RETURNING id, project_id, work_item_key, title, description, delivery_work_type,
                           priority, lifecycle_state, assigned_agent, requires_human_approval,
                           production_effect, delivery_package_id, created_at
                 """,
@@ -256,7 +256,7 @@ class WorkItemStore:
             "work_item_key": r["work_item_key"],
             "title": r["title"],
             "description": r["description"],
-            "work_type": r["work_type"],
+            "work_type": r["delivery_work_type"],
             "priority": r["priority"],
             "lifecycle_state": r["lifecycle_state"],
             "assigned_agent": r["assigned_agent"],

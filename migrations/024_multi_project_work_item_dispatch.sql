@@ -25,6 +25,9 @@ ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS assigned_agent TEXT;
 ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS requires_human_approval BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS production_effect BOOLEAN NOT NULL DEFAULT false;
 ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS delivery_package_id UUID;
+-- Step 57 dispatch work type (own vocabulary; the planner `work_type` CHECK is left
+-- to the planner -- delivery items leave it NULL and use delivery_work_type instead).
+ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS delivery_work_type TEXT;
 -- Step 57 delivery lifecycle state (separate from the planner `status`; enforced
 -- by shared/sdk/work_items/lifecycle.py against work-item-lifecycle.yaml).
 ALTER TABLE project_work_items ADD COLUMN IF NOT EXISTS lifecycle_state TEXT NOT NULL DEFAULT 'created';
