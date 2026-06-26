@@ -28,6 +28,11 @@ COPY infra/kubernetes/ ./infra/kubernetes/
 # Non-sensitive (statuses/enums/names/public git revision only); no kubeconfig,
 # token, admin password, secret, or rendered manifest.
 COPY infra/gitops/ ./infra/gitops/
+# Stage 59A (Step 57) -- committed multi-project / work-item delivery policies consumed
+# by the work_items + projects SDK (lifecycle / dispatch / decomposition / assignment /
+# delivery-state / linkage / audit / notification) + /operations/safety. Non-sensitive
+# (deterministic policy metadata only); no secret, token, or customer data.
+COPY infra/delivery/ ./infra/delivery/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.
