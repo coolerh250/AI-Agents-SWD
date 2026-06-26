@@ -2583,6 +2583,12 @@ delivery-package-ready ≠ production approval; work-item completed ≠ human ac
 `multi_project_production_ready=false`, `production_executed_true_count=0`. Next: Step 58
 (Admin Console v2 Operational Metrics), Step 59 (Sandbox GitHub Draft PR Flow).
 
+> **Strategy note (future reference, not scheduled):**
+> [Tenant-Isolated AI Workspace & Controlled Connector Framework](docs/strategy/tenant-isolated-ai-workspace-controlled-connector-framework-strategy-note.md)
+> records a future design direction. **No change to the current Roadmap, no change to
+> Step 58 / Step 59, no runtime implementation added.** The platform is tenant-ready, not
+> tenant-enabled; Step 57 remains a completed multi-project baseline (not multi-tenant).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

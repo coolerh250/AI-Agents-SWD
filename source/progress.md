@@ -11115,3 +11115,12 @@ delivery automation / multi-tenant production ready.
   NOT fully autonomous / production delivery automation / multi-tenant production ready. Step 58
   (Admin Console v2 Operational Metrics) and Step 59 (Sandbox GitHub Draft PR Flow) pending. Claude
   Code does not decide Production readiness.
+
+### Strategy Note Checkpoint — Tenant-Isolated AI Workspace & Controlled Connector Framework
+
+Strategy note recorded as a future design reference at
+`docs/strategy/tenant-isolated-ai-workspace-controlled-connector-framework-strategy-note.md`
+(+ verifier `TENANT_WORKSPACE_STRATEGY_NOTE_VERIFY` + test). **No change to the current Roadmap. No
+change to Step 58 / Step 59. No runtime implementation added.** The platform stays tenant-ready,
+not tenant-enabled; Step 57 remains a completed multi-project baseline (not multi-tenant);
+`production_executed_true_count=0`. This is NOT a scheduled stage.
