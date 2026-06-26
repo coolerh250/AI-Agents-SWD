@@ -80,6 +80,13 @@ Incidents) calling the same aggregate endpoints.
   external send / production-approve / production-ready / connector control; stale/unavailable
   shown explicitly. Backed by 14 GET `/operations/metrics/*`.
 
+- **Sandbox GitHub Draft PR (`/sandbox-github`, Step 59):** read-only sandbox draft-PR
+  dashboard — policy / repository allowlist / readiness (live-mode gate) / draft-PR requests /
+  safety. Sandbox-only; NO create / merge / ready-for-review / workflow-dispatch /
+  production-deploy control, NO arbitrary-repo input, NO token input. Backed by the read-only
+  GET `/operations/github/sandbox-draft-pr/*`. Draft-PR requests are made through the governed
+  `POST /operations/github/sandbox-draft-pr` (auth + CSRF + audit), not from this page.
+
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.

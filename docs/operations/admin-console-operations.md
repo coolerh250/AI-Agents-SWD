@@ -128,3 +128,11 @@ Step 58 adds a read-only **Operational Metrics (Admin Console v2)** dashboard ba
 `/operations/metrics/*` endpoints (visibility only — no generate/refresh/sync/deploy/PR/external-send;
 no production-ready/approve control; stale/unavailable shown explicitly). See
 [admin-console-v2-operational-metrics-verification.md](admin-console-v2-operational-metrics-verification.md).
+
+Step 59 adds a read-only **Sandbox GitHub Draft PR** section (route `/sandbox-github`) backed by the
+read-only GET `/operations/github/sandbox-draft-pr/*` endpoints (policy / allowlist / readiness /
+requests / safety). Sandbox-only and visibility-only — NO create / merge / ready-for-review /
+workflow-dispatch / production-deploy control, NO arbitrary-repo input, NO token input. Draft-PR
+requests are made through the governed `POST /operations/github/sandbox-draft-pr` (operator auth +
+CSRF + reason + audit; repository_key only). See
+[sandbox-github-draft-pr-verification.md](sandbox-github-draft-pr-verification.md).

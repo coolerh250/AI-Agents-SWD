@@ -12,3 +12,8 @@ approve / production-ready / connector control. Unavailable or stale sources are
 explicitly (`available: false` + reason). All production-readiness indicators render
 false. The dashboard links to existing project / work-item views without changing their
 mutation scope. Metrics are visibility only — not production readiness, not an SLA/SLO.
+
+> Step 59 adds a separate read-only **Sandbox GitHub Draft PR** section (route
+> `/sandbox-github`); see [sandbox-github-draft-pr-runtime.md](sandbox-github-draft-pr-runtime.md).
+> It is a sandbox-only draft-PR flow, not a metrics view, and carries no merge / workflow /
+> production / token control.

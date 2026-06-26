@@ -11167,3 +11167,61 @@ multi-tenant.
   operations center / SLA guaranteed / multi-tenant metrics ready. Step 59 (Sandbox GitHub Draft PR
   Flow) pending. Tenant strategy note recorded only, not scheduled. Claude Code does not decide
   Production readiness.
+
+## Stage 61A — Sandbox GitHub Draft PR Flow (Step 59)
+
+Adds a controlled, **sandbox-only** flow that builds (dry_run) or — only when explicitly enabled with
+a credential — creates **draft** pull requests inside an allowlisted sandbox repository, linked to a
+project / work item with audit. **Outcome: PASS.** NOT production GitHub automation / merge automation
+/ customer-repo / production release ready.
+
+- **Policies (committed YAML).** `infra/github/sandbox-github-draft-pr-policy.yaml` (defaultMode
+  dry_run; live_sandbox gated on `SANDBOX_GITHUB_LIVE`+credential; allowMerge / allowReadyForReview /
+  allowNonSandboxRepo / allowProductionBranch / allowWorkflowDispatch / allowIssueWrite /
+  allowReleaseWrite / allowDeploymentWrite all false; productionReady false) +
+  `sandbox-repository-allowlist.yaml` (repository-key only, sandbox-only, no wildcard, draft-PR only) +
+  `sandbox-github-credential-boundary.yaml` (token from env/secret-ref only; never committed/logged/
+  returned; blocked when missing; min scope contents+pull_requests; no admin/workflow/deployment) +
+  `sandbox-draft-branch-policy.yaml` (sanitized `sandbox/ai-agents/{project}/{item}/{cid}`; no
+  traversal/space/metachar; never a protected branch) + `sandbox-draft-pr-metadata-model.yaml`
+  (`[Sandbox][Draft]` title; required caveat sections; forbidden secret/token/prompt/CoT) +
+  `sandbox-draft-pr-audit-mapping.yaml` (6 events; required actor/role/reason/linkage/mode/
+  production_executed=false; forbidden token/secret/prompt/CoT).
+- **SDK.** `shared/sdk/sandbox_github` (models / policy / allowlist / branch / pr_metadata / dry_run /
+  client / audit / redaction / safety / store). dry_run builds a validated plan with NO side effect;
+  live_sandbox (urllib to GitHub API) only when enabled+credentialed, and only `draft: true` — NO
+  merge / ready-for-review / workflow-dispatch / issue / release / deployment method exists. Token read
+  from env at call time only, never logged/returned.
+- **Migration.** `migrations/025_sandbox_github_draft_pr.sql` (idempotent `sandbox_github_draft_prs`
+  with project/work-item/dispatch/correlation linkage; a row is a draft-PR artifact, not a merge/
+  review/production approval).
+- **API.** `apps/orchestrator/src/sandbox_github_api.py` (`/operations/github`). 6 read-only GET
+  (policy/allowlist/requests/{request_id}/safety/readiness) + ONE controlled write
+  `POST /operations/github/sandbox-draft-pr` (reuses operator auth + CSRF + reason + audit;
+  repository_key only; production_effect work item blocked -> never a PR). No merge / ready-for-review /
+  workflow-dispatch / arbitrary-repo / token endpoint. Token never returned.
+- **Admin Console.** Read-only Sandbox GitHub Draft PR section (React route `/sandbox-github` + static
+  fallback); policy / allowlist / readiness / requests / safety; NO create / merge / ready-for-review /
+  workflow-dispatch / production-deploy control, NO arbitrary-repo input, NO token input.
+- **Safety fields.** 16 `/operations/safety` Step 59 fields config-driven from the policy
+  (`sandbox_github_draft_pr_enabled=true`, `default_mode=dry_run`, allowlist enabled; arbitrary repo /
+  merge / ready-for-review / workflow-dispatch / issue / release / deployment / token-exposed /
+  production-branch / non-sandbox-write / production-ready all false; live_mode false + created_count 0
+  with no credential).
+- **Verifiers + combined (9 + 1).** policy/allowlist/branch/pr-metadata/client/runtime/operations-
+  visibility/admin-console/safety-fields; combined `verify_sandbox_github_draft_pr_baseline.sh`
+  (`SANDBOX_GITHUB_DRAFT_PR_BASELINE_VERIFY`; chains Step 52-58 + tenant note via the Step 58 combined,
+  then the 9 verifiers + tests + safety posture).
+- **Tests + quality.** 12 pytest files (0 skipped). ruff/black/mypy clean. Frontend (local): typecheck
+  clean, vitest pass, build OK.
+- **Live mode.** Not configured in test (`SANDBOX_GITHUB_LIVE` unset, no `SANDBOX_GITHUB_TOKEN`) -> live
+  blocked, dry_run only, `sandbox_github_draft_pr_created_count=0`. Orchestrator container carries no
+  token.
+- **kind/ArgoCD.** Left running (read-only); Step 59 performs no cluster action.
+- **Safety.** No PR merge / ready-for-review / workflow dispatch / non-sandbox write / production branch
+  / ArgoCD sync / Kubernetes mutation / external send / production action; no token committed/logged/
+  exposed; `sandbox_github_production_ready=false`, `production_executed_true_count=0`.
+- **Roadmap.** Step 59 closed -- sandbox GitHub draft PR flow baseline completed. NOT production GitHub
+  automation / merge automation / production PR flow / customer-repo automation ready. Step 60 (Release
+  & Deployment Governance) pending. Tenant strategy note recorded only, not scheduled. Claude Code does
+  not decide Production readiness.

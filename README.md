@@ -2606,6 +2606,30 @@ mutation; `operational_metrics_production_ready=false`, `production_executed_tru
 6 verifiers + combined `ADMIN_CONSOLE_V2_OPERATIONAL_METRICS_BASELINE_VERIFY`, 10 tests, 7
 docs. Next: Step 59 (Sandbox GitHub Draft PR Flow).
 
+## Sandbox GitHub Draft PR Flow (Stage 61A / Step 59)
+
+A controlled, **sandbox-only** flow that builds (dry_run) or — only when explicitly
+enabled with a credential — creates **draft** pull requests inside an allowlisted sandbox
+repository, linked to a project / work item with audit
+([policy](infra/github/sandbox-github-draft-pr-policy.yaml) +
+[allowlist](infra/github/sandbox-repository-allowlist.yaml) +
+[credential boundary](infra/github/sandbox-github-credential-boundary.yaml) +
+[branch](infra/github/sandbox-draft-branch-policy.yaml) +
+[metadata](infra/github/sandbox-draft-pr-metadata-model.yaml) +
+`shared/sdk/sandbox_github`), 6 read-only GET + 1 controlled `POST
+/operations/github/sandbox-draft-pr` (auth + CSRF + reason + audit; repository_key only),
+an Admin Console section (route `/sandbox-github`), and 16 `/operations/safety` fields.
+**Sandbox-only — NOT production GitHub automation, NOT merge automation, NOT a
+customer-repo flow, NOT production release ready.** Default mode is `dry_run`;
+`live_sandbox` is gated on `SANDBOX_GITHUB_LIVE`+`SANDBOX_GITHUB_TOKEN` and is blocked
+(never faked) without a credential. No PR merge / ready-for-review / workflow dispatch /
+non-sandbox write / production branch / ArgoCD sync / Kubernetes mutation / external send;
+a `production_effect` work item is never turned into a PR; the token is never committed /
+logged / returned; `sandbox_github_production_ready=false`,
+`production_executed_true_count=0`. 9 verifiers + combined
+`SANDBOX_GITHUB_DRAFT_PR_BASELINE_VERIFY`, 12 tests, 9 docs. Next: Step 60 (Release &
+Deployment Governance).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
