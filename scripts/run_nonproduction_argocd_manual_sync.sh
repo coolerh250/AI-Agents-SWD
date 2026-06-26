@@ -107,7 +107,9 @@ for i in $(seq 1 25); do
   h="$(kubectl -n "$ARGOCD_NS" get application "$APP" -o jsonpath='{.status.health.status}' 2>/dev/null)"
   p="$(kubectl -n "$ARGOCD_NS" get application "$APP" -o jsonpath='{.status.operationState.phase}' 2>/dev/null)"
   echo "  t=$i sync=$s health=$h op=$p"
-  [ "$s" = "Synced" ] && [ "$h" = "Healthy" ] && break
+  # Require the operation to finish (Succeeded) too, not just Synced/Healthy, so the
+  # report generator does not race a still-Running operationState.
+  [ "$s" = "Synced" ] && [ "$h" = "Healthy" ] && [ "$p" = "Succeeded" ] && break
   { [ "$p" = "Failed" ] || [ "$p" = "Error" ]; } && fail "manual sync operation $p"
   sleep 12
 done
