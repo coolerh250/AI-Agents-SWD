@@ -10,8 +10,12 @@
 Invariants:
 - **GET-only** — no generate / refresh / sync / deploy / PR / external-send endpoint, no
   mutation verb, no arbitrary path input.
-- The API computes a live, redacted aggregation (short in-process cache); the orchestrator
-  reads `.runtime` **read-only** (compose mount) and never mutates a cluster, runs kubectl/
-  helm, or calls external services.
+- The API computes a live, redacted aggregation (short in-process cache): DB-backed domains
+  (delivery / work items / dispatch / agents / workflows / approval / audit) and the
+  committed-summary security domain are live; the runtime / GitOps domains read the Step 55/56
+  `.runtime` reports, which are **not** present in the orchestrator container, so they
+  **degrade to unavailable** in-container (the host-run snapshot generator reads them for the
+  snapshot verifier). The orchestrator never mutates a cluster, runs kubectl/helm, or calls
+  external services.
 - Responses are redacted (no secret / token / kubeconfig / chain-of-thought) and show
   stale / unavailable explicitly. Every response carries `production_ready: false`.

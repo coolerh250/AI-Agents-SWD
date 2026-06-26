@@ -11143,8 +11143,12 @@ multi-tenant.
   production_ready=false; blockers/unavailable explicit; redacted).
 - **API.** 14 GET `/operations/metrics/*` (overview/delivery/work-items/dispatch/agents/workflows/
   runtime/gitops/security/approval/audit/safety/freshness/snapshot); GET-only, no generate/refresh/
-  sync/deploy/PR/external-send; live redacted aggregation; orchestrator reads `.runtime` read-only
-  (compose mount) -- never mutates a cluster. 10 `/operations/safety` Step 58 fields.
+  sync/deploy/PR/external-send; live redacted aggregation -- DB-backed + committed-summary domains
+  live, runtime/gitops domains degrade to unavailable in-container (host snapshot generator reads
+  `.runtime`); never mutates a cluster. 10 `/operations/safety` Step 58 fields. NOTE: an initial
+  `.runtime:ro` orchestrator mount was reverted -- it made the Step 55 runtime safety fields read
+  the live report in-container and shifted the posture the Step 55 verifier asserts; removing the
+  mount keeps Step 55 PASS (no prior verifier modified).
 - **Admin Console v2.** Read-only Operational Metrics dashboard (route `/metrics` + static fallback);
   no deploy/sync/PR/external-send/production-approve/production-ready/connector control; stale/
   unavailable shown explicitly.
