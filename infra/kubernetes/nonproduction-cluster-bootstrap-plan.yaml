@@ -1,0 +1,65 @@
+# Step 55.1 (Stage 57B) -- safe non-production Kubernetes cluster bootstrap plan.
+#
+# Defines how a SAFE, local-only, throwaway non-production cluster is brought up so
+# the Step 55 runtime smoke can run for real (see
+# docs/operations/nonproduction-cluster-bootstrap-plan.md). Chosen option: kind
+# (Option A) -- Docker is available on the test host; no cloud / production
+# credential is required.
+nonProductionClusterBootstrapPlan:
+  productionReady: false
+  clusterOption: kind                 # A=kind (chosen) | B=k3d | C=k3s | D=existing-nonprod
+  clusterName: aiagents-smoke
+  expectedContext: kind-aiagents-smoke # contains no prod/production substring
+  namespace: aiagents-smoke-dev
+  release: aiagents-smoke
+  nodeImage: kindest/node:v1.31.2
+  config: infra/kubernetes/kind/nonproduction-kind-cluster.yaml
+  bootstrapScript: scripts/bootstrap_nonproduction_kind_cluster.sh
+
+  # Image handling: build locally + `kind load` (NEVER push / never registry login).
+  imageHandling:
+    strategy: local-build-and-kind-load
+    pushPerformed: false
+    registryLoginPerformed: false
+    localTagSuffix: smoke-local
+    imagePullPolicy: IfNotPresent
+
+  # Scope: the smoke deploys a control-plane subset sized for the non-production
+  # host capacity. Remaining components are disabled (not faked) and recorded in
+  # the runtime smoke report. values: charts/.../values-nonprod-smoke-local.yaml
+  scope:
+    deployedComponents:
+      - orchestrator
+      - policy-engine
+      - approval-engine
+      - audit-service
+      - postgres
+      - redis
+    rationale: host-capacity-scoped non-production control-plane smoke
+
+  # In-cluster secret created at bootstrap (NOT committed; non-secret values only:
+  # in-cluster service URLs with trust auth, no password / token / cert).
+  inClusterSecret:
+    name: aiagents-runtime-secrets
+    committed: false
+    keys: [databaseUrl, redisUrl]
+
+  forbidden:
+    productionCluster: true
+    productionNamespace: true
+    defaultNamespace: true
+    kubeSystemNamespace: true
+    argocdNamespace: true
+    publicIngress: true
+    loadBalancer: true
+    registryLogin: true
+    imagePush: true
+    productionSecret: true
+    productionDbRedisVault: true
+    argocdSync: true
+    clusterAdminExpansion: true
+
+  safetyInvariants:
+    productionExecuted: false
+    kubernetesProductionDeployPerformed: false
+    argocdSyncPerformed: false

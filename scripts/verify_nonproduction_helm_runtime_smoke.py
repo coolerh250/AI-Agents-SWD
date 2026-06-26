@@ -20,6 +20,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.lib.nonprod_cluster_detect import detect_cluster  # noqa: E402
+from scripts.lib.nonprod_smoke_report import section_status  # noqa: E402
 
 MARKER = "NONPROD_HELM_RUNTIME_SMOKE_VERIFY"
 RUNNER = ROOT / "scripts" / "run_nonproduction_helm_smoke.sh"
@@ -79,9 +80,20 @@ def main() -> int:
         print(f"  [BLOCKED] guardrails valid but no safe cluster to render/install ({reason})")
         print(f"{MARKER}: BLOCKED_NO_SAFE_CLUSTER")
         return 0
-    print("  [OK] safe cluster present; render/install would proceed via the runner")
-    print(f"{MARKER}: PASS")
-    return 0
+    # Safe cluster present: PASS requires evidence of a REAL successful install --
+    # the live smoke report with pods Running (produced by run_nonproduction_runtime_smoke.py).
+    pods = section_status("podStatus")
+    if pods is None:
+        print("  [BLOCKED] safe cluster but no install evidence (run the bootstrap + helm smoke)")
+        print(f"{MARKER}: BLOCKED_NO_SAFE_CLUSTER")
+        return 0
+    if pods == "pass":
+        print("  [OK] non-production release installed; pods Running per the live smoke report")
+        print(f"{MARKER}: PASS")
+        return 0
+    print(f"  [FAIL] release installed but pods not healthy (podStatus={pods})")
+    print(f"{MARKER}: FAIL")
+    return 1
 
 
 if __name__ == "__main__":

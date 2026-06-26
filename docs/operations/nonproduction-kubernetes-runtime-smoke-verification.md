@@ -23,3 +23,21 @@ storage `NONPROD_STORAGE_SMOKE_VERIFY`, securitycontext
 `NONPROD_RUNTIME_SAFETY_FIELDS_VERIFY`.
 
 Read-only endpoints: `GET /operations/runtime/nonprod-smoke/*` (12, GET-only).
+
+## Step 55.1 — real run on a safe kind cluster
+Bootstrap + install + smoke + combined readiness (run from the repo root on the test host):
+```bash
+scripts/bootstrap_nonproduction_kind_cluster.sh
+scripts/run_nonproduction_helm_smoke.sh --namespace aiagents-smoke-dev \
+  --values infra/kubernetes/charts/ai-agents-platform/values-nonprod-smoke-local.yaml
+scripts/run_nonproduction_runtime_smoke.py            # writes the live redacted report
+scripts/verify_nonproduction_cluster_ready_for_smoke.sh
+```
+`run_nonproduction_runtime_smoke.py` (`NONPROD_RUNTIME_SMOKE_RUN`) performs real
+`kubectl` checks + an in-cluster connectivity probe and writes
+`.runtime/kubernetes/nonproduction-runtime-smoke-report.json` (gitignored, never
+committed). The cluster-dependent verifiers consume that report — PASS reflects the
+real cluster; an absent report is BLOCKED, never a faked PASS. New Step 55.1 markers:
+`NONPROD_KUBERNETES_TOOLING_VERIFY`, `KIND_NONPROD_CLUSTER_VERIFY`,
+`NONPROD_CLUSTER_BOOTSTRAP_VERIFY`, `NONPROD_CLUSTER_SAFETY_VERIFY`, and the combined
+`NONPROD_CLUSTER_READY_FOR_RUNTIME_SMOKE_VERIFY`.

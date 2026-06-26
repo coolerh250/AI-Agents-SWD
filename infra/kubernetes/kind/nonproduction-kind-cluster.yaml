@@ -1,0 +1,18 @@
+# Step 55.1 (Stage 57B) -- NON-PRODUCTION local kind cluster definition.
+#
+# A throwaway, local-only single-node cluster used ONLY to run the Step 55
+# non-production runtime smoke (see docs/operations/nonproduction-kind-cluster.md).
+# It is created/destroyed by scripts/bootstrap_nonproduction_kind_cluster.sh.
+#
+# Safety: local-only (kind runs in Docker on the test host); no public ingress,
+# no external load-balancer service, no host port exposure, no production registry,
+# no production secret/DB/Redis, no cloud credential. The resulting kubectl context
+# is "kind-aiagents-smoke" (contains no prod/production substring). Fully
+# deletable + recreatable; holds no durable state.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: aiagents-smoke
+nodes:
+  - role: control-plane
+    # No host port exposure: the smoke never exposes a host port / public ingress.
+    # In-cluster checks use `kubectl exec` against ClusterIP services only.

@@ -2514,10 +2514,31 @@ ones honestly emit `BLOCKED_NO_SAFE_CLUSTER`), a combined
 `NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY` (chains Step 51/52/53/54, deduped), 12 GET
 `/operations/runtime/nonprod-smoke/*` endpoints + 17 `/operations/safety` smoke fields, an
 Admin Console **Non-production Runtime Smoke** section (no deploy/helm-install/cleanup/exec/
-sync), and 10 tests. **On 10.0.1.31 there is no kubectl/helm/kubeconfig, so the smoke is
-BLOCKED_NO_SAFE_CLUSTER (PASS_WITH_GAPS) — never faked**; `nonprod_runtime_smoke_production_
-ready=false`, no production deploy / ArgoCD sync, `production_executed_true_count=0`. A safe
-non-production cluster is required before Step 56 (real ArgoCD manual sync).
+sync), and 10 tests. **Step 55.1 (Stage 57B) bootstrapped a safe local kind cluster and the
+smoke now PASSes for real (scoped)** — see below. `nonprod_runtime_smoke_production_
+ready=false`, no production deploy / ArgoCD sync, `production_executed_true_count=0`.
+
+## Safe Non-production Cluster Bootstrap (Stage 57B / Step 55.1)
+
+Closes the Step 55 `BLOCKED_NO_SAFE_CLUSTER` gap: a **safe, local-only kind cluster**
+(`kind-aiagents-smoke`, namespace `aiagents-smoke-dev`) is bootstrapped on the test host and
+the Step 55 runtime smoke runs **for real → PASS (scoped)**. Tooling from official sources
+(kubectl v1.36.2, helm v3.16.4, kind v0.25.0; recorded in
+[infra/kubernetes/nonproduction-tooling-inventory.yaml](infra/kubernetes/nonproduction-tooling-inventory.yaml)).
+[scripts/bootstrap_nonproduction_kind_cluster.sh](scripts/bootstrap_nonproduction_kind_cluster.sh)
+creates the cluster, `kind load`s locally-built images (no registry login/push), and creates
+a non-secret in-cluster runtime secret (never committed). A scoped control-plane subset
+(orchestrator + policy-engine + approval-engine + audit-service + in-cluster postgres + redis)
+is installed via `values-nonprod-smoke-local.yaml`; **6/6 pods Ready + migration Job Complete**.
+[scripts/run_nonproduction_runtime_smoke.py](scripts/run_nonproduction_runtime_smoke.py) runs
+real `kubectl` checks + an in-cluster connectivity probe and writes a redacted
+gitignored runtime report the verifiers consume (PASS reflects the live cluster; absent
+report → BLOCKED — never faked). 4 new verifiers + combined
+`NONPROD_CLUSTER_READY_FOR_RUNTIME_SMOKE_VERIFY`, 5 tests, 5 docs. Known gaps (honest):
+scoped subset only; kindnet does not enforce NetworkPolicy; chart migration execution is
+fail-closed. No production cluster/namespace, no registry login/push, no public
+ingress/LoadBalancer/NodePort, no ArgoCD sync, `production_executed_true_count=0`. **Step 56
+(real ArgoCD manual sync) remains out of scope and must not begin from automation.**
 
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 

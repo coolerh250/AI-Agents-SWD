@@ -1,0 +1,42 @@
+# Step 55.1 (Stage 57B) -- non-production Kubernetes runtime smoke tooling inventory.
+#
+# Records the tools required to run the Step 55 non-production runtime smoke on the
+# test host, how they were installed, and the versions used. NO production / cloud /
+# registry credential is required by any of these tools; none logs into a registry.
+# See docs/operations/nonproduction-kubernetes-tooling.md.
+nonProductionToolingInventory:
+  host: test-server (non-production)
+  productionCredentialRequired: false
+  registryLoginPerformed: false
+  imagePushPerformed: false
+  tools:
+    - name: kubectl
+      required: true
+      installed: true
+      version: v1.36.2
+      source: https://dl.k8s.io/release (official stable binary)
+      productionCredentialRequired: false
+    - name: helm
+      required: true
+      installed: true
+      version: v3.16.4
+      source: https://get.helm.sh (official release tarball)
+      productionCredentialRequired: false
+    - name: kind
+      required: true
+      installed: true
+      version: v0.25.0
+      source: https://kind.sigs.k8s.io/dl (official release binary)
+      productionCredentialRequired: false
+    - name: docker
+      required: true
+      installed: true
+      version: "29.5.2"
+      source: pre-existing host runtime
+      productionCredentialRequired: false
+  kindNodeImage: kindest/node:v1.31.2
+  notInstalled:
+    # Deliberately NOT installed in this stage (not needed for the runtime smoke).
+    - argocd-cli            # Step 56 concern, not this stage
+    - cloud-provider-cli    # no cloud credential in scope
+    - registry-credential-helper

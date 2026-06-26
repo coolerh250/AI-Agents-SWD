@@ -10973,3 +10973,57 @@ NOT executed and NOT faked.
   cluster (kind/k3s/managed non-prod) to run the real smoke, then Step 56 (Real ArgoCD
   Non-production Manual Sync). Must NOT enter Step 56 until the runtime smoke is PASS on a
   real cluster. Claude Code does not decide Production readiness.
+
+## Stage 57B — Safe Non-production Kubernetes Cluster Bootstrap (Step 55.1)
+
+Closes the Step 55 `BLOCKED_NO_SAFE_CLUSTER` gap by bootstrapping a **safe, local-only
+kind cluster** on 10.0.1.31 and running the Step 55 runtime smoke **for real**.
+**Outcome: PASS (scoped).** The host RAM was upgraded to 15Gi (a first kind-create on the
+old 4Gi/no-swap host livelocked it and it was power-cycled); the cluster + scoped install
+then came up cleanly. The smoke is real and not faked.
+
+- **Tooling (official sources).** kubectl v1.36.2 (dl.k8s.io), helm v3.16.4 (get.helm.sh),
+  kind v0.25.0 (kind.sigs.k8s.io); node image kindest/node:v1.31.2. Recorded in
+  `infra/kubernetes/nonproduction-tooling-inventory.yaml`. No registry login / image push /
+  cloud credential. argocd-cli deliberately not installed.
+- **Cluster.** `infra/kubernetes/kind/nonproduction-kind-cluster.yaml` (single control-plane,
+  local-only, no host ports / ingress / LoadBalancer); context `kind-aiagents-smoke`;
+  namespace `aiagents-smoke-dev`. `scripts/bootstrap_nonproduction_kind_cluster.sh`
+  (idempotent: create cluster, tag+`kind load` local compose images as
+  `aiagents/<svc>:smoke-local`, create namespace + a NON-secret in-cluster
+  `aiagents-runtime-secrets` (in-cluster URLs only, never committed)).
+- **Scoped real deploy.** `charts/ai-agents-platform/values-nonprod-smoke-local.yaml`
+  (control-plane subset: orchestrator + policy-engine + approval-engine + audit-service +
+  in-cluster postgres + redis; remaining components disabled, not faked; local image tags;
+  postgres `PGDATA` sub-dir so initdb works under the restricted securityContext). Installed
+  via `run_nonproduction_helm_smoke.sh`; result: **6/6 deployments Ready, migration Job
+  Complete (no-op).**
+- **Real smoke + report.** `scripts/run_nonproduction_runtime_smoke.py`
+  (`NONPROD_RUNTIME_SMOKE_RUN`) runs real `kubectl` checks + an in-cluster connectivity probe
+  and writes a redacted `.runtime/kubernetes/nonproduction-runtime-smoke-report.json`
+  (gitignored, never committed). Sections all pass: podStatus, serviceHealth, connectivity
+  (orchestrator -> policy/approval/audit `/health` = 200), networkPolicy (default-deny +
+  per-edge applied; `enforcementObserved=false` — kindnet does not enforce), pvc
+  (postgres+redis Bound), securityContext (runAsNonRoot / drop-ALL / no-privesc), batchJobs
+  (migration Complete). The 8 cluster-dependent verifiers + report verifier now consume this
+  report (PASS reflects the live cluster; absent report -> BLOCKED; never a faked PASS) -- a
+  strictness raise, not a relaxation.
+- **New verifiers + combined (4 + 1).** `verify_nonproduction_kubernetes_tooling.py`
+  (`NONPROD_KUBERNETES_TOOLING_VERIFY`), `verify_kind_nonproduction_cluster.py`
+  (`KIND_NONPROD_CLUSTER_VERIFY`), `verify_nonproduction_cluster_bootstrap.py`
+  (`NONPROD_CLUSTER_BOOTSTRAP_VERIFY`), `verify_nonproduction_cluster_safety.py`
+  (`NONPROD_CLUSTER_SAFETY_VERIFY`); combined
+  `verify_nonproduction_cluster_ready_for_smoke.sh`
+  (`NONPROD_CLUSTER_READY_FOR_RUNTIME_SMOKE_VERIFY`).
+- **Tests.** 5 new pytest files (tooling / kind config / bootstrap plan / cluster safety /
+  cluster-ready), 0 skipped.
+- **Docs.** 5 new (bootstrap-plan, kubernetes-tooling, kind-cluster, cluster-safety,
+  cluster-ready-for-smoke) + updates to runtime-smoke verification / limitations.
+- **Safety.** No production cluster / namespace; no kubeconfig / token / cert / secret
+  committed; no registry login / image push; no public ingress / LoadBalancer / NodePort; no
+  ArgoCD sync; no production action; `nonprod_runtime_smoke_production_ready=false`,
+  `kubernetes_production_deploy_performed=false`, `argocd_sync_performed=false`,
+  `production_executed_true_count=0`.
+- **Roadmap.** Step 55 -> real **PASS (scoped)**; Step 55.1 closed. Step 56 (Real ArgoCD
+  Non-production Manual Sync) remains BLOCKED and must NOT begin from automation; it requires
+  an explicit operator decision. Claude Code does not decide Production readiness.

@@ -19,8 +19,10 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from scripts.lib.nonprod_cluster_detect import detect_cluster  # noqa: E402
+from scripts.lib.nonprod_smoke_report import section_status  # noqa: E402
 
 MARKER = "NONPROD_STORAGE_SMOKE_VERIFY"
+SECTION = "pvc"
 
 
 def main() -> int:
@@ -29,10 +31,20 @@ def main() -> int:
         print(f"  [BLOCKED] PVC / storage smoke requires a safe non-production cluster ({reason})")
         print(f"{MARKER}: BLOCKED_NO_SAFE_CLUSTER")
         return 0
-    # Safe non-production cluster present: the real PVC / storage smoke checks run here
-    # (Postgres/Redis PVC bound; workspace ephemeral volumes mounted; no hostPath; no production storage class / PV; backup target disabled; restore job disabled). production_executed stays false; no deploy/sync.
-    print(f"{MARKER}: PASS")
-    return 0
+    # Safe non-production cluster present: PASS reflects the REAL live smoke report
+    # (Postgres/Redis generated PVCs Bound). No report yet -> smoke not run -> BLOCKED.
+    status = section_status(SECTION)
+    if status is None:
+        print("  [BLOCKED] no runtime smoke report yet (run run_nonproduction_runtime_smoke.py)")
+        print(f"{MARKER}: BLOCKED_NO_SAFE_CLUSTER")
+        return 0
+    if status == "pass":
+        print(f"  [OK] live cluster smoke section '{SECTION}' passed")
+        print(f"{MARKER}: PASS")
+        return 0
+    print(f"  [FAIL] live cluster smoke section '{SECTION}' status={status}")
+    print(f"{MARKER}: FAIL")
+    return 1
 
 
 if __name__ == "__main__":

@@ -1,0 +1,76 @@
+# Step 55.1 (Stage 57B) -- LOCAL kind runtime-smoke values override.
+#
+# Layered on top of the chart defaults for a REAL non-production runtime smoke on
+# a local kind cluster (see docs/operations/nonproduction-kind-cluster.md). This
+# is a SMOKE override only -- it is NOT a production values file and MUST NOT be
+# used for any real/staging/production deploy.
+#
+# Why a separate file (not values-nonprod-smoke.yaml):
+#   * Images point at locally-built + `kind load`-ed tags (aiagents/<svc>:smoke-local);
+#     nothing is pulled from / pushed to a registry (imagePullPolicy stays IfNotPresent).
+#   * Scoped to the control-plane subset that fits the non-production host capacity
+#     (orchestrator + policy-engine + approval-engine + audit-service + in-cluster
+#     postgres + redis). The remaining components stay disabled for this smoke; this
+#     is honestly recorded in the runtime smoke report (not a faked full deploy).
+#   * postgres PGDATA points at a sub-directory of the mounted PVC so the official
+#     image's initdb can chown it (the mount root is provisioner-owned).
+#
+# All safety toggles inherit the chart defaults: production=false,
+# realDeployEnabled=false, productionAuth/OIDC off, github/pr/deploy/realLlm/
+# externalDelivery off, default-deny NetworkPolicy, restricted workload security,
+# migration execution fail-closed, backup suspended, restore not rendered. No
+# Ingress / LoadBalancer / ArgoCD sync (refused by the runner, not chart values).
+global:
+  environment: test
+  production: false
+  realDeployEnabled: false
+
+defaults:
+  replicas: 1
+
+# Batch (migration) image reuses the locally-loaded orchestrator image (carries
+# python + scripts/ + migrations/). Migration execution stays fail-closed.
+batchJobs:
+  image:
+    repository: aiagents/orchestrator
+    tag: smoke-local
+    digest: ""
+
+components:
+  orchestrator:
+    enabled: true
+    image: {repository: aiagents/orchestrator, tag: smoke-local, digest: ""}
+  policy-engine:
+    enabled: true
+    image: {repository: aiagents/policy-engine, tag: smoke-local, digest: ""}
+  approval-engine:
+    enabled: true
+    image: {repository: aiagents/approval-engine, tag: smoke-local, digest: ""}
+  audit-service:
+    enabled: true
+    image: {repository: aiagents/audit-service, tag: smoke-local, digest: ""}
+  # Out-of-scope for the capacity-scoped smoke (disabled, not faked).
+  communication-gateway: {enabled: false}
+  github-automation: {enabled: false}
+  discord-gateway: {enabled: false}
+  audit-worker: {enabled: false}
+  notification-worker: {enabled: false}
+  retry-scheduler: {enabled: false}
+  intake-agent: {enabled: false}
+  requirement-agent: {enabled: false}
+  development-agent: {enabled: false}
+  qa-agent: {enabled: false}
+  devops-agent: {enabled: false}
+  project-planner-agent: {enabled: false}
+  design-review-agent: {enabled: false}
+  workspace-operator-agent: {enabled: false}
+  mini-delivery-pilot-agent: {enabled: false}
+  delivery-package-agent: {enabled: false}
+  # In-cluster non-production datastores (dev/test only; never production).
+  postgres:
+    enabled: true
+    env:
+      # PGDATA sub-dir of the PVC mount so the official image's initdb can chown it.
+      PGDATA: /var/lib/postgresql/data/pgdata
+  redis: {enabled: true}
+  vault: {enabled: false}
