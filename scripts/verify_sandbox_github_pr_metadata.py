@@ -53,9 +53,10 @@ def main() -> int:
         if section.lower() not in body.lower():
             bad(f"body missing required section: {section}")
 
-    # Forbidden content must be rejected by validate_body.
+    # Forbidden content must be rejected by validate_body. (Use the forbidden word only --
+    # never embed a real token-shaped literal, which the repo secret-leak scanner flags.)
     try:
-        m.validate_body(body + "\n\ntoken: ghp_abcdefghijklmnopqrstuvwxyz")
+        m.validate_body(body + "\n\ntoken: <redacted-in-test>")
         bad("validate_body must reject a body that mentions a token")
     except m.PrMetadataError:
         pass
