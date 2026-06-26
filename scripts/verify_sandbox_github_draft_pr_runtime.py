@@ -157,10 +157,12 @@ def main() -> int:
     if nore.get("reason") != "reason_required":
         bad(f"missing reason must be rejected: {nore}")
 
-    # no token leaked anywhere in the responses
+    # no token / credential shape leaked anywhere in the responses (a token shape, not the
+    # word "authorization" -- the PR body legitimately says "No merge authorization").
     blob = json.dumps([res, bad_repo, res2]).lower()
-    if "ghp_" in blob or "sandbox_github_token" in blob or "authorization" in blob:
-        bad("a token / credential shape leaked into a response")
+    for shape in ("ghp_", "github_pat_", "gho_", "sandbox_github_token", "bearer "):
+        if shape in blob:
+            bad(f"a token / credential shape leaked into a response: {shape!r}")
 
     if failures:
         print(f"{MARKER}: FAIL")
