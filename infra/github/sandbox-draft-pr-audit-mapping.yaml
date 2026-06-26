@@ -1,0 +1,39 @@
+# Step 59 (Stage 61A) -- Sandbox draft PR audit mapping.
+#
+# Every sandbox draft-PR operation emits an audit event. Audit metadata always carries
+# the actor / role / reason / linkage and production_executed=false. It never carries a
+# token, secret, raw prompt, or chain-of-thought.
+sandboxDraftPrAudit:
+  events:
+    - sandbox_github_draft_pr_requested
+    - sandbox_github_draft_pr_policy_checked
+    - sandbox_github_draft_branch_created
+    - sandbox_github_draft_pr_created
+    - sandbox_github_draft_pr_blocked
+    - sandbox_github_draft_pr_failed
+
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - project_id
+    - work_item_id
+    - repository_key
+    - mode
+    - correlation_id
+    - production_executed       # always false
+
+  forbiddenMetadata:
+    - token
+    - secret
+    - raw prompt
+    - chain-of-thought
+
+  invariants:
+    productionExecuted: false
+
+  rules:
+    - everyOperationEmitsAuditEvent
+    - metadataMustContainRequiredFields
+    - metadataMustNotContainForbiddenFields
+    - productionExecutedAlwaysFalse

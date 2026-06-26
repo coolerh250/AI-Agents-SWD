@@ -1,0 +1,31 @@
+# Step 59 (Stage 61A) -- Sandbox GitHub repository allowlist.
+#
+# A request never names an arbitrary owner/repo: it carries a repository *key* that
+# must resolve here. Any key outside this list is rejected. Only sandbox repositories
+# are listed; production / customer repositories and wildcards are never permitted.
+repositories:
+  - key: ai-agents-sandbox
+    owner: coolerh250
+    repo: AI-Agents-SWD
+    allowed: true
+    sandboxOnly: true
+    allowedBaseBranches:
+      - main
+    allowedHeadPrefix:
+      - sandbox/ai-agents/
+    allowDraftPR: true
+    allowMerge: false
+    allowReadyForReview: false
+    allowRelease: false
+    allowDeployment: false
+    allowWorkflowDispatch: false
+
+rules:
+  - repositoryKeyOnly            # request carries a key, never raw owner/repo
+  - noArbitraryRepo
+  - noArbitraryOwner
+  - noProductionRepoWildcard
+  - rejectRepoNotInAllowlist
+  - draftPrOnly
+  - baseBranchMustBeAllowed
+  - headBranchMustMatchAllowedPrefix

@@ -1,0 +1,53 @@
+# Step 59 (Stage 61A) -- Sandbox GitHub Draft PR policy.
+#
+# Defines the controlled boundary for creating *draft* pull requests inside an
+# explicitly allowlisted sandbox repository. This is a sandbox-only baseline: it is
+# NOT production GitHub automation, NOT merge automation, NOT a real customer-repo
+# flow. Default mode is dry_run; live_sandbox must be explicitly enabled AND have a
+# credential, otherwise it stays blocked (never a faked live success).
+sandboxGitHub:
+  enabled: true
+  productionReady: false
+  allowedMode:
+    - dry_run
+    - live_sandbox
+  defaultMode: dry_run
+  allowMerge: false
+  allowReadyForReview: false
+  allowNonSandboxRepo: false
+  allowProductionBranch: false
+  allowWorkflowDispatch: false
+  allowIssueWrite: false
+  allowReleaseWrite: false
+  allowDeploymentWrite: false
+
+  # live_sandbox is gated on an explicit env flag AND a credential reference. With no
+  # credential the runtime degrades to blocked (it does not silently fall back to a
+  # fabricated live result).
+  liveSandbox:
+    enableEnv: SANDBOX_GITHUB_LIVE        # must equal "true" to permit live_sandbox
+    requiresCredential: true
+    blockedWhenNoCredential: true
+
+  # Base branches a draft PR may target are governed by the per-repository allowlist
+  # (infra/github/sandbox-repository-allowlist.yaml). Production / release / hotfix
+  # branches are never valid bases regardless of allowlist.
+  forbiddenBaseBranches:
+    - production
+    - release
+    - hotfix
+
+  rules:
+    - defaultModeMustBeDryRun
+    - liveSandboxRequiresExplicitConfig
+    - liveSandboxBlockedWhenNoCredential
+    - rejectRepoOutsideAllowlist
+    - rejectArbitraryOwnerRepo
+    - rejectProductionBranch
+    - noMerge
+    - noReadyForReview
+    - noWorkflowDispatch
+    - noIssueWrite
+    - noReleaseWrite
+    - noDeploymentWrite
+    - productionEffectWorkItemNeverCreatesPr

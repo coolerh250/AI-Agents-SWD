@@ -1,0 +1,41 @@
+# Step 59 (Stage 61A) -- Sandbox draft branch naming policy.
+#
+# Draft branches are deterministically generated from the project / work-item keys and
+# a short correlation id. Inputs are sanitized; the result can never be a protected
+# branch and never contains a path-traversal / shell metacharacter.
+sandboxDraftBranch:
+  pattern: "sandbox/ai-agents/{project_key}/{work_item_key}/{short_correlation_id}"
+  prefix: "sandbox/ai-agents/"
+  maxLength: 200
+  shortCorrelationIdLength: 12
+  sanitize:
+    allowedCharClass: "[a-z0-9-]"      # lowercased; everything else collapses to '-'
+    collapseRepeatedDashes: true
+    stripLeadingTrailingDashes: true
+  forbidden:
+    - pathTraversal                    # no ".."  or  "/.." segments
+    - spaces
+    - shellMetacharacters              # ; | & $ ` ( ) < > etc.
+    - backslashes
+  forbiddenBranchNames:
+    - main
+    - master
+    - production
+    - release
+    - hotfix
+  forbiddenPrefixes:
+    - production
+    - release
+    - hotfix
+  collisionHandling: deterministicSuffix   # append short_correlation_id (already unique)
+
+  rules:
+    - sanitizeProjectKey
+    - sanitizeWorkItemKey
+    - enforceMaxLength
+    - noPathTraversal
+    - noSpaces
+    - noShellMetacharacters
+    - mustStartWithSandboxPrefix
+    - mustNotBeProtectedBranch
+    - mustNotUseProductionReleaseHotfixPrefix
