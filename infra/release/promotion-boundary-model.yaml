@@ -1,0 +1,31 @@
+# Step 60 (Stage 62A) -- Promotion boundary model.
+#
+# Defines the allowed promotion path. The chain stops at operator_review: promotion to
+# production requires a FUTURE, separately-approved production readiness phase. Step 60
+# adds NO production route and NO deploy action.
+promotionBoundary:
+  transitions:
+    - from: dev
+      to: test
+      auto: false
+    - from: test
+      to: nonprod
+      auto: false
+    - from: nonprod
+      to: operator_review
+      auto: false
+    - from: operator_review
+      to: production
+      allowed: false
+      requiresFutureProductionPhase: true
+
+  forbidden:
+    - productionPromotion
+    - autoPromotion
+
+  invariants:
+    - productionPromotionForbidden
+    - autoPromotionForbidden
+    - noProductionRouteAddedInStep60
+    - noDeployActionAddedInStep60
+    - futureProductionPhaseRequiresExplicitApproval

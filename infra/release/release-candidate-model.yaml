@@ -1,0 +1,44 @@
+# Step 60 (Stage 62A) -- Release candidate model.
+#
+# A release candidate aggregates delivery / work-item / sandbox-draft-PR evidence into a
+# governance object. It is NOT a release, NOT a merge, NOT a production approval.
+# target_environment defaults to nonprod and can never be production; production_ready is
+# always false in this baseline.
+releaseCandidate:
+  defaultTargetEnvironment: nonprod
+  productionReady: false
+
+  fields:
+    - release_candidate_id
+    - project_id
+    - work_item_ids
+    - delivery_package_ids
+    - sandbox_draft_pr_ids
+    - version_label
+    - target_environment
+    - status
+    - readiness_status
+    - security_status
+    - runtime_status
+    - gitops_status
+    - approval_status
+    - production_ready
+    - created_at
+    - updated_at
+
+  statuses:
+    - draft
+    - evidence_collecting
+    - ready_for_operator_review
+    - blocked
+    - rejected
+    - accepted_nonproduction
+    - archived
+
+  invariants:
+    - targetEnvironmentDefaultsNonprod
+    - targetEnvironmentNeverProduction
+    - productionReadyAlwaysFalse
+    - acceptedNonproductionIsNotProductionApproval
+    - sandboxDraftPrIsNotMerge
+    - releaseCandidateIsNotRelease

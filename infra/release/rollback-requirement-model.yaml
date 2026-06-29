@@ -1,0 +1,19 @@
+# Step 60 (Stage 62A) -- Rollback requirement model.
+#
+# A release candidate is not ready for operator review without a rollback plan + rollback
+# evidence. Defining a rollback plan does NOT trigger a rollback; production rollback is a
+# future phase only.
+rollbackRequirement:
+  rollback_plan_required: true
+  rollback_evidence_required: true
+
+  fields:
+    - rollback_owner
+    - rollback_trigger
+    - rollback_steps
+    - rollback_validation
+
+  invariants:
+    - missingRollbackPlanBlocksReadiness
+    - rollbackPlanDoesNotTriggerRollback
+    - productionRollbackFuturePhaseOnly

@@ -1,0 +1,36 @@
+# Step 60 (Stage 62A) -- Release & Deployment Governance policy.
+#
+# Defines the controlled, NON-PRODUCTION release governance boundary. This integrates
+# delivery / work-item / sandbox draft PR / runtime / GitOps / security / approval
+# evidence into a governance decision -- it does NOT deploy, sync, merge, push, or
+# release. Production stays blocked. Governance visibility != production gate active.
+releaseGovernance:
+  enabled: true
+  productionReady: false
+  allowProductionDeploy: false
+  allowAutoPromotion: false
+  allowGitHubMerge: false
+  allowTagCreation: false
+  allowReleaseCreation: false
+  allowImagePush: false
+  allowRegistryLogin: false
+  allowArgoCDProductionSync: false
+  requireHumanApprovalForProduction: true
+  defaultEnvironment: nonprod
+  allowedEnvironments:
+    - dev
+    - test
+    - nonprod
+  forbiddenEnvironments:
+    - production
+    - prod
+
+  rules:
+    - productionEnvironmentForbidden
+    - allProductionReleaseDeployBlocked
+    - governanceVisibilityIsNotProductionGate
+    - noAutoPromotion
+    - humanApprovalRequiredForProduction
+    - draftPrIsNotReleaseApproval
+    - deliveryPackageReadyIsNotProductionApproval
+    - securityBaselinePassIsNotProductionApproval

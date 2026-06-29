@@ -1,0 +1,47 @@
+# Step 60 (Stage 62A) -- Deployment intent model.
+#
+# A deployment intent records an *intention* against a release candidate. It NEVER
+# executes a deployment: the only permitted actions are validate-only / prepare-
+# nonproduction / request-operator-review. Production targets are blocked, and
+# request_operator_review != approval granted.
+deploymentIntent:
+  defaultTargetEnvironment: nonprod
+
+  fields:
+    - deployment_intent_id
+    - release_candidate_id
+    - target_environment
+    - target_runtime
+    - target_gitops_application
+    - requested_action
+    - status
+    - requires_human_approval
+    - policy_decision
+    - blocked_reason
+    - created_at
+    - updated_at
+
+  requestedActions:
+    - validate_only
+    - prepare_nonproduction
+    - request_operator_review
+
+  forbiddenActions:
+    - deploy_production
+    - sync_production
+    - merge_pr
+    - push_image
+    - create_release
+    - create_tag
+
+  statuses:
+    - created
+    - validated
+    - blocked
+    - operator_review_requested
+
+  invariants:
+    - productionTargetBlocked
+    - deploymentIntentNeverExecutesDeploy
+    - validateOnlyMayPass
+    - requestOperatorReviewIsNotApproval
