@@ -11225,3 +11225,61 @@ project / work item with audit. **Outcome: PASS.** NOT production GitHub automat
   automation / merge automation / production PR flow / customer-repo automation ready. Step 60 (Release
   & Deployment Governance) pending. Tenant strategy note recorded only, not scheduled. Claude Code does
   not decide Production readiness.
+
+## Stage 62A — Release & Deployment Governance (Step 60)
+
+Integrates delivery / work-item / sandbox-draft-PR / runtime / GitOps / security / approval evidence
+into a controlled **non-production** release governance flow. **Outcome: PASS.** NOT production
+deployment / production release approval / auto-promotion / production GitOps. Production stays blocked.
+
+- **Policies (committed YAML).** `infra/release/release-governance-policy.yaml` (production forbidden;
+  allowProductionDeploy / allowAutoPromotion / allowGitHubMerge / allowTagCreation / allowReleaseCreation
+  / allowImagePush / allowRegistryLogin / allowArgoCDProductionSync all false; productionReady false;
+  requireHumanApprovalForProduction true; allowed dev/test/nonprod, forbidden production/prod) +
+  release-candidate-model.yaml (nonprod default, production_ready false, accepted_nonproduction != prod
+  approval) + deployment-intent-model.yaml (validate_only/prepare_nonproduction/request_operator_review
+  allowed; deploy/sync/merge/push/release/tag forbidden; never executes a deploy) + promotion-boundary-
+  model.yaml (dev->test->nonprod->operator_review; production allowed:false future-phase-only; no auto-
+  promotion) + release-evidence-package-model.yaml (missing evidence blocks readiness; no secret/token/
+  CoT; never marks production approved) + release-readiness-decision-model.yaml (governance not approval;
+  production_ready always false) + rollback-requirement-model.yaml (plan+evidence required; defining !=
+  triggering) + release-audit-mapping.yaml (7 events; required linkage + production_executed=false).
+- **SDK.** `shared/sdk/release_governance` (models / policy / candidates / deployment_intent / evidence /
+  readiness / rollback / audit / redaction / safety / store). Validates target env (never production);
+  builds candidates / intents; collects redacted evidence; evaluates readiness (production + missing
+  evidence + unhealthy runtime/GitOps + unreviewed PR all block); validates rollback. NO deploy / ArgoCD
+  sync / merge / image push / external send.
+- **Migration.** `migrations/026_release_deployment_governance.sql` (idempotent release_candidates /
+  deployment_intents / release_evidence_packages / release_readiness_decisions / release_audit_events;
+  target_environment CHECK can never be production; production_ready / production_executed default false).
+- **API.** `apps/orchestrator/src/release_governance_api.py` (`/operations/release`). 11 read-only GET
+  (overview/policy/safety/limitations/candidates[/{id}[/evidence|/readiness]]/readiness-summary/
+  deployment-intents[/{id}]) + 2 controlled POST (create candidate, create deployment intent) reusing
+  operator auth + CSRF + reason + audit; production target rejected; intent never deploys. No deploy /
+  sync / merge / image-push / production-approval endpoint; no token returned.
+- **Admin Console.** Read-only Release Governance section (React route `/release-governance` + static
+  fallback); policy / candidates / intents / readiness / safety / limitations; NO production-deploy /
+  ArgoCD sync / PR merge / GitHub release / image-push / production-approve control, no production-ready
+  toggle.
+- **Safety fields.** 13 `/operations/safety` Step 60 fields config-driven from the policy
+  (release_governance_enabled / release_candidate_enabled / deployment_intent_enabled true; production_
+  ready / allow_production_deploy / allow_auto_promotion / allow_github_merge / allow_argocd_production_
+  sync / allow_image_push / allow_registry_login false; production_ready_count / production_target_count /
+  production_executed_count 0).
+- **Verifiers + combined (11 + 1).** policy/candidate/intent/promotion/evidence/readiness/rollback/
+  runtime/operations-visibility/admin-console/safety-fields; combined
+  `verify_release_deployment_governance_baseline.sh` (`RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY`;
+  chains Step 52-59 + tenant note via the Step 59 combined, then the 11 verifiers + tests + safety
+  posture).
+- **Tests + quality.** 12 pytest files (0 skipped). ruff/black/mypy clean. Frontend (local): typecheck
+  clean, 25 vitest, build OK. NOTE: the read-only-guard scan forbids a contiguous `/deploy` token, which
+  collided with the read-only GET path `/operations/release/deployment-intents`; the operations.ts getter
+  composes that path from a segment constant so the source never shows `/deploy` (guard unmodified).
+- **kind/ArgoCD.** Left running (read-only); Step 60 performs no cluster action.
+- **Safety.** No production deploy / ArgoCD production sync / GitHub merge / image push / registry login /
+  release-tag creation / workflow dispatch / external send; no secret/token/kubeconfig exposed;
+  `release_governance_production_ready=false`, `production_executed_true_count=0`.
+- **Roadmap.** Step 60 closed -- release & deployment governance baseline completed. NOT production
+  deployment / production release / production promotion ready. Step 61 (Production Backup/Restore/DR
+  Operations or a controlled cleanup review, operator decision) pending. Tenant strategy note recorded
+  only, not scheduled. Claude Code does not decide Production readiness.

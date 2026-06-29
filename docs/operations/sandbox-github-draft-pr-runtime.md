@@ -34,3 +34,8 @@ A draft PR record is **not** a merge, **not** a review, **not** a production app
 test environment neither is configured, so live mode is blocked and only dry_run plans
 are produced (`sandbox_github_draft_pr_created_count=0`). The orchestrator container does
 not carry a token.
+
+> Step 60 (Release & Deployment Governance) consumes a sandbox draft PR plan/result as
+> *evidence* on a release candidate (`sandbox_draft_pr_ids`). A draft PR is evidence only —
+> it is not a merge, not a review approval, and not a production approval. See
+> [release-deployment-governance-runtime.md](release-deployment-governance-runtime.md).

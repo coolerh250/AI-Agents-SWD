@@ -87,6 +87,14 @@ Incidents) calling the same aggregate endpoints.
   GET `/operations/github/sandbox-draft-pr/*`. Draft-PR requests are made through the governed
   `POST /operations/github/sandbox-draft-pr` (auth + CSRF + audit), not from this page.
 
+- **Release Governance (`/release-governance`, Step 60):** read-only non-production release &
+  deployment governance — overview / policy (production blocking status) / release candidates /
+  deployment intents / readiness summary / safety / known limitations. NO production-deploy /
+  ArgoCD sync / PR merge / GitHub release / image-push / production-approve control, no
+  production-ready toggle. Backed by the read-only GET `/operations/release/*`; release candidates
+  and deployment intents are created through the governed `POST /operations/release/candidates`
+  and `.../deployment-intents` (auth + CSRF + audit; production rejected, intent never deploys).
+
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.

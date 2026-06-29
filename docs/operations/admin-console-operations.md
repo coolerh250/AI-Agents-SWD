@@ -136,3 +136,12 @@ workflow-dispatch / production-deploy control, NO arbitrary-repo input, NO token
 requests are made through the governed `POST /operations/github/sandbox-draft-pr` (operator auth +
 CSRF + reason + audit; repository_key only). See
 [sandbox-github-draft-pr-verification.md](sandbox-github-draft-pr-verification.md).
+
+Step 60 adds a read-only **Release Governance** section (route `/release-governance`) backed by the
+read-only GET `/operations/release/*` endpoints (overview / policy / candidates / deployment-intents /
+readiness-summary / safety / limitations). Non-production governance — NO production-deploy / ArgoCD
+sync / PR merge / GitHub release / image-push / production-approve control, no production-ready toggle.
+Release candidates and deployment intents are created through the governed `POST
+/operations/release/candidates` and `.../deployment-intents` (operator auth + CSRF + reason + audit;
+production target rejected, deployment intent never executes a deploy). See
+[release-deployment-governance-verification.md](release-deployment-governance-verification.md).

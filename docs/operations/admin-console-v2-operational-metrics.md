@@ -17,3 +17,9 @@ mutation scope. Metrics are visibility only — not production readiness, not an
 > `/sandbox-github`); see [sandbox-github-draft-pr-runtime.md](sandbox-github-draft-pr-runtime.md).
 > It is a sandbox-only draft-PR flow, not a metrics view, and carries no merge / workflow /
 > production / token control.
+
+> Step 60 (Release & Deployment Governance) adds a separate read-only **Release Governance**
+> section (route `/release-governance`); see
+> [release-deployment-governance-runtime.md](release-deployment-governance-runtime.md). It is
+> a non-production governance flow — no production-deploy / ArgoCD sync / merge / image-push /
+> production-approve control, no production-ready toggle.

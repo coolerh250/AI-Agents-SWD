@@ -2630,6 +2630,29 @@ logged / returned; `sandbox_github_production_ready=false`,
 `SANDBOX_GITHUB_DRAFT_PR_BASELINE_VERIFY`, 12 tests, 9 docs. Next: Step 60 (Release &
 Deployment Governance).
 
+## Release & Deployment Governance (Stage 62A / Step 60)
+
+A controlled, **non-production** release governance flow that integrates delivery /
+work-item / sandbox-draft-PR / runtime / GitOps / security / approval evidence into a
+release candidate, deployment intent (intent only), evidence package, and readiness
+decision ([policy](infra/release/release-governance-policy.yaml) +
+[candidate](infra/release/release-candidate-model.yaml) +
+[deployment intent](infra/release/deployment-intent-model.yaml) +
+[promotion boundary](infra/release/promotion-boundary-model.yaml) +
+`shared/sdk/release_governance`), 11 read-only GET + 2 controlled POST under
+`/operations/release` (auth + CSRF + reason + audit), an Admin Console section (route
+`/release-governance`), and 13 `/operations/safety` fields. **Non-production governance —
+NOT production deployment, NOT production release approval, NOT auto-promotion, NOT
+production GitOps.** Production is blocked: a production target is rejected (policy + DB
+CHECK), a deployment intent never executes a deploy, the only intent actions are
+validate-only / prepare-nonproduction / request-operator-review; no PR merge / image push
+/ registry login / GitHub release-tag / workflow dispatch / ArgoCD production sync; a
+release candidate `accepted_nonproduction` is not a production approval;
+`release_governance_production_ready=false`, `production_executed_true_count=0`. 11
+verifiers + combined `RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY`, 12 tests, 11 docs.
+Next: Step 61 (Production Backup/Restore/DR Operations or a controlled cleanup review —
+operator decision).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
