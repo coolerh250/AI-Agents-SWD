@@ -44,16 +44,18 @@ def main() -> int:
     if full["complete"] is not True:
         bad(f"full evidence must be complete: {full['missing_required']}")
 
-    # secret-shaped values are redacted
+    # Forbidden keys are redacted. (The secret-shaped-VALUE branch is unit-tested in
+    # tests/test_release_evidence_package.py, which the local secret scanner allowlists as
+    # an intentional fixture; this script avoids committing a credential-shaped literal.)
     red = build_evidence_summary(
         {
-            "security_readiness": "BEGIN RSA PRIVATE KEY",
-            "rollback_plan": {"x": 1},
+            "security_readiness": "pass",
+            "rollback_plan": {"token": "placeholder"},
             "audit_events": ["e"],
         }
     )
-    if red["evidence"].get("security_readiness") != "[redacted]":
-        bad("secret-shaped evidence value must be redacted")
+    if red["evidence"]["rollback_plan"].get("token") != "[redacted]":
+        bad("forbidden key in evidence must be redacted")
 
     if failures:
         print(f"{MARKER}: FAIL")
