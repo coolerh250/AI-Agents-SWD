@@ -20,6 +20,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/delivery", label: "Multi-project Delivery" },
   { to: "/metrics", label: "Operational Metrics" },
   { to: "/sandbox-github", label: "Sandbox GitHub Draft PR" },
+  { to: "/release-governance", label: "Release Governance" },
 ];
 
 export function Nav() {

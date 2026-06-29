@@ -112,6 +112,7 @@
     { id:"multiproject", label:"Multi-project Delivery", render: renderMultiProject },
     { id:"metrics", label:"Operational Metrics", render: renderMetrics },
     { id:"sandboxgithub", label:"Sandbox GitHub Draft PR", render: renderSandboxGithub },
+    { id:"releasegov", label:"Release Governance", render: renderReleaseGovernance },
   ];
 
   async function renderOverview(el) {
@@ -220,6 +221,46 @@
       ${reprows ? `<table><tr><th>Key</th><th>Owner/Repo</th><th>Draft PR</th><th>Merge</th><th>Base branches</th></tr>${reprows}</table>` : emptyState("No allowlisted repositories")}
       <h2 style="margin-top:20px">Draft PR requests</h2>
       ${reqrows ? `<table><tr><th>Repo key</th><th>Mode</th><th>Status</th><th>Branch</th><th>PR #</th></tr>${reqrows}</table>` : emptyState("No sandbox draft PR requests yet")}`;
+  }
+
+  // Step 60 -- read-only Release Governance (visibility only). Non-production; NO production
+  // deploy / ArgoCD sync / PR merge / GitHub release / image push / production-approve control,
+  // NO production-ready toggle. Production stays blocked.
+  async function renderReleaseGovernance(el) {
+    let pol = null, safety = null, cands = null, intents = null, lim = null;
+    try { pol = await apiGet("/operations/release/policy"); } catch (_e) { pol = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    try { cands = await apiGet("/operations/release/candidates"); } catch (_e) { cands = null; }
+    try { intents = await apiGet("/operations/release/deployment-intents"); } catch (_e) { intents = null; }
+    try { lim = await apiGet("/operations/release/limitations"); } catch (_e) { lim = null; }
+    const clist = (cands && cands.candidates) || [];
+    const crows = clist.map(c => `<tr><td>${esc(c.version_label)}</td><td>${esc(c.target_environment)}</td>
+      <td>${badge(c.status)}</td><td>${badge(c.readiness_status)}</td><td>${badge(c.production_ready)}</td></tr>`).join("");
+    const ilist = (intents && intents.deployment_intents) || [];
+    const irows = ilist.map(i => `<tr><td>${esc(i.requested_action)}</td><td>${esc(i.target_environment)}</td>
+      <td>${badge(i.status)}</td><td>${esc(i.policy_decision)}</td><td>${badge(i.production_executed)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Release Governance (Step 60)</h2>
+      <p class="note">Non-production release & deployment governance. Visibility only — NOT production deployment, NOT production release approval, NOT auto-promotion, NOT production GitOps. Production is blocked: no production-deploy / ArgoCD production sync / PR merge / GitHub release / image-push control, no production-ready toggle. accepted_nonproduction is not a production approval; a deployment intent never executes a deployment. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Governance enabled", badge(safety && safety.release_governance_enabled))}
+        ${card("Production ready", badge(safety && safety.release_governance_production_ready))}
+        ${card("Allow production deploy", badge(safety && safety.release_governance_allow_production_deploy))}
+        ${card("Allow auto-promotion", badge(safety && safety.release_governance_allow_auto_promotion))}
+        ${card("Allow GitHub merge", badge(safety && safety.release_governance_allow_github_merge))}
+        ${card("Allow ArgoCD prod sync", badge(safety && safety.release_governance_allow_argocd_production_sync))}
+        ${card("Allow image push", badge(safety && safety.release_governance_allow_image_push))}
+        ${card("Allow registry login", badge(safety && safety.release_governance_allow_registry_login))}
+        ${card("RC production-ready count", esc(safety && safety.release_candidate_production_ready_count))}
+        ${card("Intent prod-target count", esc(safety && safety.deployment_intent_production_target_count))}
+        ${card("Intent prod-executed count", esc(safety && safety.deployment_intent_production_executed_count))}
+        ${card("Forbidden environments", esc((pol && pol.forbidden_environments || []).join(", ")))}
+      </div>
+      <h2 style="margin-top:20px">Release candidates</h2>
+      ${crows ? `<table><tr><th>Version</th><th>Env</th><th>Status</th><th>Readiness</th><th>Production ready</th></tr>${crows}</table>` : emptyState("No release candidates yet")}
+      <h2 style="margin-top:20px">Deployment intents</h2>
+      ${irows ? `<table><tr><th>Action</th><th>Env</th><th>Status</th><th>Policy decision</th><th>Production executed</th></tr>${irows}</table>` : emptyState("No deployment intents yet")}
+      <h2 style="margin-top:20px">Known limitations</h2>
+      <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
   }
   async function renderProjects(el) {
     const d = await apiGet("/operations/admin-console/projects");

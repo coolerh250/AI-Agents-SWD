@@ -20,6 +20,7 @@ import { SecurityPosture } from "./pages/SecurityPosture";
 import { MultiProjectDelivery } from "./pages/MultiProjectDelivery";
 import { OperationalMetrics } from "./pages/OperationalMetrics";
 import { SandboxGithub } from "./pages/SandboxGithub";
+import { ReleaseGovernance } from "./pages/ReleaseGovernance";
 
 export function App() {
   return (
@@ -45,6 +46,7 @@ export function App() {
         <Route path="/delivery" element={<MultiProjectDelivery />} />
         <Route path="/metrics" element={<OperationalMetrics />} />
         <Route path="/sandbox-github" element={<SandboxGithub />} />
+        <Route path="/release-governance" element={<ReleaseGovernance />} />
       </Routes>
     </Layout>
   );

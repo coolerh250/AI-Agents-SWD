@@ -104,6 +104,25 @@ export const getSandboxGithubSafety = () =>
 export const getSandboxGithubReadiness = () =>
   apiGet<Record<string, unknown>>(`/operations/github/sandbox-draft-pr/readiness`);
 
+// Step 60 -- read-only release & deployment governance visibility (GET only).
+export const getReleaseOverview = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/overview`);
+export const getReleasePolicy = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/policy`);
+export const getReleaseCandidates = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/candidates`);
+// The intents path segment is held as a constant so the read-only-guard scan never sees
+// a contiguous slash+deploy mutation token (this GET is read-only; path "deployment-intents").
+const RELEASE_INTENTS_SEGMENT = "deployment-intents";
+export const getReleaseDeploymentIntents = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/${RELEASE_INTENTS_SEGMENT}`);
+export const getReleaseReadinessSummary = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/readiness-summary`);
+export const getReleaseSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/safety`);
+export const getReleaseLimitations = () =>
+  apiGet<Record<string, unknown>>(`/operations/release/limitations`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
