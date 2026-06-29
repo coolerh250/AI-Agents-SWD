@@ -1,0 +1,37 @@
+# Step 60 (Stage 62A) -- Release governance audit mapping.
+#
+# Every release governance operation emits an audit event. Metadata always carries the
+# actor / role / reason / linkage / policy decision and production_executed=false. It
+# never carries a token, secret, raw prompt, or chain-of-thought.
+releaseAudit:
+  events:
+    - release_candidate_created
+    - release_evidence_collected
+    - release_readiness_evaluated
+    - deployment_intent_created
+    - deployment_intent_blocked
+    - release_operator_review_requested
+    - release_candidate_archived
+
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - project_id
+    - candidate_id
+    - deployment_intent_id
+    - target_environment
+    - policy_decision
+    - production_executed       # always false
+
+  forbiddenMetadata:
+    - token
+    - secret
+    - raw prompt
+    - chain-of-thought
+
+  invariants:
+    - everyOperationEmitsAuditEvent
+    - metadataMustContainRequiredFields
+    - metadataMustNotContainForbiddenFields
+    - productionExecutedAlwaysFalse

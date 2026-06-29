@@ -1,0 +1,40 @@
+# Step 60 (Stage 62A) -- Release evidence package model.
+#
+# The evidence package references existing platform evidence for a release candidate.
+# Missing evidence blocks production readiness (which is false here regardless). The
+# package never contains a secret, raw token, or chain-of-thought; it may state
+# non-production readiness but never "production approved".
+releaseEvidencePackage:
+  references:
+    - delivery_package
+    - work_item_state
+    - sandbox_draft_pr_plan_or_result
+    - security_readiness
+    - sbom_status
+    - runtime_smoke_status
+    - argocd_manual_sync_status
+    - operational_metrics_snapshot
+    - approval_status
+    - audit_events
+    - known_limitations
+    - rollback_plan
+
+  requiredForReadiness:
+    - security_readiness
+    - rollback_plan
+    - audit_events
+
+  forbiddenContent:
+    - secret
+    - token
+    - credential
+    - chain-of-thought
+    - raw_reasoning
+
+  invariants:
+    - missingEvidenceBlocksProductionReadiness
+    - noSecretInEvidence
+    - noChainOfThoughtInEvidence
+    - noRawTokenInEvidence
+    - mayMarkNonProductionReadiness
+    - mustNotMarkProductionApproved
