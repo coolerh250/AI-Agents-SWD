@@ -108,10 +108,16 @@ class OperatorActionStore:
     ) -> str:
         conn = await self._connect()
         try:
+            # Idempotent on session_hash: a same-identity re-login within the same second
+            # yields an identical signed token (and thus hash) -- that is the same logical
+            # session, so refresh its expiry instead of raising a UniqueViolation 500.
             row = await conn.fetchrow(
                 "INSERT INTO admin_console_sessions (identity_id, session_hash, expires_at) "
                 "SELECT id, $2, $3::text::timestamptz FROM operator_identities "
-                "WHERE identity_key=$1 RETURNING id",
+                "WHERE identity_key=$1 "
+                "ON CONFLICT (session_hash) DO UPDATE "
+                "SET expires_at=EXCLUDED.expires_at, status='active', revoked_at=NULL "
+                "RETURNING id",
                 identity_key,
                 session_hash,
                 expires_at_iso,
