@@ -1722,6 +1722,9 @@ async def operations_safety() -> dict:
     # Stage 61A (Step 59) -- sandbox GitHub draft PR flow fields.
     sandbox_github_safety = _sandbox_github_safety_summary()
 
+    # Stage 62A (Step 60) -- release & deployment governance fields.
+    release_governance_safety = _release_governance_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2141,6 +2144,10 @@ async def operations_safety() -> dict:
         # only; sandbox-only; no merge, no ready-for-review, no workflow dispatch, no
         # non-sandbox write, no token exposure, no production action.
         **sandbox_github_safety,
+        # Stage 62A (Step 60) -- release & deployment governance. Booleans/enums/counts
+        # only; non-production governance; no production deploy / ArgoCD production sync /
+        # GitHub merge / image push / registry login; production counts 0.
+        **release_governance_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4051,6 +4058,17 @@ def _sandbox_github_safety_summary() -> dict[str, Any]:
     from shared.sdk.sandbox_github import sandbox_github_safety_fields
 
     return sandbox_github_safety_fields()
+
+
+def _release_governance_safety_summary() -> dict[str, Any]:
+    """Step 60 -- release & deployment governance safety fields. Config-driven (reads the
+    committed release policy); no DB, no cluster, no deploy. Every dangerous toggle
+    (production deploy / auto-promotion / merge / sync / image push / registry login)
+    reads straight from the policy so it cannot drift true. Production counts are 0.
+    """
+    from shared.sdk.release_governance import release_governance_safety_fields
+
+    return release_governance_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

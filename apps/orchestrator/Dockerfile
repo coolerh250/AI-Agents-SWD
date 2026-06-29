@@ -42,6 +42,11 @@ COPY infra/delivery/ ./infra/delivery/
 # audit mapping) + /operations/safety. Non-sensitive (deterministic policy metadata
 # only); NO token, secret, or credential -- the sandbox token comes from the env only.
 COPY infra/github/ ./infra/github/
+# Stage 62A (Step 60) -- committed release & deployment governance policies consumed by
+# the release_governance SDK (policy / candidate / intent / promotion / evidence /
+# readiness / rollback / audit mapping) + /operations/safety. Non-sensitive (deterministic
+# governance metadata only); NO token, secret, credential, or production target.
+COPY infra/release/ ./infra/release/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.
