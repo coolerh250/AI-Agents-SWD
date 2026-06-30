@@ -104,6 +104,16 @@ Incidents) calling the same aggregate endpoints.
   governed `POST /operations/dr/cleanup-reviews` and `.../restore-plans` (auth + CSRF + reason +
   audit; production rejected, never executes a cleanup or restore).
 
+- **Production Readiness Gate (`/production-readiness`, Step 62):** read-only non-production
+  readiness gate — overview / policy (production blocking status) / checklist / evidence
+  inventory / blocking rules / production prerequisites / authorization boundary / operator
+  review package / readiness decision / rollout preflight / safety / known limitations. NO
+  production-deploy / ArgoCD-sync / GitHub-merge / image-push / restore / failover /
+  production-approve control, no production-ready toggle. Backed by the read-only GET
+  `/operations/readiness/*`; an operator review REQUEST (not an approval) is created through
+  the governed `POST /operations/readiness/operator-review-requests` (auth + CSRF + reason +
+  audit). The readiness decision is not a production approval (max `ready_for_operator_review`).
+
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.

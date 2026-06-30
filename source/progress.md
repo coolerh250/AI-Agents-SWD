@@ -11357,3 +11357,72 @@ production data mutation / cleanup execution / restore execution. Production sta
 - **Roadmap.** Step 61 closed -- backup / restore / DR operations baseline completed. NOT production DR /
   production restore / production failover ready; cleanup automation NOT enabled (cleanup review only).
   Step 62 (Production Deployment Readiness Gate) pending. Claude Code does not decide Production readiness.
+
+## Stage 64A — Production Deployment Readiness Gate (Step 62)
+
+Integrates the completed Step 52-61 evidence (identity / secret / security / runtime / GitOps /
+delivery / metrics / sandbox-GitHub / release-governance / backup-restore-DR) into a controlled
+**non-production** readiness GATE. **Outcome: PASS.** NOT production deployment / release approval /
+rollout / production-ready system. Production stays blocked and is never approved.
+
+- **Policies (committed YAML).** `infra/readiness/production-readiness-gate-policy.yaml`
+  (productionReady / allowProductionDeploy / allowProductionSync / allowProductionRestore /
+  allowProductionFailover / allowAutoPromotion / allowGitHubMerge / allowImagePush /
+  allowRegistryLogin / currentStageAllowsProductionAction all false; requireHumanApprovalBefore
+  Production + requireExplicitProductionRolloutPhase true) + production-readiness-checklist-model.yaml
+  (17 categories; production_ready_claim_allowed false everywhere) + readiness-evidence-inventory.yaml
+  (14 items; production_scope false for all; runtime/gitops nonproduction only; missing never clean) +
+  production-readiness-blocking-rules.yaml (hard guards inactive + prerequisite caps active; production
+  action / executed-nonzero / missing-evidence hard-block; tenant note future-only) +
+  production-environment-prerequisite-model.yaml (12 missing; kind nonprod != production; nonprod
+  ArgoCD != production ArgoCD) + deployment-authorization-boundary-model.yaml (may authorize review /
+  operator-request / planning; may NOT authorize deploy / sync / restore / failover / merge / push /
+  release / tag) + operator-review-package-model.yaml (not approval; no secret/CoT/dump) +
+  production-readiness-decision-model.yaml (max ready_for_operator_review; never production_ready/
+  approved) + production-rollout-preflight-model.yaml (modeled only; execution disabled; not_started) +
+  production-readiness-audit-mapping.yaml (7 events + production_ready/approved/action_allowed/executed
+  false).
+- **SDK.** `shared/sdk/production_readiness` (models / policy / checklist / evidence / blocking_rules /
+  prerequisites / authorization / operator_review / decision / preflight / audit / redaction / safety /
+  store). Evaluates blocking rules (hard guards inactive, prerequisite caps active); evaluates
+  production prerequisites (12 missing); builds redacted operator review package; produces a readiness
+  decision (max ready_for_operator_review). NO deploy / sync / merge / push / restore / failover.
+- **Migration.** `migrations/028_production_readiness_gate.sql` (idempotent production_readiness_gates /
+  checklists / evidence_items / blocking_rules / operator_review_packages / readiness_decisions /
+  rollout_preflights; production_ready / production_approved / production_action_allowed /
+  production_executed default false; decision CHECK).
+- **Report generator.** `scripts/generate_production_readiness_gate_report.py` → redacted JSON under
+  gitignored `.runtime/readiness/` (never committed; not ready/approved/action-allowed; confirms
+  production_executed_true_count == 0).
+- **API.** `apps/orchestrator/src/production_readiness_api.py` (`/operations/readiness`). 14 read-only GET
+  (overview/policy/checklist/evidence/blocking-rules/blockers/prerequisites/authorization/operator-
+  review-package/decision/preflight/report/safety/limitations) + 1 controlled POST (operator review
+  request only) reusing operator auth + CSRF + reason + audit. No deploy / sync / approval / release /
+  restore / failover / merge / image-push endpoint; no token returned.
+- **Admin Console.** Read-only Production Readiness Gate section (React route `/production-readiness` +
+  static fallback); checklist / evidence / blocking rules / prerequisites / authorization / operator
+  review package / decision / preflight / safety / limitations; NO production-deploy / ArgoCD-sync /
+  GitHub-merge / image-push / restore / failover / production-approve control, no production-ready toggle.
+- **Safety fields.** 20 `/operations/safety` Step 62 fields config-driven from the policy + models
+  (gate_enabled / report_generated / operator_review_enabled true; production_ready / production_approved
+  / allows_production_action / allows_deploy / sync / merge / image_push / restore / failover /
+  operator_review_is_approval / rollout_execution_enabled false; missing_prerequisite_count 12;
+  blocker_count; deployment/sync/restore/failover executed counts 0).
+- **Verifiers + combined (13 + 1).** policy/checklist/evidence/blocking-rules/prerequisites/
+  authorization/operator-review/decision/preflight/runtime/operations-visibility/admin-console/safety-
+  fields; combined `verify_production_deployment_readiness_gate_baseline.sh`
+  (`PRODUCTION_DEPLOYMENT_READINESS_GATE_BASELINE_VERIFY`; chains Step 52-61 + tenant note via the Step
+  61 combined, generates the report, then the 13 verifiers + tests + safety posture).
+- **Tests + quality.** 14 pytest files (54 cases, 0 skipped). ruff/black/mypy clean (the 3 mypy errors
+  are pre-existing in the untouched `operator_actions_api.py`; no new errors). Frontend (local):
+  typecheck clean, 25 vitest, build OK.
+- **kind/ArgoCD.** Left running (read-only); Step 62 performs no cluster action, no deploy, no sync.
+- **Safety.** No production deploy / sync / ArgoCD sync / GitHub merge / image push / production restore /
+  production failover / rollout execution; operator review request is not an approval; readiness decision
+  is not a production approval; no secret/token/kubeconfig exposed or committed;
+  `production_readiness_gate_production_ready=false`, `production_readiness_gate_production_approved=
+  false`, `production_executed_true_count=0`.
+- **Roadmap.** Step 62 closed -- production deployment readiness gate baseline completed. NOT production
+  deployment ready / production rollout approved / production action enabled. Step 63 (Controlled
+  Production Rollout Pilot, only after explicit operator approval) pending. Claude Code does not decide
+  Production readiness.

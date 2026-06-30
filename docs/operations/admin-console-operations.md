@@ -154,3 +154,13 @@ cloud-upload control, no production-ready toggle. Cleanup reviews and restore pl
 through the governed `POST /operations/dr/cleanup-reviews` and `.../restore-plans` (operator auth +
 CSRF + reason + audit; production target rejected, arbitrary path rejected, never executes a cleanup
 or restore). See [backup-restore-dr-verification.md](backup-restore-dr-verification.md).
+
+Step 62 adds a read-only **Production Readiness Gate** section (route `/production-readiness`)
+backed by the read-only GET `/operations/readiness/*` endpoints (overview / policy / checklist /
+evidence / blocking-rules / prerequisites / authorization / operator-review-package / decision /
+preflight / safety / limitations). Non-production gate — NO production-deploy / ArgoCD-sync /
+GitHub-merge / image-push / restore / failover / production-approve control, no production-ready
+toggle. An operator review request (not an approval) is created through the governed `POST
+/operations/readiness/operator-review-requests` (operator auth + CSRF + reason + audit; readiness
+decision is not a production approval, max `ready_for_operator_review`). See
+[production-deployment-readiness-gate-verification.md](production-deployment-readiness-gate-verification.md).

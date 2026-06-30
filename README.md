@@ -2676,6 +2676,32 @@ no external / cloud upload; DR readiness is a governance judgement, not producti
 + combined `BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY`, 13 tests, 12 docs. Next: Step 62
 (Production Deployment Readiness Gate).
 
+## Production Deployment Readiness Gate (Stage 64A / Step 62)
+
+A controlled, **non-production** readiness GATE that integrates the completed Step 52–61
+evidence (identity / secret / security / runtime / GitOps / delivery / metrics /
+sandbox-GitHub / release-governance / backup-restore-DR) into a checklist, evidence
+inventory, blocking rules, production prerequisites, deployment authorization boundary,
+operator review package, readiness decision, and rollout preflight
+([policy](infra/readiness/production-readiness-gate-policy.yaml) +
+[checklist](infra/readiness/production-readiness-checklist-model.yaml) +
+[blocking rules](infra/readiness/production-readiness-blocking-rules.yaml) +
+[decision](infra/readiness/production-readiness-decision-model.yaml) +
+`shared/sdk/production_readiness`), a host-side report generator writing redacted output to
+gitignored `.runtime/readiness/`, 14 read-only GET + 1 controlled POST under
+`/operations/readiness` (auth + CSRF + reason + audit; operator review request only), an
+Admin Console section (route `/production-readiness`), and `/operations/safety` fields.
+**Non-production gate — NOT production deployment, NOT production release approval, NOT
+production rollout, NOT a production-ready system.** Production is blocked and never
+approved: no deploy / sync / merge / image-push / restore / failover / production-approve
+control, no production-ready toggle; the readiness decision is not a production approval
+(max `ready_for_operator_review`); an operator review request is not an approval; rollout
+execution is disabled; `production_readiness_gate_production_ready=false`,
+`production_readiness_gate_production_approved=false`, `production_executed_true_count=0`. 13
+verifiers + combined `PRODUCTION_DEPLOYMENT_READINESS_GATE_BASELINE_VERIFY`, 14 tests, 13
+docs. Next: Step 63 (Controlled Production Rollout Pilot — only after explicit operator
+approval).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**
