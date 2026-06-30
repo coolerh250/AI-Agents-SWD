@@ -23,6 +23,7 @@ import { SandboxGithub } from "./pages/SandboxGithub";
 import { ReleaseGovernance } from "./pages/ReleaseGovernance";
 import { BackupDr } from "./pages/BackupDr";
 import { ProductionReadiness } from "./pages/ProductionReadiness";
+import { ControlledRolloutReview } from "./pages/ControlledRolloutReview";
 
 export function App() {
   return (
@@ -51,6 +52,7 @@ export function App() {
         <Route path="/release-governance" element={<ReleaseGovernance />} />
         <Route path="/backup-dr" element={<BackupDr />} />
         <Route path="/production-readiness" element={<ProductionReadiness />} />
+        <Route path="/controlled-rollout-review" element={<ControlledRolloutReview />} />
       </Routes>
     </Layout>
   );

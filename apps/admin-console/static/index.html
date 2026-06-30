@@ -115,6 +115,7 @@
     { id:"releasegov", label:"Release Governance", render: renderReleaseGovernance },
     { id:"backupdr", label:"Backup / Restore / DR", render: renderBackupDr },
     { id:"prodreadiness", label:"Production Readiness Gate", render: renderProductionReadiness },
+    { id:"controlledrollout", label:"Controlled Rollout Review", render: renderControlledRolloutReview },
   ];
 
   async function renderOverview(el) {
@@ -340,6 +341,43 @@
       <ul>${missing.map(m => `<li>${esc(m)}</li>`).join("") || "<li>none</li>"}</ul>
       <h2 style="margin-top:20px">Known limitations</h2>
       <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
+  }
+  // Step 63A -- read-only Controlled Rollout Go / No-Go Review (visibility only). Non-
+  // production; the recommendation is not an approval; NO production-deploy / ArgoCD-sync /
+  // GitHub-merge / image-push / restore / failover / production-approve control, no
+  // production-ready toggle.
+  async function renderControlledRolloutReview(el) {
+    let rec = null, safety = null, risks = null, lim = null;
+    try { rec = await apiGet("/operations/readiness/controlled-rollout/recommendation"); } catch (_e) { rec = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    try { risks = await apiGet("/operations/readiness/controlled-rollout/risks"); } catch (_e) { risks = null; }
+    try { lim = await apiGet("/operations/readiness/controlled-rollout/policy"); } catch (_e) { lim = null; }
+    const rlist = (risks && risks.risks) || [];
+    const rrows = rlist.map(r => `<tr><td>${esc(r.name)}</td><td>${badge(r.severity)}</td>
+      <td>${esc(r.likelihood)}</td><td>${badge(r.decision_impact)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Controlled Rollout Go / No-Go Review (Step 63A)</h2>
+      <p class="note">Non-production go/no-go REVIEW — NOT the Step 63 rollout pilot, NOT production deployment, NOT production release approval. The go / conditional_go / no_go recommendation is not an approval and authorizes no production action. Production is blocked and never approved: no production-deploy / ArgoCD-sync / GitHub-merge / image-push / restore / failover / production-approve control, no production-ready toggle. A future pilot requires explicit operator approval in a separate stage. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Recommendation", badge(safety && safety.controlled_rollout_recommendation))}
+        ${card("Recommendation is approval", badge(safety && safety.controlled_rollout_recommendation_is_approval))}
+        ${card("Allows production action", badge(safety && safety.controlled_rollout_allows_production_action))}
+        ${card("Allows deploy", badge(safety && safety.controlled_rollout_allows_deploy))}
+        ${card("Allows sync", badge(safety && safety.controlled_rollout_allows_sync))}
+        ${card("Allows merge", badge(safety && safety.controlled_rollout_allows_merge))}
+        ${card("Allows restore", badge(safety && safety.controlled_rollout_allows_restore))}
+        ${card("Allows failover", badge(safety && safety.controlled_rollout_allows_failover))}
+        ${card("Operator review is approval", badge(safety && safety.controlled_rollout_operator_review_is_approval))}
+        ${card("Missing target count", esc(safety && safety.controlled_rollout_missing_target_count))}
+        ${card("Missing credential count", esc(safety && safety.controlled_rollout_missing_credential_count))}
+        ${card("Missing GitOps count", esc(safety && safety.controlled_rollout_missing_gitops_count))}
+        ${card("Missing approval channel count", esc(safety && safety.controlled_rollout_missing_approval_channel_count))}
+        ${card("Production action executed", esc(safety && safety.controlled_rollout_production_action_executed_count))}
+        ${card("Production executed", badge(safety && safety.production_executed_true_count))}
+      </div>
+      <h2 style="margin-top:20px">No-Go reasons</h2>
+      <ul>${((rec && rec.no_go_reasons) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>
+      <h2 style="margin-top:20px">Risk register</h2>
+      ${rrows ? `<table><tr><th>Risk</th><th>Severity</th><th>Likelihood</th><th>Decision impact</th></tr>${rrows}</table>` : emptyState("No risks")}`;
   }
   async function renderProjects(el) {
     const d = await apiGet("/operations/admin-console/projects");

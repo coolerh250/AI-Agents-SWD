@@ -23,6 +23,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/release-governance", label: "Release Governance" },
   { to: "/backup-dr", label: "Backup / Restore / DR" },
   { to: "/production-readiness", label: "Production Readiness Gate" },
+  { to: "/controlled-rollout-review", label: "Controlled Rollout Review" },
 ];
 
 export function Nav() {

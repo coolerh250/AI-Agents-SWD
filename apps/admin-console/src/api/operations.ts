@@ -171,6 +171,27 @@ export const getReadinessSafety = () =>
 export const getReadinessLimitations = () =>
   apiGet<Record<string, unknown>>(`/operations/readiness/limitations`);
 
+// Step 63A -- read-only controlled rollout go/no-go review visibility (GET only).
+const CR = "/operations/readiness/controlled-rollout";
+export const getControlledRolloutPolicy = () => apiGet<Record<string, unknown>>(`${CR}/policy`);
+export const getControlledRolloutCriteria = () => apiGet<Record<string, unknown>>(`${CR}/criteria`);
+export const getControlledRolloutTarget = () =>
+  apiGet<Record<string, unknown>>(`${CR}/production-target`);
+export const getControlledRolloutCredentials = () =>
+  apiGet<Record<string, unknown>>(`${CR}/credentials`);
+export const getControlledRolloutGitops = () => apiGet<Record<string, unknown>>(`${CR}/gitops`);
+export const getControlledRolloutApprovalChannel = () =>
+  apiGet<Record<string, unknown>>(`${CR}/approval-channel`);
+export const getControlledRolloutRollbackDr = () =>
+  apiGet<Record<string, unknown>>(`${CR}/rollback-dr`);
+export const getControlledRolloutScope = () => apiGet<Record<string, unknown>>(`${CR}/scope`);
+export const getControlledRolloutRisks = () => apiGet<Record<string, unknown>>(`${CR}/risks`);
+export const getControlledRolloutDecisionPackage = () =>
+  apiGet<Record<string, unknown>>(`${CR}/decision-package`);
+export const getControlledRolloutRecommendation = () =>
+  apiGet<Record<string, unknown>>(`${CR}/recommendation`);
+export const getControlledRolloutSafety = () => apiGet<Record<string, unknown>>(`${CR}/safety`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
