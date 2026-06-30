@@ -1,0 +1,24 @@
+# Step 63A (Stage 65A) -- Production GitOps readiness model.
+#
+# Model / evidence check only. No production ArgoCD application is created, no sync is
+# triggered, no manifest is applied. The non-production ArgoCD is a REFERENCE only and is
+# never marked production ready. Production GitOps items are currently missing.
+productionGitopsReadiness:
+  items:
+    - name: production_argocd_application_defined
+      status: missing
+    - name: production_argocd_project_defined
+      status: missing
+    - name: production_repo_path_defined
+      status: missing
+    - name: production_sync_policy_defined
+      status: missing
+    - name: production_rollback_revision_strategy_defined
+      status: missing
+
+  nonprod_argocd_reference: aiagents-smoke (argocd-nonprod, non-production reference only)
+  nonprodArgocdIsProductionReady: false
+  creates_production_argocd_app: false
+  triggers_sync: false
+  applies_manifest: false
+  status: missing

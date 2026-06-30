@@ -1,0 +1,61 @@
+# Step 63A (Stage 65A) -- Controlled rollout Go / No-Go criteria.
+#
+# Each criterion maps to evidence and a current status (met / missing / insufficient). A
+# missing hard criterion forces no_go. Decision outcomes: go / conditional_go / no_go. At
+# this stage the production target / credentials / GitOps / approval channel do not exist,
+# so the expected outcome is no_go. No outcome ever authorizes a production action.
+controlledRolloutGoNoGoCriteria:
+  outcomes:
+    - go
+    - conditional_go
+    - no_go
+
+  criteria:
+    - name: production_target_identified
+      status: missing
+      hard: true
+    - name: production_credentials_configured
+      status: missing
+      hard: true
+    - name: production_gitops_app_defined
+      status: missing
+      hard: true
+    - name: production_approval_channel_defined
+      status: missing
+      hard: true
+    - name: rollback_plan_validated
+      status: insufficient
+      hard: false
+    - name: dr_evidence_sufficient
+      status: insufficient
+      hard: false
+    - name: security_production_blockers_reviewed
+      status: insufficient
+      hard: false
+    - name: release_governance_evidence_complete
+      status: met
+      hard: false
+    - name: audit_integrity_verified
+      status: met
+      hard: false
+    - name: operator_owner_assigned
+      status: missing
+      hard: true
+    - name: change_window_defined
+      status: missing
+      hard: false
+    - name: pilot_scope_limited
+      status: met
+      hard: false
+    - name: blast_radius_limited
+      status: insufficient
+      hard: false
+    - name: rollback_trigger_defined
+      status: insufficient
+      hard: false
+    - name: monitoring_alerting_defined
+      status: insufficient
+      hard: false
+    - name: communication_plan_defined
+      status: missing
+      hard: false

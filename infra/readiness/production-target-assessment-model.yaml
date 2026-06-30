@@ -1,0 +1,31 @@
+# Step 63A (Stage 65A) -- Production target assessment model.
+#
+# Assesses whether a real production target exists. A kind non-production cluster is NEVER
+# substituted for a production cluster; the non-production ArgoCD is NEVER a production
+# ArgoCD. Nothing is faked: every production target item is currently missing.
+productionTargetAssessment:
+  items:
+    - name: production_cluster
+      status: missing
+    - name: production_namespace
+      status: missing
+    - name: production_argocd_app
+      status: missing
+    - name: production_domain
+      status: missing
+    - name: production_database
+      status: missing
+    - name: production_secret_store
+      status: missing
+    - name: production_observability
+      status: missing
+    - name: production_backup_target
+      status: missing
+    - name: production_rollback_target
+      status: missing
+
+  status: missing
+  risk_level: high
+  kindNonprodIsProductionCluster: false
+  nonprodArgocdIsProductionArgocd: false
+  productionTargetExists: false

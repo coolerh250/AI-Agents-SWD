@@ -1,0 +1,19 @@
+# Step 63A (Stage 65A) -- Production approval channel readiness model.
+#
+# Checks whether an approval owner / approver group / channel / escalation path is defined.
+# It sends NO real external notification, creates NO Slack / email message, and is NEVER
+# treated as approval granted. Every approval item is currently missing.
+productionApprovalChannelReadiness:
+  items:
+    - name: approval_owner_defined
+      status: missing
+    - name: approver_group_defined
+      status: missing
+    - name: approval_channel_defined
+      status: missing
+    - name: escalation_path_defined
+      status: missing
+
+  status: missing
+  sends_external_notification: false
+  approval_granted: false

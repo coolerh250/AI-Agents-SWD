@@ -1,0 +1,30 @@
+# Step 63A (Stage 65A) -- Controlled Production Rollout Pilot Go / No-Go REVIEW policy.
+#
+# This is the go/no-go REVIEW, NOT the Step 63 rollout pilot itself. It collects the Step 62
+# readiness evidence, assesses the production rollout pilot prerequisites, identifies gaps,
+# and produces an operator decision package + a go / conditional_go / no_go recommendation.
+# It does NOT deploy, sync, merge, push, restore, or fail over. A Go / Conditional Go
+# recommendation is NOT an approval and authorizes NO production action.
+controlledProductionRolloutPilotReview:
+  enabled: true
+  productionReady: false
+  allowsProductionAction: false
+  allowsProductionDeploy: false
+  allowsProductionSync: false
+  allowsProductionRestore: false
+  allowsProductionFailover: false
+  allowsOperatorReviewRequest: true
+  operatorReviewIsApproval: false
+  goRecommendationIsApproval: false
+  conditionalGoIsApproval: false
+  requiresExplicitOperatorApprovalForPilot: true
+  requiresSeparatePilotExecutionStage: true
+
+  rules:
+    - reviewOnlyNoProductionAction
+    - goRecommendationIsNotApproval
+    - conditionalGoIsNotApproval
+    - operatorReviewRequestIsNotApproval
+    - pilotRequiresExplicitOperatorApproval
+    - pilotExecutionIsASeparateFutureStage
+    - productionExecutedMustBeZero
