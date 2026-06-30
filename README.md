@@ -2727,6 +2727,23 @@ review request is not an approval. Based on the current Step 62 result (no produ
 tests, 15 docs. Next: Step 63 (Controlled Production Rollout Pilot — only after explicit
 operator approval + a real production target).
 
+## Staging Architecture & Deployment Plan (Stage 66A / Step 64A)
+
+Starts the **Step 64 staging demonstration mainline** with a planning + inventory stage that
+designs a rebuildable, demonstrable, operable **non-production** staging environment
+([`docs/staging/`](docs/staging/): architecture / deployment-plan / access-plan /
+scope-and-non-goals / service-inventory / admin-console-plan / demo-workflow-plan /
+information-request / risk-and-safety-plan / step64-roadmap). Recommended approach: **Option A
+— Docker Compose** reusing the committed `infra/docker-compose/docker-compose.staging.yml`
+(22 services, `+10000` host-port offset, Admin Console served by the orchestrator at `/admin`,
+staging URL `http://10.0.1.32:18000/admin`). **Staging target host `10.0.1.32` over SSH;
+credentials are interactive-only, never stored / committed / printed.** **Planning only — NO
+real staging deployment, no `docker compose up`, no `kubectl apply`, no production action, no
+production secret, no external write.** Each doc carries a machine-checkable safety footer
+(`staging-only=true`, `production-action=false`, `production-ready=false`, …). Verifier
+`STAGING_ARCHITECTURE_PLAN_VERIFY` + 24 tests; `production_executed_true_count=0`. Next: Step
+64B (staging runtime bootstrap) — pending operator info + access.
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

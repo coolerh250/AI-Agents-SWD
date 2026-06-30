@@ -11493,3 +11493,38 @@ NOT an approval. Production stays blocked.
   production rollout approved / production deployment ready / production action enabled. Step 63
   (Controlled Production Rollout Pilot, only after explicit operator approval + a real production target)
   pending. Claude Code does not decide Production readiness.
+
+## Stage 66A — Staging Architecture & Deployment Plan (Step 64A)
+
+Starts the Step 64 staging demonstration mainline: a planning + inventory stage that designs a
+rebuildable, demonstrable, operable **non-production** staging environment. **Status: completed.**
+**Marker: `STAGING_ARCHITECTURE_PLAN_VERIFY: PASS`.** Planning only — NO real staging deployment, no
+`docker compose up`, no `kubectl apply`, no production action, no production secret, no external write.
+
+- **Docs (10 new, `docs/staging/`).** staging-architecture (Option A Docker Compose recommended;
+  A/B/C comparison) + staging-deployment-plan + staging-access-plan + staging-scope-and-non-goals +
+  staging-service-inventory (22-service compose, +10000 host-port offset, Admin Console at `/admin`) +
+  staging-admin-console-plan (9 minimum pages) + staging-demo-workflow-plan (SaaS User Management /
+  Create user CRUD API) + staging-information-request (operator checklist) + staging-risk-and-safety-plan
+  + staging-step64-roadmap (64A-64G). Each doc carries a machine-checkable safety footer
+  (staging-only=true, production-action=false, production-ready=false, ...).
+- **Staging target.** Host `10.0.1.32`, access SSH; credential handling **interactive only, never
+  stored / committed / printed**. Deployment source: GitHub `origin/main` (or sync from `10.0.1.31`).
+  Reused the existing committed `infra/docker-compose/docker-compose.staging.yml` (Stage 25).
+- **Verifier + test.** `scripts/verify_staging_architecture_plan.py`
+  (`STAGING_ARCHITECTURE_PLAN_VERIFY`) checks all 10 docs exist, are staging-only / non-production,
+  document the 10.0.1.32 SSH target + interactive-only credentials, and never claim production
+  readiness / allow a production action. `tests/test_staging_architecture_plan.py` (24 cases, 0
+  skipped). ruff/black/mypy clean (3 pre-existing mypy errors in untouched `operator_actions_api.py`;
+  no new errors).
+- **10.0.1.32 host preflight.** TCP `10.0.1.32:22` reachable (credential-free probe). Full host
+  inventory (OS / CPU / memory / disk / Docker / Compose / ports) recorded as a **prerequisite gap**
+  for Step 64B: a password was offered but the non-interactive shell cannot use it without embedding
+  the credential in a command/log, which Step 64A's credential rules forbid — collect via key-based
+  access or an interactive operator session in Step 64B.
+- **Safety.** No production deploy / sync / merge / image push / restore / failover / external write; no
+  secret/token/kubeconfig committed or printed; SSH password never stored/echoed; Step 62
+  (`ready_for_operator_review`) and Step 63A (`no_go`) conclusions unchanged; `production_executed_true_count=0`.
+- **Roadmap.** Step 63 — blocked / not approved / not ready. Step 64 — staging demonstration mainline
+  started. Step 64A — staging architecture & deployment plan (this stage, completed). Step 64B
+  (staging runtime bootstrap) pending operator info + access. Claude Code does not decide Production readiness.

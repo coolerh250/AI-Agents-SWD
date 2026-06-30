@@ -128,3 +128,9 @@ Incidents) calling the same aggregate endpoints.
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.
+
+**Staging (Step 64A, planning):** the minimum Admin Console pages to expose in the
+non-production staging environment (`http://10.0.1.32:18000/admin`) and the operator access
+plan are documented in [staging-admin-console-plan.md](../staging/staging-admin-console-plan.md)
+and [staging-access-plan.md](../staging/staging-access-plan.md). Staging is non-production
+only; no production action.
