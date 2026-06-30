@@ -113,6 +113,7 @@
     { id:"metrics", label:"Operational Metrics", render: renderMetrics },
     { id:"sandboxgithub", label:"Sandbox GitHub Draft PR", render: renderSandboxGithub },
     { id:"releasegov", label:"Release Governance", render: renderReleaseGovernance },
+    { id:"backupdr", label:"Backup / Restore / DR", render: renderBackupDr },
   ];
 
   async function renderOverview(el) {
@@ -259,6 +260,47 @@
       ${crows ? `<table><tr><th>Version</th><th>Env</th><th>Status</th><th>Readiness</th><th>Production ready</th></tr>${crows}</table>` : emptyState("No release candidates yet")}
       <h2 style="margin-top:20px">Deployment intents</h2>
       ${irows ? `<table><tr><th>Action</th><th>Env</th><th>Status</th><th>Policy decision</th><th>Production executed</th></tr>${irows}</table>` : emptyState("No deployment intents yet")}
+      <h2 style="margin-top:20px">Known limitations</h2>
+      <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
+  }
+  // Step 61 -- read-only Backup / Restore / DR Operations (visibility only). Non-production;
+  // NO execute-cleanup / execute-restore / failover / teardown-kind / ArgoCD-sync / cloud-
+  // upload control, NO production-ready toggle. Production restore + failover stay blocked.
+  async function renderBackupDr(el) {
+    let pol = null, safety = null, cleanup = null, plans = null, lim = null;
+    try { pol = await apiGet("/operations/dr/policy"); } catch (_e) { pol = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    try { cleanup = await apiGet("/operations/dr/cleanup-review"); } catch (_e) { cleanup = null; }
+    try { plans = await apiGet("/operations/dr/restore-plans"); } catch (_e) { plans = null; }
+    try { lim = await apiGet("/operations/dr/limitations"); } catch (_e) { lim = null; }
+    const plist = (plans && plans.restore_plans) || [];
+    const prows = plist.map(p => `<tr><td>${esc(p.target)}</td><td>${esc(p.restore_type)}</td>
+      <td>${esc(p.target_environment)}</td><td>${badge(p.status)}</td><td>${badge(p.production_restore)}</td></tr>`).join("");
+    el.innerHTML = `<h2>Backup / Restore / DR Operations (Step 61)</h2>
+      <p class="note">Non-production backup / restore / disaster-recovery governance. Visibility only — NOT production restore, NOT production failover, NOT production data mutation, NOT cleanup execution, NOT restore execution. Production is blocked: no execute-cleanup / execute-restore / failover / teardown-kind / ArgoCD-sync / cloud-upload control, no production-ready toggle. A cleanup review never deletes anything; a restore plan never executes a restore; DR readiness is not production DR ready. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("DR governance enabled", badge(safety && safety.backup_restore_dr_enabled))}
+        ${card("Production ready", badge(safety && safety.backup_restore_dr_production_ready))}
+        ${card("Allow production restore", badge(safety && safety.backup_restore_dr_allow_production_restore))}
+        ${card("Allow production failover", badge(safety && safety.backup_restore_dr_allow_production_failover))}
+        ${card("Allow external upload", badge(safety && safety.backup_restore_dr_allow_external_backup_upload))}
+        ${card("Allow cloud write", badge(safety && safety.backup_restore_dr_allow_cloud_provider_write))}
+        ${card("Cleanup execution enabled", badge(safety && safety.cleanup_execution_enabled))}
+        ${card("Restore execution enabled", badge(safety && safety.restore_execution_enabled))}
+        ${card("Teardown kind enabled", badge(safety && safety.cleanup_teardown_kind_enabled))}
+        ${card("Teardown ArgoCD enabled", badge(safety && safety.cleanup_teardown_argocd_enabled))}
+        ${card("Production restore plan count", esc(safety && safety.production_restore_plan_count))}
+        ${card("Production failover plan count", esc(safety && safety.production_failover_plan_count))}
+        ${card("Production executed", badge(safety && safety.production_executed_true_count))}
+        ${card("Forbidden environments", esc((pol && pol.forbidden_environments || []).join(", ")))}
+      </div>
+      <h2 style="margin-top:20px">Cleanup review (review only — no execution)</h2>
+      ${cleanup ? `<div class="grid">
+        ${card("Reviews recorded", esc((cleanup.cleanup_reviews||[]).length))}
+        ${card("Cleanup executed", badge(cleanup.cleanup_executed))}
+      </div>` : emptyState("Cleanup review unavailable")}
+      <h2 style="margin-top:20px">Restore plans (plan only — no execution)</h2>
+      ${prows ? `<table><tr><th>Target</th><th>Restore type</th><th>Env</th><th>Status</th><th>Production restore</th></tr>${prows}</table>` : emptyState("No restore plans yet")}
       <h2 style="margin-top:20px">Known limitations</h2>
       <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
   }

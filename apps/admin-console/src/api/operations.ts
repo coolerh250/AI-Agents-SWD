@@ -123,6 +123,28 @@ export const getReleaseSafety = () =>
 export const getReleaseLimitations = () =>
   apiGet<Record<string, unknown>>(`/operations/release/limitations`);
 
+// Step 61 -- read-only backup / restore / DR operations visibility (GET only).
+export const getDrOverview = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/overview`);
+export const getDrPolicy = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/policy`);
+export const getDrInventory = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/inventory`);
+export const getDrCleanupReview = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/cleanup-review`);
+export const getDrRestorePlans = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/restore-plans`);
+export const getDrRestoreValidations = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/restore-validations`);
+export const getDrEvidence = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/evidence`);
+export const getDrReadiness = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/readiness`);
+export const getDrSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/safety`);
+export const getDrLimitations = () =>
+  apiGet<Record<string, unknown>>(`/operations/dr/limitations`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
