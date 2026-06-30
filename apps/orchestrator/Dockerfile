@@ -53,6 +53,12 @@ COPY infra/release/ ./infra/release/
 # mapping) + /operations/safety. Non-sensitive (deterministic governance metadata only);
 # NO token, secret, credential, kubeconfig, raw dump, or production target.
 COPY infra/dr/ ./infra/dr/
+# Stage 64A (Step 62) -- committed production deployment readiness gate models consumed by
+# the production_readiness SDK (policy / checklist / evidence inventory / blocking rules /
+# prerequisites / authorization boundary / operator review / decision / preflight / audit
+# mapping) + /operations/safety. Non-sensitive (deterministic governance metadata only);
+# NO token, secret, credential, kubeconfig, raw dump, or production target.
+COPY infra/readiness/ ./infra/readiness/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.

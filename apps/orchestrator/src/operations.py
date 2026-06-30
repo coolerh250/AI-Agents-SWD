@@ -1728,6 +1728,9 @@ async def operations_safety() -> dict:
     # Stage 63A (Step 61) -- backup / restore / DR operations fields.
     backup_restore_dr_safety = _backup_restore_dr_safety_summary()
 
+    # Stage 64A (Step 62) -- production deployment readiness gate fields.
+    production_readiness_safety = _production_readiness_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2156,6 +2159,11 @@ async def operations_safety() -> dict:
         # cleanup execution / restore execution / kind+ArgoCD teardown / external upload;
         # production restore + failover counts 0.
         **backup_restore_dr_safety,
+        # Stage 64A (Step 62) -- production deployment readiness gate. Booleans/enums/counts
+        # only; readiness + operator review only; no production deploy / sync / merge / image
+        # push / restore / failover / rollout execution; production never ready/approved;
+        # executed counts 0.
+        **production_readiness_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4089,6 +4097,18 @@ def _backup_restore_dr_safety_summary() -> dict[str, Any]:
     from shared.sdk.backup_restore_dr import backup_restore_dr_safety_fields
 
     return backup_restore_dr_safety_fields()
+
+
+def _production_readiness_safety_summary() -> dict[str, Any]:
+    """Step 62 -- production deployment readiness gate safety fields. Config-driven (reads
+    the committed readiness policy + models); no DB, no cluster, no deploy. Every dangerous
+    toggle (production deploy / sync / merge / image push / restore / failover / rollout
+    execution) and production_ready / production_approved / production_action_allowed read
+    straight from the policy so they cannot drift true. Executed counts are 0.
+    """
+    from shared.sdk.production_readiness import production_readiness_safety_fields
+
+    return production_readiness_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:
