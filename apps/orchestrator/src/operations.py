@@ -1725,6 +1725,9 @@ async def operations_safety() -> dict:
     # Stage 62A (Step 60) -- release & deployment governance fields.
     release_governance_safety = _release_governance_safety_summary()
 
+    # Stage 63A (Step 61) -- backup / restore / DR operations fields.
+    backup_restore_dr_safety = _backup_restore_dr_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2148,6 +2151,11 @@ async def operations_safety() -> dict:
         # only; non-production governance; no production deploy / ArgoCD production sync /
         # GitHub merge / image push / registry login; production counts 0.
         **release_governance_safety,
+        # Stage 63A (Step 61) -- backup / restore / DR operations. Booleans/enums/counts
+        # only; non-production governance; no production restore / production failover /
+        # cleanup execution / restore execution / kind+ArgoCD teardown / external upload;
+        # production restore + failover counts 0.
+        **backup_restore_dr_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4069,6 +4077,18 @@ def _release_governance_safety_summary() -> dict[str, Any]:
     from shared.sdk.release_governance import release_governance_safety_fields
 
     return release_governance_safety_fields()
+
+
+def _backup_restore_dr_safety_summary() -> dict[str, Any]:
+    """Step 61 -- backup / restore / DR operations safety fields. Config-driven (reads the
+    committed backup-restore-DR policy); no DB, no cluster, no restore. Every dangerous
+    toggle (production restore / production failover / external upload / cloud write /
+    cleanup execution / restore execution / kind+ArgoCD teardown) reads straight from the
+    policy so it cannot drift true. Production restore / failover counts are 0.
+    """
+    from shared.sdk.backup_restore_dr import backup_restore_dr_safety_fields
+
+    return backup_restore_dr_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

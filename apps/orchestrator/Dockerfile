@@ -47,6 +47,12 @@ COPY infra/github/ ./infra/github/
 # readiness / rollback / audit mapping) + /operations/safety. Non-sensitive (deterministic
 # governance metadata only); NO token, secret, credential, or production target.
 COPY infra/release/ ./infra/release/
+# Stage 63A (Step 61) -- committed backup / restore / DR governance policies consumed by
+# the backup_restore_dr SDK (policy / target inventory / artifact classification / cleanup
+# review / restore plan / restore validation / DR operation / recovery evidence / audit
+# mapping) + /operations/safety. Non-sensitive (deterministic governance metadata only);
+# NO token, secret, credential, kubeconfig, raw dump, or production target.
+COPY infra/dr/ ./infra/dr/
 # Stage 54D (Step 52.4) -- committed read-only identity posture summary consumed
 # by the /operations/identity/* read-only API + /operations/safety. Non-sensitive
 # (booleans/enums/statuses only); no token, secret, raw email, or real group ID.

@@ -23,6 +23,7 @@ from multi_project_api import router as multi_project_router
 from operational_metrics_api import router as operational_metrics_router
 from sandbox_github_api import router as sandbox_github_router
 from release_governance_api import router as release_governance_router
+from backup_restore_dr_api import router as backup_restore_dr_router
 from identity_posture_api import router as identity_posture_router
 from secret_posture_api import router as secret_posture_router
 from security_posture_api import router as security_posture_router
@@ -223,6 +224,9 @@ app.include_router(operational_metrics_router)
 app.include_router(sandbox_github_router)
 # Stage 62A (Step 60): release & deployment governance API (governance only, no deploy).
 app.include_router(release_governance_router)
+# Stage 63A (Step 61): backup / restore / DR operations API (governance only, no restore/
+# failover/cleanup execution; production blocked).
+app.include_router(backup_restore_dr_router)
 # Stage 54D (Step 52.4): read-only identity posture API.
 app.include_router(identity_posture_router)
 # Stage 55A (Step 53): read-only secret management foundation API.
