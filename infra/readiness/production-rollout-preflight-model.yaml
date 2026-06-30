@@ -1,0 +1,33 @@
+# Step 62 (Stage 64A) -- Production rollout preflight model.
+#
+# Preflight checks are MODELED / EVALUATED only. This stage never triggers a rollout;
+# production rollout execution is disabled and the rollout status is planning_only /
+# blocked / not_started.
+productionRolloutPreflight:
+  checks:
+    - name: identity_ready
+      status: nonproduction_only
+    - name: secrets_ready
+      status: nonproduction_only
+    - name: security_ready
+      status: nonproduction_only
+    - name: release_ready
+      status: nonproduction_only
+    - name: rollback_ready
+      status: modeled_only
+    - name: dr_ready
+      status: nonproduction_only
+    - name: monitoring_ready
+      status: nonproduction_only
+    - name: approval_ready
+      status: pending_operator
+    - name: production_cluster_ready
+      status: missing
+    - name: production_gitops_ready
+      status: missing
+    - name: change_window_ready
+      status: not_defined
+
+  rolloutStatus: not_started
+  rolloutExecutionEnabled: false
+  rolloutTriggeredThisStage: false

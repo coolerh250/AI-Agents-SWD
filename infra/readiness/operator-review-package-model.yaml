@@ -1,0 +1,29 @@
+# Step 62 (Stage 64A) -- Operator review package model.
+#
+# A redacted package assembled for a human operator to review readiness. It is NOT a
+# production approval and authorizes NO production action. It contains no secret, no
+# chain-of-thought, no raw token, no raw DB / Redis dump.
+operatorReviewPackage:
+  sections:
+    - readiness_summary
+    - evidence_inventory
+    - blocking_rules_result
+    - known_limitations
+    - risk_register
+    - missing_prerequisites
+    - required_operator_decisions
+    - rollback_requirements
+    - dr_requirements
+    - security_requirements
+    - production_action_blocking_status
+
+  productionReady: false
+  productionApproval: false
+  productionActionAllowed: false
+  forbiddenContent:
+    - secret
+    - token
+    - kubeconfig
+    - chain_of_thought
+    - raw_db_dump
+    - raw_redis_dump

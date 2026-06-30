@@ -1,0 +1,23 @@
+# Step 62 (Stage 64A) -- Deployment authorization boundary model.
+#
+# Makes explicit what Step 62 may and may not authorize. An operator review request is NOT
+# a production approval; production rollout planning is NOT rollout execution.
+deploymentAuthorizationBoundary:
+  mayAuthorize:
+    - readiness_review_package
+    - operator_review_request
+    - production_rollout_planning
+  mayNotAuthorize:
+    - production_deploy
+    - production_sync
+    - production_restore
+    - production_failover
+    - pr_merge
+    - image_push
+    - release_creation
+    - tag_creation
+    - registry_login
+    - auto_promotion
+  operatorReviewRequestIsApproval: false
+  productionRolloutPlanningIsExecution: false
+  currentStageAllowsProductionAction: false

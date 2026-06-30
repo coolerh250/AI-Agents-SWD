@@ -1,0 +1,22 @@
+# Step 62 (Stage 64A) -- Production readiness decision model.
+#
+# The gate's final decision is NEVER production_ready and NEVER a production approval. If a
+# production action is requested -> blocked_by_policy. If a required evidence marker is
+# missing -> blocked_by_missing_evidence. If production prerequisites are missing ->
+# blocked_by_production_prerequisites or, at most, ready_for_operator_review. A non-zero
+# production_executed count fails the verifier.
+productionReadinessDecision:
+  statuses:
+    - not_ready
+    - blocked_by_missing_evidence
+    - blocked_by_policy
+    - blocked_by_production_prerequisites
+    - ready_for_operator_review
+    - operator_review_requested
+
+  # The maximum decision this stage can reach (never production_ready / approved).
+  maxAttainableDecision: ready_for_operator_review
+  productionReady: false
+  productionApproved: false
+  productionActionAllowed: false
+  decisionIsProductionApproval: false

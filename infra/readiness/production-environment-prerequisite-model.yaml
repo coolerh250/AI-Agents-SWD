@@ -1,0 +1,36 @@
+# Step 62 (Stage 64A) -- Production environment prerequisite model.
+#
+# The production environment does NOT exist yet. Each prerequisite is currently missing /
+# not_configured. A kind non-production cluster is NOT a production cluster; the
+# non-production ArgoCD is NOT a production ArgoCD. Nothing here is faked.
+productionEnvironmentPrerequisites:
+  prerequisites:
+    - name: production_cluster_identified
+      status: missing
+    - name: production_namespace_policy
+      status: not_configured
+    - name: production_secrets_configured
+      status: not_configured
+    - name: production_argocd_application_defined
+      status: missing
+    - name: production_backup_configured
+      status: not_configured
+    - name: production_restore_tested
+      status: not_tested
+    - name: production_monitoring_configured
+      status: not_configured
+    - name: production_alerting_configured
+      status: not_configured
+    - name: production_rollback_path_defined
+      status: not_configured
+    - name: production_approval_channel_configured
+      status: not_configured
+    - name: production_incident_response_owner_assigned
+      status: not_assigned
+    - name: production_change_window_defined
+      status: not_defined
+
+  # kind non-production must never be substituted for production.
+  kindNonprodIsProduction: false
+  nonprodArgocdIsProductionArgocd: false
+  productionEnvironmentExists: false
