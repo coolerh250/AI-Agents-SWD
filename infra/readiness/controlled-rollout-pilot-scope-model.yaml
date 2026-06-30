@@ -1,0 +1,21 @@
+# Step 63A (Stage 65A) -- Controlled rollout pilot scope model.
+#
+# Defines the strict scope a future pilot would be limited to. If the scope cannot be
+# bounded, the recommendation is no_go. The blast radius and rollback trigger must be
+# describable. This stage only models the scope; it never executes a pilot.
+controlledRolloutPilotScope:
+  constraints:
+    - single_service
+    - single_environment
+    - single_operator
+    - manual_approval
+    - manual_rollback
+    - no_auto_promotion
+    - no_external_customer_traffic_unless_explicitly_approved
+    - no_uncontrolled_data_migration
+
+  blast_radius: single_nonproduction_service_reference_only
+  rollback_trigger: manual_operator_initiated
+  scope_definable: true
+  auto_promotion: false
+  external_customer_traffic: false

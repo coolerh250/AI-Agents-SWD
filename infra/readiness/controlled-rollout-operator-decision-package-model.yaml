@@ -1,0 +1,29 @@
+# Step 63A (Stage 65A) -- Controlled rollout operator decision package model.
+#
+# Defines the sections of the redacted operator decision package assembled for a human
+# operator. The recommendation it carries is NOT an approval. It contains no secret, no
+# chain-of-thought, no raw token, no kubeconfig.
+controlledRolloutOperatorDecisionPackage:
+  sections:
+    - summary
+    - readiness_gate_result
+    - go_no_go_criteria
+    - production_target_assessment
+    - credential_readiness
+    - gitops_readiness
+    - approval_channel_readiness
+    - rollback_dr_readiness
+    - pilot_scope
+    - risk_register
+    - missing_items
+    - required_operator_decisions
+    - recommendation
+
+  recommendationIsApproval: false
+  forbiddenContent:
+    - secret
+    - token
+    - kubeconfig
+    - chain_of_thought
+    - raw_db_dump
+    - raw_redis_dump

@@ -1,0 +1,23 @@
+# Step 63A (Stage 65A) -- Controlled rollout pilot recommendation model.
+#
+# Recommendation statuses: go / conditional_go / no_go. The recommendation is NEVER an
+# approval and NEVER authorizes a production action. Based on the current Step 62 result
+# (no production target / credentials / GitOps / approval channel), the expected
+# recommendation is no_go.
+controlledRolloutPilotRecommendation:
+  statuses:
+    - go
+    - conditional_go
+    - no_go
+
+  decisionLogic:
+    - if_production_target_missing: no_go
+    - if_production_credentials_missing: no_go
+    - if_production_gitops_missing: no_go
+    - if_approval_channel_missing: no_go
+    - if_rollback_or_dr_incomplete: no_go_or_conditional_go
+    - if_all_required_pilot_evidence_exists: conditional_go_or_go_never_approval
+
+  expectedAtThisStage: no_go
+  recommendationIsApproval: false
+  recommendationAuthorizesProductionAction: false

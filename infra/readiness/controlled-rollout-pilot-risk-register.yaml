@@ -1,0 +1,67 @@
+# Step 63A (Stage 65A) -- Controlled rollout pilot risk register.
+#
+# Each risk carries severity / likelihood / mitigation / decision_impact. The aggregate of
+# these risks drives the go/no-go recommendation; several are decision_impact: no_go at this
+# stage (production target / credentials / GitOps / approval absent).
+controlledRolloutPilotRiskRegister:
+  risks:
+    - name: production_target_absent
+      severity: critical
+      likelihood: certain
+      mitigation: define + provision a real production cluster / namespace / target
+      decision_impact: no_go
+    - name: production_credentials_absent
+      severity: critical
+      likelihood: certain
+      mitigation: configure production secret references in a secret manager
+      decision_impact: no_go
+    - name: production_gitops_absent
+      severity: critical
+      likelihood: certain
+      mitigation: define a production ArgoCD application + sync policy
+      decision_impact: no_go
+    - name: rollback_not_validated
+      severity: high
+      likelihood: likely
+      mitigation: validate a production rollback path before any pilot
+      decision_impact: no_go
+    - name: dr_not_production_validated
+      severity: high
+      likelihood: likely
+      mitigation: run a production-scope DR drill (out of current scope)
+      decision_impact: conditional_go
+    - name: security_blockers_unresolved
+      severity: high
+      likelihood: possible
+      mitigation: review + remediate security production blockers
+      decision_impact: conditional_go
+    - name: observability_incomplete
+      severity: medium
+      likelihood: likely
+      mitigation: define production monitoring / alerting
+      decision_impact: conditional_go
+    - name: operator_approval_missing
+      severity: critical
+      likelihood: certain
+      mitigation: obtain explicit operator approval in a separate stage
+      decision_impact: no_go
+    - name: change_window_undefined
+      severity: medium
+      likelihood: likely
+      mitigation: define a production change window
+      decision_impact: conditional_go
+    - name: blast_radius_unclear
+      severity: medium
+      likelihood: possible
+      mitigation: bound the pilot to a single service + single environment
+      decision_impact: conditional_go
+    - name: tenant_isolation_not_implemented
+      severity: medium
+      likelihood: certain
+      mitigation: tenant isolation is a future consideration, not implemented
+      decision_impact: conditional_go
+    - name: external_connectors_not_implemented
+      severity: low
+      likelihood: certain
+      mitigation: external connectors are a future consideration, not implemented
+      decision_impact: conditional_go

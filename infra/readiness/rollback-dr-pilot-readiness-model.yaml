@@ -1,0 +1,27 @@
+# Step 63A (Stage 65A) -- Rollback / DR pilot readiness model.
+#
+# References the Step 60 release-governance rollback requirement and the Step 61
+# backup/restore/DR baseline. A Step 61 PASS is explicitly NOT production DR ready. No
+# restore / failover is executed. Production rollback / restore is not validated, so this
+# is missing / insufficient.
+rollbackDrPilotReadiness:
+  references:
+    - step60_rollback_requirement: RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY
+    - step61_dr_baseline: BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY
+
+  items:
+    - name: production_rollback_plan_validated
+      status: missing
+    - name: production_restore_tested
+      status: missing
+    - name: production_failover_tested
+      status: missing
+    - name: rollback_trigger_defined
+      status: insufficient
+    - name: dr_runbook_for_production
+      status: missing
+
+  step61_pass_is_production_dr_ready: false
+  executes_restore: false
+  executes_failover: false
+  status: insufficient
