@@ -1,0 +1,42 @@
+# Step 61 (Stage 63A) -- DR operation model.
+#
+# A DR operation records governance state only. It never performs a production failover,
+# a production restore, a cross-region failover, or a production data overwrite -- those
+# operation types are forbidden. DR readiness is a governance judgement, NOT production DR
+# ready. Missing backup / restore evidence blocks readiness.
+drOperation:
+  operationTypes:
+    - backup_inventory
+    - backup_validation
+    - restore_plan_created
+    - restore_validation
+    - cleanup_review
+    - dr_readiness_assessment
+
+  forbiddenOperationTypes:
+    - production_failover
+    - production_restore
+    - cross_region_failover
+    - production_data_overwrite
+
+  statuses:
+    - recorded
+    - blocked
+    - evidence_incomplete
+
+  readinessDecisions:
+    - not_ready
+    - blocked_by_missing_evidence
+    - blocked_by_policy
+    - ready_for_operator_review
+
+  # Evidence references required before DR readiness can be considered.
+  requiredForReadiness:
+    - backup_inventory
+    - backup_target_classification
+    - restore_plan
+    - restore_validation_result
+
+  productionReady: false
+  productionRestoreReady: false
+  productionFailoverReady: false

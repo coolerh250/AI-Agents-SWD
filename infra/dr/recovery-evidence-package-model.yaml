@@ -1,0 +1,33 @@
+# Step 61 (Stage 63A) -- Recovery evidence package model.
+#
+# Assembles a redacted recovery evidence package referencing existing platform evidence.
+# It contains NO secret, NO raw DB dump, NO raw Redis dump, NO kubeconfig, NO token, NO
+# chain-of-thought. production_ready and production_restore_ready are always false. Missing
+# required evidence is reported and blocks DR readiness.
+recoveryEvidencePackage:
+  references:
+    - backup_inventory
+    - backup_target_classification
+    - cleanup_review
+    - restore_plan
+    - restore_validation_result
+    - audit_event_refs
+    - known_limitations
+    - operator_decisions
+    - production_blocking_status
+
+  requiredForReadiness:
+    - backup_inventory
+    - backup_target_classification
+    - restore_plan
+    - restore_validation_result
+
+  productionReady: false
+  productionRestoreReady: false
+  forbiddenContent:
+    - secret
+    - raw_db_dump
+    - raw_redis_dump
+    - kubeconfig
+    - token
+    - chain_of_thought

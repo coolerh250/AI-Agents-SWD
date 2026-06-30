@@ -1,0 +1,36 @@
+# Step 61 (Stage 63A) -- Backup / Restore / DR audit mapping.
+#
+# Maps each governance operation to an audit event. Audit metadata always carries actor /
+# role / reason / operation linkage / policy_decision and production_restore=false,
+# production_failover=false, production_executed=false. It NEVER carries a token, secret,
+# raw dump, kubeconfig, or chain-of-thought.
+backupRestoreDrAudit:
+  events:
+    - backup_inventory_generated
+    - cleanup_review_created
+    - restore_plan_created
+    - restore_validation_completed
+    - dr_readiness_evaluated
+    - recovery_evidence_collected
+    - cleanup_execution_blocked
+    - production_restore_blocked
+    - production_failover_blocked
+
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - operation_id
+    - target
+    - target_environment
+    - policy_decision
+    - production_restore
+    - production_failover
+    - production_executed
+
+  forbiddenMetadata:
+    - token
+    - secret
+    - raw_dump
+    - kubeconfig
+    - chain_of_thought

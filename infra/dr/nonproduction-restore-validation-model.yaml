@@ -1,0 +1,35 @@
+# Step 61 (Stage 63A) -- Non-production restore validation model.
+#
+# Validation is safe and non-destructive: metadata / schema / redaction / freshness checks
+# and at most a dry-run or isolated non-production-copy restore. It NEVER overwrites an
+# active Postgres or Redis, NEVER uses production data, NEVER writes a production namespace,
+# NEVER triggers an ArgoCD sync, and by default does NOT mutate the kind cluster.
+nonproductionRestoreValidation:
+  validationTypes:
+    - manifest_integrity_check
+    - schema_validation
+    - redaction_validation
+    - artifact_freshness_check
+    - restore_dry_run
+    - nonproduction_copy_restore
+    - post_restore_consistency_check
+
+  statuses:
+    - passed
+    - failed
+    - blocked
+    - skipped
+
+  defaultValidationTypes:
+    - manifest_integrity_check
+    - redaction_validation
+    - artifact_freshness_check
+
+  allowActiveDatabaseOverwrite: false
+  allowActiveRedisOverwrite: false
+  allowProductionData: false
+  allowProductionNamespaceWrite: false
+  allowArgoCDSync: false
+  allowKindClusterMutation: false
+  productionTargetBlocked: true
+  rejectArbitraryRestorePath: true

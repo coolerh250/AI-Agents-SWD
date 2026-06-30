@@ -1,0 +1,60 @@
+# Step 61 (Stage 63A) -- Controlled cleanup review model.
+#
+# A cleanup review is a REVIEW, never an execution. It only considers allowlisted cleanup
+# categories under allowlisted runtime roots; arbitrary paths are rejected. Cleaning up
+# kind / ArgoCD cluster runtime state, an active DB, or an active Redis is always blocked.
+# Temporary traces and old build cache may be marked allowed; scheduled DR / regression
+# artifacts require a retained copy or operator approval. A review never deletes anything.
+controlledCleanupReview:
+  fields:
+    - cleanup_review_id
+    - scope
+    - candidate_paths
+    - classification
+    - estimated_size
+    - risk_level
+    - requires_backup_before_cleanup
+    - requires_operator_approval
+    - allowed
+    - blocked_reason
+    - validation_after_cleanup
+
+  # Only paths under these roots are eligible. Anything else is rejected as arbitrary.
+  allowedCleanupRoots:
+    - .runtime/
+    - .runtime/backup-dr/
+    - .runtime/tracing/
+    - .runtime/build-cache/
+
+  # Classifications that may be cleaned up without operator approval.
+  allowedCleanupClassifications:
+    - temporary_trace
+    - temporary_build_cache
+
+  # Classifications that need operator approval (or a retained copy) before cleanup.
+  requiresApprovalClassifications:
+    - runtime_evidence
+    - scheduled_dr_report
+    - regression_report
+    - orphan_volume
+
+  # Classifications that may NEVER be cleaned up by this baseline.
+  blockedCleanupClassifications:
+    - database_dump
+    - redis_snapshot
+    - audit_export
+    - security_summary
+    - release_evidence
+    - cluster_runtime_state
+
+  # Cleanup scopes that are hard-blocked regardless of classification.
+  forbiddenCleanupScopes:
+    - kind_cluster
+    - argocd
+    - active_database
+    - active_redis
+    - active_runtime_state
+
+  cleanupExecutionEnabled: false
+  rejectArbitraryPath: true
+  requireInventoryBeforeReview: true
