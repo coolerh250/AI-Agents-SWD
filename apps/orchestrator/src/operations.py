@@ -1731,6 +1731,9 @@ async def operations_safety() -> dict:
     # Stage 64A (Step 62) -- production deployment readiness gate fields.
     production_readiness_safety = _production_readiness_safety_summary()
 
+    # Stage 65A (Step 63A) -- controlled rollout go/no-go review fields.
+    controlled_rollout_safety = _controlled_rollout_safety_summary()
+
     # Stage 54D (Step 52.4) -- read-only identity posture fields.
     identity_posture_safety = _identity_posture_safety_summary()
 
@@ -2164,6 +2167,11 @@ async def operations_safety() -> dict:
         # push / restore / failover / rollout execution; production never ready/approved;
         # executed counts 0.
         **production_readiness_safety,
+        # Stage 65A (Step 63A) -- controlled production rollout pilot go/no-go review.
+        # Booleans/enums/counts only; review + recommendation + operator review only; no
+        # production deploy / sync / merge / image push / restore / failover; recommendation
+        # is not an approval; production action executed count 0.
+        **controlled_rollout_safety,
         # Stage 54D (Step 52.4) -- read-only identity posture. Booleans/enums only;
         # production identity NOT enabled; no IdP, no secret, no raw email/group.
         **identity_posture_safety,
@@ -4109,6 +4117,18 @@ def _production_readiness_safety_summary() -> dict[str, Any]:
     from shared.sdk.production_readiness import production_readiness_safety_fields
 
     return production_readiness_safety_fields()
+
+
+def _controlled_rollout_safety_summary() -> dict[str, Any]:
+    """Step 63A -- controlled rollout go/no-go review safety fields. Config-driven (reads the
+    committed review policy + models); no DB, no cluster, no deploy. Every dangerous toggle
+    (production deploy / sync / merge / image push / restore / failover / action) and
+    recommendation-is-approval read straight from the policy so they cannot drift true. The
+    recommendation reflects the live gap analysis; the production-action executed count is 0.
+    """
+    from shared.sdk.controlled_rollout import controlled_rollout_safety_fields
+
+    return controlled_rollout_safety_fields()
 
 
 def _identity_posture_safety_summary() -> dict[str, Any]:

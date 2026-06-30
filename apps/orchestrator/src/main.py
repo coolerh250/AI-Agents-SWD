@@ -25,6 +25,7 @@ from sandbox_github_api import router as sandbox_github_router
 from release_governance_api import router as release_governance_router
 from backup_restore_dr_api import router as backup_restore_dr_router
 from production_readiness_api import router as production_readiness_router
+from controlled_rollout_review_api import router as controlled_rollout_review_router
 from identity_posture_api import router as identity_posture_router
 from secret_posture_api import router as secret_posture_router
 from security_posture_api import router as security_posture_router
@@ -231,6 +232,10 @@ app.include_router(backup_restore_dr_router)
 # Stage 64A (Step 62): production deployment readiness gate API (readiness + operator review
 # only; no deploy/sync/merge/push/restore/failover; production blocked, never approved).
 app.include_router(production_readiness_router)
+# Stage 65A (Step 63A): controlled production rollout pilot go/no-go REVIEW API (review +
+# recommendation + operator review only; recommendation is not an approval; no production
+# action; production blocked, never approved).
+app.include_router(controlled_rollout_review_router)
 # Stage 54D (Step 52.4): read-only identity posture API.
 app.include_router(identity_posture_router)
 # Stage 55A (Step 53): read-only secret management foundation API.
