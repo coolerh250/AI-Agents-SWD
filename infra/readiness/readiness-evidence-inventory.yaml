@@ -1,0 +1,120 @@
+# Step 62 (Stage 64A) -- Readiness evidence inventory.
+#
+# Inventory of the evidence the readiness gate consumes. Every item is annotated with
+# source / freshness / availability / redaction / production scope. ALL production_scope is
+# false (or blocked) at this stage; runtime / GitOps evidence is non-production only. The
+# inventory contains NO secret. Missing evidence is never reported as clean.
+readinessEvidence:
+  items:
+    - name: step52_identity_baseline
+      source: IDENTITY_FOUNDATION_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: nonproduction_identity_only
+    - name: step53_secret_management_baseline
+      source: SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: no_production_secret_store
+    - name: step54_security_supply_chain_baseline
+      source: APPLICATION_SECURITY_SUPPLY_CHAIN_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: baseline_pass_is_not_all_risks_remediated
+    - name: step55_nonproduction_runtime_smoke
+      source: NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY
+      freshness: live_or_stale
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: kind_nonprod_is_not_production_cluster
+    - name: step56_nonproduction_argocd_manual_sync
+      source: NONPRODUCTION_ARGOCD_MANUAL_SYNC_BASELINE_VERIFY
+      freshness: live_or_stale
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: nonprod_argocd_is_not_production_argocd
+    - name: step57_multi_project_delivery_dispatch
+      source: MULTI_PROJECT_DELIVERY_DISPATCH_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: production_effect_routes_to_waiting_approval
+    - name: step58_operational_metrics
+      source: ADMIN_CONSOLE_V2_OPERATIONAL_METRICS_BASELINE_VERIFY
+      freshness: live_or_stale
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: visibility_only_not_sla_slo
+    - name: step59_sandbox_github_draft_pr
+      source: SANDBOX_GITHUB_DRAFT_PR_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: sandbox_draft_pr_is_not_merged_or_reviewed
+    - name: step60_release_deployment_governance
+      source: RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: governance_pass_is_not_production_approval
+    - name: step61_backup_restore_dr_operations
+      source: BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: dr_baseline_is_not_production_dr_ready
+    - name: tenant_strategy_note
+      source: TENANT_WORKSPACE_STRATEGY_NOTE_VERIFY
+      freshness: documentation_only
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: future_consideration_not_implemented
+    - name: audit_integrity_evidence
+      source: audit_integrity
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: nonproduction_audit_chain
+    - name: approval_controls
+      source: approval_policy
+      freshness: live
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: no_production_approval_channel
+    - name: known_limitations
+      source: docs_limitations
+      freshness: documentation_only
+      availability: available
+      redaction: redacted
+      production_scope: false
+      nonproduction_only: true
+      blocking_limitations: production_prerequisites_missing

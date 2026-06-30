@@ -1,0 +1,32 @@
+# Step 62 (Stage 64A) -- Production Deployment Readiness Gate policy.
+#
+# Integrates the completed identity / secret / security / runtime / GitOps / delivery /
+# metrics / sandbox-GitHub / release-governance / backup-restore-DR evidence into a
+# readiness GATE model. This is NOT a production deployment: it does not deploy, sync,
+# merge, push, restore, or fail over. The gate produces a readiness decision + an operator
+# review package only. Production stays permanently blocked; the current stage authorizes
+# NO production action. Readiness visibility != production ready.
+productionReadinessGate:
+  enabled: true
+  productionReady: false
+  allowProductionDeploy: false
+  allowProductionSync: false
+  allowProductionRestore: false
+  allowProductionFailover: false
+  allowAutoPromotion: false
+  allowGitHubMerge: false
+  allowImagePush: false
+  allowRegistryLogin: false
+  requireHumanApprovalBeforeProduction: true
+  requireExplicitProductionRolloutPhase: true
+  currentStageAllowsProductionAction: false
+
+  rules:
+    - productionActionForbiddenThisStage
+    - readinessGateIsNotProductionApproval
+    - operatorReviewRequestIsNotApproval
+    - nonProductionPassIsNotProductionReady
+    - rolloutRequiresFutureExplicitPhase
+    - humanApprovalRequiredBeforeProduction
+    - missingEvidenceBlocksReadiness
+    - productionExecutedMustBeZero

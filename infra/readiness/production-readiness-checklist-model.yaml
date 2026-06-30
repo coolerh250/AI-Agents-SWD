@@ -1,0 +1,110 @@
+# Step 62 (Stage 64A) -- Production readiness checklist model.
+#
+# One entry per readiness category. Each maps to an existing platform evidence source. A
+# missing required category blocks readiness; no category may ever produce a production
+# approval (production_ready_claim_allowed is false everywhere). A non-production PASS is
+# NOT a production-ready claim.
+productionReadinessChecklist:
+  categories:
+    - name: identity
+      required: true
+      evidence_source: IDENTITY_FOUNDATION_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: secret_management
+      required: true
+      evidence_source: SECRET_MANAGEMENT_FOUNDATION_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: security_supply_chain
+      required: true
+      evidence_source: APPLICATION_SECURITY_SUPPLY_CHAIN_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: runtime_kubernetes
+      required: true
+      evidence_source: NONPRODUCTION_KUBERNETES_RUNTIME_SMOKE_VERIFY
+      status: nonproduction_only
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: gitops_argocd
+      required: true
+      evidence_source: NONPRODUCTION_ARGOCD_MANUAL_SYNC_BASELINE_VERIFY
+      status: nonproduction_only
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: multi_project_delivery
+      required: true
+      evidence_source: MULTI_PROJECT_DELIVERY_DISPATCH_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: operational_metrics
+      required: true
+      evidence_source: ADMIN_CONSOLE_V2_OPERATIONAL_METRICS_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: false
+      production_ready_claim_allowed: false
+    - name: sandbox_github
+      required: true
+      evidence_source: SANDBOX_GITHUB_DRAFT_PR_BASELINE_VERIFY
+      status: sandbox_only
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: release_governance
+      required: true
+      evidence_source: RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: backup_restore_dr
+      required: true
+      evidence_source: BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY
+      status: nonproduction_pass
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: audit_integrity
+      required: true
+      evidence_source: audit_integrity_evidence
+      status: available
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: approval_governance
+      required: true
+      evidence_source: approval_controls
+      status: available
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: rollback
+      required: true
+      evidence_source: release_governance_rollback_requirement
+      status: modeled_nonproduction
+      blocking_if_missing: true
+      production_ready_claim_allowed: false
+    - name: observability
+      required: true
+      evidence_source: operational_metrics_runtime
+      status: nonproduction_pass
+      blocking_if_missing: false
+      production_ready_claim_allowed: false
+    - name: incident_response
+      required: true
+      evidence_source: incident_response_runbook
+      status: available
+      blocking_if_missing: false
+      production_ready_claim_allowed: false
+    - name: documentation
+      required: true
+      evidence_source: docs_progress_records
+      status: available
+      blocking_if_missing: false
+      production_ready_claim_allowed: false
+    - name: operator_review
+      required: true
+      evidence_source: operator_review_package
+      status: pending_operator
+      blocking_if_missing: true
+      production_ready_claim_allowed: false

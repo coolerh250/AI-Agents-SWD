@@ -1,0 +1,88 @@
+# Step 62 (Stage 64A) -- Production readiness blocking rules.
+#
+# Each rule has a severity and a currently_active flag. severity:
+#   hard         -> if active, the gate is blocked_by_policy (or fails); production must
+#                   never proceed. These are guards and are currently INACTIVE (we request
+#                   no production action; counts are 0).
+#   prerequisite -> if active, the gate is capped at ready_for_operator_review and can
+#                   never be production_ready. These ARE active at this stage (production
+#                   environment / prerequisites are not configured; runtime / GitOps are
+#                   non-production only). The tenant strategy note is a future consideration,
+#                   never an implemented capability.
+productionReadinessBlockingRules:
+  rules:
+    # ---- hard guards (must stay inactive) ----
+    - name: production_action_requested
+      severity: hard
+      currently_active: false
+    - name: production_deploy_allowed
+      severity: hard
+      currently_active: false
+    - name: production_sync_allowed
+      severity: hard
+      currently_active: false
+    - name: production_restore_allowed
+      severity: hard
+      currently_active: false
+    - name: production_failover_allowed
+      severity: hard
+      currently_active: false
+    - name: production_executed_true_count_nonzero
+      severity: hard
+      currently_active: false
+    # ---- missing-evidence blockers (active only if a required marker is absent) ----
+    - name: missing_identity_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_secret_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_security_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_runtime_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_gitops_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_release_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_dr_evidence
+      severity: hard
+      currently_active: false
+    - name: missing_rollback_plan
+      severity: hard
+      currently_active: false
+    - name: missing_audit_integrity
+      severity: hard
+      currently_active: false
+    - name: missing_human_approval
+      severity: prerequisite
+      currently_active: true
+    # ---- non-production-only / prerequisite caps (active this stage) ----
+    - name: security_production_ready_false
+      severity: prerequisite
+      currently_active: true
+    - name: release_production_ready_false
+      severity: prerequisite
+      currently_active: true
+    - name: dr_production_ready_false
+      severity: prerequisite
+      currently_active: true
+    - name: sandbox_pr_not_live_or_not_reviewed
+      severity: prerequisite
+      currently_active: true
+    - name: runtime_nonproduction_only
+      severity: prerequisite
+      currently_active: true
+    - name: gitops_nonproduction_only
+      severity: prerequisite
+      currently_active: true
+    - name: tenant_isolation_not_implemented
+      severity: prerequisite
+      currently_active: true
+    - name: external_connector_not_implemented
+      severity: prerequisite
+      currently_active: true
