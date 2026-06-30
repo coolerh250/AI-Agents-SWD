@@ -1,0 +1,202 @@
+# Step 61 (Stage 63A) -- Backup target inventory.
+#
+# Declarative inventory of what the platform can back up as governance evidence. Every
+# target is annotated with classification + handling flags. restore_allowed_production is
+# false for EVERY target (production restore is blocked). Targets that contain secrets are
+# redacted / excluded / secret-managed and never backed up as plaintext. This inventory
+# itself contains NO secret, token, kubeconfig, raw dump, or customer data.
+backupTargets:
+  - name: postgresql
+    source: postgres
+    classification: database_dump
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: database_dump
+    cleanup_allowed: false
+
+  - name: redis_streams
+    source: redis
+    classification: redis_snapshot
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: false
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: redis_snapshot
+    cleanup_allowed: false
+
+  - name: audit_records
+    source: postgres
+    classification: audit_export
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: audit_export
+    cleanup_allowed: false
+
+  - name: approval_records
+    source: postgres
+    classification: audit_export
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: audit_export
+    cleanup_allowed: false
+
+  - name: workflow_states
+    source: postgres
+    classification: database_dump
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: database_dump
+    cleanup_allowed: false
+
+  - name: agent_executions
+    source: postgres
+    classification: database_dump
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: database_dump
+    cleanup_allowed: false
+
+  - name: project_work_item_data
+    source: postgres
+    classification: database_dump
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: database_dump
+    cleanup_allowed: false
+
+  - name: release_governance_data
+    source: postgres
+    classification: release_evidence
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: release_evidence
+    cleanup_allowed: false
+
+  - name: sandbox_github_draft_pr_records
+    source: postgres
+    classification: database_dump
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: database_dump
+    cleanup_allowed: false
+
+  - name: operational_metrics_snapshots
+    source: runtime_report
+    classification: runtime_evidence
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: false
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: runtime_evidence
+    cleanup_allowed: true
+
+  - name: security_scan_summaries
+    source: runtime_report
+    classification: security_summary
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: security_summary
+    cleanup_allowed: false
+
+  - name: runtime_reports
+    source: runtime_report
+    classification: runtime_evidence
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: false
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: runtime_evidence
+    cleanup_allowed: true
+
+  - name: argocd_nonproduction_state
+    source: cluster
+    classification: cluster_runtime_state
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: false
+    backup_allowed: false
+    restore_allowed_nonprod: false
+    restore_allowed_production: false
+    retention_class: cluster_runtime_state
+    cleanup_allowed: false
+
+  - name: kind_cluster_manifests
+    source: cluster
+    classification: cluster_runtime_state
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: true
+    contains_audit_evidence: false
+    backup_allowed: false
+    restore_allowed_nonprod: false
+    restore_allowed_production: false
+    retention_class: cluster_runtime_state
+    cleanup_allowed: false
+
+  - name: docs_progress_records
+    source: repository
+    classification: release_evidence
+    contains_secret: false
+    contains_customer_data: false
+    contains_runtime_state: false
+    contains_audit_evidence: true
+    backup_allowed: true
+    restore_allowed_nonprod: true
+    restore_allowed_production: false
+    retention_class: release_evidence
+    cleanup_allowed: false

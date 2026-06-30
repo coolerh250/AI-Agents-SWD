@@ -1,0 +1,49 @@
+# Step 61 (Stage 63A) -- Backup / Restore / Disaster Recovery operations policy.
+#
+# Defines the controlled, NON-PRODUCTION backup / restore / DR governance boundary. This
+# governs backup inventory, retention / cleanup, restore planning, non-production restore
+# validation, DR operation modelling and recovery evidence. It does NOT perform a
+# production restore, a production failover, a production data mutation, a cleanup
+# execution, a restore execution, a kind / ArgoCD teardown, or an external / cloud upload.
+# Production restore and production failover stay permanently blocked. DR readiness
+# visibility != production DR ready.
+backupRestoreDr:
+  enabled: true
+  productionReady: false
+  allowProductionRestore: false
+  allowProductionFailover: false
+  allowProductionBackupMutation: false
+  allowExternalBackupUpload: false
+  allowCloudProviderWrite: false
+  allowArgoCDProductionSync: false
+  allowKubernetesProductionMutation: false
+  allowUnreviewedCleanup: false
+  requireInventoryBeforeCleanup: true
+  requireRestoreValidation: true
+  requireHumanApprovalForProductionRestore: true
+  # Cleanup / restore are review + plan + validate only -- never executed by this baseline.
+  allowCleanupExecution: false
+  allowRestoreExecution: false
+  allowKindTeardown: false
+  allowArgoCDTeardown: false
+  allowedEnvironments:
+    - local
+    - dev
+    - test
+    - nonprod
+  forbiddenEnvironments:
+    - production
+    - prod
+
+  rules:
+    - productionRestoreForbidden
+    - productionFailoverForbidden
+    - productionBackupMutationForbidden
+    - externalBackupUploadDisabled
+    - cloudProviderWriteDisabled
+    - cleanupRequiresInventoryAndAllowlist
+    - cleanupNeverExecutedByThisBaseline
+    - restoreNeverExecutedAgainstActiveRuntime
+    - kindAndArgoCDTeardownForbidden
+    - drReadinessIsNotProductionDrReady
+    - humanApprovalRequiredForProductionRestore

@@ -1,0 +1,117 @@
+# Step 61 (Stage 63A) -- Backup artifact classification.
+#
+# Classifies every backup / runtime artifact the platform produces, with retention and
+# cleanup handling. database_dump / redis_snapshot are NEVER committed. Temporary traces
+# and build cache are safe to clean up. Scheduled DR reports may only be cleaned up when a
+# retained copy exists (otherwise operator approval is required). kind / ArgoCD cluster
+# runtime state is NEVER cleaned up automatically.
+backupArtifactClassification:
+  classes:
+    runtime_evidence:
+      retention_days: 14
+      cleanup_allowed: true
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: true
+      commit_allowed: false
+      secret_scan_required: true
+
+    database_dump:
+      retention_days: 30
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: true
+      commit_allowed: false
+      secret_scan_required: true
+
+    redis_snapshot:
+      retention_days: 7
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: true
+      commit_allowed: false
+      secret_scan_required: true
+
+    audit_export:
+      retention_days: 365
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: true
+      commit_allowed: false
+      secret_scan_required: true
+
+    security_summary:
+      retention_days: 90
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: true
+
+    release_evidence:
+      retention_days: 180
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: true
+
+    temporary_trace:
+      retention_days: 3
+      cleanup_allowed: true
+      cleanup_requires_approval: false
+      backup_required: false
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: false
+
+    temporary_build_cache:
+      retention_days: 7
+      cleanup_allowed: true
+      cleanup_requires_approval: false
+      backup_required: false
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: false
+
+    scheduled_dr_report:
+      retention_days: 90
+      cleanup_allowed: false
+      cleanup_allowed_if_retained_copy: true
+      cleanup_requires_approval: true
+      backup_required: true
+      restore_validation_required: true
+      commit_allowed: false
+      secret_scan_required: true
+
+    regression_report:
+      retention_days: 30
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: false
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: true
+
+    orphan_volume:
+      retention_days: 0
+      cleanup_allowed: true
+      cleanup_requires_approval: true
+      backup_required: false
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: false
+
+    cluster_runtime_state:
+      retention_days: 0
+      cleanup_allowed: false
+      cleanup_requires_approval: true
+      backup_required: false
+      restore_validation_required: false
+      commit_allowed: false
+      secret_scan_required: false
