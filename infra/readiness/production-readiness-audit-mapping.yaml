@@ -1,0 +1,34 @@
+# Step 62 (Stage 64A) -- Production readiness audit mapping.
+#
+# Maps each readiness operation to an audit event. Audit metadata always carries actor /
+# role / reason / readiness_gate_id / decision_status and production_ready=false /
+# production_approved=false / production_action_allowed=false / production_executed=false.
+# It NEVER carries a token, secret, kubeconfig, raw prompt, chain-of-thought, or raw dump.
+productionReadinessAudit:
+  events:
+    - production_readiness_report_generated
+    - production_readiness_evidence_collected
+    - production_readiness_blocking_rules_evaluated
+    - production_readiness_decision_created
+    - operator_review_package_created
+    - operator_review_requested
+    - production_action_blocked
+
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - readiness_gate_id
+    - decision_status
+    - production_ready
+    - production_approved
+    - production_action_allowed
+    - production_executed
+
+  forbiddenMetadata:
+    - token
+    - secret
+    - kubeconfig
+    - raw_prompt
+    - chain_of_thought
+    - raw_dump
