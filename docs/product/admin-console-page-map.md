@@ -95,6 +95,15 @@ Incidents) calling the same aggregate endpoints.
   and deployment intents are created through the governed `POST /operations/release/candidates`
   and `.../deployment-intents` (auth + CSRF + audit; production rejected, intent never deploys).
 
+- **Backup / Restore / DR (`/backup-dr`, Step 61):** read-only non-production backup / restore /
+  disaster-recovery governance — overview / policy (production blocking status) / target inventory
+  & artifact classification / cleanup review / restore plans / restore validations / recovery
+  evidence / DR readiness / safety / known limitations. NO execute-cleanup / execute-restore /
+  failover / teardown-kind / ArgoCD-sync / cloud-upload control, no production-ready toggle. Backed
+  by the read-only GET `/operations/dr/*`; cleanup reviews and restore plans are created through the
+  governed `POST /operations/dr/cleanup-reviews` and `.../restore-plans` (auth + CSRF + reason +
+  audit; production rejected, never executes a cleanup or restore).
+
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.

@@ -31,3 +31,6 @@ A deployment intent never executes a deployment; no token is ever returned.
 `release_candidates`, `deployment_intents`, `release_evidence_packages`,
 `release_readiness_decisions`, `release_audit_events` — `target_environment` can never be
 production (CHECK); `production_ready` / `production_executed` default false.
+
+## Next phase
+Step 61 (Stage 63A) adds the non-production [backup / restore / DR operations](backup-restore-dr-operations-policy.md) governance baseline (`/operations/dr/*`), which likewise never executes a production action.

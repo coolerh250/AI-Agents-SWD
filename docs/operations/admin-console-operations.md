@@ -145,3 +145,12 @@ Release candidates and deployment intents are created through the governed `POST
 /operations/release/candidates` and `.../deployment-intents` (operator auth + CSRF + reason + audit;
 production target rejected, deployment intent never executes a deploy). See
 [release-deployment-governance-verification.md](release-deployment-governance-verification.md).
+
+Step 61 adds a read-only **Backup / Restore / DR** section (route `/backup-dr`) backed by the
+read-only GET `/operations/dr/*` endpoints (overview / policy / inventory / cleanup-review /
+restore-plans / restore-validations / evidence / readiness / safety / limitations). Non-production
+governance — NO execute-cleanup / execute-restore / failover / teardown-kind / ArgoCD-sync /
+cloud-upload control, no production-ready toggle. Cleanup reviews and restore plans are created
+through the governed `POST /operations/dr/cleanup-reviews` and `.../restore-plans` (operator auth +
+CSRF + reason + audit; production target rejected, arbitrary path rejected, never executes a cleanup
+or restore). See [backup-restore-dr-verification.md](backup-restore-dr-verification.md).

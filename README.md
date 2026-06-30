@@ -2653,6 +2653,29 @@ verifiers + combined `RELEASE_DEPLOYMENT_GOVERNANCE_BASELINE_VERIFY`, 12 tests, 
 Next: Step 61 (Production Backup/Restore/DR Operations or a controlled cleanup review —
 operator decision).
 
+## Backup / Restore / DR Operations (Stage 63A / Step 61)
+
+A controlled, **non-production** backup / restore / disaster-recovery governance baseline:
+backup target inventory, artifact classification, controlled cleanup review, restore plan,
+non-production restore validation, DR operation modelling, and recovery evidence
+([policy](infra/dr/backup-restore-dr-operations-policy.yaml) +
+[target inventory](infra/dr/backup-target-inventory.yaml) +
+[artifact classification](infra/dr/backup-artifact-classification.yaml) +
+[cleanup review](infra/dr/controlled-cleanup-review-model.yaml) +
+[restore plan](infra/dr/restore-plan-model.yaml) +
+`shared/sdk/backup_restore_dr`), three host-side generators writing redacted artifacts to
+gitignored `.runtime/backup-dr/`, 12 read-only GET + 2 controlled POST under
+`/operations/dr` (auth + CSRF + reason + audit), an Admin Console section (route
+`/backup-dr`), and `/operations/safety` fields. **Non-production governance — NOT
+production restore, NOT production failover, NOT production data mutation, NOT cleanup
+execution, NOT restore execution.** Production is blocked: a production target is rejected
+(policy + DB CHECK), cleanup is review-only (never deletes), restore is plan + validate
+only (never overwrites active Postgres / Redis), no kind / ArgoCD teardown, no ArgoCD sync,
+no external / cloud upload; DR readiness is a governance judgement, not production DR ready;
+`backup_restore_dr_production_ready=false`, `production_executed_true_count=0`. 12 verifiers
++ combined `BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY`, 13 tests, 12 docs. Next: Step 62
+(Production Deployment Readiness Gate).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

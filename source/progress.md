@@ -11283,3 +11283,77 @@ deployment / production release approval / auto-promotion / production GitOps. P
   deployment / production release / production promotion ready. Step 61 (Production Backup/Restore/DR
   Operations or a controlled cleanup review, operator decision) pending. Tenant strategy note recorded
   only, not scheduled. Claude Code does not decide Production readiness.
+
+## Stage 63A — Production Backup / Restore / DR Operations (Step 61)
+
+A controlled **non-production** backup / restore / disaster-recovery governance baseline: backup
+inventory, retention / cleanup, restore planning, non-production restore validation, DR operation
+modelling, recovery evidence. **Outcome: PASS.** NOT production restore / production failover /
+production data mutation / cleanup execution / restore execution. Production stays blocked.
+
+- **Policies (committed YAML).** `infra/dr/backup-restore-dr-operations-policy.yaml` (allowProduction
+  Restore / allowProductionFailover / allowProductionBackupMutation / allowExternalBackupUpload /
+  allowCloudProviderWrite / allowArgoCDProductionSync / allowKubernetesProductionMutation / allow
+  UnreviewedCleanup / allowCleanupExecution / allowRestoreExecution / allowKindTeardown / allowArgoCD
+  Teardown all false; requireInventoryBeforeCleanup / requireRestoreValidation / requireHumanApproval
+  ForProductionRestore true; productionReady false; allowed local/dev/test/nonprod, forbidden
+  production/prod) + backup-target-inventory.yaml (15 targets; restore_allowed_production false for all;
+  no secret/customer-data backed up) + backup-artifact-classification.yaml (12 classes; database_dump/
+  redis_snapshot commit_allowed false; temporary_trace/build_cache cleanup-allowed; cluster_runtime_
+  state/scheduled_dr_report never auto-cleaned) + controlled-cleanup-review-model.yaml (allowlisted
+  roots only; arbitrary path rejected; dumps/audit/cluster blocked; kind/argocd/active-db/redis scope
+  blocked) + restore-plan-model.yaml (validate/dry-run/schema/integrity only; production/overwrite/
+  failover/customer-data forbidden) + nonproduction-restore-validation-model.yaml (no active overwrite/
+  prod-namespace/argocd-sync/kind-mutation) + dr-operation-model.yaml (6 governance types; production_
+  failover/restore/cross-region/overwrite forbidden) + recovery-evidence-package-model.yaml (redacted;
+  production_ready/production_restore_ready false) + backup-restore-dr-audit-mapping.yaml (9 events +
+  production_restore/failover/executed false).
+- **SDK.** `shared/sdk/backup_restore_dr` (models / policy / inventory / classification / cleanup_review
+  / restore_plan / restore_validation / dr_operation / evidence / audit / redaction / safety / store).
+  Validates target env (never production); builds cleanup reviews (review only, never deletes); builds
+  restore plans (never executes); builds restore validation results (no active overwrite/sync/mutation);
+  evaluates DR readiness (production + missing evidence block); builds redacted recovery evidence. NO
+  restore / failover / cleanup execution / teardown / external upload. NEW package — does not touch the
+  pre-existing Stage 51 `shared/sdk/backup_dr` (backup runs / encryption / restore drills).
+- **Migration.** `migrations/027_backup_restore_dr_operations.sql` (idempotent backup_targets /
+  backup_artifacts / cleanup_reviews / restore_plans / restore_validations / dr_operations /
+  recovery_evidence_packages; target_environment CHECK never production; dr_operations operation_type
+  CHECK never production failover; production_restore / production_failover / production_executed default
+  false). Does not collide with the Stage 51 022 tables.
+- **Host generators.** `scripts/generate_backup_dr_runtime_inventory.py` /
+  `generate_controlled_cleanup_review.py` / `run_nonproduction_restore_validation.py` → redacted JSON
+  under gitignored `.runtime/backup-dr/` (never committed; only allowlisted roots; no file contents read;
+  never deletes; never overwrites active runtime).
+- **API.** `apps/orchestrator/src/backup_restore_dr_api.py` (`/operations/dr`). 12 read-only GET
+  (overview/policy/targets/artifacts/inventory/cleanup-review/cleanup/restore-plans/restore/restore-
+  validations/evidence/readiness/safety/limitations) + 2 controlled POST (create cleanup review, create
+  restore plan) reusing operator auth + CSRF + reason + audit; production target rejected; arbitrary path
+  rejected; never executes. No cleanup-execute / restore-execute / failover / teardown / ArgoCD-sync /
+  cloud-upload endpoint; no token returned.
+- **Admin Console.** Read-only Backup / Restore / DR section (React route `/backup-dr` + static
+  fallback); policy / inventory / cleanup review / restore plans / restore validations / evidence /
+  readiness / safety / limitations; NO execute-cleanup / execute-restore / failover / teardown-kind /
+  ArgoCD-sync / cloud-upload control, no production-ready toggle.
+- **Safety fields.** 21 `/operations/safety` Step 61 fields config-driven from the policy (backup_restore_
+  dr_enabled / backup_inventory_enabled / controlled_cleanup_review_enabled / restore_plan_enabled /
+  restore_validation_enabled / recovery_evidence_enabled true; production_ready / allow_production_restore
+  / allow_production_failover / allow_external_backup_upload / allow_cloud_provider_write / allow_argocd_
+  production_sync / allow_kubernetes_production_mutation / cleanup_execution_enabled / restore_execution_
+  enabled / cleanup_teardown_kind_enabled / cleanup_teardown_argocd_enabled false; production_restore_plan
+  / production_failover_plan / production_restore_executed / production_failover_executed counts 0).
+- **Verifiers + combined (12 + 1).** policy/target-inventory/artifact-classification/cleanup-review/
+  restore-plan/restore-validation/dr-operation/recovery-evidence/runtime/operations-visibility/admin-
+  console/safety-fields; combined `verify_backup_restore_dr_operations_baseline.sh`
+  (`BACKUP_RESTORE_DR_OPERATIONS_BASELINE_VERIFY`; chains Step 52-60 + tenant note via the Step 60
+  combined, runs the 3 generators, then the 12 verifiers + tests + safety posture).
+- **Tests + quality.** 13 pytest files (65 cases, 0 skipped). ruff/black/mypy clean (the 3 mypy errors are
+  pre-existing in the untouched `operator_actions_api.py`). Frontend (local): typecheck clean, 25 vitest,
+  build OK.
+- **kind/ArgoCD.** Left running (read-only); Step 61 performs no cluster action, no teardown, no sync.
+- **Safety.** No production restore / production failover / production data mutation / cleanup execution /
+  restore execution / kind teardown / ArgoCD teardown / ArgoCD sync / external backup upload / cloud
+  write; no secret/token/kubeconfig/raw-dump exposed or committed; `backup_restore_dr_production_ready=
+  false`, `production_executed_true_count=0`.
+- **Roadmap.** Step 61 closed -- backup / restore / DR operations baseline completed. NOT production DR /
+  production restore / production failover ready; cleanup automation NOT enabled (cleanup review only).
+  Step 62 (Production Deployment Readiness Gate) pending. Claude Code does not decide Production readiness.
