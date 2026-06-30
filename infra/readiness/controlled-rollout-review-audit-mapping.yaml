@@ -1,0 +1,36 @@
+# Step 63A (Stage 65A) -- Controlled rollout review audit mapping.
+#
+# Maps each review operation to an audit event. Audit metadata always carries actor / role /
+# reason / review_id / recommendation and production_ready=false / production_approved=false
+# / production_action_allowed=false / production_executed=false. It NEVER carries a token,
+# secret, kubeconfig, raw prompt, chain-of-thought, or raw dump.
+controlledRolloutReviewAudit:
+  events:
+    - controlled_rollout_review_generated
+    - controlled_rollout_criteria_evaluated
+    - controlled_rollout_target_assessed
+    - controlled_rollout_credentials_assessed
+    - controlled_rollout_gitops_assessed
+    - controlled_rollout_approval_channel_assessed
+    - controlled_rollout_recommendation_created
+    - controlled_rollout_operator_review_requested
+    - production_rollout_blocked
+
+  requiredMetadata:
+    - actor
+    - role
+    - reason
+    - review_id
+    - recommendation
+    - production_ready
+    - production_approved
+    - production_action_allowed
+    - production_executed
+
+  forbiddenMetadata:
+    - token
+    - secret
+    - kubeconfig
+    - raw_prompt
+    - chain_of_thought
+    - raw_dump
