@@ -114,6 +114,7 @@
     { id:"sandboxgithub", label:"Sandbox GitHub Draft PR", render: renderSandboxGithub },
     { id:"releasegov", label:"Release Governance", render: renderReleaseGovernance },
     { id:"backupdr", label:"Backup / Restore / DR", render: renderBackupDr },
+    { id:"prodreadiness", label:"Production Readiness Gate", render: renderProductionReadiness },
   ];
 
   async function renderOverview(el) {
@@ -301,6 +302,42 @@
       </div>` : emptyState("Cleanup review unavailable")}
       <h2 style="margin-top:20px">Restore plans (plan only — no execution)</h2>
       ${prows ? `<table><tr><th>Target</th><th>Restore type</th><th>Env</th><th>Status</th><th>Production restore</th></tr>${prows}</table>` : emptyState("No restore plans yet")}
+      <h2 style="margin-top:20px">Known limitations</h2>
+      <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
+  }
+  // Step 62 -- read-only Production Deployment Readiness Gate (visibility only). Non-
+  // production; NO production-deploy / ArgoCD-sync / GitHub-merge / image-push / restore /
+  // failover / production-approve control, NO production-ready toggle. Production never
+  // approved; readiness decision is not an approval.
+  async function renderProductionReadiness(el) {
+    let pol = null, safety = null, dec = null, prereq = null, lim = null;
+    try { pol = await apiGet("/operations/readiness/policy"); } catch (_e) { pol = null; }
+    try { safety = await apiGet("/operations/safety"); } catch (_e) { safety = null; }
+    try { dec = await apiGet("/operations/readiness/decision"); } catch (_e) { dec = null; }
+    try { prereq = await apiGet("/operations/readiness/prerequisites"); } catch (_e) { prereq = null; }
+    try { lim = await apiGet("/operations/readiness/limitations"); } catch (_e) { lim = null; }
+    const missing = (prereq && prereq.missing) || [];
+    el.innerHTML = `<h2>Production Deployment Readiness Gate (Step 62)</h2>
+      <p class="note">Non-production readiness gate. Visibility only — NOT production deployment, NOT production release approval, NOT production rollout, NOT a production-ready system. Production is blocked and never approved: no production-deploy / ArgoCD-sync / GitHub-merge / image-push / restore / failover / production-approve control, no production-ready toggle. The readiness decision is not a production approval; an operator review request is not an approval. Claude Code does not decide production readiness.</p>
+      <div class="grid">
+        ${card("Gate enabled", badge(safety && safety.production_readiness_gate_enabled))}
+        ${card("Decision", badge(dec && dec.decision))}
+        ${card("Production ready", badge(safety && safety.production_readiness_gate_production_ready))}
+        ${card("Production approved", badge(safety && safety.production_readiness_gate_production_approved))}
+        ${card("Allows production action", badge(safety && safety.production_readiness_gate_allows_production_action))}
+        ${card("Allows deploy", badge(safety && safety.production_readiness_gate_allows_deploy))}
+        ${card("Allows sync", badge(safety && safety.production_readiness_gate_allows_sync))}
+        ${card("Allows merge", badge(safety && safety.production_readiness_gate_allows_merge))}
+        ${card("Allows restore", badge(safety && safety.production_readiness_gate_allows_restore))}
+        ${card("Allows failover", badge(safety && safety.production_readiness_gate_allows_failover))}
+        ${card("Operator review is approval", badge(safety && safety.production_readiness_operator_review_is_approval))}
+        ${card("Rollout execution", badge(safety && safety.production_rollout_execution_enabled))}
+        ${card("Missing prerequisites", esc(safety && safety.production_readiness_missing_prerequisite_count))}
+        ${card("Blocker count", esc(safety && safety.production_readiness_blocker_count))}
+        ${card("Production executed", badge(safety && safety.production_executed_true_count))}
+      </div>
+      <h2 style="margin-top:20px">Missing production prerequisites</h2>
+      <ul>${missing.map(m => `<li>${esc(m)}</li>`).join("") || "<li>none</li>"}</ul>
       <h2 style="margin-top:20px">Known limitations</h2>
       <ul>${((lim && lim.limitations) || []).map(b => `<li>${esc(b)}</li>`).join("") || "<li>none</li>"}</ul>`;
   }

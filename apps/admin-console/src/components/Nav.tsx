@@ -22,6 +22,7 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/sandbox-github", label: "Sandbox GitHub Draft PR" },
   { to: "/release-governance", label: "Release Governance" },
   { to: "/backup-dr", label: "Backup / Restore / DR" },
+  { to: "/production-readiness", label: "Production Readiness Gate" },
 ];
 
 export function Nav() {

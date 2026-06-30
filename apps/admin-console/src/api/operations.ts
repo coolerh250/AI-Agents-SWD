@@ -145,6 +145,32 @@ export const getDrSafety = () =>
 export const getDrLimitations = () =>
   apiGet<Record<string, unknown>>(`/operations/dr/limitations`);
 
+// Step 62 -- read-only production deployment readiness gate visibility (GET only).
+export const getReadinessOverview = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/overview`);
+export const getReadinessPolicy = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/policy`);
+export const getReadinessChecklist = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/checklist`);
+export const getReadinessEvidence = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/evidence`);
+export const getReadinessBlockingRules = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/blocking-rules`);
+export const getReadinessPrerequisites = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/prerequisites`);
+export const getReadinessAuthorization = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/authorization`);
+export const getReadinessOperatorReviewPackage = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/operator-review-package`);
+export const getReadinessDecision = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/decision`);
+export const getReadinessPreflight = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/preflight`);
+export const getReadinessSafety = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/safety`);
+export const getReadinessLimitations = () =>
+  apiGet<Record<string, unknown>>(`/operations/readiness/limitations`);
+
 // Step 53 -- read-only secret management foundation (GET only).
 export const getSecretReport = () =>
   apiGet<Record<string, unknown>>(`/operations/secrets/report`);
