@@ -164,3 +164,15 @@ toggle. An operator review request (not an approval) is created through the gove
 /operations/readiness/operator-review-requests` (operator auth + CSRF + reason + audit; readiness
 decision is not a production approval, max `ready_for_operator_review`). See
 [production-deployment-readiness-gate-verification.md](production-deployment-readiness-gate-verification.md).
+
+Step 63A adds a read-only **Controlled Rollout Review** section (route
+`/controlled-rollout-review`) backed by the read-only GET
+`/operations/readiness/controlled-rollout/*` endpoints (policy / criteria / production-target
+/ credentials / gitops / approval-channel / rollback-dr / scope / risks / decision-package /
+recommendation / safety). Non-production go/no-go REVIEW — NO production-deploy / ArgoCD-sync
+/ GitHub-merge / image-push / restore / failover / production-approve control, no
+production-ready toggle. An operator review request (not an approval) is created through the
+governed `POST /operations/readiness/controlled-rollout/operator-review-requests` (operator
+auth + CSRF + reason + audit). The go/conditional_go/no_go recommendation is not an approval
+(current recommendation `no_go`). See
+[controlled-production-rollout-go-no-go-review-verification.md](controlled-production-rollout-go-no-go-review-verification.md).

@@ -13,3 +13,6 @@ available). The live posture is exposed read-only at `/operations/readiness/*` a
 `/operations/safety`. The single controlled write (`POST
 /operations/readiness/operator-review-requests`) creates an operator review request only
 (auth + CSRF + reason + audit) and is not a production approval.
+
+## Next phase
+Step 63A (Stage 65A) adds the non-production [controlled rollout go/no-go review](controlled-production-rollout-pilot-review-policy.md) (`/operations/readiness/controlled-rollout/*`), which consumes this readiness gate result as input and produces a go/conditional_go/no_go recommendation that is never an approval.

@@ -2702,6 +2702,31 @@ verifiers + combined `PRODUCTION_DEPLOYMENT_READINESS_GATE_BASELINE_VERIFY`, 14 
 docs. Next: Step 63 (Controlled Production Rollout Pilot — only after explicit operator
 approval).
 
+## Controlled Rollout Go / No-Go Review (Stage 65A / Step 63A)
+
+A controlled, **non-production** go/no-go REVIEW (NOT the Step 63 rollout pilot itself) that
+collects the Step 62 readiness evidence, assesses the production rollout pilot prerequisites
+(target / credentials / GitOps / approval channel / rollback-DR), bounds the pilot scope,
+registers risks, builds an operator decision package, and produces a `go` / `conditional_go`
+/ `no_go` recommendation
+([review policy](infra/readiness/controlled-production-rollout-pilot-review-policy.yaml) +
+[go/no-go criteria](infra/readiness/controlled-rollout-go-no-go-criteria.yaml) +
+[recommendation](infra/readiness/controlled-rollout-pilot-recommendation-model.yaml) +
+`shared/sdk/controlled_rollout`), a host-side report generator writing redacted output to
+gitignored `.runtime/readiness/`, 12 read-only GET + 1 controlled POST under
+`/operations/readiness/controlled-rollout` (auth + CSRF + reason + audit; operator review
+request only), an Admin Console section (route `/controlled-rollout-review`), and
+`/operations/safety` fields. **Non-production review — NOT production deployment, NOT
+production release approval, NOT production rollout.** The go/conditional_go/no_go
+recommendation is **not** an approval and authorizes **no** production action; an operator
+review request is not an approval. Based on the current Step 62 result (no production target
+/ credentials / GitOps / approval channel) the recommendation is **`no_go`**;
+`controlled_rollout_recommendation_is_approval=false`,
+`controlled_rollout_production_action_executed_count=0`, `production_executed_true_count=0`.
+15 verifiers + combined `CONTROLLED_PRODUCTION_ROLLOUT_GO_NO_GO_REVIEW_BASELINE_VERIFY`, 16
+tests, 15 docs. Next: Step 63 (Controlled Production Rollout Pilot — only after explicit
+operator approval + a real production target).
+
 ## Local Security Scan Toolchain Baseline (Stage 56B / Step 54.2)
 
 Makes the Step 54.1 scan policies **partially executable** with a **local, offline**

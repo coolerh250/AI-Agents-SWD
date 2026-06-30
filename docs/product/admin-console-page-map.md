@@ -114,6 +114,17 @@ Incidents) calling the same aggregate endpoints.
   the governed `POST /operations/readiness/operator-review-requests` (auth + CSRF + reason +
   audit). The readiness decision is not a production approval (max `ready_for_operator_review`).
 
+- **Controlled Rollout Review (`/controlled-rollout-review`, Step 63A):** read-only
+  non-production go/no-go REVIEW — recommendation / review policy / go-no-go criteria /
+  production target / credential / GitOps / approval-channel / rollback-DR readiness / pilot
+  scope / risk register / operator decision package / safety. NO production-deploy /
+  ArgoCD-sync / GitHub-merge / image-push / restore / failover / production-approve control,
+  no production-ready toggle. Backed by the read-only GET
+  `/operations/readiness/controlled-rollout/*`; an operator review REQUEST (not an approval)
+  is created through the governed `POST .../operator-review-requests` (auth + CSRF + reason +
+  audit). The go/conditional_go/no_go recommendation is not an approval; current
+  recommendation is `no_go`.
+
 Most pages are GET-only. The Operator Console (Step 52) and Multi-project Delivery (Step 57)
 pages additionally perform controlled, audited, CSRF-protected mutations within their own
 domain; both are present in the React app, and the static fallback renders read-only views.

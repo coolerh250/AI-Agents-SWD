@@ -11426,3 +11426,70 @@ rollout / production-ready system. Production stays blocked and is never approve
   deployment ready / production rollout approved / production action enabled. Step 63 (Controlled
   Production Rollout Pilot, only after explicit operator approval) pending. Claude Code does not decide
   Production readiness.
+
+## Stage 65A — Controlled Production Rollout Pilot Go / No-Go Review (Step 63A)
+
+Builds the go/no-go REVIEW package for a future controlled production rollout pilot based on the Step
+62 readiness gate result. **Outcome: PASS.** This is the REVIEW, NOT the Step 63 rollout pilot itself.
+NOT production deployment / release approval / rollout. The go/conditional_go/no_go recommendation is
+NOT an approval. Production stays blocked.
+
+- **Policies / models (committed YAML, 12).** `infra/readiness/controlled-production-rollout-pilot-
+  review-policy.yaml` (productionReady / allowsProductionAction / allowsProductionDeploy / Sync /
+  Restore / Failover / operatorReviewIsApproval / goRecommendationIsApproval / conditionalGoIsApproval
+  all false; requiresExplicitOperatorApprovalForPilot + requiresSeparatePilotExecutionStage true) +
+  controlled-rollout-go-no-go-criteria.yaml (16 criteria, outcomes go/conditional_go/no_go, hard
+  production gates missing) + production-target-assessment-model.yaml (9 items missing; kind nonprod !=
+  production cluster; nonprod ArgoCD != production ArgoCD) + production-credential-readiness-model.yaml
+  (5 refs not_configured; records only {name, configured}; reads/creates/exposes none) +
+  production-gitops-readiness-model.yaml (5 items missing; no app create / sync / apply; nonprod ArgoCD
+  reference only) + production-approval-channel-readiness-model.yaml (4 items missing; no external send;
+  not approval granted) + rollback-dr-pilot-readiness-model.yaml (references Step 60 rollback + Step 61
+  DR; Step 61 PASS != production DR ready; no restore/failover) + controlled-rollout-pilot-scope-model.yaml
+  (single service/env/operator, manual approval+rollback, no auto-promotion, no external traffic) +
+  controlled-rollout-pilot-risk-register.yaml (12 risks; severity/likelihood/mitigation/decision_impact)
+  + controlled-rollout-operator-decision-package-model.yaml (recommendation != approval; no secret/CoT)
+  + controlled-rollout-pilot-recommendation-model.yaml (go/conditional_go/no_go; expected no_go) +
+  controlled-rollout-review-audit-mapping.yaml (9 events + production_ready/approved/action_allowed/
+  executed false).
+- **SDK.** `shared/sdk/controlled_rollout` (models / loaders / recommendation / decision_package / audit
+  / redaction / safety). Evaluates the go/no-go recommendation (no_go while production target /
+  credentials / GitOps / approval channel are missing); builds the redacted operator decision package.
+  NO deploy / sync / merge / push / restore / failover. No DB migration this stage; the POST reuses the
+  Step 62 operator_review_packages table.
+- **Report generator.** `scripts/generate_controlled_rollout_go_no_go_review.py` → redacted JSON under
+  gitignored `.runtime/readiness/` (recommendation not approval; not production ready/approved/action-
+  allowed; confirms production_executed_true_count == 0).
+- **API.** `apps/orchestrator/src/controlled_rollout_review_api.py` (`/operations/readiness/controlled-
+  rollout`). 12 read-only GET (policy / criteria / production-target / credentials / gitops /
+  approval-channel / rollback-dr / scope / risks / decision-package / recommendation / safety) + 1
+  controlled POST (operator review request only) reusing operator auth/CSRF/reason/audit. No rollout /
+  deploy / sync / approval / release / restore / failover / merge / image-push endpoint; no token returned.
+- **Admin Console.** Read-only Controlled Rollout Review section (React route `/controlled-rollout-review`
+  + static fallback); recommendation / criteria / target / credential / GitOps / approval / rollback-DR /
+  scope / risks / decision package / safety; NO production-deploy / ArgoCD-sync / GitHub-merge / image-push
+  / restore / failover / production-approve control, no production-ready toggle.
+- **Safety fields.** 18 `/operations/safety` Step 63A fields config-driven from the policy + models
+  (review_enabled / report_generated / operator_review_enabled true; recommendation_is_approval /
+  allows_production_action / deploy / sync / merge / image_push / restore / failover /
+  operator_review_is_approval false; recommendation reflects live gap analysis = no_go; missing target /
+  credential / gitops / approval-channel counts; production_action_executed_count 0).
+- **Verifiers + combined (15 + 1).** review-policy / go-no-go-criteria / production-target / credential /
+  gitops / approval-channel / rollback-dr / pilot-scope / risk-register / operator-decision-package /
+  recommendation / runtime / operations-visibility / admin-console / safety-fields; combined
+  `verify_controlled_production_rollout_go_no_go_review_baseline.sh`
+  (`CONTROLLED_PRODUCTION_ROLLOUT_GO_NO_GO_REVIEW_BASELINE_VERIFY`; chains Step 52-62 + tenant note via the
+  Step 62 combined, generates the review, then the 15 verifiers + tests + safety posture).
+- **Tests + quality.** 16 pytest files (46 cases, 0 skipped). ruff/black/mypy clean (the 3 mypy errors are
+  pre-existing in the untouched `operator_actions_api.py`; no new errors). Frontend (local): typecheck
+  clean, 25 vitest, build OK.
+- **kind/ArgoCD.** Left running (read-only); Step 63A performs no cluster action, no deploy, no sync.
+- **Safety.** No production deploy / sync / ArgoCD sync / GitHub merge / image push / production restore /
+  production failover / rollout execution; recommendation is not an approval; operator review request is
+  not an approval; no secret/token/kubeconfig exposed or committed; current recommendation `no_go`;
+  `controlled_rollout_recommendation_is_approval=false`,
+  `controlled_rollout_production_action_executed_count=0`, `production_executed_true_count=0`.
+- **Roadmap.** Step 63A closed -- controlled production rollout pilot go/no-go review completed. NOT
+  production rollout approved / production deployment ready / production action enabled. Step 63
+  (Controlled Production Rollout Pilot, only after explicit operator approval + a real production target)
+  pending. Claude Code does not decide Production readiness.
