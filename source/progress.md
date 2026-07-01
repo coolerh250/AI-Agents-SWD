@@ -11677,3 +11677,41 @@ production deploy, no production secret, no external write; live integrations di
   **`PASS`**. Public exposure: none; production action: none; `production_executed_true_count=0`.
 - **Roadmap.** Step 64C completed; **Step 64D (demo workflow seed & execution)** is next.
   Claude Code does not decide Production readiness.
+
+## Stage 66D — Demo Workflow Seed & Execution (Step 64D)
+
+Seeded and executed a demonstrable non-production workflow on the staging runtime `10.0.1.32`
+(`agentai-swd-stage`). **Status: pass_with_gaps.** **Marker: `STAGING_DEMO_WORKFLOW_VERIFY:
+PASS_WITH_GAPS`.** **Target host: 10.0.1.32.** **Runtime posture: staging runtime running with
+seeded demo workflow evidence.** **Production posture: no production action, no production
+deploy, no production secret, no external write; live integrations disabled/mocked;
+`production_executed_true_count=0`.**
+
+- **Seed.** `scripts/staging_seed_demo_workflow.py` (staging-only, idempotent) run inside the
+  orchestrator container (existing `ProjectStore`/`WorkItemStore` SDK, no raw SQL): created
+  **SaaS User Management Module** (`PRJ-SAAS-USER-MANAGEMENT-MODULE-15F51D`, `nonprod`,
+  `production_allowed=false`) + work item **`WI-0001` "Create user CRUD API"**
+  (`production_effect=false`, lifecycle `created`).
+- **Workflow.** Orchestrator `POST /workflow/test` (mock, `production_executed=false`) ran the
+  full pipeline intake→requirement→development→qa→devops. **10 agent executions completed, 0
+  failed; 2 workflows completed; 2 QA runs; 2 code workspaces; 0 LLM interactions** (LLM
+  disabled/mocked).
+- **Audit.** `work_item_created` (actor `staging-demo`, role `intake`) + per-workflow
+  `audit_refs`; `audit_logs_total=60`.
+- **Admin Console.** Backing `/operations/*` endpoints populated (project=1, work items=1,
+  agent executions=10, workflows=2, qa runs=2); `/operations/safety`
+  `production_executed_true_count=0`.
+- **Gaps (PASS_WITH_GAPS).** (1) delivery package + release candidate **not** produced — the
+  governed work-item dispatch requires operator auth, disabled in staging
+  (`operator_actions_disabled`); (2) communication-gateway `/intake/mock/project-work-item`
+  500s on a missing-PyYAML image bug (worked around via the orchestrator container).
+- **Docs + verifier.** New `docs/staging/staging-demo-workflow-execution-report.md`,
+  `staging-demo-seed-data.md`, `staging-demo-admin-console-evidence.md`,
+  `staging-demo-audit-evidence.md`, `staging-demo-delivery-evidence.md`,
+  `staging-demo-known-gaps.md`; `scripts/staging_seed_demo_workflow.py`;
+  `scripts/verify_staging_demo_workflow.py` (`STAGING_DEMO_WORKFLOW_VERIFY`) +
+  `tests/test_staging_demo_workflow.py`. Updated `staging-demo-workflow-plan.md`,
+  `staging-step64-roadmap.md`, `staging-admin-console-known-gaps.md`. Prior staging markers
+  maintained.
+- **Roadmap.** Step 64D completed (pass_with_gaps); **Step 64E (operator walkthrough SOP)** is
+  next. Claude Code does not decide Production readiness.

@@ -21,7 +21,10 @@ probed in Step 64C. Deeper per-page data validation is deferred to Step 64D/64E.
 
 ## Empty data states
 The staging DB is freshly bootstrapped, so data pages show empty states (no projects / work
-items / candidates). The demo workflow seed is Step 64D.
+items / candidates). **Update (Step 64D):** the demo seed + workflow populated Projects /
+Work Items / Agent Executions / QA / Audit / Metrics (project=1, work items=1, agent
+executions=10, workflows=2). Release Governance remains empty (delivery dispatch gated). See
+[staging-demo-admin-console-evidence.md](staging-demo-admin-console-evidence.md).
 
 ## Transport / secrets
 - **HTTP only** (no TLS) — acceptable for the first staging demo; TLS is a future option.

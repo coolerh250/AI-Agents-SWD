@@ -40,6 +40,18 @@ Project + work item visible (Projects); agent run trace (Agent Executions / Work
 metrics counters (Operational Metrics); a release candidate (Release Governance, non-prod);
 safety posture green (Safety) with `production_executed_true_count=0`.
 
+## Step 64D execution update
+Executed **PASS_WITH_GAPS**: seeded SaaS User Management Module + `WI-0001` "Create user CRUD
+API" (nonprod, `production_effect=false`) via `scripts/staging_seed_demo_workflow.py`, and ran
+the mock agent workflow (`/workflow/test`) through the full intake→requirement→development→qa→
+devops pipeline (10 agent executions completed, 2 QA runs, 2 code workspaces, 2 workflows
+completed). Audit `work_item_created` recorded; `audit_logs_total=60`. Admin Console pages
+populated; `production_executed_true_count=0`. **Gaps:** delivery package + release candidate
+gated (governed dispatch needs operator auth, disabled in staging); gateway mock-intake
+endpoint 500s on a missing-PyYAML image bug (worked around via the orchestrator container). See
+[staging-demo-workflow-execution-report.md](staging-demo-workflow-execution-report.md) and
+[staging-demo-known-gaps.md](staging-demo-known-gaps.md).
+
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
 
