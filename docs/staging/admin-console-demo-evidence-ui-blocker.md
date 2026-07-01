@@ -25,10 +25,21 @@ populated, expect a different data shape, need a project/work-item selection the
 or the summary pages don't drill into per-item records. This requires UI/API-integration work,
 not just a rebuild.
 
+## Diagnosis complete (Step 64E.3A)
+Read-only diagnosis identified the concrete UI/API mismatch per item — see
+[admin-console-demo-evidence-ui-api-diagnosis.md](admin-console-demo-evidence-ui-api-diagnosis.md),
+[admin-console-demo-evidence-endpoint-map.md](admin-console-demo-evidence-endpoint-map.md),
+[admin-console-demo-evidence-frontend-route-map.md](admin-console-demo-evidence-frontend-route-map.md),
+[admin-console-demo-evidence-ui-api-mismatch-report.md](admin-console-demo-evidence-ui-api-mismatch-report.md).
+**Primary cause:** the pages read a delivery-pilot + aggregate-metrics model; the demo populated
+the mock-workflow + seeded-work-item path. QA/code endpoints are entirely unwired; work items are
+gated behind manual selection; agent-execution/workflow/audit have only aggregate or stub views.
+
 ## Next remediation
-**Admin Console Demo Evidence UI Remediation** — make the deployed pages actually fetch and
-render the per-item demo evidence the operator must see, then operator re-review. This is a
-future stage requiring its own authorization; **not** performed here.
+**Admin Console Demo Evidence UI Remediation (Step 64E.3B)** — wire the deployed pages to the
+per-item endpoints per
+[admin-console-demo-evidence-remediation-plan.md](admin-console-demo-evidence-remediation-plan.md),
+then operator re-review. A future stage requiring its own authorization; **not** performed here.
 
 ## Status
 - Step 64E: **FAILED_OPERATOR_VALIDATION**. Step 64F: **BLOCKED**.

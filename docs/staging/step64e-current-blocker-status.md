@@ -19,7 +19,8 @@ the operator's re-review.
 | Step 64E (SOP) | doc completeness PASS; operator validation FAILED |
 | Step 64E-R (live walkthrough) | operator verdict NOT_USABLE; root cause = zero-build fallback served |
 | Step 64E.1 (React bundle remediation) | PASS_WITH_GAPS — full bundle deployed |
-| **Step 64E.2 (this — re-review recording)** | operator re-review verdict **NOT_USABLE** — demo evidence still not UI-visible |
+| Step 64E.2 (re-review recording) | operator re-review verdict **NOT_USABLE** — demo evidence still not UI-visible |
+| **Step 64E.3A (this — UI/API gap diagnosis)** | read-only diagnosis: pages read delivery-pilot/aggregate model; demo used mock-workflow/seeded path; QA/code unwired; work items gated behind selection. Remediation plan for 64E.3B produced. |
 
 ## Safety
 Recording only — no UI fix, image rebuild, restart, workflow, or data change. No production

@@ -11843,3 +11843,35 @@ deploy, no production secret, no external write; `production_executed_true_count
 - **Gate.** Step 64E stays FAILED_OPERATOR_VALIDATION; Step 64F stays BLOCKED; next stage must
   remediate Admin Console demo-evidence visibility. Claude Code cannot self-accept operator
   usability and does not decide Production readiness.
+
+## Stage 66E.3A — Admin Console Demo Evidence UI/API Gap Diagnosis (Step 64E.3A)
+
+Read-only diagnosis of why the deployed React Admin Console still doesn't surface the demo
+evidence. **Status: completed.** **Marker:
+`ADMIN_CONSOLE_DEMO_EVIDENCE_DIAGNOSIS_VERIFY: PASS`.** **Operator verdict: NOT_USABLE.** **Step
+64E: FAILED_OPERATOR_VALIDATION. Step 64F: BLOCKED.** **Runtime posture: read-only diagnosis only —
+no rebuild, restart, or data change.** **Production posture: no production action, no production
+deploy, no production secret, no external write; `production_executed_true_count=0`.**
+
+- **Overarching root cause.** The Admin Console v0 pages target a **delivery-pilot +
+  aggregate-metrics** data model (`latest_pilot`, delivery package, `/operations/metrics/*`
+  counts); the Step 64D demo populated the **mock-workflow + seeded delivery work-item** path. The
+  per-item records exist but are not what the pages read.
+- **Per-item findings.** (1) **WI-0001** — data at `/operations/delivery/…/work-items`; Multi-project
+  Delivery loads work items only after manual project selection; Projects/ProjectDetail carry no
+  `work_items`. (2) **Agent executions** — only aggregate `/operations/metrics/agents`;
+  WorkspaceExecution reads `latest_pilot` (=None for the demo). (3) **Workflow** — only aggregate
+  `/operations/metrics/workflows`; TaskGraph is a stub. (4) **QA/code** — `/operations/qa/runs` +
+  `/operations/code/workspaces` return demo data but **no frontend page calls them**. (5) **Audit**
+  — only aggregate `/operations/metrics/audit`; per-event `/operations/delivery/work-items/{id}/events`
+  not consumed.
+- **Docs + verifier.** New `admin-console-demo-evidence-ui-api-diagnosis.md`,
+  `admin-console-demo-evidence-endpoint-map.md`, `admin-console-demo-evidence-frontend-route-map.md`,
+  `admin-console-demo-evidence-ui-api-mismatch-report.md`, `admin-console-demo-evidence-remediation-plan.md`;
+  updated ui-blocker + blocker-status + roadmap.
+  `scripts/verify_admin_console_demo_evidence_diagnosis.py`
+  (`ADMIN_CONSOLE_DEMO_EVIDENCE_DIAGNOSIS_VERIFY`) +
+  `tests/test_admin_console_demo_evidence_diagnosis.py`.
+- **Next.** Step 64E.3B — wire the deployed pages to the per-item endpoints
+  (`admin-console-demo-evidence-remediation-plan.md`), rebuild, operator re-review. No remediation
+  implemented here. Claude Code cannot self-accept operator usability.
