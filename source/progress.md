@@ -11528,3 +11528,33 @@ rebuildable, demonstrable, operable **non-production** staging environment. **St
 - **Roadmap.** Step 63 — blocked / not approved / not ready. Step 64 — staging demonstration mainline
   started. Step 64A — staging architecture & deployment plan (this stage, completed). Step 64B
   (staging runtime bootstrap) pending operator info + access. Claude Code does not decide Production readiness.
+
+## Stage 66B.1 — Authenticated Staging Host Preflight (Step 64B.1)
+
+Authenticated **read-only** inventory of the staging target host `10.0.1.32`
+(`agentai-swd-stage`). **Status: completed.** **Marker: `STAGING_HOST_AUTHENTICATED_PREFLIGHT_VERIFY:
+PASS`.** **Target host: 10.0.1.32.** No runtime deployment in this stage; no package install; no host
+config change; no production action; no production secret; no external write.
+
+- **SSH access.** Key-based only. Generated a session ed25519 keypair
+  (`~/.ssh/ai-agents-staging/staging_10_0_1_32`, fingerprint `SHA256:pYdqIgihLdNgEfgPQ2h9sYlSc6dzO4O6xsKlmeQrwy8`);
+  printed the **public** key for the operator to install in `itadmin@10.0.1.32`'s
+  `authorized_keys`. The **private key is never printed / committed / stored in repo**; **no
+  password** was used (the non-interactive shell cannot use one without leaking it). Ran the
+  read-only inventory via `scripts/staging_host_preflight_operator_run.sh` piped over SSH.
+- **Host inventory.** Ubuntu 24.04.4 LTS, kernel 6.8.0-124, 16 vCPU, 7.7 GiB RAM (no swap),
+  `/` 48 GB (43 GB free) + `/data` 98 GB (93 GB free), NIC `ens33` 10.0.1.32/24 via 10.0.1.254.
+  Listening: `22` (SSH) + `53` (systemd-resolved loopback); port `18000` free. Passwordless sudo
+  available; **`docker_group_access=false`**.
+- **Prerequisite gap.** **Docker Engine + Docker Compose v2 NOT installed** (daemon inactive) →
+  `ready_for_runtime_bootstrap=false`. Required before Step 64B.2: authorize Docker install
+  (passwordless sudo available — not performed here), add `itadmin` to a docker group (or use sudo).
+- **Docs + verifier.** `docs/staging/staging-host-preflight-report.md` +
+  `staging-runtime-bootstrap-readiness.md`; `scripts/verify_staging_host_preflight.py`
+  (`STAGING_HOST_AUTHENTICATED_PREFLIGHT_VERIFY`) + `tests/test_staging_host_preflight.py`. Existing
+  `STAGING_ARCHITECTURE_PLAN_VERIFY` maintained PASS.
+- **Safety.** No production deploy / sync / merge / image push / restore / failover / external write;
+  no runtime deployment; no secret/password/private-key committed or printed; Step 62
+  (`ready_for_operator_review`) + Step 63A (`no_go`) conclusions unchanged; `production_executed_true_count=0`.
+- **Roadmap.** Step 64B.1 completed; **Step 64B.2 (staging runtime bootstrap)** pending explicit
+  operator authorization to install Docker on `10.0.1.32`. Claude Code does not decide Production readiness.

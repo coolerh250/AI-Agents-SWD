@@ -63,6 +63,14 @@ Run existing non-production smoke verifiers (`check_staging_runtime.sh`,
 only staging volumes/containers; it never touches `10.0.1.31` test data, production, or any
 scheduled DR/regression artifacts.
 
+## Step 64B.1 preflight update
+Authenticated host preflight of `10.0.1.32` (`agentai-swd-stage`) completed: Ubuntu 24.04 LTS,
+16 vCPU, 7.7 GiB RAM, `/data` 93 GB free, key-based SSH established. **Prerequisite gap: Docker
+Engine + Docker Compose v2 are NOT installed** → the compose bring-up (Step 64B.2) is blocked
+until they are installed (passwordless sudo available; not installed in Step 64B.1). See
+[staging-host-preflight-report.md](staging-host-preflight-report.md) +
+[staging-runtime-bootstrap-readiness.md](staging-runtime-bootstrap-readiness.md).
+
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
 

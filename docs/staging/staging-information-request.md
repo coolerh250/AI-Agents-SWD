@@ -34,6 +34,16 @@ Checklist of information needed from the operator / administrator before Step 64
 - **Staging cleanup preference:** when/how to tear down (no auto-cleanup without operator
   confirmation).
 
+## Step 64B.1 preflight update (resolved / newly known)
+- **SSH username:** `itadmin` (confirmed) — key-based access **established** on `10.0.1.32`
+  (`agentai-swd-stage`). SSH item 1–2 resolved. Credentials remain interactive/key-only, never
+  stored.
+- **sudo:** passwordless sudo available (item 3 resolved).
+- **Docker:** **NOT installed** on `10.0.1.32` (items 4–5) → operator must authorize a Docker
+  install before Step 64B.2 (no install performed in Step 64B.1).
+- Still open: exposed-port confirmation (6), browser reachability (7), SSH-port-forward
+  preference (8), HTTP-for-first-demo (9), integrations disabled (10).
+
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
 
