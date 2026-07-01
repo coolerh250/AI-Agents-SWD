@@ -3,10 +3,11 @@
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 > **No public exposure — access is via SSH local port-forward only. Live integrations disabled/mocked.**
 
-Overall result: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING**. The staging Admin Console on
-`10.0.1.32` (`agentai-swd-stage`) is reachable and browsable via the SSH local port-forward
-access path; the port-forward was validated end-to-end from a client host holding the staging
-key. Direct confirmation from the **operator's own workstation** is still pending.
+Overall result: **PASS**. The staging Admin Console on `10.0.1.32` (`agentai-swd-stage`) is
+reachable and browsable via the SSH local port-forward access path; the port-forward was
+validated end-to-end from a client host holding the staging key, and the **operator has
+confirmed** they can open the read-only Admin Console page from their own workstation through
+the approved SSH port-forward path (`http://localhost:18000/admin`).
 
 ## Runtime status (re-validated)
 - **Target host:** `10.0.1.32`; repo `/data/ai-agents-staging/AI-Agents-SWD` at `f43e163`.
@@ -22,7 +23,8 @@ key. Direct confirmation from the **operator's own workstation** is still pendin
 - **End-to-end validation:** a fresh SSH `-L 18000:127.0.0.1:18000` tunnel was established from a
   client host; through it `localhost:18000/health` → 200, `localhost:18000/admin` → 200
   ("Admin Console v0 — read-only"), `localhost:18000/operations/safety` → 200. The tunnel was
-  torn down afterward and local port 18000 freed. See
+  torn down afterward and local port 18000 freed. **Operator workstation access: confirmed** —
+  the operator opened the read-only Admin Console page successfully. See
   [staging-operator-access-validation.md](staging-operator-access-validation.md).
 
 ## Read-only API dependencies (probed on host, all 200)

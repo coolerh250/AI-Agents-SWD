@@ -30,11 +30,12 @@ From a client host holding the staging key, a fresh tunnel was opened and torn d
 
 This proves the port-forward access **mechanism** works end-to-end from a client workstation.
 
-## Operator workstation confirmation — PENDING
-The session SSH key currently lives on the Claude Code host, not necessarily the operator's
-workstation. **Direct confirmation from the operator's own workstation is still required.**
-Marker is `PASS_WITH_OPERATOR_CONFIRMATION_PENDING` until the operator confirms they can open
-`http://localhost:18000/admin` through their own tunnel.
+## Operator workstation confirmation — CONFIRMED
+The operator has **confirmed** they can open the read-only Admin Console page from their own
+workstation through the approved SSH local port-forward path (`http://localhost:18000/admin`),
+result: read-only Admin Console page opened successfully. Marker is now full **PASS**. Access
+method: SSH local port-forward + HTTP; public exposure: none; production action: none;
+`production_executed_true_count=0`.
 
 ## Access alternatives if the operator cannot use the current key
 - **Option A (recommended):** operator generates their own SSH keypair and installs the public

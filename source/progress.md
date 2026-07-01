@@ -11640,8 +11640,8 @@ external write; live integrations disabled/mocked; demo workflow NOT executed.**
 
 Validated that the staging Admin Console on `10.0.1.32` (`agentai-swd-stage`) is reachable,
 browsable, and safely exposed, and produced operator access + walkthrough docs. **Status:
-completed (operator confirmation pending).** **Marker:
-`STAGING_ADMIN_CONSOLE_EXPOSURE_VERIFY: PASS_WITH_OPERATOR_CONFIRMATION_PENDING`.** **Target
+completed.** **Marker: `STAGING_ADMIN_CONSOLE_EXPOSURE_VERIFY: PASS`** (operator confirmed
+Admin Console access from their own workstation via SSH port-forward + HTTP). **Target
 host: 10.0.1.32.** **Runtime posture: staging runtime running; Admin Console exposed through
 SSH port-forward only (no public exposure).** **Production posture: no production action, no
 production deploy, no production secret, no external write; live integrations disabled/mocked.**
@@ -11671,5 +11671,9 @@ production deploy, no production secret, no external write; live integrations di
   `docs/product/admin-console-page-map.md`. `scripts/verify_staging_admin_console_exposure.py`
   (`STAGING_ADMIN_CONSOLE_EXPOSURE_VERIFY`) + `tests/test_staging_admin_console_exposure.py`.
   Prior staging markers maintained PASS.
-- **Roadmap.** Step 64C completed (operator confirmation pending); **Step 64D (demo workflow
-  seed & execution)** is next. Claude Code does not decide Production readiness.
+- **Operator confirmation (64C update).** Operator confirmed the read-only Admin Console page
+  opens successfully from their own workstation via SSH local port-forward + HTTP
+  (`http://localhost:18000/admin`); marker updated `PASS_WITH_OPERATOR_CONFIRMATION_PENDING` →
+  **`PASS`**. Public exposure: none; production action: none; `production_executed_true_count=0`.
+- **Roadmap.** Step 64C completed; **Step 64D (demo workflow seed & execution)** is next.
+  Claude Code does not decide Production readiness.

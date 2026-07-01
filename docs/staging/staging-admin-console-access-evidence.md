@@ -42,8 +42,8 @@ The SSH local port-forward path was validated from a client host: a fresh
 `-L 18000:127.0.0.1:18000` tunnel was opened, `localhost:18000/health` → 200,
 `localhost:18000/admin` → 200 ("Admin Console v0 — read-only"),
 `localhost:18000/operations/safety` → 200; the tunnel was then torn down and local port 18000
-freed. Operator-workstation confirmation is still pending
-(`PASS_WITH_OPERATOR_CONFIRMATION_PENDING`). See
+freed. **Operator workstation access: confirmed** — the operator opened the read-only Admin
+Console page successfully from their own workstation (marker now full **PASS**). See
 [staging-operator-access-validation.md](staging-operator-access-validation.md),
 [staging-admin-console-exposure-report.md](staging-admin-console-exposure-report.md), and the
 page inventory [staging-admin-console-page-inventory.md](staging-admin-console-page-inventory.md).

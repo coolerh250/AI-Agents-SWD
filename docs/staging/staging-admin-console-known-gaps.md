@@ -6,12 +6,12 @@ Known gaps / pending items for the staging Admin Console exposure (Step 64C) on 
 host `10.0.1.32` (`agentai-swd-stage`). None is a production readiness sign-off; **Claude Code
 does not decide production readiness.**
 
-## Operator workstation confirmation — pending
-The port-forward mechanism was validated end-to-end from a client host holding the staging
-key, but **not from the operator's own workstation**. Overall marker is
-`PASS_WITH_OPERATOR_CONFIRMATION_PENDING` until the operator confirms they can open
-`http://localhost:18000/admin` via their own tunnel. Alternatives (own key / existing SSH
-access) are in [staging-operator-access-validation.md](staging-operator-access-validation.md).
+## Operator workstation confirmation — resolved (confirmed)
+The port-forward mechanism was validated end-to-end from a client host, and the **operator has
+confirmed** they can open the read-only Admin Console page from their own workstation via
+`http://localhost:18000/admin`. Overall marker is now full **PASS**. Alternatives (own key /
+existing SSH access) remain documented in
+[staging-operator-access-validation.md](staging-operator-access-validation.md).
 
 ## Per-page endpoints not all individually probed
 13 read-only `/operations/*` endpoints were probed (all 200). Some pages (projects, task-graph,
