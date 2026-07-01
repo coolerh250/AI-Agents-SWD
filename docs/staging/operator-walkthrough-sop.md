@@ -2,6 +2,13 @@
 
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 
+> **Validation status (Step 64E-R):** SOP **document completeness = PASS**, but **operator
+> walkthrough validation = PENDING**. Overall Step 64E is
+> **PASS_WITH_OPERATOR_VALIDATION_PENDING** until an operator completes
+> [operator-walkthrough-confirmation-form.md](operator-walkthrough-confirmation-form.md). Claude
+> Code cannot self-confirm operator acceptance. See
+> [operator-walkthrough-validation-report.md](operator-walkthrough-validation-report.md).
+
 ## Purpose
 A step-by-step SOP for an operator to access the **staging** AI Agents Platform, verify system
 health, review the seeded demo (project → work item → agent execution → audit → metrics), and

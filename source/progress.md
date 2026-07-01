@@ -11742,5 +11742,31 @@ production action, no production deploy, no production secret, no external write
 - **Safety.** SOP documents the do-not-execute list; no runtime gap fixed (PyYAML + delivery
   gate documented, not changed); no production action; no operator-auth bypass; no public
   exposure; `production_executed_true_count=0`.
-- **Roadmap.** Step 64E completed; **Step 64F (deployment management SOP)** is next. Claude Code
+- **Roadmap.** Step 64E SOP **document completeness = PASS**; **operator walkthrough validation
+  = PENDING** (corrected in Step 64E-R → overall `PASS_WITH_OPERATOR_VALIDATION_PENDING`).
+  **Step 64F is paused** until operator validation is completed or explicitly waived. Claude Code
   does not decide Production readiness.
+
+## Stage 66E-R — Operator Walkthrough Revalidation & Status Correction (Step 64E-R)
+
+Corrected the Step 64E conclusion after the operator noted it was self-marked PASS without an
+actual operator walkthrough. **Status: completed.** **Marker:
+`OPERATOR_WALKTHROUGH_REVALIDATION_VERIFY: PASS`.** **Corrected Step 64E status:
+`PASS_WITH_OPERATOR_VALIDATION_PENDING`.** **SOP document completeness: PASS.** **Operator
+walkthrough validation: PENDING.** **Production posture: no production action, no production
+deploy, no production secret, no external write; `production_executed_true_count=0`.**
+
+- **Correction.** `OPERATOR_WALKTHROUGH_SOP_VERIFY: PASS` reflects **document completeness only**;
+  it is not operator acceptance. Claude Code cannot self-confirm operator acceptance.
+- **Runtime re-check (read-only).** 22/22 containers running; `/health` 200; `/operations/safety`
+  200; `production_executed_true_count=0`. No new workflow, no data change, no gap fixed.
+- **Docs created.** `docs/staging/operator-walkthrough-validation-report.md`,
+  `operator-walkthrough-confirmation-form.md`, `operator-walkthrough-revalidation-notes.md`.
+- **Docs updated.** `operator-walkthrough-sop.md` (validation-status banner),
+  `operator-acceptance-checklist.md` (every item operator-owned, `pending`),
+  `staging-step64-roadmap.md` (64E corrected, 64E-R added, 64F paused).
+- **Verifier + tests.** `scripts/verify_operator_walkthrough_revalidation.py`
+  (`OPERATOR_WALKTHROUGH_REVALIDATION_VERIFY`) + `tests/test_operator_walkthrough_revalidation.py`.
+  Verifier FAILs if any revalidation doc marks Step 64E overall as full PASS.
+- **Gate.** **Step 64F paused** until the operator completes the confirmation form or explicitly
+  waives operator validation. Claude Code does not decide Production readiness.
