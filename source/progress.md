@@ -11594,3 +11594,44 @@ no external write.**
 - **Roadmap.** Step 64B.2A completed; **Step 64B.2B (staging runtime bootstrap)** is next —
   `ready_for_runtime_bootstrap` remains `false` until repo sync + gitignored staging env +
   compose-config validation are done on the host. Claude Code does not decide Production readiness.
+
+## Stage 66B.2B — Staging Runtime Bootstrap (Step 64B.2B)
+
+AI Agents Platform **staging runtime bootstrap** on the staging target host `10.0.1.32`
+(`agentai-swd-stage`), under **explicit operator authorization**. **Status: completed.**
+**Marker: `STAGING_RUNTIME_BOOTSTRAP_VERIFY: PASS`.** **Target host: 10.0.1.32.**
+**Runtime posture: staging runtime started (22 containers running).** **Production posture:
+no production action, no production deploy, no production sync, no production secret, no
+external write; live integrations disabled/mocked; demo workflow NOT executed.**
+
+- **Repo / env.** Cloned `origin/main` to `/data/ai-agents-staging/AI-Agents-SWD` (deployed
+  commit `f43e163`); generated gitignored `infra/runtime/.env.staging.local` via
+  `scripts/generate_staging_env.sh` (`chmod 600`, never committed/printed; random
+  `POSTGRES_PASSWORD`; token fields keep sandbox placeholders; `SECRET_PROVIDER=mock-vault`,
+  `ALLOW_VAULT_DEV_MODE_FOR_STAGING=true` staging escape hatch).
+- **Bring-up.** `docker compose … config` valid; 15 app images built + 7 base images pulled;
+  `scripts/start_staging_runtime.sh` → `up -d`, waited Postgres/Redis, applied all
+  `migrations/*.sql`, initialised Redis Streams, restarted consumers → `START_STAGING_RUNTIME:
+  PASS`. Initial `up` hit a transient Docker Hub TLS timeout pulling `grafana/tempo`; base
+  images re-pulled with retries, no config change.
+- **Services.** 22/22 containers running (21 healthy; `vault` dev mode, no healthcheck). Host
+  ports loopback-only, `+10000` offset (orchestrator `127.0.0.1:18000`).
+- **Health.** `/health` 200; `/admin` 307 → `/admin/` 200 ("Admin Console v0 — read-only");
+  policy/approval/audit/comms `:18001–18004/health` 200; `pg_isready` accepting; redis `PONG`;
+  `/operations/safety` 200.
+- **Safety endpoint.** `production_executed_true_count=0`,
+  `deployment_environment_production_count=0`, `workflow_production_executed_true_count=0`,
+  `github_external_write_enabled=false`, `real_github_test_enabled=false`,
+  `discord_external_send_enabled=false`. `github_has_token=true` is a sandbox/mock token (live
+  write off).
+- **Access.** SSH local port-forward `-L 18000:127.0.0.1:18000` → `http://localhost:18000/admin`
+  (loopback-only; HTTP acceptable for first demo).
+- **Docs + verifier.** New `docs/staging/staging-runtime-bootstrap-report.md`,
+  `staging-runtime-service-status.md`, `staging-admin-console-access-evidence.md`,
+  `staging-runtime-known-limitations.md`, `staging-runtime-stop-and-restart-notes.md`; updated
+  `staging-step64-roadmap.md`. `scripts/verify_staging_runtime_bootstrap.py`
+  (`STAGING_RUNTIME_BOOTSTRAP_VERIFY`) + `tests/test_staging_runtime_bootstrap.py`. Existing
+  `STAGING_ARCHITECTURE_PLAN_VERIFY` + `STAGING_HOST_AUTHENTICATED_PREFLIGHT_VERIFY` +
+  `STAGING_HOST_RUNTIME_PREPARATION_VERIFY` maintained PASS.
+- **Roadmap.** Step 64B.2B completed; **Step 64C (Admin Console exposure)** is next. Claude
+  Code does not decide Production readiness.
