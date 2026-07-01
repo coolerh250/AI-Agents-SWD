@@ -11635,3 +11635,41 @@ external write; live integrations disabled/mocked; demo workflow NOT executed.**
   `STAGING_HOST_RUNTIME_PREPARATION_VERIFY` maintained PASS.
 - **Roadmap.** Step 64B.2B completed; **Step 64C (Admin Console exposure)** is next. Claude
   Code does not decide Production readiness.
+
+## Stage 66C — Admin Console Exposure & Operator Access Validation (Step 64C)
+
+Validated that the staging Admin Console on `10.0.1.32` (`agentai-swd-stage`) is reachable,
+browsable, and safely exposed, and produced operator access + walkthrough docs. **Status:
+completed (operator confirmation pending).** **Marker:
+`STAGING_ADMIN_CONSOLE_EXPOSURE_VERIFY: PASS_WITH_OPERATOR_CONFIRMATION_PENDING`.** **Target
+host: 10.0.1.32.** **Runtime posture: staging runtime running; Admin Console exposed through
+SSH port-forward only (no public exposure).** **Production posture: no production action, no
+production deploy, no production secret, no external write; live integrations disabled/mocked.**
+
+- **Runtime re-validated.** 22/22 containers running; `/health` 200; `/admin` 307 → `/admin/`
+  200 ("Admin Console v0 — read-only"); `/operations/safety` 200,
+  `production_executed_true_count=0`.
+- **Read-only endpoints.** 13 `/operations/*` endpoints probed on host, all 200 (`summary`,
+  `agents`, `safety`, `metrics/overview`, `readiness/overview`,
+  `readiness/controlled-rollout/policy`, `release/overview`, `dr/overview`,
+  `github/sandbox-draft-pr/safety`, `runtime/kubernetes/baseline`, `security/foundation`,
+  `identity/posture`, `secrets/foundation`).
+- **Page inventory.** 24 Admin Console routes inventoried (App.tsx); expected page groups all
+  present.
+- **Mutation gating.** Unauthenticated `POST /operations/readiness/operator-review-requests` →
+  HTTP 200 with `status=policy_blocked` / `reason=operator_actions_disabled` /
+  `production_executed=false`; no record created; counters unchanged. Operator actions disabled
+  in staging.
+- **Operator access.** SSH local port-forward `-L 18000:127.0.0.1:18000` validated end-to-end
+  from a client host (tunnel opened → `localhost:18000/{health,admin,operations/safety}` 200 →
+  torn down, port freed). Operator-workstation confirmation pending; alternatives documented.
+  No public port exposure.
+- **Docs + verifier.** New `docs/staging/staging-admin-console-exposure-report.md`,
+  `staging-operator-access-validation.md`, `staging-admin-console-page-inventory.md`,
+  `staging-operator-first-login-guide.md`, `staging-admin-console-known-gaps.md`; updated
+  `staging-admin-console-access-evidence.md`, `staging-step64-roadmap.md`,
+  `docs/product/admin-console-page-map.md`. `scripts/verify_staging_admin_console_exposure.py`
+  (`STAGING_ADMIN_CONSOLE_EXPOSURE_VERIFY`) + `tests/test_staging_admin_console_exposure.py`.
+  Prior staging markers maintained PASS.
+- **Roadmap.** Step 64C completed (operator confirmation pending); **Step 64D (demo workflow
+  seed & execution)** is next. Claude Code does not decide Production readiness.

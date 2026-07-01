@@ -134,3 +134,13 @@ non-production staging environment (`http://10.0.1.32:18000/admin`) and the oper
 plan are documented in [staging-admin-console-plan.md](../staging/staging-admin-console-plan.md)
 and [staging-access-plan.md](../staging/staging-access-plan.md). Staging is non-production
 only; no production action.
+
+**Staging (Step 64C, exposure validation):** the staging Admin Console is running on
+`10.0.1.32` and was validated reachable via SSH local port-forward + HTTP
+(`http://localhost:18000/admin`). All 24 read-only routes were inventoried and 13
+`/operations/*` backing endpoints probed 200; operator mutations are gated
+(`operator_actions_disabled`). Evidence + operator first-login guide:
+[staging-admin-console-exposure-report.md](../staging/staging-admin-console-exposure-report.md),
+[staging-admin-console-page-inventory.md](../staging/staging-admin-console-page-inventory.md),
+[staging-operator-first-login-guide.md](../staging/staging-operator-first-login-guide.md).
+No public exposure; no production action; `production_executed_true_count=0`.
