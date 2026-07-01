@@ -15,12 +15,13 @@ or pasting a deep link does not.
   `admin_console_static/dist/index.html` for unmatched `/admin/*` paths (catch-all route), so
   deep-links/refresh resolve.
 
-## 2. Per-item rendering not self-verified
-The deployed bundle **contains** the pages/routes that should show work-item identity, agent
-executions, workflows, QA/code, and audit — but confirming each renders the demo data requires a
-browser. That confirmation is the **operator re-review**
-([staging-admin-console-operator-rereview-plan.md](staging-admin-console-operator-rereview-plan.md)),
-not a Claude Code self-check.
+## 2. Per-item rendering — operator re-review FAILED (Step 64E.2)
+The deployed bundle contains the pages/routes, but the operator re-reviewed and the per-item demo
+evidence (WI-0001, agent executions, workflow, QA/code, audit) is **still not visible** — verdict
+**NOT_USABLE**. So deploying the bundle was necessary but not sufficient; the remaining blocker is
+the Admin Console demo-evidence UI/API integration. See
+[admin-console-demo-evidence-ui-blocker.md](admin-console-demo-evidence-ui-blocker.md) and
+[operator-rereview-result-after-react-bundle-remediation.md](operator-rereview-result-after-react-bundle-remediation.md).
 
 ## 3. Safety result = warning (mock-vault)
 `/operations/safety` `result` is `warning`, driven by `warnings=['mock_vault_provider_in_use']`

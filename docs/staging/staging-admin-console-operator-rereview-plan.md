@@ -5,6 +5,13 @@
 The Step 64E.1 remediation deployed the full React Admin Console. **The operator must re-review**
 to decide whether the per-item demo evidence is now usable. Claude Code cannot self-confirm this.
 
+> **Re-review result (Step 64E.2):** the operator re-reviewed and the verdict is **NOT_USABLE** —
+> WI-0001, agent executions, workflow, QA/code, and audit are **still not visible** in the
+> deployed UI (`production_executed_true_count=0`). Deploying the bundle was not sufficient; the
+> next blocker is the Admin Console demo-evidence UI/API integration. See
+> [operator-rereview-result-after-react-bundle-remediation.md](operator-rereview-result-after-react-bundle-remediation.md)
+> and [admin-console-demo-evidence-ui-blocker.md](admin-console-demo-evidence-ui-blocker.md).
+
 ## Access
 ```bash
 ssh -i ~/.ssh/ai-agents-staging/staging_10_0_1_32 -L 18000:127.0.0.1:18000 itadmin@10.0.1.32

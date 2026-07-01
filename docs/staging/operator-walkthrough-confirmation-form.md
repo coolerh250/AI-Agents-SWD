@@ -24,6 +24,10 @@ signed copy if desired.
 > now deployed). Please re-run items 4/5/6 per
 > [staging-admin-console-operator-rereview-plan.md](staging-admin-console-operator-rereview-plan.md)
 > and record a fresh item-15 verdict. Step 64E stays `FAILED_OPERATOR_VALIDATION` until you do.
+>
+> **Re-review result (Step 64E.2):** operator re-reviewed — items 4/5/6 still **no** (WI-0001,
+> agent executions, workflow, QA/code, audit still not visible); item 9 (`production_executed_true_count=0`)
+> yes; **item 15 verdict = NOT_USABLE**. Step 64E stays `FAILED_OPERATOR_VALIDATION`.
 
 ## Items
 

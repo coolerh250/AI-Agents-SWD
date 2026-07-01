@@ -52,12 +52,14 @@ visibility — they were based on **backend API checks**, not on what the deploy
 renders, and the navigation guide listed tabs the deployed console does not show. These have
 been corrected.
 
-## Remediation status (Step 64E.1)
-The console deployment gap has been **remediated** — the full React/Vite bundle is now built into
-the orchestrator image and served at `/admin` (all 23 routes present; validated). **Step 64E
-remains `FAILED_OPERATOR_VALIDATION` until the operator re-reviews the remediated UI and accepts.**
-See [staging-admin-console-operator-rereview-plan.md](staging-admin-console-operator-rereview-plan.md)
-and [staging-admin-console-react-bundle-remediation-report.md](staging-admin-console-react-bundle-remediation-report.md).
+## Remediation status (Step 64E.1) + re-review (Step 64E.2)
+The console deployment gap was **remediated** in Step 64E.1 — the full React/Vite bundle is now
+served at `/admin` (all 23 routes). **However, the operator re-reviewed (Step 64E.2) and the
+verdict is again `NOT_USABLE`:** WI-0001, agent executions, workflow, QA/code, and audit are
+**still not visible** in the deployed UI. The blocker is now the Admin Console demo-evidence
+UI/API integration, not deployment. **Step 64E remains `FAILED_OPERATOR_VALIDATION`.** See
+[operator-rereview-result-after-react-bundle-remediation.md](operator-rereview-result-after-react-bundle-remediation.md)
+and [admin-console-demo-evidence-ui-blocker.md](admin-console-demo-evidence-ui-blocker.md).
 
 ## Gate on Step 64F
 **Step 64F is blocked.** It must not proceed until the operator re-reviews the remediated console

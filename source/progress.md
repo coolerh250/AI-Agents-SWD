@@ -11815,3 +11815,31 @@ image push; `production_executed_true_count=0`.**
 - **Gate.** Operator must re-review the remediated console
   (`docs/staging/staging-admin-console-operator-rereview-plan.md`). Step 64E/64F unchanged until
   then. Claude Code cannot self-confirm operator acceptance.
+
+## Stage 66E.2 — Operator Re-review Failure Recording (Step 64E.2)
+
+Recorded the operator's re-review of the staging Admin Console **after** the Step 64E.1 React
+bundle remediation. **Status: completed.** **Marker:
+`OPERATOR_REREVIEW_FAILURE_RECORDING_VERIFY: PASS`.** **Operator verdict: NOT_USABLE.** **Step
+64E status: FAILED_OPERATOR_VALIDATION.** **Step 64F status: BLOCKED.** **Next remediation: Admin
+Console Demo Evidence UI Remediation.** **Production posture: no production action, no production
+deploy, no production secret, no external write; `production_executed_true_count=0`.**
+
+- **Operator re-review result (recorded exactly).** WI-0001 visible: **no**; agent executions:
+  **no**; workflow: **no**; QA/code: **no**; audit/evidence: **no**;
+  `production_executed_true_count`: **0**; verdict: **NOT_USABLE**.
+- **Blocker shift.** The full React bundle is deployed (Step 64E.1) but the deployed UI **still
+  does not surface** the per-item demo evidence. The blocker is no longer bundle deployment — it
+  is the Admin Console **demo-evidence UI / API integration** (pages exist but don't present the
+  per-item data). Backend data may exist, but operator usability requires UI-visible evidence.
+- **Recording only.** No UI fix, no image rebuild, no container restart, no workflow, no data
+  change. Read-only re-check: `/admin` 200; safety `result=warning` (mock-vault), prod_exec 0.
+- **Docs + verifier.** New `operator-rereview-result-after-react-bundle-remediation.md`,
+  `admin-console-demo-evidence-ui-blocker.md`, `step64e-current-blocker-status.md`; updated
+  re-review plan + validation report + confirmation form + remediation known-gaps + roadmap.
+  `scripts/verify_operator_rereview_failure_recording.py`
+  (`OPERATOR_REREVIEW_FAILURE_RECORDING_VERIFY`) +
+  `tests/test_operator_rereview_failure_recording.py`.
+- **Gate.** Step 64E stays FAILED_OPERATOR_VALIDATION; Step 64F stays BLOCKED; next stage must
+  remediate Admin Console demo-evidence visibility. Claude Code cannot self-accept operator
+  usability and does not decide Production readiness.
