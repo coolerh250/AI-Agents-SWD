@@ -10,7 +10,8 @@ performs a production action.
 |---|---|---|
 | **Step 64A** | Staging Architecture & Deployment Plan | **(this stage)** inventory + architecture + deployment/access plans + service inventory + Admin Console plan + demo workflow plan + information request + risk/safety plan + roadmap + verifier + test. Planning only — no deployment. |
 | **Step 64B.1** | Authenticated Staging Host Preflight | **(completed)** key-based SSH read-only inventory of `10.0.1.32` (`agentai-swd-stage`): Ubuntu 24.04, 16 vCPU, 7.7 GiB RAM, `/data` 93 GB free; **Docker not installed** → `ready_for_runtime_bootstrap=false`. No install, no runtime deployment, no production action. |
-| **Step 64B.2** | Staging Runtime Bootstrap | after explicit operator authorization, install Docker prerequisites, generate gitignored staging env, bring up `docker-compose.staging.yml`, apply migrations, smoke-check. No production action. |
+| **Step 64B.2A** | Staging Host Runtime Preparation | **(completed)** under explicit operator authorization: installed Docker Engine `29.6.1` + Docker Compose v2 `v5.2.0` on `10.0.1.32`, enabled/started daemon, added `itadmin` to `docker` group, created `/data/ai-agents-staging`, `hello-world` validation-only. **No `docker compose up`; no AI Agents runtime deployed; no production action.** |
+| **Step 64B.2B** | Staging Runtime Bootstrap | after the host prep above: sync repo, generate gitignored staging env, validate + bring up `docker-compose.staging.yml`, apply migrations, smoke-check. No production action. |
 | **Step 64C** | Admin Console Exposure | expose `/admin` to the operator (SSH port-forward / port), confirm read-only pages + operator-session model. |
 | **Step 64D** | Demo Workflow Seed & Execution | seed the SaaS User Management / Create user CRUD API demo, run the (mocked) agent workflow, produce Admin Console evidence. |
 | **Step 64E** | Operator Walkthrough SOP | a step-by-step operator walkthrough of the staging system. |

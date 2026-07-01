@@ -11558,3 +11558,39 @@ config change; no production action; no production secret; no external write.
   (`ready_for_operator_review`) + Step 63A (`no_go`) conclusions unchanged; `production_executed_true_count=0`.
 - **Roadmap.** Step 64B.1 completed; **Step 64B.2 (staging runtime bootstrap)** pending explicit
   operator authorization to install Docker on `10.0.1.32`. Claude Code does not decide Production readiness.
+
+## Stage 66B.2A — Staging Host Runtime Preparation (Step 64B.2A)
+
+Host-level container runtime **preparation** of the staging target host `10.0.1.32`
+(`agentai-swd-stage`), under **explicit operator authorization**. **Status: completed.**
+**Marker: `STAGING_HOST_RUNTIME_PREPARATION_VERIFY: PASS`.** **Target host: 10.0.1.32.**
+**Runtime posture: Docker/Compose prepared only; no AI Agents staging runtime deployed; no
+`docker compose up`; no platform service started; no migration; no demo.** **Production
+posture: no production action, no production deploy, no production sync, no production secret,
+no external write.**
+
+- **Access.** Key-based SSH (`itadmin@10.0.1.32`, key `~/.ssh/ai-agents-staging/staging_10_0_1_32`);
+  no password used or exposed; private key never printed / committed / stored; passwordless
+  `sudo` (already on host) used for install + service management.
+- **Install.** Official Docker apt repository (`download.docker.com`, `noble`, `stable`);
+  packages `docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin`.
+  No Kubernetes / k3s / kind / ArgoCD / registry / cloud tooling. **Docker `29.6.1`** +
+  **Compose v2 `v5.2.0`**; daemon **active + enabled**.
+- **Group / dir.** `docker` group present (gid 988); `itadmin` added (effective after
+  reconnect — current session still uses `sudo`); `/data/ai-agents-staging` created
+  (`itadmin:itadmin`).
+- **Validation.** `docker ps` empty; `docker run --rm hello-world` passed **validation-only**
+  (image removed afterward); port 18000 reconfirmed free; no platform containers.
+- **Docs + verifier.** New `docs/staging/staging-host-runtime-preparation-report.md`,
+  `staging-docker-installation-notes.md`, `staging-runtime-bootstrap-prerequisites-after-prep.md`;
+  updated `staging-runtime-bootstrap-readiness.md`, `staging-deployment-plan.md`,
+  `staging-information-request.md`, `staging-risk-and-safety-plan.md`, `staging-step64-roadmap.md`.
+  `scripts/verify_staging_host_runtime_preparation.py` (`STAGING_HOST_RUNTIME_PREPARATION_VERIFY`)
+  + `tests/test_staging_host_runtime_preparation.py`. Existing `STAGING_ARCHITECTURE_PLAN_VERIFY`
+  + `STAGING_HOST_AUTHENTICATED_PREFLIGHT_VERIFY` maintained PASS.
+- **Safety.** No AI Agents runtime deployed; no `docker compose up`; no production deploy /
+  sync / secret / merge / image push / external write; Step 62 (`ready_for_operator_review`) +
+  Step 63A (`no_go`) conclusions unchanged; `production_executed_true_count=0`.
+- **Roadmap.** Step 64B.2A completed; **Step 64B.2B (staging runtime bootstrap)** is next —
+  `ready_for_runtime_bootstrap` remains `false` until repo sync + gitignored staging env +
+  compose-config validation are done on the host. Claude Code does not decide Production readiness.

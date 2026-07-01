@@ -31,7 +31,8 @@ script, `.env`, or commit.
 | Vault dev mode | documented staging limitation; not production secret storage |
 | Operator session for mutation pages | reuse existing auth + CSRF + audit; confirm in 64C |
 | Confusing staging with production | explicit staging-only labelling on every doc + safety endpoint |
-| Missing Docker on `10.0.1.32` | record as prerequisite gap; no auto-install in Step 64A |
+| Missing Docker on `10.0.1.32` | resolved in Step 64B.2A under explicit operator authorization — Docker Engine `29.6.1` + Compose v2 `v5.2.0` installed (host prep only; no `docker compose up`, no runtime deployed) |
+| Host prep mistaken for runtime bootstrap | Step 64B.2A installs the container runtime only; no platform service started, no migration, no demo — actual bring-up deferred to Step 64B.2B |
 
 ## Safety endpoint checks (Step 64B+)
 After bring-up verify `GET /operations/safety`: all `*_allow_production_*` / deploy / sync /

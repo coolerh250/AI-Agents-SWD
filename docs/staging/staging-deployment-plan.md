@@ -71,6 +71,18 @@ until they are installed (passwordless sudo available; not installed in Step 64B
 [staging-host-preflight-report.md](staging-host-preflight-report.md) +
 [staging-runtime-bootstrap-readiness.md](staging-runtime-bootstrap-readiness.md).
 
+## Step 64B.2A host runtime preparation update
+Under explicit operator authorization, the Docker prerequisite gap is now **resolved on the
+host**: Docker Engine `29.6.1` + Docker Compose v2 `v5.2.0` installed (daemon active + enabled;
+`docker` group present; `itadmin` added, effective after reconnect); staging volume base
+`/data/ai-agents-staging` created; port 18000 confirmed free; `hello-world` validation-only run
+passed and its image removed. **No AI Agents runtime deployed; no `docker compose up`; no
+platform service started; no migration; no production action.** Remaining Step 64B.2B
+prerequisites (repo sync, gitignored staging env, compose-config validation) are tracked in
+[staging-runtime-bootstrap-prerequisites-after-prep.md](staging-runtime-bootstrap-prerequisites-after-prep.md);
+full detail in [staging-host-runtime-preparation-report.md](staging-host-runtime-preparation-report.md)
+and [staging-docker-installation-notes.md](staging-docker-installation-notes.md).
+
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
 

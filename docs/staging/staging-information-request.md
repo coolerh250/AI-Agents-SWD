@@ -39,10 +39,23 @@ Checklist of information needed from the operator / administrator before Step 64
   (`agentai-swd-stage`). SSH item 1–2 resolved. Credentials remain interactive/key-only, never
   stored.
 - **sudo:** passwordless sudo available (item 3 resolved).
-- **Docker:** **NOT installed** on `10.0.1.32` (items 4–5) → operator must authorize a Docker
-  install before Step 64B.2 (no install performed in Step 64B.1).
+- **Docker:** **NOT installed** on `10.0.1.32` at preflight (items 4–5) → operator must
+  authorize a Docker install before Step 64B.2 (no install performed in Step 64B.1).
 - Still open: exposed-port confirmation (6), browser reachability (7), SSH-port-forward
   preference (8), HTTP-for-first-demo (9), integrations disabled (10).
+
+## Step 64B.2A host preparation update (resolved / newly known)
+- **Docker (items 4–5):** **resolved** — operator authorized host preparation; Docker Engine
+  `29.6.1` + Docker Compose v2 `v5.2.0` now installed on `10.0.1.32` (daemon active + enabled;
+  `docker` group present; `itadmin` added, effective after reconnect).
+- **Access mode (items 8–9):** operator confirmed **SSH local port-forward + HTTP** for the
+  first staging demo (`http://localhost:18000/admin`).
+- **Integrations (item 10):** operator confirmed live GitHub / Slack / LLM integrations remain
+  **disabled / mocked** in staging.
+- **Staging volume:** operator confirmed `/data/ai-agents-staging` as the staging volume base
+  (created in 64B.2A).
+- Still open: exposed-port confirmation beyond loopback (6, default remains loopback + SSH
+  port-forward), browser reachability from the operator workstation (7).
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

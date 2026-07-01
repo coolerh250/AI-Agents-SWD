@@ -8,9 +8,19 @@ authenticated host preflight of `10.0.1.32` (`agentai-swd-stage`). See
 [staging-host-preflight-report.md](staging-host-preflight-report.md).
 
 ## ready_for_runtime_bootstrap: **false**
-The host is reachable, sized adequately, and reachable over key-based SSH, but **Docker
-Engine + Docker Compose v2 are not installed**, so the compose staging stack cannot be
-brought up yet.
+The host is reachable, sized adequately, and reachable over key-based SSH, but at Step 64B.1
+**Docker Engine + Docker Compose v2 were not installed**, so the compose staging stack could
+not be brought up yet.
+
+> **Step 64B.2A update (host preparation done):** Docker Engine `29.6.1` + Docker Compose v2
+> `v5.2.0` are now **installed** on `10.0.1.32` (daemon active + enabled; `docker` group
+> present; `itadmin` added; `/data/ai-agents-staging` created). The **host container runtime
+> prerequisite is now satisfied.** `ready_for_runtime_bootstrap` remains **false** only
+> because the full bootstrap (Step 64B.2B) still needs repo sync + a gitignored staging env +
+> compose-config validation on the host — none performed yet. See
+> [staging-runtime-bootstrap-prerequisites-after-prep.md](staging-runtime-bootstrap-prerequisites-after-prep.md)
+> and [staging-host-runtime-preparation-report.md](staging-host-runtime-preparation-report.md).
+> No AI Agents runtime was deployed; no `docker compose up`.
 
 ## Readiness summary
 | Prerequisite | State |
