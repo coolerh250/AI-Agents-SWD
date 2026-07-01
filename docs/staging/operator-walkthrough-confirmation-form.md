@@ -20,6 +20,11 @@ The operator performed the walkthrough live. Recorded answers:
 **Overall Step 64E: FAILED_OPERATOR_VALIDATION.** Blank template retained below for a formal
 signed copy if desired.
 
+> **Re-review needed (Step 64E.1):** the console has since been remediated (full React bundle
+> now deployed). Please re-run items 4/5/6 per
+> [staging-admin-console-operator-rereview-plan.md](staging-admin-console-operator-rereview-plan.md)
+> and record a fresh item-15 verdict. Step 64E stays `FAILED_OPERATOR_VALIDATION` until you do.
+
 ## Items
 
 **1. I can open http://localhost:18000/admin through SSH tunnel.**

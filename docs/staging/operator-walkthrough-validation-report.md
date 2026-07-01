@@ -52,11 +52,17 @@ visibility — they were based on **backend API checks**, not on what the deploy
 renders, and the navigation guide listed tabs the deployed console does not show. These have
 been corrected.
 
+## Remediation status (Step 64E.1)
+The console deployment gap has been **remediated** — the full React/Vite bundle is now built into
+the orchestrator image and served at `/admin` (all 23 routes present; validated). **Step 64E
+remains `FAILED_OPERATOR_VALIDATION` until the operator re-reviews the remediated UI and accepts.**
+See [staging-admin-console-operator-rereview-plan.md](staging-admin-console-operator-rereview-plan.md)
+and [staging-admin-console-react-bundle-remediation-report.md](staging-admin-console-react-bundle-remediation-report.md).
+
 ## Gate on Step 64F
-**Step 64F is blocked.** It must not proceed until the console deployment gap is remediated
-(the demo evidence is actually visible in the deployed console) and the operator re-reviews and
-accepts — or the operator explicitly waives. Claude Code cannot self-confirm operator
-acceptance and does not decide production readiness.
+**Step 64F is blocked.** It must not proceed until the operator re-reviews the remediated console
+and accepts — or explicitly waives. Claude Code cannot self-confirm operator acceptance and does
+not decide production readiness.
 
 ## Safety
 No production action; no production secret; no external write; no public exposure; live

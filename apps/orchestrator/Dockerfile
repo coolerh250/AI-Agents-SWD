@@ -1,3 +1,14 @@
+# Step 64E.1 -- Admin Console React/Vite bundle build stage. Builds the full
+# read-only Admin Console SPA so the deployed /admin serves the real React app
+# (base "/admin/", router basename "/admin") instead of only the zero-build
+# static fallback. Output lands in static/dist (per vite.config outDir).
+FROM node:20-slim AS admin-console-build
+WORKDIR /admin-console
+COPY apps/admin-console/package.json apps/admin-console/package-lock.json ./
+RUN npm ci
+COPY apps/admin-console/ ./
+RUN npm run build
+
 FROM python:3.12-slim
 
 WORKDIR /app
@@ -11,6 +22,11 @@ COPY apps/orchestrator/src/ ./
 # at /admin). A built Vite bundle (admin_console_static/dist) is preferred when
 # present; the committed static/ fallback guarantees /admin responds.
 COPY apps/admin-console/static/ ./admin_console_static/
+# Step 64E.1 -- the built React/Vite bundle, served preferentially at /admin
+# (admin_console_static/dist). Overwrites any stale host-built dist that the
+# fallback COPY may have carried in; the zero-build static/ index.html above
+# remains only as the fallback when dist is absent.
+COPY --from=admin-console-build /admin-console/static/dist/ ./admin_console_static/dist/
 # Stage 52 -- allowlisted verification scripts (path-resolution for the
 # governed operator verification rerun). The runner uses realpath containment to
 # the scripts/ dir and shell=False with fixed argv; heavy docker-dependent

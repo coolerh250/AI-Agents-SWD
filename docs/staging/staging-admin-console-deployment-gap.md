@@ -45,10 +45,19 @@ The operator judged it **not usable**.
 
 Recommended: **option 1** (build the real React bundle) then operator re-review.
 
+## Remediation applied (Step 64E.1)
+Option 1 was implemented: `apps/orchestrator/Dockerfile` now builds the Vite React bundle (stage
+`admin-console-build`) and copies it into `admin_console_static/dist`; the orchestrator image was
+rebuilt + recreated on `10.0.1.32` and now serves the full React app at `/admin` (assets 200; all
+23 routes present). The zero-build fallback remains only as fallback. **This prepares the UI for
+operator re-review; it does not by itself re-accept Step 64E.** See
+[staging-admin-console-react-bundle-remediation-report.md](staging-admin-console-react-bundle-remediation-report.md)
++ [staging-admin-console-remediation-validation.md](staging-admin-console-remediation-validation.md).
+
 ## Status
-- **Step 64E: FAILED_OPERATOR_VALIDATION.**
-- **Step 64F: blocked** until remediation + operator re-acceptance (or explicit waiver).
-- No fix applied here; no image rebuild; no production action;
+- **Step 64E: FAILED_OPERATOR_VALIDATION** (until operator re-review of the remediated UI).
+- **Step 64F: blocked** until operator re-acceptance (or explicit waiver).
+- Remediation applied (image rebuilt locally, no push); no production action;
   `production_executed_true_count=0`. Claude Code does not decide production readiness.
 
 ---

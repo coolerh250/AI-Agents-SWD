@@ -7,3 +7,8 @@
 .ruff_cache/
 *.log
 .claude/
+# Step 64E.1 -- keep node_modules + local frontend build artifacts out of the build
+# context; the orchestrator image builds the Admin Console bundle in a dedicated stage.
+**/node_modules/
+apps/admin-console/static/dist/
+apps/admin-console/tsconfig.tsbuildinfo

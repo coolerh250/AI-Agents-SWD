@@ -11779,3 +11779,39 @@ production deploy, no production secret, no external write; `production_executed
 - **Gate.** **Step 64F BLOCKED** until the console deployment gap is remediated (demo evidence
   actually visible) and the operator re-reviews + accepts, or explicitly waives. Claude Code does
   not decide Production readiness and cannot self-confirm operator acceptance.
+
+## Stage 66E.1 — Admin Console React Bundle Remediation (Step 64E.1)
+
+Remediated the Admin Console deployment gap under explicit operator authorization: built the full
+React/Vite bundle into the orchestrator image so `/admin` serves the real SPA instead of the
+zero-build fallback. **Status: completed (PASS_WITH_GAPS, remediation-prepared).** **Marker:
+`STAGING_ADMIN_CONSOLE_REACT_BUNDLE_REMEDIATION_VERIFY: PASS_WITH_GAPS`.** **Target host:
+10.0.1.32.** **Runtime posture: orchestrator image remediated + recreated; deployed `/admin` is
+the full React bundle.** **Operator posture: re-review required — Step 64E stays
+`FAILED_OPERATOR_VALIDATION`, Step 64F stays BLOCKED until the operator accepts.** **Production
+posture: no production action, no production deploy, no production secret, no external write, no
+image push; `production_executed_true_count=0`.**
+
+- **Change.** `apps/orchestrator/Dockerfile` — added `node:20-slim` stage `admin-console-build`
+  (`npm ci` + `npm run build`, Vite `base=/admin/`, router `basename=/admin`, `outDir=static/dist`),
+  then `COPY --from … static/dist/ → admin_console_static/dist/` (fallback retained).
+  `.dockerignore` — exclude `node_modules`, `static/dist`, `tsconfig.tsbuildinfo`.
+- **Rebuild/redeploy.** Rebuilt `aiagents-staging-orchestrator` on `10.0.1.32` (in-image Vite
+  build: 79 modules); recreated only the orchestrator (`up -d orchestrator`), `running (healthy)`,
+  all 22 services healthy. No `down -v`, no volume/DB reset, **no image push**.
+- **Validation.** `/health` 200; `/admin/` 200 serving the Vite bundle (HTML refs
+  `/admin/assets/index-*.js`; JS asset 200); bundle contains the previously-missing routes
+  (`/task-graph`, `/workspace`, `/operator`, `/design-review`, `/mini-delivery`,
+  `/controlled-rollout-review`); backend intact (projects 1 / work items 1 / prod_exec 0).
+- **Gaps.** SPA deep-link 404 (`/admin/workspace`, `/admin/metrics` — no StaticFiles catch-all;
+  navigate via tabs); per-item render pending browser-based operator re-review; safety
+  `result=warning` (`mock_vault_provider_in_use`, expected staging escape hatch; prod_exec 0).
+- **Docs + verifier.** New `staging-admin-console-react-bundle-remediation-report.md`,
+  `staging-admin-console-remediation-validation.md`, `staging-admin-console-operator-rereview-plan.md`,
+  `staging-admin-console-remediation-known-gaps.md`; updated deployment-gap + validation report +
+  confirmation form + roadmap. `scripts/verify_staging_admin_console_react_bundle_remediation.py`
+  (`STAGING_ADMIN_CONSOLE_REACT_BUNDLE_REMEDIATION_VERIFY`) +
+  `tests/test_staging_admin_console_react_bundle_remediation.py`.
+- **Gate.** Operator must re-review the remediated console
+  (`docs/staging/staging-admin-console-operator-rereview-plan.md`). Step 64E/64F unchanged until
+  then. Claude Code cannot self-confirm operator acceptance.
