@@ -11715,3 +11715,32 @@ deploy, no production secret, no external write; live integrations disabled/mock
   maintained.
 - **Roadmap.** Step 64D completed (pass_with_gaps); **Step 64E (operator walkthrough SOP)** is
   next. Claude Code does not decide Production readiness.
+
+## Stage 66E — Operator Walkthrough SOP (Step 64E)
+
+Produced the operator-facing walkthrough SOP + guides for the running staging system on
+`10.0.1.32` (`agentai-swd-stage`). **Status: completed.** **Marker:
+`OPERATOR_WALKTHROUGH_SOP_VERIFY: PASS`.** **Target host: 10.0.1.32.** **Runtime posture:
+staging runtime running with seeded demo workflow evidence.** **Operator posture: operator can
+follow the SOP to inspect the Admin Console + safety posture.** **Production posture: no
+production action, no production deploy, no production secret, no external write;
+`production_executed_true_count=0`.**
+
+- **Runtime re-validated.** 22/22 containers running; `/health` 200; `/admin` 200;
+  `/operations/safety` 200 (`production_executed_true_count=0`); demo data present (project=1,
+  work items=1, agent executions 10/10 completed, `audit_logs_total=60`).
+- **Docs created (8).** `docs/staging/operator-walkthrough-sop.md`,
+  `operator-admin-console-navigation-guide.md`, `operator-demo-workflow-review-guide.md`,
+  `operator-safety-check-guide.md`, `operator-known-gaps-and-limitations.md`,
+  `operator-do-not-execute-list.md`, `operator-access-troubleshooting.md`,
+  `operator-acceptance-checklist.md`.
+- **Docs updated.** `staging-admin-console-known-gaps.md`, `staging-demo-known-gaps.md`,
+  `staging-step64-roadmap.md`.
+- **Verifier + tests.** `scripts/verify_operator_walkthrough_sop.py`
+  (`OPERATOR_WALKTHROUGH_SOP_VERIFY`) + `tests/test_operator_walkthrough_sop.py`. Prior staging
+  markers maintained PASS.
+- **Safety.** SOP documents the do-not-execute list; no runtime gap fixed (PyYAML + delivery
+  gate documented, not changed); no production action; no operator-auth bypass; no public
+  exposure; `production_executed_true_count=0`.
+- **Roadmap.** Step 64E completed; **Step 64F (deployment management SOP)** is next. Claude Code
+  does not decide Production readiness.

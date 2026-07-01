@@ -36,6 +36,11 @@ Page reachability + demo data are evidenced by host-local `curl` values recorded
 docs. A gitignored `runtime_evidence/staging/demo-workflow/` path is reserved for optional
 local, non-secret screenshots.
 
+## Operator-facing summary (Step 64E)
+These gaps are restated for operators in
+[operator-known-gaps-and-limitations.md](operator-known-gaps-and-limitations.md), with the SOP
+in [operator-walkthrough-sop.md](operator-walkthrough-sop.md).
+
 ## Not done in this stage
 - No production deploy / sync / secret / external write; no GitHub merge / image push; no live
   Slack/GitHub/LLM call. `production_executed_true_count=0`.

@@ -38,6 +38,11 @@ executions=10, workflows=2). Release Governance remains empty (delivery dispatch
   gitignored `runtime_evidence/staging/admin-console/` path is reserved for optional local,
   non-secret screenshots if desired later.
 
+## Operator SOP (Step 64E)
+Operator-facing navigation + safety + acceptance guidance for these pages is in
+[operator-admin-console-navigation-guide.md](operator-admin-console-navigation-guide.md) and
+[operator-walkthrough-sop.md](operator-walkthrough-sop.md).
+
 ## Not done in this stage
 - No demo workflow executed (Step 64D).
 - No operator mutation performed (operator actions disabled in staging).
