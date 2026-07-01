@@ -29,10 +29,17 @@ Admin Console via the SSH tunnel and confirm each acceptance item (demo project,
 agent executions, audit, metrics, safety posture, understanding of gaps, no public exposure,
 integrations disabled), and record whether the SOP is usable.
 
+## What happened next (operator walkthrough completed)
+The operator performed the walkthrough live and judged the deployed console **NOT USABLE** —
+the demo's per-item evidence (work-item identity, agent executions, workflows, QA/code, audit)
+is not visible. Root cause: the orchestrator serves the zero-build static fallback, not the full
+React bundle. See [staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
+
 ## What must happen before Step 64F
-- Operator completes the confirmation form **or** explicitly waives operator validation.
-- Until then, **Step 64F is paused** and Step 64E overall stays
-  `PASS_WITH_OPERATOR_VALIDATION_PENDING`.
+- **Remediate** the console deployment gap (build the React bundle into the image, or extend the
+  fallback) so the demo evidence is actually visible.
+- Operator **re-reviews and accepts** (or explicitly waives).
+- Until then, **Step 64F is blocked** and Step 64E overall is `FAILED_OPERATOR_VALIDATION`.
 
 ## Process note (to avoid recurrence)
 Acceptance items that require a human observation are **operator-owned**; Claude Code marks them

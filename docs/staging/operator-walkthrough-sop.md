@@ -2,12 +2,13 @@
 
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 
-> **Validation status (Step 64E-R):** SOP **document completeness = PASS**, but **operator
-> walkthrough validation = PENDING**. Overall Step 64E is
-> **PASS_WITH_OPERATOR_VALIDATION_PENDING** until an operator completes
-> [operator-walkthrough-confirmation-form.md](operator-walkthrough-confirmation-form.md). Claude
-> Code cannot self-confirm operator acceptance. See
-> [operator-walkthrough-validation-report.md](operator-walkthrough-validation-report.md).
+> **Validation status (Step 64E-R):** SOP **document completeness = PASS**, but the operator
+> performed the walkthrough and judged the deployed console **NOT USABLE** — work-item identity,
+> agent executions, workflows, QA/code, and audit are not visible (deployed console is the
+> zero-build fallback). Overall Step 64E: **FAILED_OPERATOR_VALIDATION**; Step 64F **blocked**
+> pending console remediation + re-review. Claude Code cannot self-confirm operator acceptance.
+> See [operator-walkthrough-validation-report.md](operator-walkthrough-validation-report.md) and
+> [staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
 
 ## Purpose
 A step-by-step SOP for an operator to access the **staging** AI Agents Platform, verify system

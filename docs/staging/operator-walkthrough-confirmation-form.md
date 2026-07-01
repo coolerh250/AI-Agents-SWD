@@ -7,6 +7,19 @@ To be filled in by the **operator/manager** after performing the walkthrough
 or self-confirm. For each item record **Confirmed: yes / no / not checked** and an optional
 **Operator note**.
 
+## Live walkthrough result (captured with the operator, 2026-07-01)
+The operator performed the walkthrough live. Recorded answers:
+- **1** console opens — **yes** · **2** read-only page — **yes** · **3** demo project visible — **yes**
+- **4** work item WI-0001 visible — **no** (only the count "1"; identity not shown)
+- **5** agent executions visible — **no** · **6** workflows/QA/code visible — **no**
+- **7** operational metrics — **yes** · **8** safety posture — **yes** · **9** production_executed=0 — **yes**
+- **10** live integrations disabled — **yes** · **11** no public exposure (SSH tunnel) — **yes**
+- **12** understands known gaps — noted · **13** understands do-not-execute — noted
+- **15 overall acceptance — NOT USABLE** (missing per-item visibility is a blocker)
+
+**Overall Step 64E: FAILED_OPERATOR_VALIDATION.** Blank template retained below for a formal
+signed copy if desired.
+
 ## Items
 
 **1. I can open http://localhost:18000/admin through SSH tunnel.**

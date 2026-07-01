@@ -2,10 +2,17 @@
 
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 
-Evidence that the staging Admin Console pages (backing `/operations/*` endpoints on
-`10.0.1.32`) now show the populated demo data after the Step 64D execution. Values are from
-host-local `curl`; the read-only Admin Console pages render this data at
-`http://localhost:18000/admin` via the operator SSH port-forward.
+Evidence that the demo data is present in the backing `/operations/*` endpoints on `10.0.1.32`
+after the Step 64D execution. Values are from host-local `curl`.
+
+> **Correction (Step 64E-R):** this evidence is **backend-API only**. The deployed console (the
+> zero-build static fallback) does **not** render most of it. The operator walkthrough confirmed
+> only aggregate counts (Operational Metrics) + safety posture (Safety Center) are visible; the
+> **"Agent Executions / Workflows / QA / Code / Audit" pages listed below are NOT in the
+> deployed console** and their per-item data is not visible to the operator. Do not read the
+> "Pages populated" list as operator-visible. Root cause + remediation:
+> [staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md);
+> operator verdict: [operator-walkthrough-validation-report.md](operator-walkthrough-validation-report.md).
 
 ## Populated data (backing endpoints, all 200)
 | Admin Console area | Endpoint | Demo evidence |

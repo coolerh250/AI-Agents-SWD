@@ -62,9 +62,13 @@ dispatched task through all stages:
 [staging-demo-audit-evidence.md](staging-demo-audit-evidence.md).
 
 ## Admin Console evidence
-Backing `/operations/*` endpoints now return the demo data (project=1, work items=1, workflows=2,
-agent executions=10, qa runs=2). See
-[staging-demo-admin-console-evidence.md](staging-demo-admin-console-evidence.md).
+Backing `/operations/*` endpoints return the demo data (project=1, work items=1, workflows=2,
+agent executions=10, qa runs=2). **Correction (Step 64E-R):** this is **backend-API only**. The
+operator walkthrough found the deployed console (zero-build fallback) surfaces only aggregate
+counts + safety posture; work-item identity, agent executions, workflows, QA/code, and audit are
+**not visible** in the console. See
+[staging-demo-admin-console-evidence.md](staging-demo-admin-console-evidence.md) and
+[staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
 
 ## Safety posture (final)
 - `production_executed_true_count = 0`; `deployment_environment_production_count = 0`;

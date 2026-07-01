@@ -11750,23 +11750,32 @@ production action, no production deploy, no production secret, no external write
 ## Stage 66E-R — Operator Walkthrough Revalidation & Status Correction (Step 64E-R)
 
 Corrected the Step 64E conclusion after the operator noted it was self-marked PASS without an
-actual operator walkthrough. **Status: completed.** **Marker:
+actual operator walkthrough — then **ran the operator walkthrough live** and recorded the
+operator's verdict. **Status: completed.** **Marker:
 `OPERATOR_WALKTHROUGH_REVALIDATION_VERIFY: PASS`.** **Corrected Step 64E status:
-`PASS_WITH_OPERATOR_VALIDATION_PENDING`.** **SOP document completeness: PASS.** **Operator
-walkthrough validation: PENDING.** **Production posture: no production action, no production
-deploy, no production secret, no external write; `production_executed_true_count=0`.**
+`FAILED_OPERATOR_VALIDATION`.** **SOP document completeness: PASS.** **Operator walkthrough
+validation: COMPLETED — result NOT USABLE.** **Production posture: no production action, no
+production deploy, no production secret, no external write; `production_executed_true_count=0`.**
 
-- **Correction.** `OPERATOR_WALKTHROUGH_SOP_VERIFY: PASS` reflects **document completeness only**;
-  it is not operator acceptance. Claude Code cannot self-confirm operator acceptance.
-- **Runtime re-check (read-only).** 22/22 containers running; `/health` 200; `/operations/safety`
-  200; `production_executed_true_count=0`. No new workflow, no data change, no gap fixed.
-- **Docs created.** `docs/staging/operator-walkthrough-validation-report.md`,
-  `operator-walkthrough-confirmation-form.md`, `operator-walkthrough-revalidation-notes.md`.
-- **Docs updated.** `operator-walkthrough-sop.md` (validation-status banner),
-  `operator-acceptance-checklist.md` (every item operator-owned, `pending`),
-  `staging-step64-roadmap.md` (64E corrected, 64E-R added, 64F paused).
-- **Verifier + tests.** `scripts/verify_operator_walkthrough_revalidation.py`
-  (`OPERATOR_WALKTHROUGH_REVALIDATION_VERIFY`) + `tests/test_operator_walkthrough_revalidation.py`.
-  Verifier FAILs if any revalidation doc marks Step 64E overall as full PASS.
-- **Gate.** **Step 64F paused** until the operator completes the confirmation form or explicitly
-  waives operator validation. Claude Code does not decide Production readiness.
+- **Live walkthrough result.** Operator confirmed visible: console opens + read-only, demo
+  project, Operational Metrics (projects 1 / work items 1 / dispatches 0 / prod_exec 0), Safety
+  Center (result safe; deploy/github_write/real_llm/pr/external/operator_actions all false).
+  **Not visible (blocking):** work-item identity (`WI-0001`), agent executions, workflows,
+  QA/code, audit. Operator verdict: **NOT USABLE**.
+- **Root cause.** The orchestrator image serves the **zero-build static fallback** Admin Console
+  (`Dockerfile: COPY apps/admin-console/static/ ./admin_console_static/`); the full Vite React
+  bundle is not built into the image, so per-item pages (Workspace Execution / Operator Console /
+  Task Graph) are absent and deployed pages are summary-only. See
+  `docs/staging/staging-admin-console-deployment-gap.md`.
+- **Honesty correction.** Step 64D "Admin Console pages populated" + the 64E navigation guide
+  overstated console visibility (based on backend API, not the deployed UI). Corrected in the
+  demo report, admin-console evidence, demo-review guide, and navigation guide.
+- **Docs.** New `operator-walkthrough-validation-report.md`, `operator-walkthrough-confirmation-form.md`
+  (live result recorded), `operator-walkthrough-revalidation-notes.md`,
+  `staging-admin-console-deployment-gap.md`. Updated SOP, acceptance checklist, roadmap, and the
+  overclaimed demo docs.
+- **Runtime re-check (read-only).** 22/22 running; `/health` 200; `/operations/safety` 200;
+  `production_executed_true_count=0`. No new workflow, no data change, no gap fixed, no image rebuild.
+- **Gate.** **Step 64F BLOCKED** until the console deployment gap is remediated (demo evidence
+  actually visible) and the operator re-reviews + accepts, or explicitly waives. Claude Code does
+  not decide Production readiness and cannot self-confirm operator acceptance.

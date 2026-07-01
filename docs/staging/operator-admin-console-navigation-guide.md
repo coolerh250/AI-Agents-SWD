@@ -4,8 +4,27 @@
 
 Page-by-page guidance for the **staging** Admin Console (`http://localhost:18000/admin` via the
 operator SSH tunnel). All pages are **read-only**; operator mutations are disabled in staging
-(`operator_actions_disabled`). For each page: what to look for, expected demo data, expected
-empty state, known gap, and how to interpret it.
+(`operator_actions_disabled`).
+
+> **Correction (Step 64E-R, after the operator walkthrough):** the **deployed** console is the
+> zero-build static fallback with **18 tabs**, and it is **summary-only** — it does **not**
+> render per-item work items, agent executions, workflows, QA/code, or audit. Earlier versions
+> of this guide listed pages (Agent Executions, Workflows, QA/Code, Task Graph, Workspace
+> Execution, Operator Console) that are **not in the deployed console**; those were based on the
+> React source, not on what is served. The demo's per-item evidence exists only via backend API.
+> Root cause + remediation: [staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
+>
+> **Deployed tabs (18):** Executive Overview, Projects, Delivery Package, Safety Center,
+> Regression, Cost/LLM, Incidents, Runtime Baseline, Identity Posture, Secret Posture,
+> Security/Supply Chain, Multi-project Delivery, Operational Metrics, Sandbox GitHub Draft PR,
+> Release Governance, Backup/Restore/DR, Production Readiness Gate, Controlled Rollout Review.
+> **What is genuinely visible:** aggregate counts (Executive Overview, Operational Metrics) and
+> the safety posture (Safety Center, Multi-project Delivery flags). **Not visible:** work-item
+> identity, agent executions, workflows, QA/code, audit.
+
+The sections below describe the *intended* per-page content of the full React app; treat any
+"Agent Executions / Workflows / QA / Task Graph / Workspace / Operator Console" entry as
+**not present in the current deployed console** until the deployment gap is remediated.
 
 ## Overview / Dashboard (`/`)
 - **What to look for:** platform + delivery status cards, service/workflow summaries.

@@ -24,7 +24,8 @@ FORM = STAGING / "operator-walkthrough-confirmation-form.md"
 NOTES = STAGING / "operator-walkthrough-revalidation-notes.md"
 
 MARKER = "OPERATOR_WALKTHROUGH_REVALIDATION_VERIFY"
-CORRECTED = "PASS_WITH_OPERATOR_VALIDATION_PENDING"
+# The corrected Step 64E status is one of these resolved/pending values (never plain full PASS).
+CORRECTED_STATUSES = ("PASS_WITH_OPERATOR_VALIDATION_PENDING", "FAILED_OPERATOR_VALIDATION")
 
 DOCS = {"report": REPORT, "form": FORM, "notes": NOTES}
 
@@ -56,13 +57,15 @@ def main() -> int:
     report = texts["report"]
     report_low = report.lower()
 
-    # Corrected split: document completeness PASS, operator validation PENDING, overall pending.
+    # Corrected split: document completeness PASS separate from operator validation status.
     if "document completeness" not in report_low or "pass" not in report_low:
         bad("validation report does not state SOP document completeness PASS")
-    if "operator" not in report_low or "pending" not in report_low:
-        bad("validation report does not state operator walkthrough validation PENDING")
-    if CORRECTED not in report:
-        bad(f"validation report does not declare overall {CORRECTED}")
+    if "operator" not in report_low or not (
+        "pending" in report_low or "not usable" in report_low or "completed" in report_low
+    ):
+        bad("validation report does not record operator walkthrough validation status")
+    if not any(s in report for s in CORRECTED_STATUSES):
+        bad("validation report does not declare a corrected Step 64E status (pending or failed)")
 
     # FAIL if any doc still marks Step 64E overall as full PASS (not the pending variant).
     # Skip negations ("is not full PASS") which reinforce the correction rather than claim it.
@@ -78,7 +81,7 @@ def main() -> int:
     if "step 64f" not in low:
         bad("docs do not mention Step 64F gating")
     if not ("pause" in low or "paused" in low or "blocked" in low or "should not proceed" in low):
-        bad("docs do not state Step 64F is paused pending operator validation")
+        bad("docs do not state Step 64F is paused/blocked pending operator validation")
 
     # Claude Code cannot self-confirm operator acceptance.
     if "cannot self-confirm" not in low and "cannot self confirm" not in low:
@@ -134,8 +137,9 @@ def main() -> int:
     if failures:
         print(f"{MARKER}: FAIL")
         return 1
-    print("  [OK] Step 64E corrected: doc completeness PASS, operator validation PENDING, overall")
-    print(f"       {CORRECTED}; Step 64F paused; Claude Code cannot self-confirm; prod_exec=0")
+    print("  [OK] Step 64E corrected: doc completeness PASS, operator validation status recorded,")
+    print("       overall not full PASS; Step 64F paused/blocked; Claude Code cannot self-confirm;")
+    print("       prod_exec=0")
     print(f"{MARKER}: PASS")
     return 0
 

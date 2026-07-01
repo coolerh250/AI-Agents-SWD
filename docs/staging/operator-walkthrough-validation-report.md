@@ -2,41 +2,65 @@
 
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 
-Status correction for Step 64E. The Step 64E Operator Walkthrough SOP documents were produced
-and self-verified by Claude Code, **but no operator/manager has yet performed the walkthrough**.
-This report separates document completeness from operator validation.
+Records the outcome of the Step 64E operator walkthrough. The SOP documents were produced and
+self-verified by Claude Code; the **operator then performed the walkthrough live** and returned
+a verdict. This report separates document completeness from the operator's actual result.
 
-## Corrected status
+## Result
 | Dimension | Status |
 |---|---|
-| **SOP document completeness** | **PASS** |
-| **Operator actual walkthrough validation** | **PENDING** |
-| **Overall Step 64E status** | **PASS_WITH_OPERATOR_VALIDATION_PENDING** |
+| **SOP document completeness** | **PASS** (documents exist + self-consistent) |
+| **Operator actual walkthrough validation** | **COMPLETED — result: NOT USABLE** |
+| **Overall Step 64E status** | **FAILED_OPERATOR_VALIDATION** (not accepted) |
 
-Step 64E overall is **not** full PASS. It must not be marked full PASS unless the operator
-explicitly replies that they completed the walkthrough and provides a confirmation result.
+Step 64E is **not** PASS. The operator judged the staging Admin Console **not usable** for
+operator review because the per-item demo evidence is not visible in the deployed console.
 
-## What is confirmed
-- The eight operator SOP documents exist and are self-consistent (marker
-  `OPERATOR_WALKTHROUGH_SOP_VERIFY: PASS` = document completeness only).
-- The staging runtime is running (22/22 containers; `/health` 200; `/operations/safety` 200;
-  `production_executed_true_count=0`) — a read-only re-check.
+## What the operator confirmed visible (genuine)
+- Console opens at `http://localhost:18000/admin`; read-only (`admin_console_read_only=true`).
+- Executive Overview: **ACTIVE PROJECTS 1**, **SAFETY safe**.
+- Projects: **SaaS User Management Module** (status draft, risk low, env nonprod).
+- Multi-project Delivery: project **nonprod / production false**; dispatch GitHub-write /
+  ArgoCD-sync / production-action / external-send / production-ready all **false**.
+- Operational Metrics: **projects 1**, **work items 1**, **dispatches 0**,
+  **production_executed_true_count 0**, production_ready false.
+- Safety Center: **result safe**, **production_executed_true_count 0**, deploy / github_write /
+  real_llm / pr_creation / external_delivery / operator_actions all **false**;
+  admin_console_read_only true; latest_human_acceptance_status **null**.
 
-## What is NOT yet confirmed
-- **operator has not yet completed the formal walkthrough validation.**
-- **Claude Code cannot self-confirm operator acceptance** — running docs/tests is not operator
-  validation.
-- Operator confirmation of each acceptance item (see
-  [operator-walkthrough-confirmation-form.md](operator-walkthrough-confirmation-form.md)).
+## What the operator could NOT see (blocking — UI gaps)
+- **Work-item identity** (`WI-0001` "Create user CRUD API") — only the count "1" shows.
+- **Agent executions** (intake→requirement→development→qa→devops).
+- **Workflows / QA / code output.**
+- **Audit events.**
+
+The underlying data exists (verified via backend API in Step 64D), but the **deployed console
+does not render it**.
+
+## Root cause
+The staging orchestrator image serves the **committed zero-build static fallback** Admin
+Console (`apps/orchestrator/Dockerfile`: `COPY apps/admin-console/static/ ./admin_console_static/`);
+the full Vite React bundle is **not built into the image**. The fallback exposes 18 summary
+tabs and has no per-item views. The React app has more pages (Workspace Execution, Operator
+Console, Task Graph) that would surface agent/workflow data, but they are not in the deployed
+build. See
+[staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
+
+## Honesty correction
+Step 64D's "Admin Console pages populated" and the Step 64E navigation guide overstated console
+visibility — they were based on **backend API checks**, not on what the deployed console
+renders, and the navigation guide listed tabs the deployed console does not show. These have
+been corrected.
 
 ## Gate on Step 64F
-**Step 64F should not proceed until operator validation is completed or explicitly waived** by
-the operator. Step 64F is paused.
+**Step 64F is blocked.** It must not proceed until the console deployment gap is remediated
+(the demo evidence is actually visible in the deployed console) and the operator re-reviews and
+accepts — or the operator explicitly waives. Claude Code cannot self-confirm operator
+acceptance and does not decide production readiness.
 
 ## Safety
 No production action; no production secret; no external write; no public exposure; live
-integrations disabled/mocked; `production_executed_true_count=0`. Claude Code does not decide
-production readiness.
+integrations disabled/mocked; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

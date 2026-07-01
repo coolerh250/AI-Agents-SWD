@@ -11,6 +11,12 @@ sign-off.
 For every item — **Verification owner:** Operator · **Evidence type:** operator confirmation ·
 **Status:** pending / confirmed / failed.
 
+> **Live result (operator, 2026-07-01):** items 1–3, 7–11, 13 **confirmed**; items **4, 5, 6
+> failed** (work-item identity, agent executions, workflows/QA/code **not visible** in the
+> deployed console); item **14 (overall acceptance) = FAILED — NOT USABLE**. Overall Step 64E:
+> **FAILED_OPERATOR_VALIDATION**; Step 64F **blocked** pending console remediation + re-review.
+> See [operator-walkthrough-validation-report.md](operator-walkthrough-validation-report.md).
+
 ## Access
 - [ ] **1.** Operator can establish the SSH local port-forward tunnel to `10.0.1.32`.
   - Verification owner: Operator · Evidence type: operator confirmation · Status: pending

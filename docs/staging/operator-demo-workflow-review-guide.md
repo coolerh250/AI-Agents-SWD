@@ -2,7 +2,15 @@
 
 > **Staging only — non-production only. No production action. No production secret. No external write.**
 
-How an operator reads and interprets the Step 64D demo in the **staging** Admin Console.
+How an operator reads and interprets the Step 64D demo.
+
+> **Correction (Step 64E-R):** most of what this guide describes ("in the Admin Console the
+> operator sees each stage's agent execution", audit interpretation, etc.) is **not visible in
+> the deployed console** — it reflects backend API data + the full React app, not the deployed
+> zero-build fallback. The operator walkthrough confirmed only aggregate counts + safety posture
+> are visible. Treat the agent-stage / audit sections below as **API-level explanation**, not
+> operator-visible pages, until the console deployment gap is remediated. See
+> [staging-admin-console-deployment-gap.md](staging-admin-console-deployment-gap.md).
 
 ## Demo project
 - **SaaS User Management Module** (`PRJ-SAAS-USER-MANAGEMENT-MODULE-15F51D`), environment

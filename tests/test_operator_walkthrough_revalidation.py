@@ -14,7 +14,7 @@ ROADMAP = STAGING / "staging-step64-roadmap.md"
 PROGRESS = ROOT / "source" / "progress.md"
 
 DOCS = (REPORT, FORM, NOTES)
-CORRECTED = "PASS_WITH_OPERATOR_VALIDATION_PENDING"
+CORRECTED_STATUSES = ("PASS_WITH_OPERATOR_VALIDATION_PENDING", "FAILED_OPERATOR_VALIDATION")
 
 
 def test_revalidation_docs_exist() -> None:
@@ -28,19 +28,20 @@ def test_operator_confirmation_form_exists() -> None:
 
 
 def test_step64e_corrected_status() -> None:
-    assert CORRECTED in REPORT.read_text(encoding="utf-8")
+    report = REPORT.read_text(encoding="utf-8")
+    assert any(s in report for s in CORRECTED_STATUSES)
 
 
-def test_operator_validation_remains_pending() -> None:
+def test_operator_validation_status_recorded() -> None:
     low = REPORT.read_text(encoding="utf-8").lower()
-    assert "pending" in low
+    assert "pending" in low or "not usable" in low or "completed" in low
     assert "document completeness" in low and "pass" in low
 
 
-def test_step64f_paused_pending_operator_validation() -> None:
+def test_step64f_paused_or_blocked() -> None:
     low = "".join(p.read_text(encoding="utf-8") for p in DOCS).lower()
     assert "step 64f" in low
-    assert "pause" in low or "paused" in low or "should not proceed" in low
+    assert "pause" in low or "paused" in low or "blocked" in low or "should not proceed" in low
 
 
 def test_self_confirmation_forbidden() -> None:
