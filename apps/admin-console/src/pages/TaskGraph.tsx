@@ -1,30 +1,59 @@
 import { AsyncView } from "../components/AsyncView";
-import { EmptyState } from "../components/EmptyState";
+import { EvidenceTable } from "../components/EvidenceTable";
 import { KeyValueTable } from "../components/KeyValueTable";
-import { getLatestDeliveryState } from "../api/operations";
+import { getLatestDeliveryState, getWorkflows } from "../api/operations";
 
-// v0: surfaces the latest pilot's project context. A full per-project work-item
-// graph drill-down (table + dependencies; optional React Flow) is future work;
-// this fallback table keeps the page renderable without extra dependencies.
+type Dict = Record<string, unknown>;
+
+const loadGraph = () =>
+  Promise.all([getLatestDeliveryState(), getWorkflows()]).then(([pilot, workflows]) => ({
+    pilot,
+    workflows,
+  }));
+
+// Step 64E.4B -- Workflows / Task Graph. Renders the read-only workflow/stage
+// trace from /operations/workflows (task_id / stage / status / production_executed)
+// in addition to the latest project context. GET-only; a full per-project graph
+// drill-down remains future work, but the workflow table is always renderable.
 export function TaskGraph() {
   return (
-    <AsyncView load={getLatestDeliveryState}>
-      {(d) =>
-        d.latest_pilot ? (
+    <AsyncView load={loadGraph}>
+      {({ pilot, workflows }) => {
+        const rows = ((workflows as Dict).workflows as Dict[]) || [];
+        const latestPilot = (pilot as { latest_pilot?: Record<string, unknown> }).latest_pilot;
+        return (
           <>
-            <h2>Task Graph</h2>
+            <h2>Workflows / Task Graph</h2>
             <p className="note">
-              Latest project context. Per-project work-item graph drill-down is planned.
+              Read-only workflow/stage trace for the staging demonstration (non-production).
+              production_executed=false; no production action.
             </p>
-            <KeyValueTable data={d.latest_pilot} />
+            <section>
+              <h3>Workflows</h3>
+              <EvidenceTable
+                rows={rows}
+                cols={[
+                  "task_id",
+                  "stage",
+                  "approval_status",
+                  "risk_level",
+                  "production_executed",
+                  "updated_at",
+                ]}
+                empty="No workflows yet"
+              />
+            </section>
+            <section>
+              <h3>Latest project context</h3>
+              {latestPilot ? (
+                <KeyValueTable data={latestPilot} />
+              ) : (
+                <p className="note">No latest project context available yet.</p>
+              )}
+            </section>
           </>
-        ) : (
-          <>
-            <h2>Task Graph</h2>
-            <EmptyState message="No project graph available yet" />
-          </>
-        )
-      }
+        );
+      }}
     </AsyncView>
   );
 }

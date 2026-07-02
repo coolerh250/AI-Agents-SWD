@@ -52,6 +52,14 @@ entirely in test — **no staging acceptance until tests pass**.
 - Read-only invariant preserved (no write client methods).
 - **No staging acceptance until this test gate passes.**
 
+## Implemented (Step 64E.4B)
+This 64E.4B test/QA plan was executed: the formal pages were wired to the demo evidence (frontend
+only, GET-only; no new backend endpoint needed), and frontend typecheck + 34 vitest + build pass.
+See [product-ui-integration-fix-test-report.md](product-ui-integration-fix-test-report.md),
+[product-ui-formal-page-validation-matrix.md](product-ui-formal-page-validation-matrix.md), and
+[product-ui-test-qa-evidence.md](product-ui-test-qa-evidence.md). **No staging redeploy occurred**
+— the redeploy is Step 64E.4C.
+
 ## Sequencing
 64E.4B (this, test/QA) → 64E.4C (staging redeploy,
 [product-ui-staging-redeploy-plan.md](product-ui-staging-redeploy-plan.md)) →

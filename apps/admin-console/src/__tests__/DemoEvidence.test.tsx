@@ -64,7 +64,7 @@ describe("DemoEvidence", () => {
         <DemoEvidence />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByText("Demo Evidence")).toBeDefined());
+    await waitFor(() => expect(screen.getByText(/Demo Evidence/)).toBeDefined());
     // WI-0001 identity
     expect(screen.getByText("Create user CRUD API")).toBeDefined();
     expect(screen.getByText("WI-0001")).toBeDefined();

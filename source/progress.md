@@ -11955,3 +11955,40 @@ production secret, no external write, no image push; `production_executed_true_c
   FAILED_STAGING_REPRESENTATIVENESS; Step 64F stays BLOCKED. Claude Code does not decide operator
   acceptance or production readiness. No production action, no production deploy, no production
   secret, no external write.
+
+## Stage 66E.4B — Product UI Integration Fix in Test/QA (Step 64E.4B)
+
+Wired the Admin Console **formal product pages** to the Step 64D demo evidence so acceptance no
+longer depends on the diagnostic Demo Evidence page. **Status: completed (PASS_WITH_GAPS).**
+**Marker: `PRODUCT_UI_INTEGRATION_FIX_TEST_VERIFY: PASS_WITH_GAPS`.** **Step 64E:
+FAILED_STAGING_REPRESENTATIVENESS. Step 64F: BLOCKED.** **Runtime posture: test/QA remediation
+only — no staging redeploy, no image rebuild, no container restart, no data change.** **Production
+posture: no production action, no production deploy, no production secret, no external write, no
+image push; `production_executed_true_count=0`.**
+
+- **Frontend changes (GET-only).** Projects/Work Items (`/delivery`, MultiProjectDelivery)
+  auto-selects the first project on load → **WI-0001 "Create user CRUD API"** visible with no
+  manual click. New pages: **Agent Executions** (`/agent-executions`, `/operations/agent-executions`),
+  **QA / Code** (`/qa-code`, `/operations/qa/runs` + `/operations/code/workspaces`), **Audit /
+  Evidence** (`/audit-evidence`, `/operations/delivery/work-items/{id}/events`). **Workflows / Task
+  Graph** (`/task-graph`) now renders the workflow/stage trace (`/operations/workflows`). **Safety
+  Center** (`/safety`) explicitly surfaces `production_executed_true_count` + integration-disable
+  flags. New shared read-only `EvidenceTable` component with labelled empty state.
+- **Demo Evidence page.** Relabeled **"Diagnostics (Demo Evidence)"**, moved last in nav, in-page
+  "developer diagnostic — not a staging acceptance path" banner. Not removed (low-risk relabel).
+- **Backend/API.** **No new endpoint required** — every evidence type is served by an existing
+  read-only `/operations/*` endpoint. GET-only client invariant preserved (read-only guard test
+  passes).
+- **Test/QA evidence.** `npm run typecheck` PASS; `npm test` **34 vitest passed** (new
+  `ProductUiFormalPages.test.tsx`; DemoEvidence heading matcher updated); `npm run build` PASS.
+- **Gaps.** SPA deep-link 404 (navigate via tabs); QA `validation_runs` may be count-only in real
+  staging (count + empty-state shown); live staging-browser render pending 64E.4C.
+- **Docs + verifier.** New `product-ui-integration-fix-test-report.md`,
+  `product-ui-formal-page-validation-matrix.md`, `product-ui-test-qa-evidence.md`,
+  `product-ui-known-gaps-before-staging-redeploy.md`; updated remediation-plan + evidence-map +
+  test-qa-remediation-plan + operator-rereview-plan + roadmap.
+  `scripts/verify_product_ui_integration_fix_test.py`
+  (`PRODUCT_UI_INTEGRATION_FIX_TEST_VERIFY`) + `tests/test_product_ui_integration_fix_test.py`.
+- **Gate.** Next is **Step 64E.4C** (staging redeploy of the tested UI), then **64E.4D** (operator
+  formal-page re-review). Step 64E stays FAILED_STAGING_REPRESENTATIVENESS; Step 64F stays BLOCKED.
+  No staging redeploy occurred here. Claude Code does not decide operator acceptance.

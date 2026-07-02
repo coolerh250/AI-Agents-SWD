@@ -81,6 +81,15 @@ no production deploy/sync/secret, no GitHub live write, no image push, no regist
 external Slack/GitHub/LLM call, no public port exposure, no volume deletion. **No implementation
 is claimed here** — this is a plan only.
 
+## Implemented in Step 64E.4B (test/QA only)
+The formal-product-UI integration fix was implemented in test/QA under Step 64E.4B: each evidence
+type now renders on its formal page (Projects/Work Items auto-loads WI-0001; new Agent Executions,
+QA/Code, Audit/Evidence pages; Workflows/Task Graph workflow trace; Safety Center prod_exec), with
+frontend typecheck + vitest + build passing; the Demo Evidence page is relabeled diagnostic-only.
+See [product-ui-integration-fix-test-report.md](product-ui-integration-fix-test-report.md) and
+[product-ui-formal-page-validation-matrix.md](product-ui-formal-page-validation-matrix.md).
+**No staging redeploy occurred** — staging validation still requires Step 64E.4C then 64E.4D.
+
 ## Status
 - Step 64E: **FAILED_STAGING_REPRESENTATIVENESS**. Step 64F: **BLOCKED**.
 - Demo Evidence page: **developer diagnostic only — not staging acceptance**.

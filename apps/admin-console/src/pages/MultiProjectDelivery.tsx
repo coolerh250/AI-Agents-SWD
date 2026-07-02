@@ -29,9 +29,11 @@ export function MultiProjectDelivery(): JSX.Element {
   const [reason, setReason] = useState("");
   const [msg, setMsg] = useState("");
 
-  async function loadProjects(): Promise<void> {
+  async function loadProjects(): Promise<Dict[]> {
     const r = (await getDeliveryProjects()) as { projects?: Dict[] };
-    setProjects(r.projects || []);
+    const list = r.projects || [];
+    setProjects(list);
+    return list;
   }
   async function loadItems(pid: string): Promise<void> {
     setSelected(pid);
@@ -40,8 +42,13 @@ export function MultiProjectDelivery(): JSX.Element {
     const ds = (await getProjectDeliveryState(pid)) as Dict;
     setDeliveryState(String(ds.delivery_state ?? ""));
   }
+  // Step 64E.4B: auto-select the first project on load so its work items
+  // (e.g. WI-0001) are visible without a manual click.
   useEffect(() => {
-    void loadProjects();
+    void (async () => {
+      const list = await loadProjects();
+      if (list[0]) await loadItems(String(list[0].project_id));
+    })();
   }, []);
 
   async function onCreateProject(): Promise<void> {

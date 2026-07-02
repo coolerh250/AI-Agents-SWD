@@ -100,7 +100,13 @@ export function DemoEvidence() {
 
   return (
     <div className="demo-evidence" data-testid="demo-evidence">
-      <h2>Demo Evidence</h2>
+      <h2>Diagnostics — Demo Evidence (Developer Diagnostic)</h2>
+      <p className="note">
+        <strong>Developer diagnostic / debug view only — not a staging acceptance path.</strong>{" "}
+        Operator acceptance is based on the formal product pages (Projects / Work Items, Agent
+        Executions, Workflows / Task Graph, QA / Code, Audit / Evidence, Safety Center), not this
+        page.
+      </p>
       <p className="note">
         Read-only view of the Step 64D staging demonstration (non-production). Live GitHub /
         Slack / LLM integrations are disabled or mocked; no production action. Governed delivery /

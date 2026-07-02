@@ -2,9 +2,12 @@ import { NavLink } from "react-router-dom";
 
 export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/", label: "Executive Overview" },
-  { to: "/demo-evidence", label: "Demo Evidence" },
   { to: "/projects", label: "Projects" },
-  { to: "/task-graph", label: "Task Graph" },
+  { to: "/delivery", label: "Projects / Work Items" },
+  { to: "/agent-executions", label: "Agent Executions" },
+  { to: "/task-graph", label: "Workflows / Task Graph" },
+  { to: "/qa-code", label: "QA / Code" },
+  { to: "/audit-evidence", label: "Audit / Evidence" },
   { to: "/design-review", label: "Design Review" },
   { to: "/workspace", label: "Workspace Execution" },
   { to: "/mini-delivery", label: "Mini Delivery Pilot" },
@@ -18,13 +21,14 @@ export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/identity", label: "Identity Posture" },
   { to: "/secrets", label: "Secret Posture" },
   { to: "/security", label: "Security / Supply Chain" },
-  { to: "/delivery", label: "Multi-project Delivery" },
   { to: "/metrics", label: "Operational Metrics" },
   { to: "/sandbox-github", label: "Sandbox GitHub Draft PR" },
   { to: "/release-governance", label: "Release Governance" },
   { to: "/backup-dr", label: "Backup / Restore / DR" },
   { to: "/production-readiness", label: "Production Readiness Gate" },
   { to: "/controlled-rollout-review", label: "Controlled Rollout Review" },
+  // Developer diagnostic only -- NOT a staging acceptance path (Step 64E.4A policy).
+  { to: "/demo-evidence", label: "Diagnostics (Demo Evidence)" },
 ];
 
 export function Nav() {

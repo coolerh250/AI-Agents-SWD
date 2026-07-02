@@ -136,6 +136,13 @@ acceptance criteria. The Demo Evidence page is **not** in this map — it is dia
 - **Test acceptance criteria:** component test renders the gated/disabled governance state.
 - **Staging acceptance criteria:** operator confirms release actions are gated/disabled in staging.
 
+## Wired in Step 64E.4B (test/QA only)
+Concrete routes now surfacing each evidence type (see
+[product-ui-formal-page-validation-matrix.md](product-ui-formal-page-validation-matrix.md)):
+WI-0001 → `/delivery`; agent executions → `/agent-executions`; workflow → `/task-graph`;
+QA/code → `/qa-code`; audit → `/audit-evidence`; safety → `/safety`. **No staging redeploy
+occurred**; staging validation requires Step 64E.4C then 64E.4D.
+
 ## Status
 - Step 64E: **FAILED_STAGING_REPRESENTATIVENESS**. Step 64F: **BLOCKED**.
 - Demo Evidence page: **diagnostic only — not staging acceptance**.
