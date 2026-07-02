@@ -11992,3 +11992,36 @@ image push; `production_executed_true_count=0`.**
 - **Gate.** Next is **Step 64E.4C** (staging redeploy of the tested UI), then **64E.4D** (operator
   formal-page re-review). Step 64E stays FAILED_STAGING_REPRESENTATIVENESS; Step 64F stays BLOCKED.
   No staging redeploy occurred here. Claude Code does not decide operator acceptance.
+
+## Stage 66E.4C — Staging Redeploy with Product UI (Step 64E.4C)
+
+Redeployed the Step 64E.4B test-passed formal Admin Console product UI to staging `10.0.1.32`
+(operator-authorized, staging-only). **Status: completed (PASS_WITH_GAPS).** **Marker:
+`PRODUCT_UI_STAGING_REDEPLOY_VERIFY: PASS_WITH_GAPS`.** **Step 64E: FAILED_STAGING_REPRESENTATIVENESS
+(pending operator product UI re-review). Step 64F: BLOCKED.** **Runtime posture: tested formal
+product UI deployed to staging for operator re-review; orchestrator-only rebuild/restart.**
+**Production posture: no production action, no production deploy, no production secret, no external
+write, no image push, no volume deletion; `production_executed_true_count=0`.**
+
+- **Sync.** Staging repo `git pull --ff-only origin main` → **3ace806 → 44f9a40** (fast-forward;
+  clean tree beforehand; no hard reset, no evidence/volume deletion).
+- **Rebuild/restart.** `orchestrator` only: `build orchestrator` (in-image Vite build) + `up -d
+  orchestrator`; postgres/redis only health-waited. No `down`, no `down -v`, no prune, no volume rm.
+- **Runtime validation.** `/health` 200; `/admin` 307 → `/admin/` 200 (bundle
+  `index-B4s3Ud5S.js`); `/operations/safety` 200 `production_executed_true_count=0`,
+  github/discord/llm external all false; orchestrator `running (healthy)`.
+- **Formal-page evidence (GET, real IDs).** `/operations/delivery/projects` 200 (1 project
+  `PRJ-SAAS-USER-MANAGEMENT-MODULE-15F51D`); work-items 200 (**WI-0001 "Create user CRUD API"**);
+  events 200 (`work_item_created`); `/operations/agent-executions` 200 count=10;
+  `/operations/workflows` 200 count=2 `production_executed=false`; `/operations/qa/runs` 200
+  count=2; `/operations/code/workspaces` 200 count=2. Bundle contains the formal routes + nav.
+- **Gaps.** SPA deep-link `/admin/agent-executions` hard-refresh 404 (navigate via tabs); operator
+  visual re-review pending (64E.4D).
+- **Docs + verifier.** New `product-ui-staging-redeploy-report.md`,
+  `product-ui-staging-technical-validation.md`, `product-ui-formal-page-staging-evidence.md`,
+  `product-ui-operator-rereview-instructions.md`, `product-ui-staging-known-gaps.md`; updated
+  redeploy-plan + operator-rereview-plan + roadmap. `scripts/verify_product_ui_staging_redeploy.py`
+  (`PRODUCT_UI_STAGING_REDEPLOY_VERIFY`) + `tests/test_product_ui_staging_redeploy.py`.
+- **Gate.** Ready for **Step 64E.4D** operator product-UI re-review (`http://localhost:18000/admin`
+  via SSH tunnel; navigate by tabs). Step 64E stays FAILED_STAGING_REPRESENTATIVENESS; Step 64F
+  stays BLOCKED. Claude Code does not decide operator acceptance.

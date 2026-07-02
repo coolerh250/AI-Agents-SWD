@@ -6,12 +6,14 @@
 Defines the future **Step 64E.4D** operator re-review of the **formal product pages** (not the Demo
 Evidence page), after the 64E.4C staging redeploy.
 
-## Readiness (after Step 64E.4B)
-The formal pages have been wired to the demo evidence in test/QA (Step 64E.4B) — Projects/Work
-Items (`/delivery`) auto-loads WI-0001; Agent Executions (`/agent-executions`); Workflows/Task
-Graph (`/task-graph`); QA/Code (`/qa-code`); Audit/Evidence (`/audit-evidence`); Safety Center
-(`/safety`). This re-review still runs **only after** the Step 64E.4C staging redeploy of that
-tested UI. **No staging redeploy has occurred yet.**
+## Readiness (after Step 64E.4C)
+The tested formal pages are now **deployed on staging** (`10.0.1.32`, bundle `index-B4s3Ud5S.js`;
+Step 64E.4C redeploy, PASS_WITH_GAPS): Projects/Work Items (`/delivery`) auto-loads WI-0001; Agent
+Executions (`/agent-executions`); Workflows/Task Graph (`/task-graph`); QA/Code (`/qa-code`);
+Audit/Evidence (`/audit-evidence`); Safety Center (`/safety`). All formal-page endpoints returned
+the demo data and `production_executed_true_count=0`. **This re-review (Step 64E.4D) is now ready
+to run** — see [product-ui-operator-rereview-instructions.md](product-ui-operator-rereview-instructions.md).
+Claude Code does not decide acceptance.
 
 ## Access
 `ssh -i ~/.ssh/ai-agents-staging/staging_10_0_1_32 -L 18000:127.0.0.1:18000 itadmin@10.0.1.32` then

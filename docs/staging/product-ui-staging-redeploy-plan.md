@@ -41,6 +41,14 @@ Proceeds to Step 64E.4D operator product-UI re-review
 ([operator-product-ui-rereview-plan.md](operator-product-ui-rereview-plan.md)). **Claude Code does
 not self-accept operator usability.**
 
+## Executed in Step 64E.4C
+This redeploy was executed: staging `10.0.1.32` synced 3ace806 → **44f9a40**; **orchestrator
+rebuilt + recreated only**; `/health` 200, `/admin/` 200 (bundle `index-B4s3Ud5S.js`),
+`/operations/safety` `production_executed_true_count=0`; all formal-page endpoints returned the
+demo data. Result **PASS_WITH_GAPS** (SPA deep-link 404 carry-over). See
+[product-ui-staging-redeploy-report.md](product-ui-staging-redeploy-report.md). **Ready for
+operator product UI re-review (Step 64E.4D)** — not operator acceptance.
+
 ## Status
 - Step 64E: **FAILED_STAGING_REPRESENTATIVENESS** (until operator accepts formal pages in 64E.4D).
 - Step 64F: **BLOCKED**.
