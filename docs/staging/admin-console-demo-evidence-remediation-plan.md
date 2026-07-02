@@ -61,9 +61,17 @@ redeployed the orchestrator on `10.0.1.32`; technically validated. See
 [admin-console-demo-evidence-ui-remediation-report.md](admin-console-demo-evidence-ui-remediation-report.md).
 **Operator re-review still required.**
 
+## Superseded by Step 64E.4A
+This plan produced the Demo Evidence page. The operator judged Demo-Evidence-based visibility
+**not acceptable as staging validation** — staging must validate the **formal product UI**, not a
+special demo page. This plan is therefore superseded by the formal-product-UI remediation:
+[product-ui-remediation-plan.md](product-ui-remediation-plan.md) (test/QA in 64E.4B → staging
+redeploy in 64E.4C → operator re-review in 64E.4D). The Demo Evidence page is now **diagnostic
+only** ([demo-evidence-page-diagnostic-only-policy.md](demo-evidence-page-diagnostic-only-policy.md)).
+
 ## Status
-Implemented (Step 64E.3B) — operator re-review pending. Step 64E FAILED_OPERATOR_VALIDATION;
-Step 64F BLOCKED; `production_executed_true_count=0`.
+Superseded (Step 64E.4A). Step 64E **FAILED_STAGING_REPRESENTATIVENESS**; Step 64F **BLOCKED**;
+Demo Evidence page **diagnostic only**; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

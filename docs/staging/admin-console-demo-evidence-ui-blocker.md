@@ -44,8 +44,18 @@ existing QA/code/delivery/events endpoints; rebuilt + redeployed + technically v
 [admin-console-demo-evidence-operator-rereview-checklist.md](admin-console-demo-evidence-operator-rereview-checklist.md));
 Step 64E stays FAILED_OPERATOR_VALIDATION and Step 64F stays BLOCKED until the operator accepts.
 
+## Reframed by Step 64E.4A
+The operator judged Demo-Evidence-based visibility **not acceptable as staging validation**:
+staging must validate the **formal product UI**, not a special demo page. The blocker is therefore
+reframed — the Demo Evidence page is **diagnostic only** and the formal product pages must surface
+WI-0001, agent executions, workflow, QA/code, and audit. Step 64E is corrected to
+**FAILED_STAGING_REPRESENTATIVENESS**; remediation returns to test/QA (64E.4B → 64E.4C → 64E.4D).
+See [product-ui-remediation-plan.md](product-ui-remediation-plan.md) and
+[demo-evidence-page-diagnostic-only-policy.md](demo-evidence-page-diagnostic-only-policy.md).
+
 ## Status
-- Step 64E: **FAILED_OPERATOR_VALIDATION**. Step 64F: **BLOCKED**.
+- Step 64E: **FAILED_STAGING_REPRESENTATIVENESS**. Step 64F: **BLOCKED**.
+- Demo Evidence page: **diagnostic only — not staging acceptance**.
 - No production action; `production_executed_true_count=0`.
 
 ---

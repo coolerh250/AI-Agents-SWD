@@ -11913,3 +11913,45 @@ image push; `production_executed_true_count=0`.**
 - **Gate.** Operator must re-review the Demo Evidence page
   (`admin-console-demo-evidence-operator-rereview-checklist.md`). Step 64E/64F unchanged until
   then. Claude Code cannot self-accept operator usability.
+
+## Stage 66E.4A — Product UI Remediation Plan (Step 64E.4A)
+
+Re-defined the Admin Console remediation around the **formal product UI** after the operator
+judged the Step 64E.3B Demo Evidence page insufficient for staging validation. **Status: completed
+(PASS).** **Marker: `PRODUCT_UI_REMEDIATION_PLAN_VERIFY: PASS`.** **Step 64E:
+FAILED_STAGING_REPRESENTATIVENESS. Step 64F: BLOCKED.** **Demo Evidence posture: developer
+diagnostic only — not staging acceptance.** **Planning only — no code change, no rebuild, no
+restart, no redeploy.** **Production posture: no production action, no production deploy, no
+production secret, no external write, no image push; `production_executed_true_count=0`.**
+
+- **Operator conclusion.** Data is visible via the added Demo Evidence page, but that is not an
+  acceptable staging acceptance path; staging must validate the formal product UI. If formal pages
+  are incomplete, the work returns to test/QA before staging validation. Staging should eventually
+  connect to controlled, non-production external resources, not rely only on fake/demo data.
+- **Corrected status.** Step 64E moved from `FAILED_OPERATOR_VALIDATION` to
+  `FAILED_STAGING_REPRESENTATIVENESS`; Step 64F stays BLOCKED; Demo Evidence page reclassified
+  diagnostic-only; production rollout paused; `production_executed_true_count=0`.
+- **Formal-page evidence map.** WI-0001 → Projects / Work Items; agent executions → Agent
+  Executions; workflow → Workflows / Task Graph; QA/code → QA / Code; audit/evidence → Audit /
+  Evidence; safety → Safety Center (also Operational Metrics + Release Governance). Each page
+  defines purpose / operator question / expected evidence / endpoints / UI behavior / empty state /
+  known gap / test acceptance / staging acceptance.
+- **Test/QA-first remediation.** 64E.4B (product UI integration fix in test — frontend +
+  read-only API + unit/component/contract tests + fixtures; no staging acceptance until tests
+  pass) → 64E.4C (staging redeploy, validate formal pages, no Demo Evidence acceptance) → 64E.4D
+  (operator product-UI re-review with pass/fail rules + accepted-gaps policy).
+- **Controlled external integration.** Deferred to Step 65 (65A readiness, 65B secrets, 65C GitHub
+  sandbox, 65D notification, 65E LLM, 65F end-to-end), each with purpose/resources/credential
+  handling/kill switch/allowed/forbidden/acceptance evidence; sandbox/non-production only; required
+  before production planning. Roadmap only — not implemented.
+- **Docs + verifier.** New `product-ui-remediation-plan.md`,
+  `formal-admin-console-page-evidence-map.md`, `staging-representativeness-policy.md`,
+  `demo-evidence-page-diagnostic-only-policy.md`, `product-ui-test-qa-remediation-plan.md`,
+  `product-ui-staging-redeploy-plan.md`, `operator-product-ui-rereview-plan.md`,
+  `controlled-staging-external-integration-roadmap.md`; updated blocker-status + ui-blocker +
+  demo-evidence remediation-plan + roadmap. `scripts/verify_product_ui_remediation_plan.py`
+  (`PRODUCT_UI_REMEDIATION_PLAN_VERIFY`) + `tests/test_product_ui_remediation_plan.py`.
+- **Gate.** Next is Step 64E.4B (product UI integration fix in test). Step 64E stays
+  FAILED_STAGING_REPRESENTATIVENESS; Step 64F stays BLOCKED. Claude Code does not decide operator
+  acceptance or production readiness. No production action, no production deploy, no production
+  secret, no external write.
