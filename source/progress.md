@@ -12052,3 +12052,31 @@ deploy, no production secret, no external write, no image push; `production_exec
   `tests/test_operator_product_ui_rereview.py`.
 - **Gate.** Step 64E is **PASS**; Step 64F is **READY_TO_RESUME** (staging deployment-management
   SOP; not a production readiness sign-off). Claude Code does not decide production readiness.
+
+## Stage 66F.1 — Deployment Management SOP Design (Step 64F.1)
+
+Authored the staging deployment-management SOP design package for the `aiagents-staging` runtime on
+`10.0.1.32`. **Status: completed.** **Marker: `DEPLOYMENT_MANAGEMENT_SOP_DESIGN_VERIFY: PASS`.**
+**Step 64E status: PASS. Step 64F status: SOP_DESIGN_COMPLETED.** **Runtime posture:
+documentation/design only — no start/stop/restart/rebuild/teardown/restore or data change.**
+**Production posture: no production action, no production deploy, no production secret, no external
+write, no image push; `production_executed_true_count=0`.**
+
+- **SOP coverage.** Main SOP documents environment identity + start, stop, restart,
+  orchestrator-only rebuild/redeploy, upgrade, rollback, teardown, restore, health/safety
+  validation, troubleshooting, and an authorization matrix — commands documented (referencing the
+  existing `start_staging_runtime.sh` / `stop_staging_runtime.sh --volumes` / `check_staging_runtime.sh`
+  scripts and the canonical `docker compose -p aiagents-staging …` invocation) but **not executed**.
+- **Guardrails.** Destructive commands (`down -v`, volume deletion, teardown, restore, rollback,
+  full-stack restart, external-integration enablement, production deploy) require separate explicit
+  operator authorization; the formal product UI is the acceptance path; the Demo Evidence /
+  Diagnostics page is not.
+- **Docs + verifier.** New `deployment-management-sop.md`,
+  `deployment-management-operator-checklist.md`, `deployment-management-command-reference.md`,
+  `deployment-management-authorization-matrix.md`, `deployment-management-troubleshooting-guide.md`,
+  `deployment-management-validation-plan.md`, `deployment-management-known-risks.md`; updated
+  roadmap. `scripts/verify_deployment_management_sop_design.py`
+  (`DEPLOYMENT_MANAGEMENT_SOP_DESIGN_VERIFY`) + `tests/test_deployment_management_sop_design.py`.
+- **Gate.** This is staging deployment management, **not** production readiness and **not** a
+  production rollout. Next is Step 64F.2 (per operator scheduling). Claude Code does not decide
+  production readiness.
