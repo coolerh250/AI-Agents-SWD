@@ -11875,3 +11875,41 @@ deploy, no production secret, no external write; `production_executed_true_count
 - **Next.** Step 64E.3B — wire the deployed pages to the per-item endpoints
   (`admin-console-demo-evidence-remediation-plan.md`), rebuild, operator re-review. No remediation
   implemented here. Claude Code cannot self-accept operator usability.
+
+## Stage 66E.3B — Admin Console Demo Evidence UI Remediation (Step 64E.3B)
+
+Implemented the demo-evidence UI remediation under operator authorization. **Status: completed
+(PASS_WITH_GAPS).** **Marker: `ADMIN_CONSOLE_DEMO_EVIDENCE_UI_REMEDIATION_VERIFY: PASS_WITH_GAPS`.**
+**Step 64E: FAILED_OPERATOR_VALIDATION (operator re-review required). Step 64F: BLOCKED.**
+**Runtime posture: staging UI/API remediation deployed for operator re-review.** **Production
+posture: no production action, no production deploy, no production secret, no external write, no
+image push; `production_executed_true_count=0`.**
+
+- **Change.** New read-only **Demo Evidence** page `apps/admin-console/src/pages/DemoEvidence.tsx`
+  (route `/demo-evidence` + nav) rendering: demo project + `WI-0001` (auto-loaded, no manual
+  select), agent executions, workflows, QA runs, code workspaces, work-item audit events, and
+  `production_executed_true_count`. Two read-only GET endpoints added to `operations.py`
+  (`/operations/agent-executions`, `/operations/workflows`, shaped to safe fields). Frontend
+  getters for existing `/operations/qa/runs`, `/operations/code/workspaces`, delivery/events,
+  `/operations/safety`. GET-only client.
+- **Deploy.** Rebuilt `aiagents-staging-orchestrator` on `10.0.1.32` (in-image Vite build);
+  recreated only the orchestrator (`up -d orchestrator`), healthy. No `down -v`, no volume/DB
+  reset, **no image push**. Deployed commit `d72c835` (code).
+- **Validation.** `/admin/` serves the Vite bundle `index-CoRvi971.js` containing the demo-evidence
+  route + nav + endpoint calls. `/operations/agent-executions` 200 (10 completed);
+  `/operations/workflows` 200 (2, `production_executed=false`); qa/runs + code/workspaces +
+  delivery/projects 200; `/operations/safety` `production_executed_true_count=0`. Frontend vitest
+  (26) + backend pytest (2 new) pass; mypy no new errors (23 pre-existing in operations.py).
+- **Gaps.** SPA deep-link 404 (navigate via tabs); QA `validation_runs` rows may be empty (count
+  shown); browser render confirmed via vitest + endpoint data, not a staging browser session.
+- **Docs + verifier.** New `admin-console-demo-evidence-ui-remediation-report.md`,
+  `admin-console-demo-evidence-ui-validation.md`,
+  `admin-console-demo-evidence-operator-rereview-checklist.md`,
+  `admin-console-demo-evidence-known-gaps-after-remediation.md`; updated remediation-plan +
+  ui-blocker + blocker-status + operator validation report + confirmation form + roadmap.
+  `scripts/verify_admin_console_demo_evidence_ui_remediation.py`
+  (`ADMIN_CONSOLE_DEMO_EVIDENCE_UI_REMEDIATION_VERIFY`) +
+  `tests/test_admin_console_demo_evidence_ui_remediation.py`.
+- **Gate.** Operator must re-review the Demo Evidence page
+  (`admin-console-demo-evidence-operator-rereview-checklist.md`). Step 64E/64F unchanged until
+  then. Claude Code cannot self-accept operator usability.

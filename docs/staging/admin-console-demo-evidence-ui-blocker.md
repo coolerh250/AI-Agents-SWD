@@ -35,11 +35,14 @@ Read-only diagnosis identified the concrete UI/API mismatch per item — see
 the mock-workflow + seeded-work-item path. QA/code endpoints are entirely unwired; work items are
 gated behind manual selection; agent-execution/workflow/audit have only aggregate or stub views.
 
-## Next remediation
-**Admin Console Demo Evidence UI Remediation (Step 64E.3B)** — wire the deployed pages to the
-per-item endpoints per
-[admin-console-demo-evidence-remediation-plan.md](admin-console-demo-evidence-remediation-plan.md),
-then operator re-review. A future stage requiring its own authorization; **not** performed here.
+## Remediation implemented (Step 64E.3B)
+A read-only **Demo Evidence** page (`/demo-evidence`) now surfaces WI-0001, agent executions,
+workflows, QA/code, and audit events, backed by two new read-only endpoints + getters for the
+existing QA/code/delivery/events endpoints; rebuilt + redeployed + technically validated. See
+[admin-console-demo-evidence-ui-remediation-report.md](admin-console-demo-evidence-ui-remediation-report.md).
+**Operator re-review is required** (checklist:
+[admin-console-demo-evidence-operator-rereview-checklist.md](admin-console-demo-evidence-operator-rereview-checklist.md));
+Step 64E stays FAILED_OPERATOR_VALIDATION and Step 64F stays BLOCKED until the operator accepts.
 
 ## Status
 - Step 64E: **FAILED_OPERATOR_VALIDATION**. Step 64F: **BLOCKED**.

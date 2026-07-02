@@ -28,6 +28,12 @@ signed copy if desired.
 > **Re-review result (Step 64E.2):** operator re-reviewed — items 4/5/6 still **no** (WI-0001,
 > agent executions, workflow, QA/code, audit still not visible); item 9 (`production_executed_true_count=0`)
 > yes; **item 15 verdict = NOT_USABLE**. Step 64E stays `FAILED_OPERATOR_VALIDATION`.
+>
+> **Re-review needed (Step 64E.3B):** a **Demo Evidence** page was added + deployed to surface
+> WI-0001 / agent executions / workflows / QA / code / audit. Please re-run items 4/5/6 on the
+> **Demo Evidence** tab per
+> [admin-console-demo-evidence-operator-rereview-checklist.md](admin-console-demo-evidence-operator-rereview-checklist.md)
+> and record a fresh item-15 verdict. Step 64E stays `FAILED_OPERATOR_VALIDATION` until you do.
 
 ## Items
 

@@ -61,6 +61,13 @@ UI/API integration, not deployment. **Step 64E remains `FAILED_OPERATOR_VALIDATI
 [operator-rereview-result-after-react-bundle-remediation.md](operator-rereview-result-after-react-bundle-remediation.md)
 and [admin-console-demo-evidence-ui-blocker.md](admin-console-demo-evidence-ui-blocker.md).
 
+## Demo Evidence UI remediation (Step 64E.3B)
+A read-only **Demo Evidence** page (`/demo-evidence`) was added + deployed to surface WI-0001,
+agent executions, workflows, QA/code, and audit events (technically validated; endpoints 200,
+demo data present). **Step 64E stays `FAILED_OPERATOR_VALIDATION` until the operator re-reviews
+the Demo Evidence page and accepts** —
+[admin-console-demo-evidence-operator-rereview-checklist.md](admin-console-demo-evidence-operator-rereview-checklist.md).
+
 ## Gate on Step 64F
 **Step 64F is blocked.** It must not proceed until the operator re-reviews the remediated console
 and accepts — or explicitly waives. Claude Code cannot self-confirm operator acceptance and does

@@ -53,9 +53,17 @@ the deployed Admin Console, then operator re-review.
   `production_executed_true_count=0` · operator verdict recorded (usable / usable-with-gaps /
   not-usable). Claude Code must not self-accept.
 
+## Implemented in Step 64E.3B
+This plan was implemented — a read-only **Demo Evidence** page (route `/demo-evidence`) now
+surfaces the five items, backed by two new read-only endpoints (`/operations/agent-executions`,
+`/operations/workflows`) + getters for the existing QA/code/delivery/events endpoints. Rebuilt +
+redeployed the orchestrator on `10.0.1.32`; technically validated. See
+[admin-console-demo-evidence-ui-remediation-report.md](admin-console-demo-evidence-ui-remediation-report.md).
+**Operator re-review still required.**
+
 ## Status
-Plan only; nothing implemented. Step 64E FAILED_OPERATOR_VALIDATION; Step 64F BLOCKED;
-`production_executed_true_count=0`.
+Implemented (Step 64E.3B) — operator re-review pending. Step 64E FAILED_OPERATOR_VALIDATION;
+Step 64F BLOCKED; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
