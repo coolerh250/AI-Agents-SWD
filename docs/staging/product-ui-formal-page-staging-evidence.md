@@ -24,11 +24,17 @@ page is **not** an acceptance path.
 - Bundle routes + nav labels for all formal pages are present in the served JS (see
   [product-ui-staging-technical-validation.md](product-ui-staging-technical-validation.md)).
 
+## Operator acceptance (Step 64E.4D)
+The operator re-reviewed these formal pages and returned **PASS** (正式頁面都能呈現必要 evidence，且
+Safety Center 正常). See
+[operator-product-ui-rereview-result.md](operator-product-ui-rereview-result.md) and
+[product-ui-staging-operator-acceptance-record.md](product-ui-staging-operator-acceptance-record.md).
+**Step 64E: PASS. Step 64F: READY_TO_RESUME.**
+
 ## Boundary
-This is **technical** evidence that the formal pages are wired and populated. **Operator visual
-re-review is Step 64E.4D** and has not occurred. Step 64E remains
-FAILED_STAGING_REPRESENTATIVENESS; Step 64F remains BLOCKED. Claude Code does not decide operator
-acceptance. No production action; `production_executed_true_count=0`.
+This document captures the **technical** evidence that the formal pages are wired and populated; the
+operator's acceptance is recorded separately (above). Claude Code recorded the operator verdict and
+did not self-accept. No production action; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

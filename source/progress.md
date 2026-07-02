@@ -12025,3 +12025,30 @@ write, no image push, no volume deletion; `production_executed_true_count=0`.**
 - **Gate.** Ready for **Step 64E.4D** operator product-UI re-review (`http://localhost:18000/admin`
   via SSH tunnel; navigate by tabs). Step 64E stays FAILED_STAGING_REPRESENTATIVENESS; Step 64F
   stays BLOCKED. Claude Code does not decide operator acceptance.
+
+## Stage 66E.4D — Operator Product UI Re-review (Step 64E.4D)
+
+Recorded the operator's re-review of the staging formal product UI (Step 64E.4C deploy). **Status:
+completed.** **Marker: `OPERATOR_PRODUCT_UI_REREVIEW_VERIFY: PASS`.** **Operator verdict: PASS.**
+**Step 64E: PASS. Step 64F: READY_TO_RESUME.** **Runtime posture: recording only — no code change,
+no rebuild, no restart, no redeploy.** **Production posture: no production action, no production
+deploy, no production secret, no external write, no image push; `production_executed_true_count=0`.**
+
+- **Operator verdict.** PASS — statement: 正式頁面都能呈現必要 evidence，且 Safety Center 正常. Provided
+  by the operator; Claude Code recorded it and did not self-accept operator usability
+  ([[dont-self-confirm-human-validation]]).
+- **Formal-page checklist (operator).** Projects / Work Items PASS; Agent Executions PASS;
+  Workflows / Task Graph PASS; QA / Code PASS; Audit / Evidence PASS; Safety Center PASS
+  (`production_executed_true_count=0`); Diagnostics / Demo Evidence — not used as the acceptance
+  path (developer diagnostic only).
+- **Accepted gaps.** SPA deep-link hard-refresh 404 accepted as non-blocking (top-nav navigation
+  works); no blocking product UI gaps accepted.
+- **Read-only recheck.** `/health` 200; `/operations/safety` `production_executed_true_count=0`,
+  github/discord/llm external all false.
+- **Docs + verifier.** New `operator-product-ui-rereview-result.md`,
+  `product-ui-staging-operator-acceptance-record.md`, `product-ui-accepted-gaps.md`; updated
+  operator-rereview-plan + formal-page-staging-evidence + roadmap.
+  `scripts/verify_operator_product_ui_rereview.py` (`OPERATOR_PRODUCT_UI_REREVIEW_VERIFY`) +
+  `tests/test_operator_product_ui_rereview.py`.
+- **Gate.** Step 64E is **PASS**; Step 64F is **READY_TO_RESUME** (staging deployment-management
+  SOP; not a production readiness sign-off). Claude Code does not decide production readiness.

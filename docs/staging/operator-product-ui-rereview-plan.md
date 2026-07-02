@@ -15,6 +15,14 @@ the demo data and `production_executed_true_count=0`. **This re-review (Step 64E
 to run** — see [product-ui-operator-rereview-instructions.md](product-ui-operator-rereview-instructions.md).
 Claude Code does not decide acceptance.
 
+## Result (Step 64E.4D — recorded)
+The operator completed this re-review and returned **PASS** (正式頁面都能呈現必要 evidence，且 Safety
+Center 正常): all formal-page checklist items PASS; Diagnostics/Demo Evidence not used as the
+acceptance path; `production_executed_true_count=0`. **Step 64E: PASS. Step 64F: READY_TO_RESUME.**
+See [operator-product-ui-rereview-result.md](operator-product-ui-rereview-result.md),
+[product-ui-staging-operator-acceptance-record.md](product-ui-staging-operator-acceptance-record.md),
+and [product-ui-accepted-gaps.md](product-ui-accepted-gaps.md).
+
 ## Access
 `ssh -i ~/.ssh/ai-agents-staging/staging_10_0_1_32 -L 18000:127.0.0.1:18000 itadmin@10.0.1.32` then
 open `http://localhost:18000/admin`. Navigate via the formal top-nav tabs (not deep-link
