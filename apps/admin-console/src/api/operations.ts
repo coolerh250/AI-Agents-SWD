@@ -89,6 +89,15 @@ export const getMetricsAudit = () =>
   apiGet<Record<string, unknown>>(`/operations/metrics/audit`);
 export const getMetricsSafety = () =>
   apiGet<Record<string, unknown>>(`/operations/metrics/safety`);
+
+// Step 64E.3B -- read-only demo-evidence getters for the Demo Evidence page.
+export const getQaRuns = () => apiGet<Record<string, unknown>>(`/operations/qa/runs`);
+export const getCodeWorkspaces = () =>
+  apiGet<Record<string, unknown>>(`/operations/code/workspaces`);
+export const getAgentExecutions = () =>
+  apiGet<Record<string, unknown>>(`/operations/agent-executions`);
+export const getWorkflows = () => apiGet<Record<string, unknown>>(`/operations/workflows`);
+export const getSafety = () => apiGet<Record<string, unknown>>(`/operations/safety`);
 export const getMetricsFreshness = () =>
   apiGet<Record<string, unknown>>(`/operations/metrics/freshness`);
 

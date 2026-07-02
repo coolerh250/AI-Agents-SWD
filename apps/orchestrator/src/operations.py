@@ -1490,6 +1490,63 @@ async def operations_agent_detail(agent_name: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Step 64E.3B -- read-only demo-evidence lists (GET only, shaped to safe fields;
+# no raw generated code / logs). Consumed by the Admin Console Demo Evidence page
+# so operators can see the seeded demo's per-agent executions + per-workflow trace.
+# ---------------------------------------------------------------------------
+
+
+@router.get("/agent-executions")
+@_instrument("/operations/agent-executions", "operations.agent_executions_view")
+async def operations_agent_executions(task_id: str | None = None, agent: str | None = None) -> dict:
+    try:
+        rows = await AgentExecutionStore().list_executions(task_id=task_id, agent=agent)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=503, detail=f"agent execution store unavailable: {exc}"
+        ) from exc
+    executions = [
+        {
+            "id": r.get("id"),
+            "task_id": r.get("task_id"),
+            "agent": r.get("agent"),
+            "status": r.get("status"),
+            "started_at": r.get("started_at"),
+            "completed_at": r.get("completed_at"),
+            "created_at": r.get("created_at"),
+        }
+        for r in rows
+    ]
+    return {"count": len(executions), "executions": executions, "generated_at": _utcnow_iso()}
+
+
+@router.get("/workflows")
+@_instrument("/operations/workflows", "operations.workflows_view")
+async def operations_workflows(status: str | None = None) -> dict:
+    try:
+        rows = await WorkflowStore().list_workflows(status)
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail=f"workflow store unavailable: {exc}") from exc
+    workflows = []
+    for r in rows:
+        exec_result = r.get("execution_result")
+        prod = exec_result.get("production_executed") if isinstance(exec_result, dict) else None
+        workflows.append(
+            {
+                "task_id": r.get("task_id"),
+                "stage": r.get("stage"),
+                "approval_required": r.get("approval_required"),
+                "approval_status": r.get("approval_status"),
+                "risk_level": r.get("risk_level"),
+                "production_executed": prod,
+                "created_at": r.get("created_at"),
+                "updated_at": r.get("updated_at"),
+            }
+        )
+    return {"count": len(workflows), "workflows": workflows, "generated_at": _utcnow_iso()}
+
+
+# ---------------------------------------------------------------------------
 # /operations/streams
 # ---------------------------------------------------------------------------
 

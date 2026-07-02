@@ -24,12 +24,14 @@ import { ReleaseGovernance } from "./pages/ReleaseGovernance";
 import { BackupDr } from "./pages/BackupDr";
 import { ProductionReadiness } from "./pages/ProductionReadiness";
 import { ControlledRolloutReview } from "./pages/ControlledRolloutReview";
+import { DemoEvidence } from "./pages/DemoEvidence";
 
 export function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<ExecutiveOverview />} />
+        <Route path="/demo-evidence" element={<DemoEvidence />} />
         <Route path="/projects" element={<Projects />} />
         <Route path="/projects/:projectId" element={<ProjectDetail />} />
         <Route path="/task-graph" element={<TaskGraph />} />
