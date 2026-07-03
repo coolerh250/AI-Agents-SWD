@@ -141,11 +141,15 @@ authorization; full-stack restart, rollback, teardown, restore, external-integra
 and any production deploy require **explicit** authorization (destructive/production actions
 require separate explicit sign-off and are out of scope for routine staging operations).
 
-## Rehearsed in Step 64F.2
-The restart (§D, orchestrator-only) and health/safety validation (§J) procedures were exercised in
-a controlled rehearsal on `10.0.1.32` — orchestrator recovered healthy, all formal-evidence
-endpoints unchanged, `production_executed_true_count=0`, no data loss. See
-[deployment-management-rehearsal-report.md](deployment-management-rehearsal-report.md).
+## Rehearsed in Steps 64F.2 / 64F.3
+- **64F.2** — the restart (§D, orchestrator-only) and health/safety validation (§J) procedures were
+  exercised on `10.0.1.32`: orchestrator recovered healthy, all formal-evidence endpoints
+  unchanged, `production_executed_true_count=0`, no data loss. See
+  [deployment-management-rehearsal-report.md](deployment-management-rehearsal-report.md).
+- **64F.3** — the rebuild/redeploy (§E, git ff-only sync → orchestrator-only `build` + `up -d`) and
+  validation (§J) procedures were exercised: build succeeded, orchestrator recovered healthy,
+  formal-evidence endpoints unchanged, `production_executed_true_count=0`, no data loss. See
+  [deployment-management-rebuild-redeploy-rehearsal-report.md](deployment-management-rebuild-redeploy-rehearsal-report.md).
 
 ## Status
 - Step 64E: **PASS**. Step 64F: **REHEARSAL_COMPLETED** (SOP designed in 64F.1, restart+validation

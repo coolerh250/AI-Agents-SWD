@@ -12114,3 +12114,39 @@ action, no production deploy, no production secret, no external write, no image 
   `tests/test_controlled_staging_operations_rehearsal.py`.
 - **Gate.** Staging deployment management only, **not** production readiness. Next is Step 64F.3
   (per operator scheduling / authorization). Claude Code does not decide production readiness.
+
+## Stage 66F.3 — Controlled Orchestrator Rebuild/Redeploy Rehearsal (Step 64F.3)
+
+Rehearsed the SOP rebuild/redeploy procedure: a git ff-only sync + **orchestrator-only** `build` +
+`up -d` of the `aiagents-staging` runtime on `10.0.1.32`, then the validation-plan run.
+**Status: completed (PASS_WITH_GAPS).** **Marker:
+`CONTROLLED_ORCHESTRATOR_REBUILD_REDEPLOY_REHEARSAL_VERIFY: PASS_WITH_GAPS`.** **Step 64E: PASS.
+Step 64F: REBUILD_REDEPLOY_REHEARSAL_COMPLETED.** **Runtime posture: orchestrator-only
+rebuild/redeploy rehearsal — no full-stack rebuild, no full-stack restart, no down/down -v, no
+teardown, no restore, no rollback, no data change.** **Production posture: no production action, no
+production deploy, no production secret, no external write, no image push;
+`production_executed_true_count=0`.**
+
+- **Sync.** `git pull --ff-only origin main` → **44f9a40 → 9ec9676** (fast-forward; no hard reset,
+  no git clean). The `44f9a40..9ec9676` diff is docs/scripts/tests only (no `apps/` code change).
+- **Rebuild/redeploy.** `docker compose -p aiagents-staging … build orchestrator` then
+  `… up -d orchestrator` (orchestrator only; postgres/redis health-waited). No scope-less
+  build/up; no full-stack rebuild/restart; no down/down -v; no prune; no volume rm.
+- **Before/after.** `/health` 200→200; `/admin` 307→307 (`/admin/` 200); orchestrator healthy
+  before/after (up ~2m after); 22/22 running; `/operations/safety` prod_exec 0→0 (external flags
+  false). Bundle `index-B4s3Ud5S.js` unchanged (expected — docs-only diff). Formal-evidence
+  endpoints identical: delivery/projects 1, WI-0001, `work_item_created`, agent-executions 10,
+  workflows 2 (`production_executed=false`), qa/runs 2, code/workspaces 2 — **no data loss**.
+- **Gap.** SPA deep-link `/admin/agent-executions` hard-refresh 404 (navigate via tabs) — unchanged
+  accepted non-blocking gap.
+- **Docs + verifier.** New `deployment-management-rebuild-redeploy-rehearsal-report.md`,
+  `deployment-management-rebuild-redeploy-before-after-evidence.md`,
+  `deployment-management-rebuild-redeploy-validation-result.md`,
+  `deployment-management-rebuild-redeploy-known-gaps.md`,
+  `deployment-management-rebuild-redeploy-safety-record.md`; updated deployment-management-sop +
+  command-reference + validation-plan + known-risks + roadmap.
+  `scripts/verify_controlled_orchestrator_rebuild_redeploy_rehearsal.py`
+  (`CONTROLLED_ORCHESTRATOR_REBUILD_REDEPLOY_REHEARSAL_VERIFY`) +
+  `tests/test_controlled_orchestrator_rebuild_redeploy_rehearsal.py`.
+- **Gate.** Staging deployment management only, **not** production readiness. Next is Step 64F.4
+  (per operator scheduling / authorization). Claude Code does not decide production readiness.

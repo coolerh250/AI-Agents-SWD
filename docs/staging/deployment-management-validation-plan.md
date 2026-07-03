@@ -43,12 +43,14 @@ before treating the runtime as good. All checks are **GET/HEAD** (plus `docker c
 - **FAIL:** Admin Console unreachable, a safety flag non-compliant, or a required evidence type
   missing from its formal page → roll back / remediate per the SOP.
 
-## Exercised in Step 64F.2
-This validation plan was run after an orchestrator-only restart on `10.0.1.32` (Step 64F.2): §1–§4
-all held (Admin Console reachable, `production_executed_true_count=0`, formal-page endpoints
-returned unchanged demo data), with the deep-link 404 as the sole documented non-blocking gap →
-PASS_WITH_GAPS. See
-[deployment-management-rehearsal-before-after-evidence.md](deployment-management-rehearsal-before-after-evidence.md).
+## Exercised in Steps 64F.2 / 64F.3
+- **64F.2 (orchestrator restart):** §1–§4 held (Admin Console reachable,
+  `production_executed_true_count=0`, formal-page endpoints unchanged), deep-link 404 the sole gap →
+  PASS_WITH_GAPS. See
+  [deployment-management-rehearsal-before-after-evidence.md](deployment-management-rehearsal-before-after-evidence.md).
+- **64F.3 (orchestrator rebuild/redeploy):** §1–§4 held again after a git ff-only sync +
+  orchestrator-only build + `up -d`; no data loss; deep-link 404 the sole gap → PASS_WITH_GAPS. See
+  [deployment-management-rebuild-redeploy-validation-result.md](deployment-management-rebuild-redeploy-validation-result.md).
 
 ## Status
 Step 64E: **PASS**. Step 64F: **REHEARSAL_COMPLETED**. Staging deployment management only, not

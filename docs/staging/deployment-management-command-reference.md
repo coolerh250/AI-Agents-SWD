@@ -44,6 +44,13 @@ docker compose -p aiagents-staging \
 `image push`, `registry login`, production deploy/sync/secret, live GitHub write, live
 Slack/Discord send, live LLM call, public port exposure, DB reset, workflow re-run.
 
+## Exercised in Step 64F.3
+The lifecycle commands `build orchestrator` and `up -d orchestrator` (with the canonical
+`-p aiagents-staging …` invocation), plus the read-only checks, were exercised in the Step 64F.3
+rebuild/redeploy rehearsal on `10.0.1.32` — orchestrator rebuilt + recreated, healthy, no data
+loss, `production_executed_true_count=0`. See
+[deployment-management-rebuild-redeploy-rehearsal-report.md](deployment-management-rebuild-redeploy-rehearsal-report.md).
+
 ## Notes
 - **Never print `infra/runtime/.env.staging.local`** or any secret.
 - Host ports are loopback + `+10000` offset; operator access is via SSH `-L
