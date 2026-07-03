@@ -6,15 +6,18 @@
 Authorization gates for Step 65C–65I. Each step is default-off and runs only when the operator
 explicitly authorizes it; sandbox / non-production only.
 
-## Step 65C — Staging Secret & Credential Setup
-- **Operator authorization:** required. **Resource:** staging secret backend. **Credential ref:**
-  the sandbox references in [staging-secret-backend-plan.md](staging-secret-backend-plan.md).
+## Step 65C — Staging Secret & Credential Setup (completed — PASS_WITH_GAPS)
+- **Operator authorization:** granted. **Resource:** env-file staging secret backend. **Credential
+  ref:** the sandbox references in [staging-secret-backend-plan.md](staging-secret-backend-plan.md).
 - **Allowed:** store sandbox references (existence only). **Forbidden:** production secrets;
   printing/committing secrets.
-- **Success:** references present (never values); mock→sandbox toggle documented. **Failure:** any
-  production secret or leaked value.
+- **Success:** non-secret references + safe kill switches provisioned (never values); mock→sandbox
+  toggle documented. **Failure:** any production secret or leaked value.
 - **Rollback/disable:** remove/rotate references → mock. **Audit:** existence booleans. **User
   validation:** operator confirms credentials/resources.
+- **Done:** env-file backend; references + safe defaults set; three secret values pending operator
+  out-of-band entry; `production_executed_true_count=0`; no integration enabled. See
+  [staging-secret-credential-setup-report.md](staging-secret-credential-setup-report.md).
 
 ## Step 65D — Controlled GitHub Sandbox Validation
 - **Operator authorization:** required. **Resource:** sandbox repo. **Credential ref:** `GITHUB_TOKEN`.

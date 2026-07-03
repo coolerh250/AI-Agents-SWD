@@ -12227,3 +12227,40 @@ deploy, no production secret, no external write; `production_executed_true_count
 - **Gate.** Next is Step 65C (staging secret & credential setup) — operator-authorized; operator
   provides sandbox credentials out-of-band. Claude Code does not enable integrations or decide
   staging functional acceptance. Not production readiness.
+
+## Stage 65C — Staging Secret & Credential Setup (Step 65C)
+
+Provisioned the staging sandbox credential scaffolding on `10.0.1.32` under operator authorization
+(owner/rotation = Zachary). **Status: completed (PASS_WITH_GAPS — three secret values pending
+operator out-of-band entry).** **Marker: `STAGING_SECRET_CREDENTIAL_SETUP_VERIFY: PASS_WITH_GAPS`.**
+**Prepared integrations: GitHub sandbox, notification (Discord) staging channel, LLM (Anthropic)
+staging key, staging secret backend (env-file).** **Runtime posture: credential setup only — no
+integration enablement, no external write, no workflow execution, no runtime reload/restart.**
+**Production posture: no production action, no production deploy, no production secret, no external
+write; `production_executed_true_count=0`.**
+
+- **Backend.** env-file `infra/runtime/.env.staging.local` (gitignored, chmod 600, owner `itadmin`);
+  `SECRET_PROVIDER` unchanged (mock-vault). Appended **non-secret** references + metadata +
+  safe-default kill switches (`GITHUB_SANDBOX_REPO=…AI-Agents-SWD-sandbox`, `GITHUB_DRY_RUN=true`,
+  `NOTIFICATION_PLATFORM=discord`, `NOTIFICATION_MESSAGE_PREFIX=[STAGING]`, `LLM_PROVIDER=mock`,
+  `LLM_STAGING_PROVIDER=anthropic`, `LLM_MAX_COST_PER_RUN=5`, `ENABLE_REAL_LLM_NETWORK_CALL=false`,
+  `SECRET_OWNER=Zachary`, `SECRET_ROTATION_OWNER=Zachary`, `SECRET_AUDIT_REQUIRED=true`). A
+  secret-containing backup was created during the edit and then **removed**.
+- **Secret values.** NONE printed/committed. `GITHUB_TOKEN` + `DISCORD_BOT_TOKEN` pre-exist (masked);
+  `DISCORD_TEST_CHANNEL_ID`, `ANTHROPIC_API_KEY`/`LLM_API_KEY` **pending out-of-band** (before
+  65E/65F); GitHub sandbox token to be confirmed before 65D.
+- **Kill switches safe.** `GITHUB_DRY_RUN=true`, `RUN_REAL_GITHUB_TEST=false`,
+  `RUN_REAL_DISCORD_TEST=false`, `ENABLE_REAL_LLM_NETWORK_CALL=false`, `LLM_PROVIDER=mock`.
+  `/operations/safety` (read-only, runtime NOT reloaded): `production_executed_true_count=0`,
+  github/discord/llm external all false.
+- **Runtime reload.** Not performed (not authorized) — references provisioned but the orchestrator
+  has not reloaded them; a reload/restart is a later explicit authorization.
+- **Docs + verifier.** New `staging-secret-credential-setup-report.md`,
+  `staging-secret-reference-map.md`, `staging-secret-kill-switch-record.md`,
+  `staging-secret-validation-result.md`, `staging-secret-known-gaps.md`,
+  `staging-secret-operator-handback.md`; updated secret-backend-plan + authorization-gates +
+  user-input-checklist + validation-roadmap. `scripts/verify_staging_secret_credential_setup.py`
+  (`STAGING_SECRET_CREDENTIAL_SETUP_VERIFY`) + `tests/test_staging_secret_credential_setup.py`.
+- **Gate.** Next is Step 65D (controlled GitHub sandbox validation) after the operator sets the
+  sandbox token out-of-band and authorizes the write. Claude Code does not enable integrations or
+  decide staging functional acceptance. Not production readiness.

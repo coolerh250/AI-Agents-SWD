@@ -33,9 +33,17 @@ now** — values are provided out-of-band at 65C and stored only in the staging 
 - 65G/65H: authorize the E2E run and each failure/governance scenario.
 - 65I: give the staging functional acceptance verdict.
 
+## Received at Step 65C (non-secret metadata)
+- GitHub sandbox repo: `coolerh250/AI-Agents-SWD-sandbox` ✓
+- Notification platform / channel: Discord / `MySanbox/#general` ✓
+- LLM provider / quota: Anthropic / `5` ✓
+- Secret backend: env-file ✓ · Credential owner: Zachary ✓ · Rotation owner: Zachary ✓
+- **Still pending (secret values, out-of-band):** GitHub sandbox token (before 65D), Discord bot
+  token + numeric channel ID (before 65E), Anthropic key (before 65F).
+
 ## Posture
-Planning only. No secret requested/created, no integration enabled, no external write, no runtime
-change, no production action; `production_executed_true_count=0`.
+Checklist / documentation. No secret value provided in chat/repo; no integration enabled, no
+external write, no production action; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

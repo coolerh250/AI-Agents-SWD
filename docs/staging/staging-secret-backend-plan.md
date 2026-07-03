@@ -54,9 +54,17 @@ If a sandbox credential is absent or an enable flag is off, the integration fall
 mock/disabled — the safe default — and `/operations/safety` shows the corresponding
 `*_enabled=false`.
 
+## Executed in Step 65C
+Backend chosen = **env-file** (`infra/runtime/.env.staging.local`, gitignored, chmod 600, owner
+`itadmin`). Non-secret references + metadata + safe-default kill switches were provisioned;
+owner/rotation = **Zachary**. The three sandbox secret **values** (GitHub sandbox token, Discord bot
+token + channel ID, Anthropic key) are pending operator out-of-band entry. See
+[staging-secret-credential-setup-report.md](staging-secret-credential-setup-report.md) and
+[staging-secret-reference-map.md](staging-secret-reference-map.md). No runtime reload performed.
+
 ## Posture
-Planning only. No secret created/updated/printed/committed, no integration enabled, no external
-write, no runtime change, no production action; `production_executed_true_count=0`.
+Backend plan executed at 65C (setup only). No secret value printed/committed, no integration
+enabled, no external write, no production action; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

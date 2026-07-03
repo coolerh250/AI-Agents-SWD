@@ -26,13 +26,17 @@ explicit operator authorization; sandbox/non-production only.
   [external-integration-user-input-checklist.md](external-integration-user-input-checklist.md).
   Planning only; no integration enabled; `production_executed_true_count=0`.
 
-## Step 65C — Staging Secret & Credential Setup
+## Step 65C — Staging Secret & Credential Setup (completed — PASS_WITH_GAPS)
 - **Purpose:** provision sandbox credentials in the staging secret store.
 - **Allowed:** configure sandbox credentials (existence only). **Forbidden:** production secrets;
   printing/committing secrets.
-- **Op-auth:** required. **User validation:** operator confirms sandbox credentials/resources.
+- **Op-auth:** granted. **User validation:** operator confirms sandbox credentials/resources.
 - **Acceptance:** credentials present (never values); mock→sandbox toggle documented. **Rollback:**
   remove/rotate to return to mock.
+- **Done:** env-file backend; non-secret references + safe kill switches provisioned (owner/rotation
+  = Zachary); three secret values pending operator out-of-band entry; no integration enabled;
+  `production_executed_true_count=0`. See
+  [staging-secret-credential-setup-report.md](staging-secret-credential-setup-report.md).
 
 ## Step 65D — Controlled GitHub Sandbox Validation
 - **Purpose:** validate GitHub integration against a sandbox repo (draft PRs).
