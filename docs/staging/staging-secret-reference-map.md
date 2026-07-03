@@ -24,7 +24,7 @@ in the gitignored `infra/runtime/.env.staging.local` on `10.0.1.32`, entered out
 - **Key reference:** `ANTHROPIC_API_KEY` (or `LLM_API_KEY`) — non-production staging key, value
   out-of-band.
 - **Provider (non-secret):** `LLM_STAGING_PROVIDER=anthropic`; current `LLM_PROVIDER=mock` (safe
-  default); quota `LLM_MAX_COST_PER_RUN=5` (operator-defined bounded limit).
+  default); quota `LLM_MAX_COST_PER_RUN=1` (operator-defined bounded limit = 1 USD per run).
 
 ## Secret backend / ownership (non-secret)
 - **Backend:** env-file (`infra/runtime/.env.staging.local`, gitignored, chmod 600).

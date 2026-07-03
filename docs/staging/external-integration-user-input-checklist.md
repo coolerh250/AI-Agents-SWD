@@ -36,7 +36,7 @@ now** — values are provided out-of-band at 65C and stored only in the staging 
 ## Received at Step 65C (non-secret metadata)
 - GitHub sandbox repo: `coolerh250/AI-Agents-SWD-sandbox` ✓
 - Notification platform / channel: Discord / `MySanbox/#general` ✓
-- LLM provider / quota: Anthropic / `5` ✓
+- LLM provider / quota: Anthropic / `1` (USD per run; adjusted from 5 → 1 by operator) ✓
 - Secret backend: env-file ✓ · Credential owner: Zachary ✓ · Rotation owner: Zachary ✓
 - **Still pending (secret values, out-of-band):** GitHub sandbox token (before 65D), Discord bot
   token + numeric channel ID (before 65E), Anthropic key (before 65F).

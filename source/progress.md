@@ -12243,7 +12243,8 @@ write; `production_executed_true_count=0`.**
   `SECRET_PROVIDER` unchanged (mock-vault). Appended **non-secret** references + metadata +
   safe-default kill switches (`GITHUB_SANDBOX_REPO=…AI-Agents-SWD-sandbox`, `GITHUB_DRY_RUN=true`,
   `NOTIFICATION_PLATFORM=discord`, `NOTIFICATION_MESSAGE_PREFIX=[STAGING]`, `LLM_PROVIDER=mock`,
-  `LLM_STAGING_PROVIDER=anthropic`, `LLM_MAX_COST_PER_RUN=5`, `ENABLE_REAL_LLM_NETWORK_CALL=false`,
+  `LLM_STAGING_PROVIDER=anthropic`, `LLM_MAX_COST_PER_RUN=1` (USD/run; later adjusted 5→1 by
+  operator), `ENABLE_REAL_LLM_NETWORK_CALL=false`,
   `SECRET_OWNER=Zachary`, `SECRET_ROTATION_OWNER=Zachary`, `SECRET_AUDIT_REQUIRED=true`). A
   secret-containing backup was created during the edit and then **removed**.
 - **Secret values.** NONE printed/committed. `GITHUB_TOKEN` + `DISCORD_BOT_TOKEN` pre-exist (masked);
