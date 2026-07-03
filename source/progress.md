@@ -12150,3 +12150,45 @@ production deploy, no production secret, no external write, no image push;
   `tests/test_controlled_orchestrator_rebuild_redeploy_rehearsal.py`.
 - **Gate.** Staging deployment management only, **not** production readiness. Next is Step 64F.4
   (per operator scheduling / authorization). Claude Code does not decide production readiness.
+
+## Stage 65A — Staging Functional Coverage & Integration Readiness Assessment (Step 65A)
+
+Operator paused Step 64F.4 and pivoted to a **staging functional-validation track**: verify that all
+platform functions actually run correctly in staging. This stage is a **read-only assessment** that
+inventories coverage, gaps, integration readiness, and the 65B–65I roadmap. **Status: completed
+(PASS_WITH_GAPS — one tracked `UNKNOWN` item pending operator scope).** **Marker:
+`STAGING_FUNCTIONAL_COVERAGE_ASSESSMENT_VERIFY: PASS_WITH_GAPS`.** **Step 64E: PASS. Step
+64F: PAUSED_AFTER_REBUILD_REDEPLOY_REHEARSAL. Step 65: FUNCTIONAL_VALIDATION_TRACK_STARTED.**
+**Runtime posture: assessment only — no restart, rebuild, stop/start, workflow execution,
+integration enablement, or data change.** **Production posture: no production action, no production
+deploy, no production secret, no external write; `production_executed_true_count=0`.**
+
+- **Honest classification.** Deployment/ops rehearsals + Admin Console formal pages + safety/gating
+  are `STAGING_VALIDATED`; the whole intake→agent→workflow→QA→code→audit data path is
+  `SEEDED_EVIDENCE_ONLY`/`MOCKED` (seeded via mock, not a fresh E2E run); resume/cancel/abort,
+  approval paths, retry/DLQ, audit integrity are `TEST_VALIDATED_ONLY`; communication-gateway intake
+  is `BLOCKED_BY_DESIGN` (PyYAML); live GitHub `MOCKED/BLOCKED_BY_CREDENTIAL` (dry-run), Discord/LLM
+  `DISABLED/MOCKED`, secret backend `mock-vault`, registry sandbox `NOT_IMPLEMENTED`.
+- **Read-only probes.** `/operations/safety`: prod_exec=0, `github_external_write_enabled=false`,
+  `discord_has_token=false`, `llm_provider=mock`, `secret_provider=mock-vault`; `/operations/streams`
+  count=11; GitHub sandbox + release governance endpoints present but gated.
+- **Biggest blockers.** (1) no fresh E2E workflow from a real intake (65G); (2) live external
+  integrations not set up — credentials + sandbox resources + operator auth (65C–65F); (3)
+  failure/governance paths not exercised in staging (65H).
+- **Roadmap.** 65B integration plan → 65C secret/credential setup → 65D GitHub sandbox → 65E
+  notification → 65F LLM → 65G E2E workflow → 65H failure/recovery/governance → 65I acceptance
+  report. Each step operator-authorized; sandbox/non-prod only.
+- **User validation points.** After 65A scope; before 65C credentials; before 65D/65E/65F authorize
+  each integration; during 65G validate E2E on formal pages; during 65H authorize scenarios; at 65I
+  operator gives the acceptance verdict.
+- **Docs + verifier.** New `staging-functional-coverage-matrix.md`,
+  `staging-functional-gap-register.md`, `staging-integration-readiness-assessment.md`,
+  `staging-functional-validation-roadmap.md`, `staging-functional-acceptance-criteria.md`,
+  `staging-user-validation-points.md`, `staging-functional-validation-risk-register.md`,
+  `step64-to-step65-transition-note.md`; updated roadmap.
+  `scripts/verify_staging_functional_coverage_assessment.py`
+  (`STAGING_FUNCTIONAL_COVERAGE_ASSESSMENT_VERIFY`) +
+  `tests/test_staging_functional_coverage_assessment.py`.
+- **Gate.** Operator confirms the functional-coverage scope and in-scope integrations before 65B/65C.
+  Claude Code does not decide staging functional acceptance or production readiness. This is not
+  production readiness.
