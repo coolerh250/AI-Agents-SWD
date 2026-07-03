@@ -6,7 +6,7 @@
 repositories:
   - key: ai-agents-sandbox
     owner: coolerh250
-    repo: AI-Agents-SWD
+    repo: AI-Agents-SWD-sandbox
     allowed: true
     sandboxOnly: true
     allowedBaseBranches:
