@@ -64,6 +64,16 @@ operator-authorized step.
 - Audit evidence: every controlled external action must be recorded (sanitized).
 - Sandbox/non-production only: staging must not use production secrets or production data.
 
+## Planned in Step 65B
+The controlled integration plans were authored in Step 65B (operator scope: GitHub / notification /
+LLM / secret backend in scope; registry + cloud storage deferred): per-integration sandbox
+resources, credential references (names only), kill switches, allowed/forbidden actions, audit, and
+65C–65I gates. See [controlled-external-integration-plan.md](controlled-external-integration-plan.md),
+[staging-secret-backend-plan.md](staging-secret-backend-plan.md),
+[github-sandbox-integration-plan.md](github-sandbox-integration-plan.md),
+[notification-staging-channel-plan.md](notification-staging-channel-plan.md),
+[llm-staging-integration-plan.md](llm-staging-integration-plan.md).
+
 ## Posture
 Read-only assessment only. No integration enabled, no secret created, no external write, no
 production action; `production_executed_true_count=0`. Enabling any integration is a later,

@@ -12192,3 +12192,38 @@ deploy, no production secret, no external write; `production_executed_true_count
 - **Gate.** Operator confirms the functional-coverage scope and in-scope integrations before 65B/65C.
   Claude Code does not decide staging functional acceptance or production readiness. This is not
   production readiness.
+
+## Stage 65B — Controlled Staging External Integration Plan (Step 65B)
+
+Authored the controlled staging external-integration plan after operator scope confirmation.
+**Status: completed (PASS_WITH_GAPS — resource names are tracked placeholders pending operator
+input).** **Marker: `CONTROLLED_EXTERNAL_INTEGRATION_PLAN_VERIFY: PASS_WITH_GAPS`.**
+**Functional scope: FULL_DOMAIN_MATRIX.** **In-scope: GitHub sandbox, notification staging channel,
+LLM staging key, staging secret backend. Deferred: container registry sandbox, cloud storage /
+Google Drive.** **Runtime posture: planning only — no integration enablement, no secret creation, no
+workflow execution, no external write.** **Production posture: no production action, no production
+deploy, no production secret, no external write; `production_executed_true_count=0`.**
+
+- **Plans.** Per-integration sandbox resources, credential **references (names/flags only, never
+  values)**, enable-flag + kill-switch model (GitHub `RUN_REAL_GITHUB_TEST`/`GITHUB_DRY_RUN`,
+  notification `RUN_REAL_DISCORD_TEST`, LLM `LLM_PROVIDER`/`ENABLE_REAL_LLM_NETWORK_CALL`), allowed
+  vs forbidden actions, audit/evidence, and not-touching-production verification tied to
+  `/operations/safety`.
+- **Secret handling.** No secret values committed/printed/copied; staging-only non-production
+  references; out-of-band delivery to the staging secret backend at 65C; existence-only records.
+- **Gates.** 65C–65I authorization gates each with op-auth / resource / credential ref / allowed /
+  forbidden / success / failure / rollback / audit / user-validation. User-input checklist separates
+  "needed later" from "do not provide now".
+- **Deferred.** Container registry + cloud storage/Drive registered as LATER with entry criteria.
+- **Docs + verifier.** New `controlled-external-integration-plan.md`,
+  `staging-secret-backend-plan.md`, `github-sandbox-integration-plan.md`,
+  `notification-staging-channel-plan.md`, `llm-staging-integration-plan.md`,
+  `deferred-integration-register.md`, `external-integration-authorization-gates.md`,
+  `external-integration-user-input-checklist.md`, `external-integration-risk-register.md`; updated
+  validation-roadmap + integration-readiness-assessment + gap-register.
+  `scripts/verify_controlled_external_integration_plan.py`
+  (`CONTROLLED_EXTERNAL_INTEGRATION_PLAN_VERIFY`) +
+  `tests/test_controlled_external_integration_plan.py`.
+- **Gate.** Next is Step 65C (staging secret & credential setup) — operator-authorized; operator
+  provides sandbox credentials out-of-band. Claude Code does not enable integrations or decide
+  staging functional acceptance. Not production readiness.

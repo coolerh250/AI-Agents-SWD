@@ -24,6 +24,10 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 ## Credential gaps
 - No staging sandbox credentials provisioned for GitHub / notification / LLM; `secret_provider` is
   `mock-vault`. A staging secret store + credential setup is required. → 65C.
+- **Step 65B note:** the integration + secret-backend plans now exist
+  ([controlled-external-integration-plan.md](controlled-external-integration-plan.md),
+  [staging-secret-backend-plan.md](staging-secret-backend-plan.md)); credentials are still not
+  provisioned (that is 65C, operator-authorized).
 
 ## Operator authorization gaps
 - Operator actions are disabled in staging (`operator_actions_disabled`), so operator-submitted

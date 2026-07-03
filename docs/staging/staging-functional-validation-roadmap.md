@@ -13,12 +13,18 @@ explicit operator authorization; sandbox/non-production only.
   integration enablement, secret creation, production action.
 - **Acceptance:** the seven assessment docs + verifier PASS. **Exit:** operator confirms scope.
 
-## Step 65B — Controlled Staging External Integration Plan
-- **Purpose:** detailed plan for each in-scope integration (GitHub/notification/LLM/registry).
+## Step 65B — Controlled Staging External Integration Plan (completed)
+- **Purpose:** detailed plan for each in-scope integration (GitHub/notification/LLM/secret backend).
 - **Allowed:** documentation. **Forbidden:** enabling integrations, storing secrets.
 - **Inputs:** operator's in-scope integration list. **Op-auth:** required to set scope.
 - **Acceptance:** per-integration plan with kill switches. **Exit/abort:** operator defers an
   integration.
+- **Done:** operator scope `FULL_DOMAIN_MATRIX`; in-scope GitHub/notification/LLM/secret backend;
+  deferred registry + cloud storage. Plans in
+  [controlled-external-integration-plan.md](controlled-external-integration-plan.md) +
+  [external-integration-authorization-gates.md](external-integration-authorization-gates.md) +
+  [external-integration-user-input-checklist.md](external-integration-user-input-checklist.md).
+  Planning only; no integration enabled; `production_executed_true_count=0`.
 
 ## Step 65C — Staging Secret & Credential Setup
 - **Purpose:** provision sandbox credentials in the staging secret store.
