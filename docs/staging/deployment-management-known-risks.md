@@ -28,6 +28,12 @@ Known risks of staging deployment operations and their mitigations.
    prefer orchestrator-only; full-stack restart requires explicit authorization + documented
    reason.
 
+## Confirmed by the Step 64F.2 rehearsal
+The orchestrator-only restart rehearsal confirmed: risk #2 (stale bundle) did not occur — restart
+kept the same bundle without rebuilding; risk #7 (blast radius) was avoided — only the orchestrator
+restarted, the other 21 services stayed up; no data loss. The SPA deep-link 404 (risk #4) remains
+an accepted non-blocking gap.
+
 ## Non-goals / boundaries
 - This SOP is **staging deployment management**, not production readiness and not a production
   rollout. Claude Code does not decide production readiness.

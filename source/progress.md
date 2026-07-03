@@ -12080,3 +12080,37 @@ write, no image push; `production_executed_true_count=0`.**
 - **Gate.** This is staging deployment management, **not** production readiness and **not** a
   production rollout. Next is Step 64F.2 (per operator scheduling). Claude Code does not decide
   production readiness.
+
+## Stage 66F.2 — Controlled Staging Operations Rehearsal (Step 64F.2)
+
+First controlled, low-risk operations rehearsal of the Step 64F.1 SOP: an **orchestrator-only
+restart** of the `aiagents-staging` runtime on `10.0.1.32` plus the validation-plan run.
+**Status: completed (PASS_WITH_GAPS).** **Marker:
+`CONTROLLED_STAGING_OPERATIONS_REHEARSAL_VERIFY: PASS_WITH_GAPS`.** **Step 64E: PASS. Step 64F:
+REHEARSAL_COMPLETED.** **Runtime posture: orchestrator-only restart rehearsal — no rebuild, no
+full-stack restart, no teardown, no restore, no data change.** **Production posture: no production
+action, no production deploy, no production secret, no external write, no image push;
+`production_executed_true_count=0`.**
+
+- **Action.** `docker compose -p aiagents-staging -f infra/docker-compose/docker-compose.staging.yml
+  --env-file infra/runtime/.env.staging.local restart orchestrator` (orchestrator container only;
+  the other 21 services untouched). Staging HEAD `44f9a40` unchanged; bundle `index-B4s3Ud5S.js`
+  unchanged (restart does not rebuild).
+- **Before/after.** `/health` 200→200; `/admin` 307→307 (`/admin/` 200); orchestrator healthy
+  before/after; 22/22 running; `/operations/safety` prod_exec 0→0 (github/discord/llm external all
+  false). Formal-evidence endpoints identical: delivery/projects 1, WI-0001, `work_item_created`,
+  agent-executions 10, workflows 2 (`production_executed=false`), qa/runs 2, code/workspaces 2 —
+  **no data loss**.
+- **Gap.** SPA deep-link `/admin/agent-executions` hard-refresh 404 (navigate via tabs) — unchanged
+  accepted non-blocking gap.
+- **Docs + verifier.** New `deployment-management-rehearsal-report.md`,
+  `deployment-management-rehearsal-before-after-evidence.md`,
+  `deployment-management-rehearsal-operator-checklist-result.md`,
+  `deployment-management-rehearsal-known-gaps.md`,
+  `deployment-management-rehearsal-safety-record.md`; updated deployment-management-sop +
+  validation-plan + known-risks + roadmap.
+  `scripts/verify_controlled_staging_operations_rehearsal.py`
+  (`CONTROLLED_STAGING_OPERATIONS_REHEARSAL_VERIFY`) +
+  `tests/test_controlled_staging_operations_rehearsal.py`.
+- **Gate.** Staging deployment management only, **not** production readiness. Next is Step 64F.3
+  (per operator scheduling / authorization). Claude Code does not decide production readiness.

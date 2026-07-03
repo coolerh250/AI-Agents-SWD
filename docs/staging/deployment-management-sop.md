@@ -141,8 +141,15 @@ authorization; full-stack restart, rollback, teardown, restore, external-integra
 and any production deploy require **explicit** authorization (destructive/production actions
 require separate explicit sign-off and are out of scope for routine staging operations).
 
+## Rehearsed in Step 64F.2
+The restart (§D, orchestrator-only) and health/safety validation (§J) procedures were exercised in
+a controlled rehearsal on `10.0.1.32` — orchestrator recovered healthy, all formal-evidence
+endpoints unchanged, `production_executed_true_count=0`, no data loss. See
+[deployment-management-rehearsal-report.md](deployment-management-rehearsal-report.md).
+
 ## Status
-- Step 64E: **PASS**. Step 64F: **SOP_DESIGN_COMPLETED**.
+- Step 64E: **PASS**. Step 64F: **REHEARSAL_COMPLETED** (SOP designed in 64F.1, restart+validation
+  rehearsed in 64F.2).
 - **This is staging deployment management, not production readiness and not a production rollout.**
 - No runtime change in this stage; no production action; `production_executed_true_count=0`.
 - Destructive commands (`down -v`, volume deletion, teardown, restore, rollback) require separate
