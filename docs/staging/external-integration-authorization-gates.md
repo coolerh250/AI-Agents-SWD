@@ -35,7 +35,7 @@ explicitly authorizes it; sandbox / non-production only.
   `production_executed_true_count=0`. See
   [controlled-github-sandbox-validation-report.md](controlled-github-sandbox-validation-report.md).
 
-## Step 65E — Controlled Notification Validation (completed — PASS_WITH_OPERATOR_CONFIRMATION_PENDING)
+## Step 65E — Controlled Notification Validation (completed — PASS)
 - **Operator authorization:** granted. **Resource:** `MySanbox` / `#general` Discord test channel.
   **Credential ref:** `DISCORD_TEST_CHANNEL_ID` + `DISCORD_TEST_GUILD_ID` + `DISCORD_BOT_TOKEN`.
 - **Allowed:** `[STAGING]` test-channel sends. **Forbidden:** production channels, real-user DMs,
@@ -47,7 +47,7 @@ explicitly authorizes it; sandbox / non-production only.
   controlled path; required a compose env-wiring fix for `discord-gateway`
   (`DISCORD_TEST_CHANNEL_ID`/`DISCORD_TEST_GUILD_ID`) and a scoped, temporary
   `SECRET_PROVIDER=env` override for that one container (reset after); staging reset to safe;
-  `production_executed_true_count=0`. Operator visual confirmation **pending**. See
+  `production_executed_true_count=0`. Operator confirmed **VISIBLE**. See
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
 ## Step 65F — Controlled LLM Validation

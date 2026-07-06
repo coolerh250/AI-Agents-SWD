@@ -9,9 +9,9 @@ operator authorization: one `[STAGING]`-prefixed test message was sent to the op
 controlled real-Discord path.
 
 ## Overall result
-- Overall result: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING** — the technical send succeeded
-  (`external_sent=true`, `status=delivered`, guard `allowed=true`) and staging was reset to safe;
-  the operator has not yet confirmed visually seeing the message in Discord.
+- Overall result: **PASS** — the technical send succeeded (`external_sent=true`,
+  `status=delivered`, guard `allowed=true`), staging was reset to safe, and the operator confirmed
+  **VISIBLE** — the message was seen in `MySanbox` / `#general`.
 - `production_executed_true_count=0` throughout. Notification send flag reset to disabled.
 
 ## What was validated (real)
@@ -59,9 +59,8 @@ controlled real-Discord path.
   `/status` returned to the exact pre-validation state (`has_token=false`, `real_test_enabled=false`).
 
 ## Status
-- Step 65E: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING** (real send validated technically; awaiting
-  operator visual confirmation). Step 65F (LLM) still pending its own authorization. This is not
-  production readiness.
+- Step 65E: **PASS** (real send validated technically; operator confirmed `VISIBLE`). Step 65F
+  (LLM) still pending its own authorization. This is not production readiness.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No production notification._

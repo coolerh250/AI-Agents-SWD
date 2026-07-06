@@ -33,7 +33,7 @@ Notification send capability is fully disabled again. No production channel was 
 production action occurred; `production_executed_true_count` remained 0 throughout.
 
 ## Status
-Step 65E: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING**. Reset confirmed.
+Step 65E: **PASS**. Operator confirmed `VISIBLE`. Reset confirmed.
 
 ---
 _Staging only — non-production only. No production action. No production notification._

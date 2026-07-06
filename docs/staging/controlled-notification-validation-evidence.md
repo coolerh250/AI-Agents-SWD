@@ -57,7 +57,7 @@ async stream-consumer's own audit copy of the same logical event):
   exactly).
 
 ## Status
-Step 65E: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING**. `production_executed_true_count=0`. Not
+Step 65E: **PASS**. Operator confirmed `VISIBLE`. `production_executed_true_count=0`. Not
 production readiness.
 
 ---

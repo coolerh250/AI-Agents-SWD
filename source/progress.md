@@ -12341,9 +12341,9 @@ production secret, no external write; `production_executed_true_count=0`.**
 Performed a **real** (not mock) controlled notification validation on `10.0.1.32` under operator
 authorization: one `[STAGING]`-prefixed test message was sent to the operator's non-production
 Discord test channel (`MySanbox`/`#general`) via the discord-gateway's existing controlled
-real-Discord path. **Status: completed (pass_with_operator_confirmation_pending).** **Marker:
-`CONTROLLED_NOTIFICATION_VALIDATION_VERIFY: PASS_WITH_OPERATOR_CONFIRMATION_PENDING`.**
-**Notification status: PASS_WITH_OPERATOR_CONFIRMATION_PENDING.** **Runtime posture: one controlled
+real-Discord path. **Status: completed (pass — operator confirmed VISIBLE).** **Marker:
+`CONTROLLED_NOTIFICATION_VALIDATION_VERIFY: PASS`.**
+**Notification status: PASS.** **Runtime posture: one controlled
 staging notification only; reset to safe defaults after validation.** **Production posture: no
 production action, no production deploy, no production secret, no production notification, no
 external write except the one approved staging notification.**
@@ -12372,7 +12372,7 @@ external write except the one approved staging notification.**
   functional-validation-roadmap + functional-gap-register.
 - **Verifier + tests.** `scripts/verify_controlled_notification_validation.py`
   (`CONTROLLED_NOTIFICATION_VALIDATION_VERIFY`) + `tests/test_controlled_notification_validation.py`.
-- **Gate.** Awaiting the operator's visual confirmation of message visibility
-  (`VISIBLE`/`NOT_VISIBLE`/`PARTIAL_DELAYED`). Next after that is Step 65F (real Anthropic LLM call)
-  under its own explicit authorization. Claude Code does not decide staging functional acceptance.
-  Not production readiness.
+- **Operator confirmation.** Operator confirmed **VISIBLE** — the message was seen in
+  `MySanbox`/`#general`.
+- **Gate.** Next is Step 65F (real Anthropic LLM call) under its own explicit authorization. Claude
+  Code does not decide staging functional acceptance. Not production readiness.

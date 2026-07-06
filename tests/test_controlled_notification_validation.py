@@ -84,6 +84,11 @@ def test_prod_exec_zero_documented() -> None:
     assert not re.search(r"production_executed_true_count\s*[`]*\s*[:=]?\s*[`]*\s*[1-9]", low)
 
 
+def test_operator_confirmation_recorded() -> None:
+    text = CONFIRMATION.read_text(encoding="utf-8").lower()
+    assert re.search(r"recorded value:\s*\**\s*visible", text)
+
+
 def test_progress_documents_stage() -> None:
     text = PROGRESS.read_text(encoding="utf-8")
     assert "65E" in text

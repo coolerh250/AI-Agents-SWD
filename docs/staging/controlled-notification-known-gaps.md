@@ -4,9 +4,8 @@
 > **Documentation only. No secret value appears here.**
 
 ## Gaps
-1. **Operator visual confirmation pending.** The technical send succeeded
-   (`external_sent=true`, `status=delivered`) but the operator has not yet confirmed seeing the
-   message in the `MySanbox` / `#general` Discord channel. Tracked in
+1. ~~Operator visual confirmation pending.~~ **RESOLVED** — the operator confirmed `VISIBLE`
+   (seeing the message in `MySanbox` / `#general`). See
    [controlled-notification-operator-confirmation.md](controlled-notification-operator-confirmation.md).
 2. **Mock-vault file left stale.** `infra/runtime/.mock-vault-secrets.local.json` still holds an
    old 36-char placeholder `DISCORD_BOT_TOKEN` / empty `DISCORD_TEST_CHANNEL_ID` from an earlier

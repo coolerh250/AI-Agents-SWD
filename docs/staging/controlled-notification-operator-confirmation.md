@@ -11,9 +11,9 @@
   is **not** treated as equivalent to the operator's own visual confirmation.
 
 ## Operator visibility confirmation
-- **Status: PENDING.** Not yet confirmed by the operator at the time this document was written.
+- **Status: CONFIRMED.**
 - Required value (one of): `VISIBLE` / `NOT_VISIBLE` / `PARTIAL_DELAYED`.
-- Recorded value: *(pending — to be updated once the operator responds)*.
+- Recorded value: **VISIBLE** — the operator confirmed seeing the message in `MySanbox` / `#general`.
 
 ## What the operator should check
 - The `MySanbox` server, `#general` channel, for a message beginning `[STAGING] AI Agents
@@ -23,11 +23,10 @@
 ## Rule
 Claude Code must not mark Step 65E as fully accepted staging-functional evidence until the operator
 confirms `VISIBLE` (or explicitly accepts the technical delivery result as sufficient for this
-stage). Until then this document, and the overall Step 65E marker, remain
-**PASS_WITH_OPERATOR_CONFIRMATION_PENDING**.
+stage). The operator has now confirmed `VISIBLE`.
 
 ## Status
-Step 65E: **PASS_WITH_OPERATOR_CONFIRMATION_PENDING**. `production_executed_true_count=0`.
+Step 65E: **PASS**. Operator confirmed `VISIBLE`. `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production notification._

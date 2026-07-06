@@ -112,7 +112,9 @@ def main() -> int:
     if "exactly one" not in low and "external_sent_count=1" not in low:
         gap("docs do not explicitly state 'exactly one' controlled send count")
 
-    operator_confirmed = "recorded value: visible" in texts["operator-confirmation"].lower()
+    operator_confirmed = bool(
+        re.search(r"recorded value:\s*\**\s*visible", texts["operator-confirmation"].lower())
+    )
     if not operator_confirmed:
         gap("operator visual confirmation is pending (VISIBLE not yet recorded)")
 
