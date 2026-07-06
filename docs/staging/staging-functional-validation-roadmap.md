@@ -111,6 +111,21 @@ explicit operator authorization; sandbox/non-production only.
   calls without separate authorization; no untracked external calls. See
   [step65f-to-step65g-precondition-update.md](step65f-to-step65g-precondition-update.md).
 
+### Step 65G.1 — E2E Workflow Readiness & Execution Plan (completed)
+- **Purpose:** build a grounded, controlled, auditable E2E execution plan for 65G.2.
+- **Allowed:** read-only inspection + planning. **Forbidden:** workflow execution, intake creation,
+  GitHub write, Discord send, LLM call, runtime change, production action.
+- **Done:** mapped the real fresh-intake entry (`/intake/mock` stream mode → `stream.tasks` →
+  intake→requirement→development→qa→devops pipeline) and confirmed the pipeline's native
+  integration points are mock/dry-run — so the three controlled rails (65D/65E/65F) must be invoked
+  as separately-authorized correlated steps. Produced 8 planning docs (readiness report, test case,
+  execution plan, integration guardrails, budget/call limits, Admin Console checklist, abort/reset
+  plan, operator-authorization template); one tracked gap (confirm `workflow_state` visibility for a
+  stream-mode intake). `production_executed_true_count=0`. See
+  [e2e-staging-workflow-readiness-report.md](e2e-staging-workflow-readiness-report.md).
+- **Step 65G status: READY_FOR_CONTROLLED_EXECUTION** (pending operator authorization for 65G.2 via
+  [e2e-staging-operator-authorization-template.md](e2e-staging-operator-authorization-template.md)).
+
 ## Step 65H — Failure / Recovery / Governance Validation
 - **Purpose:** exercise approval paths, cancel/abort, retry/DLQ/replay, failure evidence in staging.
 - **Allowed:** controlled failure/governance scenarios. **Forbidden:** production action.

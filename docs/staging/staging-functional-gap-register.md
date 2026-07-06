@@ -8,7 +8,18 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 
 ## Functional gaps
 - **No fresh end-to-end workflow from a real intake.** All agent/workflow/QA/code/audit evidence is
-  seeded/mock (`/workflow/test` + delivery seed), not a run started from intake. → 65G.
+  seeded/mock (`/workflow/test` + delivery seed), not a run started from intake. → 65G. **65G.1
+  planned:** fresh-intake entry mapped (`/intake/mock` stream mode → `stream.tasks` → 5-agent
+  pipeline); controlled execution plan ready pending operator authorization for 65G.2. See
+  [e2e-staging-workflow-readiness-report.md](e2e-staging-workflow-readiness-report.md).
+- **[65G.1 tracked gap] Workflow-trace visibility for a stream-mode intake.** `workflow_states`
+  (the `/task-graph` evidence) are created by the mock `/workflow/test` path; a stream-mode fresh
+  intake records agent_executions but its `workflow_state` visibility must be confirmed by a
+  read-only check at 65G.2 start. Non-blocking for planning; first step of 65G.2.
+- **[65G.1 finding] Pipeline-native integrations are mock/dry-run.** The distributed agent pipeline
+  uses mock LLM, dry-run demo-PR, and simulated notifications; the controlled rails (65D/65E/65F)
+  must be invoked as separately-authorized correlated steps to produce real external artifacts in
+  65G.2 (per the 65F-C guardrail).
 - **Workflow resume / cancel / abort / ignore-after-abort** exercised only in tests, not staging. →
   65H.
 - **Approval paths (required / granted / denied / expired)** exercised only in tests. → 65H.

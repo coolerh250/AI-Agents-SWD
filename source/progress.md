@@ -12451,3 +12451,40 @@ production deploy, no production secret.**
 - **Gate.** Step 65G (end-to-end staging workflow validation) is ready under the updated
   preconditions, pending its own explicit operator authorization. Claude Code does not decide
   staging functional acceptance. Not production readiness.
+
+## Stage 65G.1 — E2E Staging Workflow Readiness & Execution Plan (Step 65G.1)
+
+Built a grounded, controlled, auditable execution plan for Step 65G (End-to-End Staging Workflow
+Validation) via read-only inspection of the real staging services, routes, and agent pipeline —
+readiness/planning only, no workflow executed and no external call. **Status: completed** (one
+tracked workflow-trace-visibility item to confirm read-only at 65G.2 start; not a planning blocker).
+**Marker: `E2E_STAGING_WORKFLOW_READINESS_VERIFY: PASS`.** **Step 65G status:
+READY_FOR_CONTROLLED_EXECUTION.** **Runtime posture: planning/readiness only; no workflow execution,
+no GitHub write, no Discord send, no LLM call, no runtime change.** **Production posture: no
+production action, no production deploy, no production secret; `production_executed_true_count=0`.**
+
+- **Fresh-intake entry mapped.** `POST :18004/intake/mock {publish_to_stream:true}` → `stream.tasks`
+  → the real 5-agent pipeline (intake→requirement→development→qa→devops via Redis streams), each hop
+  recording agent_execution + audit + discussion; optionally paired with
+  `/intake/mock/project-work-item` for the formal `/delivery` objects. This closes the "all evidence
+  is seeded" gap once executed at 65G.2.
+- **Key finding.** The pipeline's native integrations are mock/dry-run (development-agent LLM=mock;
+  devops-agent GitHub=dry-run demo-PR, not the Step-59 sandbox rail; notifications=simulated). Per
+  the 65F-C guardrail, the three controlled rails (65D sandbox draft-PR, 65E discord-gateway real
+  send, 65F budget/audit LLM) must be invoked as **separately-authorized, correlated** controlled
+  steps — the pipeline's native paths must not perform real external writes.
+- **Tracked gap.** Confirm at 65G.2 start (read-only) whether a stream-mode fresh intake yields a
+  `workflow_state` on `/task-graph` (that surface is created by the mock `/workflow/test` path); the
+  stream pipeline records agent_executions. Non-blocking for planning.
+- **Limits planned for 65G.2.** ≤1 GitHub draft-PR flow; ≤1 Discord `[STAGING]` send; minimum-1
+  bounded LLM call at ≤$1 (block-mode budget policy); 0 diagnostic probes; no auto-retry.
+- **Docs.** New `e2e-staging-workflow-readiness-report.md`, `e2e-staging-workflow-test-case.md`,
+  `e2e-staging-workflow-execution-plan.md`, `e2e-staging-integration-guardrails.md`,
+  `e2e-staging-budget-and-call-limits.md`, `e2e-staging-admin-console-validation-checklist.md`,
+  `e2e-staging-abort-and-reset-plan.md`, `e2e-staging-operator-authorization-template.md`; updated
+  functional-validation-roadmap + functional-gap-register + external-integration-authorization-gates.
+- **Verifier + tests.** `scripts/verify_e2e_staging_workflow_readiness.py`
+  (`E2E_STAGING_WORKFLOW_READINESS_VERIFY`) + `tests/test_e2e_staging_workflow_readiness.py`.
+- **Gate.** Step 65G.2 (controlled E2E execution) runs only after the operator returns the
+  authorization template. Claude Code does not decide staging functional acceptance. Not production
+  readiness.

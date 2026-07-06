@@ -80,6 +80,14 @@ explicitly authorizes it; sandbox / non-production only.
   any production side effect.
 - **Rollback/disable:** abort run; disable integrations. **Audit:** workflow + agent + external
   evidence. **User validation:** operator validates E2E output.
+- **65G.1 planned (completed):** grounded execution plan built; the operator authorizes 65G.2 via
+  [e2e-staging-operator-authorization-template.md](e2e-staging-operator-authorization-template.md),
+  which names: fresh intake, GitHub sandbox draft-PR (yes/no), Discord staging notification
+  (yes/no), Anthropic budget/audit LLM calls (yes/no), max LLM call count, max LLM cost, max Discord
+  sends, max GitHub draft-PR flows, and post-run UI validation. All real external calls go through
+  the controlled rails (65D/65E/65F); direct diagnostic external calls forbidden unless separately
+  authorized. See
+  [e2e-staging-workflow-readiness-report.md](e2e-staging-workflow-readiness-report.md).
 
 ## Step 65H — Failure / Recovery / Governance Validation
 - **Operator authorization:** required (authorize each scenario). **Resource:** staging runtime.
