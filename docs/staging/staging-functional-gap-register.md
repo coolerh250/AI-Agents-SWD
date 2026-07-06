@@ -15,8 +15,9 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 - **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H.
 
 ## Integration gaps
-- **GitHub:** dry-run/mock only (`github_external_write_enabled=false`); no controlled sandbox
-  write validated. → 65D.
+- **GitHub:** ~~dry-run/mock only; no controlled sandbox write validated~~ → **RESOLVED (65D)**:
+  real draft PR #15 created in `AI-Agents-SWD-sandbox` via the controlled path (a Step 59 no-commit
+  flow gap was fixed); reset to safe; `production_executed_true_count=0`.
 - **Notification (Slack/Discord):** disabled (`discord_has_token=false`); no test channel. → 65E.
 - **LLM:** `llm_provider=mock`; no non-prod key/quota validated. → 65F.
 - **Container registry sandbox:** not set up. → 65B/65D.

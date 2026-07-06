@@ -19,14 +19,21 @@ explicitly authorizes it; sandbox / non-production only.
   out-of-band entry; `production_executed_true_count=0`; no integration enabled. See
   [staging-secret-credential-setup-report.md](staging-secret-credential-setup-report.md).
 
-## Step 65D — Controlled GitHub Sandbox Validation
-- **Operator authorization:** required. **Resource:** sandbox repo. **Credential ref:** `GITHUB_TOKEN`.
+## Step 65D — Controlled GitHub Sandbox Validation (completed — PASS)
+- **Operator authorization:** granted. **Resource:** sandbox repo `coolerh250/AI-Agents-SWD-sandbox`.
+  **Credential ref:** `SANDBOX_GITHUB_TOKEN` (the real live gate is `SANDBOX_GITHUB_LIVE` +
+  `SANDBOX_GITHUB_TOKEN`, not the earlier-assumed `RUN_REAL_GITHUB_TEST`).
 - **Allowed:** sandbox branch/commit/draft-PR/read/audit. **Forbidden:** merge, production/customer
   repo, release/tag, protected branch, image push.
 - **Success:** recorded sandbox interaction; `production_executed_true_count=0`. **Failure:** any
   non-sandbox target.
-- **Rollback/disable:** `GITHUB_DRY_RUN=true` / revoke token. **Audit:** PR/branch ref + result.
-  **User validation:** operator verifies the sandbox artifact.
+- **Rollback/disable:** `SANDBOX_GITHUB_LIVE=false` / revoke token. **Audit:** PR/branch ref +
+  result. **User validation:** operator verifies the sandbox artifact.
+- **Done:** real draft **PR #15** created in the sandbox repo (draft=true, 1 commit); required an
+  allowlist retarget (`022b518`), compose env wiring (`38e4fcd`), and a flow fix to commit an
+  evidence file before opening the PR (`ea52208`); staging reset to safe;
+  `production_executed_true_count=0`. See
+  [controlled-github-sandbox-validation-report.md](controlled-github-sandbox-validation-report.md).
 
 ## Step 65E — Controlled Notification Validation
 - **Operator authorization:** required. **Resource:** test channel. **Credential ref:**

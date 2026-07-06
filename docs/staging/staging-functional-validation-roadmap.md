@@ -38,14 +38,17 @@ explicit operator authorization; sandbox/non-production only.
   `production_executed_true_count=0`. See
   [staging-secret-credential-setup-report.md](staging-secret-credential-setup-report.md).
 
-## Step 65D — Controlled GitHub Sandbox Validation
+## Step 65D — Controlled GitHub Sandbox Validation (completed — PASS)
 - **Purpose:** validate GitHub integration against a sandbox repo (draft PRs).
 - **Allowed:** controlled sandbox-repo writes. **Forbidden:** production repo writes, protected-branch
   merges, image push.
-- **Op-auth:** required (authorize sandbox write). **User validation:** operator verifies the
-  sandbox artifact.
+- **Op-auth:** granted. **User validation:** operator can verify the sandbox artifact.
 - **Acceptance:** recorded sandbox interaction; `production_executed_true_count=0`. **Abort:** any
   non-sandbox target.
+- **Done:** real draft **PR #15** created in `coolerh250/AI-Agents-SWD-sandbox` (draft, 1 commit,
+  no merge) via the full controlled path; a Step 59 flow gap (no-commit → empty PR) was fixed;
+  staging reset to safe; `production_executed_true_count=0`. See
+  [controlled-github-sandbox-validation-report.md](controlled-github-sandbox-validation-report.md).
 
 ## Step 65E — Controlled Notification Validation
 - **Purpose:** validate notification delivery to a test channel.

@@ -12228,6 +12228,43 @@ deploy, no production secret, no external write; `production_executed_true_count
   provides sandbox credentials out-of-band. Claude Code does not enable integrations or decide
   staging functional acceptance. Not production readiness.
 
+## Stage 65D — Controlled GitHub Sandbox Validation (Step 65D)
+
+Performed a **real** (not mock) controlled GitHub sandbox validation on `10.0.1.32` under operator
+authorization: a live draft PR was created in the operator's non-production sandbox repo
+`coolerh250/AI-Agents-SWD-sandbox`. **Status: completed (PASS).** **Marker:
+`CONTROLLED_GITHUB_SANDBOX_VALIDATION_VERIFY: PASS`.** **Runtime posture: controlled sandbox
+draft-PR write; live-mode + operator-auth enabled only for the window, then reset to safe.**
+**Production posture: no production action, no production repo write, no merge, no production
+deploy/sync/secret, no image push; `production_executed_true_count=0`.**
+
+- **Result.** Real draft **PR #15** — `https://github.com/coolerh250/AI-Agents-SWD-sandbox/pull/15`
+  (`draft=true`, `commits=1`, `changed_files=1`, base `main`), `status=created`, `created_count=1`,
+  `merge_enabled=false`.
+- **Path validated (all real).** operator test-login + CSRF → sandbox draft-PR policy → repository
+  allowlist (retargeted to the sandbox repo) → live-mode gate (`SANDBOX_GITHUB_LIVE` +
+  `SANDBOX_GITHUB_TOKEN`) → real GitHub API (branch + evidence commit + draft PR).
+- **Changes required (committed).** (1) allowlist retarget `AI-Agents-SWD` → `AI-Agents-SWD-sandbox`
+  (`022b518`); (2) compose env wiring of `SANDBOX_GITHUB_*` + test-local operator-auth flags into
+  the orchestrator with safe defaults (`38e4fcd`); (3) **flow fix** — the Step 59 live flow created
+  a branch with no commit so GitHub rejected the PR ("no commits between base and head"); fixed
+  `_create_live` to commit a non-production evidence file before opening the draft PR + new audit
+  event + client test (`ea52208`).
+- **Findings resolved.** Token initially lacked git perms (403) → operator granted Contents (RW) +
+  Pull requests (RW); first attempt failed (empty branch) → flow fix; stray empty branch deleted.
+- **Reset.** `SANDBOX_GITHUB_LIVE=false`, operator actions disabled, auth mode disabled;
+  orchestrator recreated; readiness `live_effective=false`; test-login `auth_disabled`;
+  `production_executed_true_count=0`. No secret value printed or committed.
+- **Docs + verifier.** New `controlled-github-sandbox-validation-report.md`,
+  `controlled-github-sandbox-validation-evidence.md`, `controlled-github-sandbox-safety-record.md`,
+  `controlled-github-sandbox-known-gaps.md`; updated authorization-gates + validation-roadmap +
+  gap-register. `scripts/verify_controlled_github_sandbox_validation.py`
+  (`CONTROLLED_GITHUB_SANDBOX_VALIDATION_VERIFY`) +
+  `tests/test_controlled_github_sandbox_validation.py`. Client fix covered by
+  `tests/test_sandbox_github_client.py`.
+- **Gate.** Next is Step 65E (real Discord notification) / 65F (real Anthropic LLM), each under its
+  own explicit authorization. Not production readiness.
+
 ## Stage 65C — Staging Secret & Credential Setup (Step 65C)
 
 Provisioned the staging sandbox credential scaffolding on `10.0.1.32` under operator authorization
