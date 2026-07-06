@@ -12376,3 +12376,40 @@ external write except the one approved staging notification.**
   `MySanbox`/`#general`.
 - **Gate.** Next is Step 65F (real Anthropic LLM call) under its own explicit authorization. Claude
   Code does not decide staging functional acceptance. Not production readiness.
+
+## Stage 65F — Controlled LLM Validation (Step 65F)
+
+Performed a **real** (not mock) controlled LLM validation on `10.0.1.32` under operator
+authorization: one official, audited, bounded Anthropic call was made through the platform's
+existing Stage-35 plan-only real-LLM rail (`RealLLMPlanOnlyProvider`), gated by a $1-capped budget
+policy, with a safe staging-connectivity-only prompt. **Status: completed (pass).** **Marker:
+`CONTROLLED_LLM_VALIDATION_VERIFY: PASS`.** **LLM status: VALIDATED.** **Runtime posture: one
+controlled staging LLM call only; real-call flags were ephemeral (scoped to a single
+`docker compose exec` process), so nothing persistent needed resetting.** **Production posture: no
+production action, no production deploy, no production secret, no production data, no external
+write beyond the one approved, bounded LLM API call.**
+
+- **Budget gate.** Created a bounded policy (`external_anthropic`, `max_cost_per_task_usd=1.00`,
+  `max_cost_per_day_usd=1.00`, `max_cost_per_month_usd=1.00`, `enforcement_mode=block`); preflight
+  returned `allowed`; deactivated the policy after the call.
+- **Stale default model fixed via env-only override.** The hardcoded default Anthropic model
+  (`claude-3-5-haiku`) is no longer valid (`404 not_found_error`); worked around with an
+  `ANTHROPIC_MODEL=claude-haiku-4-5-20251001` ephemeral env override — no source change.
+- **Ephemeral enablement, no persistent change.** `RUN_REAL_LLM_TEST` / `ENABLE_REAL_LLM_NETWORK_CALL`
+  / `LLM_PROVIDER=external_anthropic` / `ANTHROPIC_MODEL` / `ANTHROPIC_API_KEY` were injected only
+  via `docker compose exec -e …` for the single one-off call — the orchestrator's persistent
+  environment and `/operations/safety` (`llm_provider=mock`, `llm_real_enabled=false`) never
+  changed, before, during, or after.
+- **Call result.** Model `claude-haiku-4-5-20251001`; 369 prompt + 339 completion = 708 tokens;
+  actual cost **$0.03096** (well under the $1 cap); `plan_only=true`, `requires_human_review=true`,
+  `production_executed=false`; 0 `code_workspaces` / 0 `code_change_artifacts` rows for the task.
+- **Deviation disclosed.** Two small diagnostic probes (outside the audited path, negligible cost,
+  no sensitive content) preceded the one official call, to identify the stale-model-name root cause.
+- **Docs.** New `controlled-llm-validation-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-reset-record.md`, `-known-gaps.md`; updated llm-staging-integration-plan +
+  external-integration-authorization-gates + functional-validation-roadmap + functional-gap-register.
+- **Verifier + tests.** `scripts/verify_controlled_llm_validation.py`
+  (`CONTROLLED_LLM_VALIDATION_VERIFY`) + `tests/test_controlled_llm_validation.py`.
+- **Gate.** All three sandbox integrations (GitHub, Discord, LLM) are now validated. Next is Step
+  65G (end-to-end staging workflow validation) under its own explicit operator authorization. Claude
+  Code does not decide staging functional acceptance. Not production readiness.

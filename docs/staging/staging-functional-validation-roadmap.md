@@ -68,11 +68,18 @@ explicit operator authorization; sandbox/non-production only.
   operator confirmed **VISIBLE**. See
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
-## Step 65F — Controlled LLM Validation
+## Step 65F — Controlled LLM Validation (completed — PASS)
 - **Purpose:** validate live LLM calls against a non-prod key/quota.
 - **Allowed:** bounded live calls. **Forbidden:** production keys, unbounded spend, production data.
-- **Op-auth:** required (authorize key + quota). **User validation:** operator confirms usage.
+- **Op-auth:** granted (key + $1 per-run cap). **User validation:** technical delivery documented
+  (metadata + audit trail); no operator-visible Admin Console surface for this call (see known
+  gaps).
 - **Acceptance:** recorded live call within quota. **Abort:** quota breach / production key.
+- **Done:** one official, audited, bounded Anthropic call (`claude-haiku-4-5-20251001`, 708 tokens,
+  actual cost $0.03096, well under the $1 cap) via the Stage-35 plan-only real-LLM rail;
+  `plan_only=true`, `requires_human_review=true`, `production_executed=false`;
+  `production_executed_true_count=0`. See
+  [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
 
 ## Step 65G — End-to-End Staging Workflow Validation
 - **Purpose:** run a fresh workflow from intake through agents → QA/code → audit, visible on the

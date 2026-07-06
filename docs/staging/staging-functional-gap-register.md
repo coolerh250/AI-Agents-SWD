@@ -22,8 +22,10 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   message sent to `MySanbox`/`#general` via the discord-gateway controlled path; reset to safe;
   `production_executed_true_count=0`; operator confirmed **VISIBLE**. → see
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
-- **LLM:** **PENDING_65F** — `llm_provider=mock`; key is a configured reference present / not yet
-  validated; no live call has occurred (`llm_real_enabled=false`). → 65F.
+- **LLM:** ~~**PENDING_65F**~~ → **VALIDATED**: one official, audited, bounded Anthropic call
+  (`claude-haiku-4-5-20251001`, 708 tokens, actual cost $0.03096, well under the $1 cap) via the
+  Stage-35 plan-only real-LLM rail; `production_executed_true_count=0`. → see
+  [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
 - **Container registry sandbox:** not set up. → 65B/65D.
 
 ## Credential gaps

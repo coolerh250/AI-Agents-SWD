@@ -41,9 +41,18 @@ Plan for the controlled LLM integration to be validated at Step 65F. Currently `
 ## Operator authorization
 Required before 65F; the operator authorizes the key usage and quota, and confirms usage afterward.
 
+## Step 65F outcome (real, not mock)
+Validated: one official, audited, bounded Anthropic call (model `claude-haiku-4-5-20251001`, 708
+tokens, actual cost $0.03096, well within the $1 cap) via the platform's existing Stage-35 plan-only
+real-LLM rail; `plan_only=true`, `requires_human_review=true`, `production_executed=false`;
+`production_executed_true_count=0`; nothing left persistently enabled (real-call flags were
+ephemeral, scoped to one `docker compose exec` process only). See
+[controlled-llm-validation-report.md](controlled-llm-validation-report.md).
+
 ## Posture
-Planning only. No LLM call, no key use, no integration enabled, no external write, no runtime change,
-no production action; `production_executed_true_count=0`.
+Step 65F executed (real, bounded call; nothing left enabled). No production data; no secret in
+prompt; no runtime change beyond an ephemeral one-off exec; no production action;
+`production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._

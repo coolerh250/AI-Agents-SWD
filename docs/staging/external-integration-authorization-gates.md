@@ -50,15 +50,21 @@ explicitly authorizes it; sandbox / non-production only.
   `production_executed_true_count=0`. Operator confirmed **VISIBLE**. See
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
-## Step 65F — Controlled LLM Validation
-- **Operator authorization:** required. **Resource:** non-prod LLM key + quota. **Credential ref:**
-  `LLM_API_KEY`.
+## Step 65F — Controlled LLM Validation (completed — PASS)
+- **Operator authorization:** granted. **Resource:** non-prod Anthropic key + $1 per-run cap.
+  **Credential ref:** `ANTHROPIC_API_KEY`.
 - **Allowed:** bounded live calls. **Forbidden:** production keys/data, unbounded spend, auto
   production action, external write from LLM output.
 - **Success:** recorded call within quota; `production_executed_true_count=0`. **Failure:** quota
   breach / production key.
 - **Rollback/disable:** `LLM_PROVIDER=mock` / revoke key. **Audit:** call metadata + cost. **User
   validation:** operator confirms usage.
+- **Done:** one official, audited, bounded call (model `claude-haiku-4-5-20251001`, 708 tokens,
+  actual cost $0.03096) via the platform's Stage-35 plan-only real-LLM rail; required an
+  `ANTHROPIC_MODEL` env override (the hardcoded default model name was stale) — no source change;
+  real-call flags were ephemeral (scoped to one `docker compose exec` process only), so nothing
+  persistent needed resetting; `production_executed_true_count=0`. See
+  [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
 
 ## Step 65G — End-to-End Staging Workflow Validation
 - **Operator authorization:** required (authorize the run). **Resource:** in-scope integrations (or
