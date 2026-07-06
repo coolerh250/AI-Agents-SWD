@@ -12488,3 +12488,45 @@ production action, no production deploy, no production secret; `production_execu
 - **Gate.** Step 65G.2 (controlled E2E execution) runs only after the operator returns the
   authorization template. Claude Code does not decide staging functional acceptance. Not production
   readiness.
+
+## Stage 65G.2 — Controlled E2E Staging Workflow Execution (Step 65G.2)
+
+Executed a real controlled end-to-end staging workflow validation on `10.0.1.32` under explicit
+operator authorization: one fresh intake drove the real distributed agent pipeline, and the three
+validated controlled rails (LLM/GitHub/Discord) were each exercised exactly once, correlated to the
+same task id. **Status: completed (pass_with_operator_validation_pending).** **Marker:
+`E2E_STAGING_WORKFLOW_EXECUTION_VERIFY: PASS_WITH_OPERATOR_VALIDATION_PENDING`.** **E2E status:
+EXECUTED / OPERATOR_VALIDATION_PENDING.** **Runtime posture: one fresh E2E staging workflow with
+controlled rails only; all flags reset to safe after.** **Production posture: no production action,
+no production deploy, no production secret, no production data; `production_executed_true_count=0`.**
+
+- **Correlation task id:** `step65g2-e2e-20260706074202`.
+- **Fresh intake (1).** `POST :18004/intake/mock {publish_to_stream:true}` → `stream.tasks`
+  (`published_id=1783323767121-0`). The `/intake/mock/project-work-item` convenience endpoint is
+  broken in staging (comm-gateway image missing PyYAML → HTTP 500); worked around via the
+  orchestrator operator-auth multi-project API (no image rebuild).
+- **Pipeline (5 hops, all completed).** intake→requirement→development→qa→devops for the task id
+  (~730 ms); pipeline-native integrations stayed mock/dry-run/simulated by design.
+- **Controlled LLM (1).** `external_anthropic` / `claude-haiku-4-5-20251001`, 990 tokens, actual
+  cost **$0.05073** (≤$1, block-mode budget, `exceeded=false`), `plan_only=true`,
+  `production_executed=false`. interaction `3052864c…`.
+- **Controlled GitHub (1).** sandbox draft **PR #16** in `coolerh250/AI-Agents-SWD-sandbox`
+  (`draft=true`, `merge_performed=false`, `non_sandbox_repo_write_performed=false`), tied to project
+  `PRJ-STEP-65G-2-E2E-CA0256` / work item `WI-0001` (`production_effect=false`).
+- **Controlled Discord (1).** one `[STAGING]` notification to `MySanbox/#general`
+  (`external_sent=true`, delivery `019f0127…`) referencing the task id + PR #16.
+- **Tracked gap confirmed.** Stream-mode intake creates **no** `workflow_state` (`/task-graph` shows
+  no trace); pipeline evidence is on `/agent-executions`. Not fabricated.
+- **Reset + safety.** All live flags reset (`SANDBOX_GITHUB_LIVE=false`, operator-auth off,
+  `RUN_REAL_DISCORD_TEST=false`, `SECRET_PROVIDER=mock-vault`); budget policy `inactive`; orchestrator
+  + discord-gateway recreated; `/operations/safety` after: `production_executed_true_count=0`, all
+  live integrations disabled. 0 direct diagnostic calls; no secrets; no production/customer data.
+- **Docs.** New execution-report, evidence, agent-pipeline-record, llm-record, github-record,
+  discord-record, admin-console-evidence-checklist, safety-reset-record, known-gaps,
+  operator-validation-request; updated functional-validation-roadmap + functional-gap-register
+  (fresh-E2E gap RESOLVED) + external-integration-authorization-gates.
+- **Verifier + tests.** `scripts/verify_e2e_staging_workflow_execution.py`
+  (`E2E_STAGING_WORKFLOW_EXECUTION_VERIFY`) + `tests/test_e2e_staging_workflow_execution.py`.
+- **Gate.** Awaiting operator UI validation on the formal Admin Console pages
+  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Claude Code does not decide staging functional
+  acceptance. Not production readiness.

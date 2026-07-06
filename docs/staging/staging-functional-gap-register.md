@@ -7,15 +7,19 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 [staging-functional-coverage-matrix.md](staging-functional-coverage-matrix.md).
 
 ## Functional gaps
-- **No fresh end-to-end workflow from a real intake.** All agent/workflow/QA/code/audit evidence is
-  seeded/mock (`/workflow/test` + delivery seed), not a run started from intake. → 65G. **65G.1
-  planned:** fresh-intake entry mapped (`/intake/mock` stream mode → `stream.tasks` → 5-agent
-  pipeline); controlled execution plan ready pending operator authorization for 65G.2. See
-  [e2e-staging-workflow-readiness-report.md](e2e-staging-workflow-readiness-report.md).
-- **[65G.1 tracked gap] Workflow-trace visibility for a stream-mode intake.** `workflow_states`
-  (the `/task-graph` evidence) are created by the mock `/workflow/test` path; a stream-mode fresh
-  intake records agent_executions but its `workflow_state` visibility must be confirmed by a
-  read-only check at 65G.2 start. Non-blocking for planning; first step of 65G.2.
+- **No fresh end-to-end workflow from a real intake.** ~~All agent/workflow/QA/code/audit evidence
+  is seeded/mock.~~ → **RESOLVED (65G.2):** fresh intake `step65g2-e2e-20260706074202` drove the
+  real 5-hop distributed pipeline (intake→requirement→development→qa→devops, all completed) with
+  correlated controlled LLM/GitHub(PR #16)/Discord artifacts; `production_executed_true_count=0`.
+  Operator UI validation pending. See
+  [e2e-staging-workflow-execution-report.md](e2e-staging-workflow-execution-report.md).
+- **[65G.1 tracked gap → CONFIRMED in 65G.2] Workflow-trace visibility for a stream-mode intake.** A
+  stream-mode fresh intake creates **no** `workflow_state`, so `/task-graph` shows no trace; pipeline
+  evidence is on `/agent-executions`. No `workflow_state` fabricated. Non-blocking; a future
+  enhancement could register a workflow for real intakes.
+- **[65G.2 finding, non-blocking] `/intake/mock/project-work-item` broken in staging** — the
+  communication-gateway image lacks PyYAML (HTTP 500). Worked around via the orchestrator
+  multi-project API. A future maintenance pass should add PyYAML to that image.
 - **[65G.1 finding] Pipeline-native integrations are mock/dry-run.** The distributed agent pipeline
   uses mock LLM, dry-run demo-PR, and simulated notifications; the controlled rails (65D/65E/65F)
   must be invoked as separately-authorized correlated steps to produce real external artifacts in

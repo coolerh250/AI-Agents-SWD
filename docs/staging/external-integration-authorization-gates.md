@@ -88,6 +88,11 @@ explicitly authorizes it; sandbox / non-production only.
   the controlled rails (65D/65E/65F); direct diagnostic external calls forbidden unless separately
   authorized. See
   [e2e-staging-workflow-readiness-report.md](e2e-staging-workflow-readiness-report.md).
+- **65G.2 executed (completed — PASS_WITH_OPERATOR_VALIDATION_PENDING):** one fresh intake drove the
+  real 5-hop pipeline; the three controlled rails each ran once, correlated — controlled LLM call
+  ($0.05073 ≤ $1), sandbox draft **PR #16** (no merge), one `[STAGING]` Discord send; 0 direct
+  diagnostic calls; all flags reset; `production_executed_true_count=0`. Operator UI validation
+  pending. See [e2e-staging-workflow-execution-report.md](e2e-staging-workflow-execution-report.md).
 
 ## Step 65H — Failure / Recovery / Governance Validation
 - **Operator authorization:** required (authorize each scenario). **Resource:** staging runtime.
