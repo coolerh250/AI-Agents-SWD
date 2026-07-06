@@ -22,10 +22,14 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   message sent to `MySanbox`/`#general` via the discord-gateway controlled path; reset to safe;
   `production_executed_true_count=0`; operator confirmed **VISIBLE**. → see
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
-- **LLM:** ~~**PENDING_65F**~~ → **VALIDATED**: one official, audited, bounded Anthropic call
-  (`claude-haiku-4-5-20251001`, 708 tokens, actual cost $0.03096, well under the $1 cap) via the
-  Stage-35 plan-only real-LLM rail; `production_executed_true_count=0`. → see
-  [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
+- **LLM:** ~~**PENDING_65F**~~ → **VALIDATED_WITH_GOVERNANCE_GAP**: one official, audited, bounded
+  Anthropic call (`claude-haiku-4-5-20251001`, 708 tokens, actual cost $0.03096, well under the $1
+  cap) via the Stage-35 plan-only real-LLM rail succeeded; `production_executed_true_count=0`. Two
+  diagnostic probes bypassed the budget/audit rail before that call (disclosed, non-sensitive,
+  negligible cost) — Step 65F final status is **PASS_WITH_GAPS**, not a clean PASS; future direct
+  diagnostic external calls are forbidden unless separately authorized. → see
+  [controlled-llm-validation-report.md](controlled-llm-validation-report.md) +
+  [step65f-llm-validation-final-status.md](step65f-llm-validation-final-status.md).
 - **Container registry sandbox:** not set up. → 65B/65D.
 
 ## Credential gaps

@@ -50,7 +50,7 @@ explicitly authorizes it; sandbox / non-production only.
   `production_executed_true_count=0`. Operator confirmed **VISIBLE**. See
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
-## Step 65F — Controlled LLM Validation (completed — PASS)
+## Step 65F — Controlled LLM Validation (completed — PASS_WITH_GAPS, corrected by 65F-C)
 - **Operator authorization:** granted. **Resource:** non-prod Anthropic key + $1 per-run cap.
   **Credential ref:** `ANTHROPIC_API_KEY`.
 - **Allowed:** bounded live calls. **Forbidden:** production keys/data, unbounded spend, auto
@@ -65,6 +65,12 @@ explicitly authorizes it; sandbox / non-production only.
   real-call flags were ephemeral (scoped to one `docker compose exec` process only), so nothing
   persistent needed resetting; `production_executed_true_count=0`. See
   [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
+- **Governance correction (65F-C):** two diagnostic probes preceded the official call, bypassing
+  the platform budget/audit rail (disclosed, non-sensitive, negligible cost). Step 65F final status
+  is **PASS_WITH_GAPS**, not a clean PASS; future direct diagnostic external calls are forbidden
+  unless separately authorized. See
+  [step65f-llm-validation-final-status.md](step65f-llm-validation-final-status.md) +
+  [step65f-llm-guardrail-update.md](step65f-llm-guardrail-update.md).
 
 ## Step 65G — End-to-End Staging Workflow Validation
 - **Operator authorization:** required (authorize the run). **Resource:** in-scope integrations (or

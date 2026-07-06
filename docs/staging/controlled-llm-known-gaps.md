@@ -25,6 +25,13 @@
    was checked directly. Full Admin Console visibility of a live LLM interaction is in scope for
    65G (end-to-end workflow validation), not 65F.
 
+## Governance consolidation (Step 65F-C)
+Gap #3 above (diagnostic probes) has been formally consolidated: see
+[step65f-llm-diagnostic-exception-record.md](step65f-llm-diagnostic-exception-record.md) and
+[step65f-llm-guardrail-update.md](step65f-llm-guardrail-update.md). **Step 65F final status is
+PASS_WITH_GAPS** (not a clean PASS) precisely because of this gap; future direct diagnostic
+external calls are forbidden unless separately authorized.
+
 ## Non-gaps (done)
 - Exactly one official, audited controlled LLM call; bounded by a $1-capped budget policy; no
   production data/secrets/personal data in the prompt; no GitHub write; no notification send; no

@@ -68,7 +68,7 @@ explicit operator authorization; sandbox/non-production only.
   operator confirmed **VISIBLE**. See
   [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
-## Step 65F — Controlled LLM Validation (completed — PASS)
+## Step 65F — Controlled LLM Validation (completed — PASS_WITH_GAPS, corrected by 65F-C)
 - **Purpose:** validate live LLM calls against a non-prod key/quota.
 - **Allowed:** bounded live calls. **Forbidden:** production keys, unbounded spend, production data.
 - **Op-auth:** granted (key + $1 per-run cap). **User validation:** technical delivery documented
@@ -80,8 +80,24 @@ explicit operator authorization; sandbox/non-production only.
   `plan_only=true`, `requires_human_review=true`, `production_executed=false`;
   `production_executed_true_count=0`. See
   [controlled-llm-validation-report.md](controlled-llm-validation-report.md).
+- **Step 65F-C correction:** two diagnostic probes bypassed the budget/audit rail before the
+  official call (disclosed, non-sensitive, negligible cost) — Step 65F final status is
+  **PASS_WITH_GAPS**; LLM integration status is **VALIDATED_WITH_GOVERNANCE_GAP**. See
+  [step65f-llm-validation-final-status.md](step65f-llm-validation-final-status.md).
 
-## Step 65G — End-to-End Staging Workflow Validation
+## Step 65F-C — LLM Diagnostic Exception & Guardrail Consolidation (completed)
+- **Purpose:** formally reconcile the 65F diagnostic-probe disclosure and update future guardrails.
+- **Allowed:** documentation / reconciliation / guardrail update. **Forbidden:** any new LLM call,
+  GitHub write, notification send, workflow execution, runtime change.
+- **Done:** Step 65F corrected to PASS_WITH_GAPS; LLM integration status
+  VALIDATED_WITH_GOVERNANCE_GAP; guardrail added — direct diagnostic external calls forbidden
+  unless separately authorized; Step 65G preconditions updated accordingly;
+  `production_executed_true_count=0`. See
+  [step65f-llm-diagnostic-exception-record.md](step65f-llm-diagnostic-exception-record.md),
+  [step65f-llm-guardrail-update.md](step65f-llm-guardrail-update.md),
+  [step65f-to-step65g-precondition-update.md](step65f-to-step65g-precondition-update.md).
+
+## Step 65G — End-to-End Staging Workflow Validation (READY_AFTER_GUARDRAIL_CONSOLIDATION)
 - **Purpose:** run a fresh workflow from intake through agents → QA/code → audit, visible on the
   **formal** Admin Console pages.
 - **Allowed:** controlled workflow run (mock or scoped-sandbox integrations). **Forbidden:**
@@ -90,6 +106,10 @@ explicit operator authorization; sandbox/non-production only.
   formal pages + external artifacts.
 - **Acceptance:** end-to-end evidence on formal pages; `production_executed_true_count=0`.
   **Abort:** any production side effect.
+- **Preconditions (added by 65F-C):** all GitHub writes / notifications / LLM calls exercised during
+  the run must go through their respective platform-controlled rails; no direct diagnostic external
+  calls without separate authorization; no untracked external calls. See
+  [step65f-to-step65g-precondition-update.md](step65f-to-step65g-precondition-update.md).
 
 ## Step 65H — Failure / Recovery / Governance Validation
 - **Purpose:** exercise approval paths, cancel/abort, retry/DLQ/replay, failure evidence in staging.

@@ -12413,3 +12413,41 @@ write beyond the one approved, bounded LLM API call.**
 - **Gate.** All three sandbox integrations (GitHub, Discord, LLM) are now validated. Next is Step
   65G (end-to-end staging workflow validation) under its own explicit operator authorization. Claude
   Code does not decide staging functional acceptance. Not production readiness.
+
+## Stage 65F-C — LLM Diagnostic Exception & Guardrail Consolidation (Step 65F-C)
+
+Formally reconciled the two diagnostic Anthropic probes disclosed in the Step 65F completion
+report, corrected the Step 65F status, and updated future validation guardrails —
+documentation / reconciliation / guardrail update only, no new external call. **Status: completed
+(pass).** **Marker: `STEP65F_LLM_GUARDRAIL_CONSOLIDATION_VERIFY: PASS`.** **Step 65F status:
+PASS_WITH_GAPS.** **LLM integration status: VALIDATED_WITH_GOVERNANCE_GAP.** **Step 65G status:
+READY_AFTER_GUARDRAIL_CONSOLIDATION.** **Runtime posture: documentation/guardrail only; no LLM
+call, no external write, no workflow execution.** **Production posture: no production action, no
+production deploy, no production secret.**
+
+- **Corrected status.** Step 65F technical result: PASS (the official audited call succeeded
+  unchanged). Step 65F governance result: PASS_WITH_GAPS (the two diagnostic probes bypassed the
+  budget/audit rail). Step 65F final status: **PASS_WITH_GAPS**, not a clean PASS.
+- **Diagnostic exception recorded.** 2 probes, purpose = diagnosing the stale default Anthropic
+  model name; no secrets/production/customer data; negligible cost; not acceptable as standard
+  practice going forward.
+- **Guardrail update.** All real external calls must go through their platform-controlled
+  budget/audit/evidence rail; direct diagnostic external calls forbidden unless separately
+  authorized; "exactly one call" counts official + diagnostic calls together unless the operator
+  explicitly authorizes more; prefer non-network diagnosis (source/env/guard-dry-run) before a live
+  diagnostic call.
+- **Step 65G preconditions added.** All GitHub writes / notifications / LLM calls during the 65G run
+  must go through their respective controlled rails; no direct diagnostic external calls; no extra
+  probes; no untracked external calls; no production action.
+- **No new external call in this stage.** No LLM call, no GitHub write, no notification send, no
+  workflow execution, no runtime change; `production_executed_true_count=0` (confirmed read-only).
+- **Docs.** New `step65f-llm-diagnostic-exception-record.md`, `step65f-llm-guardrail-update.md`,
+  `step65f-llm-validation-final-status.md`, `step65f-to-step65g-precondition-update.md`; updated
+  controlled-llm-validation-report + controlled-llm-known-gaps +
+  external-integration-authorization-gates + functional-validation-roadmap +
+  functional-gap-register.
+- **Verifier + tests.** `scripts/verify_step65f_llm_guardrail_consolidation.py`
+  (`STEP65F_LLM_GUARDRAIL_CONSOLIDATION_VERIFY`) + `tests/test_step65f_llm_guardrail_consolidation.py`.
+- **Gate.** Step 65G (end-to-end staging workflow validation) is ready under the updated
+  preconditions, pending its own explicit operator authorization. Claude Code does not decide
+  staging functional acceptance. Not production readiness.

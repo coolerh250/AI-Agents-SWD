@@ -9,10 +9,15 @@ plan-only real-LLM rail (`shared/sdk/llm/plan_only_provider.py::RealLLMPlanOnlyP
 a budget policy capped at $1, with a safe, non-production, staging-connectivity-only prompt.
 
 ## Overall result
-- Overall result: **PASS** — the audited call succeeded (`preflight allowed`, `safety_allowed=true`,
-  0 violations), `plan_only=true`, `requires_human_review=true`, `production_executed=false`; no
-  workspace or code-change artifact was created; the LLM real-call flags were never made persistent
-  (see §Runtime scope) so there was nothing to leave enabled.
+- Overall result: **PASS_WITH_GAPS** (corrected in Step 65F-C — see
+  [step65f-llm-validation-final-status.md](step65f-llm-validation-final-status.md)). The **official
+  audited call** succeeded (`preflight allowed`, `safety_allowed=true`, 0 violations),
+  `plan_only=true`, `requires_human_review=true`, `production_executed=false`; no workspace or
+  code-change artifact was created; the LLM real-call flags were never made persistent (see §Runtime
+  scope) so there was nothing to leave enabled. The **governance** result is PASS_WITH_GAPS because
+  two diagnostic probes (disclosed below) bypassed the platform's budget/audit rail before the
+  official call — see
+  [step65f-llm-diagnostic-exception-record.md](step65f-llm-diagnostic-exception-record.md).
 - `production_executed_true_count=0` throughout.
 
 ## What was validated (real)
@@ -70,8 +75,10 @@ a budget policy capped at $1, with a safe, non-production, staging-connectivity-
 - The budget policy created for this validation was deactivated (`status=inactive`) after the call.
 
 ## Status
-- Step 65F: **PASS** (real, bounded, audited LLM call validated; reset posture confirmed). This is
-  not production readiness.
+- Step 65F: **PASS_WITH_GAPS** (final, per Step 65F-C) — the official audited LLM call is
+  technically **PASS**; the disclosed diagnostic-probe deviation makes the overall governance
+  result PASS_WITH_GAPS, not a clean PASS. Reset posture confirmed. This is not production
+  readiness.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No production data._
