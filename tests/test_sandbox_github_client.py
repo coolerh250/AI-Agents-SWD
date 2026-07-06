@@ -58,3 +58,31 @@ def test_live_mode_not_created_without_credential(monkeypatch) -> None:
     monkeypatch.delenv("SANDBOX_GITHUB_LIVE", raising=False)
     res = _req(_client(), requested_mode="live_sandbox")
     assert res.status != "created"
+
+
+def test_live_mode_commits_evidence_before_opening_pr(monkeypatch) -> None:
+    # Step 65D fix: the branch must carry a commit (evidence file) before the PR is
+    # opened, otherwise GitHub rejects the PR ("no commits between base and head").
+    monkeypatch.setenv("SANDBOX_GITHUB_LIVE", "true")
+    monkeypatch.setenv("SANDBOX_GITHUB_TOKEN", "x" * 20)
+    calls: list[tuple[str, str]] = []
+
+    def fake_gh(self, method: str, path: str, body: dict | None = None) -> dict:
+        calls.append((method, path))
+        if method == "GET" and "git/ref/heads/" in path:
+            return {"object": {"sha": "basesha0000"}}
+        if method == "POST" and path.endswith("/pulls"):
+            return {"number": 42, "html_url": "https://example.invalid/pull/42"}
+        return {}
+
+    monkeypatch.setattr(C, "_gh", fake_gh)
+    res = _req(_client(), requested_mode="live_sandbox")
+    assert res.status == "created"
+    assert res.draft_pr_number == 42
+    assert res.draft_pr_url == "https://example.invalid/pull/42"
+    put_idx = next(i for i, (m, p) in enumerate(calls) if m == "PUT" and "/contents/" in p)
+    pr_idx = next(i for i, (m, p) in enumerate(calls) if m == "POST" and p.endswith("/pulls"))
+    assert put_idx < pr_idx, "evidence commit must precede PR creation"
+    types = [e["event_type"] for e in res.audit_events]
+    assert "sandbox_github_draft_evidence_committed" in types
+    assert "sandbox_github_draft_pr_created" in types

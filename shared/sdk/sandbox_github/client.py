@@ -10,6 +10,7 @@ only and never logged or returned.
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 import urllib.error
@@ -241,6 +242,40 @@ class SandboxGitHubClient:
                     mode=MODE_LIVE_SANDBOX,
                     correlation_id=plan.correlation_id,
                     extra={"head_branch": plan.head_branch},
+                )
+            )
+            # Commit a non-production sandbox evidence file so the branch is ahead of
+            # base (a PR needs >=1 commit between base and head). No production content.
+            evidence_path = f"sandbox-evidence/{plan.correlation_id}.md"
+            evidence_body = (
+                "# Sandbox draft PR evidence (non-production)\n\n"
+                f"- repository_key: {plan.repository_key}\n"
+                f"- project_id: {project_id}\n"
+                f"- work_item_id: {work_item_id}\n"
+                f"- correlation_id: {plan.correlation_id}\n"
+                f"- head_branch: {plan.head_branch}\n"
+                f"- base_branch: {plan.base_branch}\n"
+                f"- mode: {MODE_LIVE_SANDBOX}\n\n"
+                "Non-production sandbox evidence only. No production action.\n"
+            )
+            self._gh(
+                "PUT",
+                f"/repos/{plan.owner}/{plan.repo}/contents/{evidence_path}",
+                {
+                    "message": f"[Sandbox] evidence for {plan.head_branch}",
+                    "content": base64.b64encode(evidence_body.encode()).decode(),
+                    "branch": plan.head_branch,
+                },
+            )
+            events.append(
+                self._audit(
+                    "sandbox_github_draft_evidence_committed",
+                    project_id=project_id,
+                    work_item_id=work_item_id,
+                    repository_key=plan.repository_key,
+                    mode=MODE_LIVE_SANDBOX,
+                    correlation_id=plan.correlation_id,
+                    extra={"evidence_path": evidence_path},
                 )
             )
             pr = self._gh(

@@ -15,6 +15,7 @@ EVENTS = (
     "sandbox_github_draft_pr_requested",
     "sandbox_github_draft_pr_policy_checked",
     "sandbox_github_draft_branch_created",
+    "sandbox_github_draft_evidence_committed",
     "sandbox_github_draft_pr_created",
     "sandbox_github_draft_pr_blocked",
     "sandbox_github_draft_pr_failed",
