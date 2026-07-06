@@ -12530,3 +12530,33 @@ no production deploy, no production secret, no production data; `production_exec
 - **Gate.** Awaiting operator UI validation on the formal Admin Console pages
   (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Claude Code does not decide staging functional
   acceptance. Not production readiness.
+
+## Stage 65G.2-V — Operator UI Validation Record (Step 65G.2-V)
+
+Recorded the operator's formal UI validation of the Step 65G.2 controlled E2E run — documentation
+only, no new external action. **Status: completed.** **Marker:
+`E2E_OPERATOR_UI_VALIDATION_VERIFY: PASS`.** **Step 65G.2 status: PASS.** **Fresh E2E workflow
+status: VALIDATED.** **Admin Console evidence status: OPERATOR_VISIBLE.** **Runtime posture:
+documentation only; no workflow execution, no GitHub write, no Discord send, no LLM call, no runtime
+change. Production posture: no production action, no production deploy, no production secret;
+`production_executed_true_count=0`.**
+
+- **Operator response: VISIBLE** — confirmed on the formal Admin Console pages (`/delivery`,
+  `/agent-executions`, `/qa-code`, `/cost-llm`, `/sandbox-github`, `/audit-evidence`, `/safety`);
+  Diagnostics / `/demo-evidence` was **not** used as the acceptance path.
+- **Corrected status.** Step 65G.2 final status **PASS** (was PASS_WITH_OPERATOR_VALIDATION_PENDING);
+  fresh E2E workflow **VALIDATED**; Admin Console formal evidence **OPERATOR_VISIBLE**.
+- **Gaps.** Fresh E2E gap **resolved** + operator-visible. `/task-graph` `workflow_state` gap remains
+  **non-blocking** for stream-mode intake (evidence on `/agent-executions`); comm-gateway PyYAML +
+  sandbox-rail-naming findings remain tracked non-blocking.
+- **No new external action** in this validation-record stage; read-only `/operations/safety` confirms
+  `production_executed_true_count=0`.
+- **Docs.** New `e2e-staging-operator-ui-validation-record.md`; updated
+  e2e-staging-operator-validation-request + e2e-staging-workflow-execution-report +
+  e2e-staging-admin-console-evidence-checklist + functional-validation-roadmap +
+  functional-gap-register.
+- **Verifier + tests.** `scripts/verify_e2e_operator_ui_validation.py`
+  (`E2E_OPERATOR_UI_VALIDATION_VERIFY`) + `tests/test_e2e_operator_ui_validation.py`.
+- **Gate.** Next is Step 65H (failure / recovery / governance validation) under its own explicit
+  operator authorization. Claude Code does not decide staging functional acceptance. Not production
+  readiness.

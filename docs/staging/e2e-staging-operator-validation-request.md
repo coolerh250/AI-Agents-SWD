@@ -28,13 +28,17 @@ Record one of:
 - **NOT_VISIBLE** — evidence not visible on the formal pages.
 - **PARTIAL_WITH_GAPS** — some visible; note which are missing.
 
+## Operator response (recorded)
+- **Operator response: VISIBLE** — confirmed on the formal Admin Console pages (not
+  `/demo-evidence`). Recorded in
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md).
+
 ## Rule
 Claude Code must not self-accept this validation or decide staging functional acceptance (that is the
-operator's Step 65I verdict). Until the operator responds, Step 65G.2 remains
-**PASS_WITH_OPERATOR_VALIDATION_PENDING**.
+operator's Step 65I verdict). The operator has now confirmed **VISIBLE**.
 
 ## Status
-Step 65G.2: awaiting operator UI validation. `production_executed_true_count=0`.
+Step 65G.2: **PASS** (operator VISIBLE). `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

@@ -8,11 +8,12 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 
 ## Functional gaps
 - **No fresh end-to-end workflow from a real intake.** ~~All agent/workflow/QA/code/audit evidence
-  is seeded/mock.~~ → **RESOLVED (65G.2):** fresh intake `step65g2-e2e-20260706074202` drove the
-  real 5-hop distributed pipeline (intake→requirement→development→qa→devops, all completed) with
-  correlated controlled LLM/GitHub(PR #16)/Discord artifacts; `production_executed_true_count=0`.
-  Operator UI validation pending. See
-  [e2e-staging-workflow-execution-report.md](e2e-staging-workflow-execution-report.md).
+  is seeded/mock.~~ → **RESOLVED (65G.2) + OPERATOR_VISIBLE (65G.2-V):** fresh intake
+  `step65g2-e2e-20260706074202` drove the real 5-hop distributed pipeline
+  (intake→requirement→development→qa→devops, all completed) with correlated controlled
+  LLM/GitHub(PR #16)/Discord artifacts; `production_executed_true_count=0`. Operator confirmed
+  **VISIBLE** on the formal Admin Console pages; Step 65G.2 final status **PASS**. See
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md).
 - **[65G.1 tracked gap → CONFIRMED in 65G.2] Workflow-trace visibility for a stream-mode intake.** A
   stream-mode fresh intake creates **no** `workflow_state`, so `/task-graph` shows no trace; pipeline
   evidence is on `/agent-executions`. No `workflow_state` fabricated. Non-blocking; a future

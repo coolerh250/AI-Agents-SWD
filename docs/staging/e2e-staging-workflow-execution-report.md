@@ -9,9 +9,10 @@ controlled rails (LLM / GitHub sandbox / Discord) were exercised exactly once ea
 the same task id.
 
 ## Overall result
-- Overall result: **PASS_WITH_OPERATOR_VALIDATION_PENDING** — every technical step succeeded within
-  the authorized counts and caps, and staging was reset to safe; the operator has not yet visually
-  confirmed the evidence on the formal Admin Console pages.
+- Overall result: **PASS** (corrected by Step 65G.2-V — the operator confirmed **VISIBLE** on the
+  formal Admin Console pages). Every technical step succeeded within the authorized counts and caps,
+  staging was reset to safe, and the fresh E2E evidence is operator-visible. See
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md).
 - `production_executed_true_count=0` before and after. **Claude Code does not decide staging
   functional acceptance.**
 
@@ -69,9 +70,9 @@ the same task id.
   restart, never `down`/`down -v`).
 
 ## Status
-- Step 65G.2: **PASS_WITH_OPERATOR_VALIDATION_PENDING**. Awaiting operator confirmation on the
-  formal Admin Console pages (see
-  [e2e-staging-operator-validation-request.md](e2e-staging-operator-validation-request.md)). Not
+- Step 65G.2: **PASS** (operator confirmed **VISIBLE** on the formal Admin Console pages — Step
+  65G.2-V; see
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md)). Not
   production readiness.
 
 ## Companion records

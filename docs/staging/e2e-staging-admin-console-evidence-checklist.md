@@ -19,15 +19,16 @@ Formal-page evidence for the Step 65G.2 run (task `step65g2-e2e-20260706074202`)
 | `/safety` | after reset: `production_executed_true_count=0`; live integrations disabled | safe posture, counter still 0 |
 | `/metrics` | operational metrics snapshot (no external side effect) | metrics reflect the run |
 
-## Operator confirmation required
-The operator must open the formal pages above and confirm the fresh workflow + the three correlated
-controlled artifacts (LLM / GitHub PR #16 / Discord) are visible. Record the operator's response as
-`VISIBLE` / `NOT_VISIBLE` / `PARTIAL_WITH_GAPS` in
-[e2e-staging-operator-validation-request.md](e2e-staging-operator-validation-request.md). **Claude
-Code must not self-accept this validation.**
+## Operator confirmation (recorded)
+- **Operator response: VISIBLE** — the operator confirmed the fresh workflow + the three correlated
+  controlled artifacts (LLM / GitHub PR #16 / Discord) on the formal pages (not `/demo-evidence`).
+  Recorded in
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md).
+- Admin Console formal evidence: **OPERATOR_VISIBLE**. Claude Code did not self-accept this
+  validation.
 
 ## Status
-Step 65G.2 evidence: captured via read-only APIs; operator UI validation **pending**.
+Step 65G.2 evidence: captured via read-only APIs; operator UI validation **VISIBLE** (Step 65G.2-V).
 `production_executed_true_count=0`.
 
 ---

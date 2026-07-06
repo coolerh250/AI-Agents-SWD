@@ -126,15 +126,24 @@ explicit operator authorization; sandbox/non-production only.
 - **Step 65G status: READY_FOR_CONTROLLED_EXECUTION** (pending operator authorization for 65G.2 via
   [e2e-staging-operator-authorization-template.md](e2e-staging-operator-authorization-template.md)).
 
-### Step 65G.2 — Controlled E2E Staging Workflow Execution (completed — PASS_WITH_OPERATOR_VALIDATION_PENDING)
+### Step 65G.2 — Controlled E2E Staging Workflow Execution (completed — PASS)
 - **Purpose:** execute one controlled fresh-intake E2E run through the real pipeline + the three
   controlled rails.
 - **Allowed:** 1 fresh intake, 1 LLM call (≤$1), 1 GitHub sandbox draft PR, 1 Discord `[STAGING]`
   send. **Forbidden:** production action; direct diagnostic calls; over-count.
 - **Done:** fresh intake `step65g2-e2e-20260706074202` → 5-hop pipeline completed; controlled LLM
   call ($0.05073); sandbox draft **PR #16** (no merge); one `[STAGING]` Discord send; all correlated;
-  flags reset; `production_executed_true_count=0`. Operator UI validation **pending**. See
+  flags reset; `production_executed_true_count=0`. See
   [e2e-staging-workflow-execution-report.md](e2e-staging-workflow-execution-report.md).
+
+### Step 65G.2-V — Operator UI Validation Record (completed — PASS)
+- **Purpose:** record the operator's formal UI validation of the 65G.2 evidence.
+- **Allowed:** documentation only. **Forbidden:** any new external action / workflow / production
+  action.
+- **Done:** operator response **VISIBLE** on the formal Admin Console pages (not `/demo-evidence`);
+  Step 65G.2 final status **PASS**; fresh E2E workflow **VALIDATED**; Admin Console formal evidence
+  **OPERATOR_VISIBLE**; `production_executed_true_count=0`. See
+  [e2e-staging-operator-ui-validation-record.md](e2e-staging-operator-ui-validation-record.md).
 
 ## Step 65H — Failure / Recovery / Governance Validation
 - **Purpose:** exercise approval paths, cancel/abort, retry/DLQ/replay, failure evidence in staging.
