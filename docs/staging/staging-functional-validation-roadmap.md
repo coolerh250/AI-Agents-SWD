@@ -50,6 +50,14 @@ explicit operator authorization; sandbox/non-production only.
   staging reset to safe; `production_executed_true_count=0`. See
   [controlled-github-sandbox-validation-report.md](controlled-github-sandbox-validation-report.md).
 
+## Step 65D-C — 65C / 65D Integration Status Consolidation (completed)
+- **Purpose:** consolidate 65C + 65D results, correct integration status, confirm safety posture.
+- **Allowed:** documentation / reconciliation / read-only verification. **Forbidden:** GitHub write,
+  notification send, LLM call, workflow execution, runtime change, production action.
+- **Done:** GitHub sandbox **VALIDATED** (token gap **RESOLVED_BY_65D**); notification **PENDING_65E**;
+  LLM **PENDING_65F**; no new external write; `production_executed_true_count=0`. See
+  [step65c-65d-integration-status-consolidation.md](step65c-65d-integration-status-consolidation.md).
+
 ## Step 65E — Controlled Notification Validation
 - **Purpose:** validate notification delivery to a test channel.
 - **Allowed:** test-channel sends. **Forbidden:** production channels / real users.

@@ -12302,3 +12302,36 @@ write; `production_executed_true_count=0`.**
 - **Gate.** Next is Step 65D (controlled GitHub sandbox validation) after the operator sets the
   sandbox token out-of-band and authorizes the write. Claude Code does not enable integrations or
   decide staging functional acceptance. Not production readiness.
+
+## Stage 65D-C — Step 65C / 65D Integration Status Consolidation (Step 65D-C)
+
+Consolidated the results of Step 65C (Staging Secret & Credential Setup) and Step 65D (Controlled
+GitHub Sandbox Validation): corrected the integration roadmap status, mapped 65C gaps to their
+current disposition, and confirmed the safety posture — documentation / reconciliation / read-only
+only. **Status: completed (pass_with_gaps — Discord/LLM references present but not yet validated;
+tracked).** **Marker: `STEP65C_65D_CONSOLIDATION_VERIFY: PASS`.** **Step 65C status:
+PASS_WITH_GAPS. Step 65D status: PASS. GitHub sandbox status: VALIDATED. Notification status:
+READY_FOR_65E_OPERATOR_AUTHORIZATION. LLM status: READY_FOR_65F_OPERATOR_AUTHORIZATION.** **Runtime
+posture: consolidation only; no new integration enablement, no external write, no workflow
+execution, no runtime change. Production posture: no production action, no production deploy, no
+production secret, no external write; `production_executed_true_count=0`.**
+
+- **Sequencing.** Step 65C completed before 65D but its report was provided later; reviewing it does
+  **not** require a full 65D-R. 65C stays PASS_WITH_GAPS; 65D stays PASS.
+- **Gap closure map.** GitHub sandbox token → **RESOLVED_BY_65D** (real draft PR #15); Discord
+  token/channel → **PENDING_65E** (configured reference present / not yet validated); Anthropic key
+  → **PENDING_65F** (configured reference present / not yet validated); 65C runtime-not-reloaded →
+  superseded (65D runtime changes applied only for the GitHub window, reset after).
+- **Safety posture (read-only `/operations/safety`).** `production_executed_true_count=0`; GitHub
+  live write disabled after 65D; notification send not executed yet; LLM live call not executed yet;
+  external writes limited to sandbox draft PR #15; no secret values.
+- **Docs.** New `step65c-65d-integration-status-consolidation.md`, `step65c-65d-gap-closure-map.md`,
+  `step65c-65d-current-safety-posture.md`, `step65c-65d-next-gates.md`; updated
+  secret-credential-setup-report + secret-known-gaps + controlled-github-sandbox-validation-report +
+  controlled-github-sandbox-safety-record (spec's `…-validation-safety-record.md` is absent; closest
+  match updated) + functional-validation-roadmap + functional-gap-register.
+- **Verifier + tests.** `scripts/verify_step65c_65d_consolidation.py`
+  (`STEP65C_65D_CONSOLIDATION_VERIFY`) + `tests/test_step65c_65d_consolidation.py`.
+- **Gate.** Next is Step 65E (real Discord notification) / 65F (real Anthropic LLM), each under its
+  own explicit operator authorization. Claude Code does not decide staging functional acceptance.
+  Not production readiness.

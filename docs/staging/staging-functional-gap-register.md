@@ -18,8 +18,10 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 - **GitHub:** ~~dry-run/mock only; no controlled sandbox write validated~~ → **RESOLVED (65D)**:
   real draft PR #15 created in `AI-Agents-SWD-sandbox` via the controlled path (a Step 59 no-commit
   flow gap was fixed); reset to safe; `production_executed_true_count=0`.
-- **Notification (Slack/Discord):** disabled (`discord_has_token=false`); no test channel. → 65E.
-- **LLM:** `llm_provider=mock`; no non-prod key/quota validated. → 65F.
+- **Notification (Slack/Discord):** **PENDING_65E** — configured reference present / not yet
+  validated; no real send has occurred (`discord_external_send_enabled=false`). → 65E.
+- **LLM:** **PENDING_65F** — `llm_provider=mock`; key is a configured reference present / not yet
+  validated; no live call has occurred (`llm_real_enabled=false`). → 65F.
 - **Container registry sandbox:** not set up. → 65B/65D.
 
 ## Credential gaps

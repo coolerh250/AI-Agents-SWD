@@ -14,6 +14,13 @@ the staging secret backend by the operator.
   **pending operator out-of-band entry**, tracked in
   [staging-secret-known-gaps.md](staging-secret-known-gaps.md).
 
+## Consolidation (Step 65D-C)
+Consolidated with Step 65D in
+[step65c-65d-integration-status-consolidation.md](step65c-65d-integration-status-consolidation.md).
+Step 65C remains **PASS_WITH_GAPS**. The GitHub sandbox token gap is now **RESOLVED_BY_65D**;
+Discord (notification) is **PENDING_65E** and Anthropic (LLM) is **PENDING_65F** — each a configured
+reference present / not yet validated. No new external write, no secret values; `production_executed_true_count=0`.
+
 ## Backend used
 - **Option A — staging-local env file:** `infra/runtime/.env.staging.local` (gitignored, `chmod 600`,
   owner `itadmin` on the staging host). Operator-chosen backend: **env-file**.

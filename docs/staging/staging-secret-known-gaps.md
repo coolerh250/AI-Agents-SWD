@@ -6,10 +6,18 @@
 Items still pending after the Step 65C credential setup, to be provided by the operator out-of-band
 before the relevant later step.
 
+## Gap closure update (Step 65D-C)
+Consolidated in [step65c-65d-gap-closure-map.md](step65c-65d-gap-closure-map.md):
+1. **GitHub sandbox token — RESOLVED_BY_65D.** Exercised end-to-end by the real sandbox draft PR #15
+   in `coolerh250/AI-Agents-SWD-sandbox`; reset to safe afterwards.
+2. **Discord bot token + channel ID — PENDING_65E** (configured reference present / not yet
+   validated).
+3. **Anthropic LLM key — PENDING_65F** (configured reference present / not yet validated).
+
 ## Pending sandbox secret values (out-of-band, before their step)
 1. **GitHub sandbox token** — confirm/set the sandbox-repo token in `GITHUB_TOKEN` (and point
    `GITHUB_TEST_REPO`/allowlist at the sandbox repo) before **65D**. The existing `GITHUB_TOKEN` is
-   the earlier bootstrap value and must be confirmed as the sandbox token.
+   the earlier bootstrap value and must be confirmed as the sandbox token. **(Resolved by 65D.)**
 2. **Discord bot token + channel ID** — set `DISCORD_TEST_CHANNEL_ID` (numeric ID for
    `MySanbox/#general`) and confirm `DISCORD_BOT_TOKEN` before **65E**.
 3. **Anthropic LLM key** — set `ANTHROPIC_API_KEY` (or `LLM_API_KEY`), non-production, before
