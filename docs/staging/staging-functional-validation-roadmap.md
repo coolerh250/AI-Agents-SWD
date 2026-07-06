@@ -58,11 +58,15 @@ explicit operator authorization; sandbox/non-production only.
   LLM **PENDING_65F**; no new external write; `production_executed_true_count=0`. See
   [step65c-65d-integration-status-consolidation.md](step65c-65d-integration-status-consolidation.md).
 
-## Step 65E — Controlled Notification Validation
+## Step 65E — Controlled Notification Validation (completed — PASS_WITH_OPERATOR_CONFIRMATION_PENDING)
 - **Purpose:** validate notification delivery to a test channel.
 - **Allowed:** test-channel sends. **Forbidden:** production channels / real users.
-- **Op-auth:** required. **User validation:** operator confirms test-channel delivery.
+- **Op-auth:** granted. **User validation:** operator confirms test-channel delivery (pending).
 - **Acceptance:** recorded test delivery. **Abort:** any production channel.
+- **Done:** one real `[STAGING]` test message sent to `MySanbox`/`#general` via the discord-gateway
+  controlled path (`external_sent=true`); reset to safe; `production_executed_true_count=0`;
+  operator visual confirmation pending. See
+  [controlled-notification-validation-report.md](controlled-notification-validation-report.md).
 
 ## Step 65F — Controlled LLM Validation
 - **Purpose:** validate live LLM calls against a non-prod key/quota.

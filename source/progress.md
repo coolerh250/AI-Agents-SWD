@@ -12335,3 +12335,44 @@ production secret, no external write; `production_executed_true_count=0`.**
 - **Gate.** Next is Step 65E (real Discord notification) / 65F (real Anthropic LLM), each under its
   own explicit operator authorization. Claude Code does not decide staging functional acceptance.
   Not production readiness.
+
+## Stage 65E — Controlled Notification Validation (Step 65E)
+
+Performed a **real** (not mock) controlled notification validation on `10.0.1.32` under operator
+authorization: one `[STAGING]`-prefixed test message was sent to the operator's non-production
+Discord test channel (`MySanbox`/`#general`) via the discord-gateway's existing controlled
+real-Discord path. **Status: completed (pass_with_operator_confirmation_pending).** **Marker:
+`CONTROLLED_NOTIFICATION_VALIDATION_VERIFY: PASS_WITH_OPERATOR_CONFIRMATION_PENDING`.**
+**Notification status: PASS_WITH_OPERATOR_CONFIRMATION_PENDING.** **Runtime posture: one controlled
+staging notification only; reset to safe defaults after validation.** **Production posture: no
+production action, no production deploy, no production secret, no production notification, no
+external write except the one approved staging notification.**
+
+- **Compose-wiring gap fixed (`2052dff`).** `discord-gateway`'s environment block was missing
+  `DISCORD_TEST_CHANNEL_ID` / `DISCORD_TEST_GUILD_ID` / `DISCORD_ALLOWED_ROLE_ID` (same class of gap
+  as 65D's GitHub wiring) — added with safe empty defaults.
+- **Missing operator input.** `DISCORD_TEST_GUILD_ID` (a non-secret Discord server identifier) had
+  never been collected; the operator provided it directly and it was added to
+  `infra/runtime/.env.staging.local` on the host (not committed, not printed).
+- **Secret-provider routing gap (runtime-only, not committed).** `SECRET_PROVIDER=mock-vault` routed
+  the token lookup through a stale placeholder in `.mock-vault-secrets.local.json`; a scoped,
+  temporary `SECRET_PROVIDER=env` override — applied only to a single recreate of the
+  `discord-gateway` container — was used instead of touching that shared file; reset to
+  `mock-vault` after.
+- **Send.** Guard dry-run blocked as expected before enablement (`run_real_discord_test_not_true`);
+  after enabling, exactly **one** real send succeeded (`external_sent=true`, `status=delivered`,
+  `production_executed=false`); the stream-consumer path (`notification-worker`) was left untouched
+  and correctly recorded its own copy as `simulated` (proving no double-send/autospam).
+- **Reset.** `RUN_REAL_DISCORD_TEST=false`, `SECRET_PROVIDER=mock-vault`; discord-gateway recreated;
+  `/status` returned to the exact pre-validation baseline (`has_token=false`,
+  `real_test_enabled=false`); `/operations/safety` unaffected (`production_executed_true_count=0`).
+- **Docs.** New `controlled-notification-validation-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-reset-record.md`, `-known-gaps.md`, `-operator-confirmation.md`; updated
+  notification-staging-channel-plan + external-integration-authorization-gates +
+  functional-validation-roadmap + functional-gap-register.
+- **Verifier + tests.** `scripts/verify_controlled_notification_validation.py`
+  (`CONTROLLED_NOTIFICATION_VALIDATION_VERIFY`) + `tests/test_controlled_notification_validation.py`.
+- **Gate.** Awaiting the operator's visual confirmation of message visibility
+  (`VISIBLE`/`NOT_VISIBLE`/`PARTIAL_DELAYED`). Next after that is Step 65F (real Anthropic LLM call)
+  under its own explicit authorization. Claude Code does not decide staging functional acceptance.
+  Not production readiness.

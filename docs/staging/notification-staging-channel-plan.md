@@ -42,9 +42,17 @@ Plan for the controlled notification integration to be validated at Step 65E. Cu
 Required before 65E sends anything; the operator authorizes the send and confirms the test-channel
 delivery afterward.
 
+## Step 65E outcome (real, not mock)
+Validated: one real `[STAGING]` test message sent to `MySanbox` / `#general` via the
+discord-gateway's controlled `/discord/real/test-message` path; `external_sent=true`;
+`production_executed_true_count=0`; reset to safe after. Operator visual confirmation is
+**pending**. See
+[controlled-notification-validation-report.md](controlled-notification-validation-report.md).
+
 ## Posture
-Planning only. No notification sent, no token use, no integration enabled, no external write, no
-runtime change, no production action; `production_executed_true_count=0`.
+Step 65E executed (real send, reset after). No production channel; no DM; no spam; no secret in
+message; no runtime change beyond the discord-gateway container for the validation window; no
+production action; `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No external write._
