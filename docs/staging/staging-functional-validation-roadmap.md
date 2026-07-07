@@ -170,6 +170,16 @@ explicit operator authorization; sandbox/non-production only.
 - **Step 65H status: PLANNED** (65H.2 pending operator authorization via
   [failure-governance-operator-authorization-templates.md](failure-governance-operator-authorization-templates.md)).
 
+### Step 65H.2 — Approval & Governance Path Validation (completed — PASS_WITH_GAPS)
+- **Purpose:** validate approval required/granted/denied/expired + production-block paths.
+- **Allowed:** ≤3 controlled workflows; **no** external GitHub/Discord/LLM; no production action.
+- **Done:** WF1 required→granted→auto-resumed→`completed` (5 hops); WF2 required→denied→`rejected`
+  (terminal, not resumed); WF3 `production.deploy`→blocked at `waiting_approval` (0 hops, left
+  unapproved). Approval **expired/timeout** = tracked gap (no safe route; read-only confirmed, not
+  executed — no DB manipulation). `production_executed_true_count=0`; no external integration
+  enabled. Operator UI validation **pending**. See
+  [approval-governance-validation-report.md](approval-governance-validation-report.md).
+
 ## Step 65I — Staging Functional Acceptance Report
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.

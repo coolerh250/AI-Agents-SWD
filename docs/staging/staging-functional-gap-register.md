@@ -28,9 +28,13 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
 - **Workflow resume / cancel / abort / ignore-after-abort** exercised only in tests, not staging. →
   65H. **65H.1 planned:** cancel/abort routes + ignore-after-abort (409-on-terminal) mapped;
   controlled scenarios B1–B6 defined pending 65H.3 authorization.
-- **Approval paths (required / granted / denied / expired)** exercised only in tests. → 65H. **65H.1
-  planned:** approval-engine routes mapped; scenarios A1–A6 defined pending 65H.2 authorization
-  (`approval expired/timeout` path is a tracked unknown to confirm at 65H.2 start).
+- **Approval paths (required / granted / denied / expired)** ~~exercised only in tests~~ →
+  **VALIDATED (65H.2, PASS_WITH_GAPS):** required/granted/denied + production-block validated on
+  controlled staging workflows (WF1 granted→resumed→completed; WF2 denied→rejected; WF3
+  production.deploy blocked); `production_executed_true_count=0`; no external integration. The
+  **approval expired/timeout** path is a **tracked gap** — no safe expiry route exists (read-only
+  confirmed; not executed, no DB manipulation). Operator UI validation pending. See
+  [approval-governance-validation-report.md](approval-governance-validation-report.md).
 - **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H. **65H.1
   planned:** `max_retries=3`, `stream.deadletter`(`.terminal`), `/deadletter/replay` mapped;
   scenarios C1–C7 defined pending 65H.4 authorization. See

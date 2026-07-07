@@ -12600,3 +12600,41 @@ posture: planning/readiness only; no scenario execution, no external write, no w
 - **Gate.** Step 65H.2 (approval & governance path validation) runs only after the operator returns
   its authorization template. Claude Code does not decide staging functional acceptance. Not
   production readiness.
+
+## Stage 65H.2 — Approval & Governance Path Validation (Step 65H.2)
+
+Executed a real controlled approval & governance validation on `10.0.1.32` under explicit operator
+authorization: three controlled workflows exercised the approval required/granted/denied and
+production-block paths on `workflow_state` objects, with **no** external integration. **Status:
+completed (pass_with_gaps — expiry path is a tracked gap; operator UI validation pending).**
+**Marker: `APPROVAL_GOVERNANCE_VALIDATION_VERIFY: PASS_WITH_GAPS`.** **Runtime posture: 3 controlled
+workflows only; no external GitHub/Discord/LLM; no runtime flag change; no service recreate.**
+**Production posture: no production action, no production deploy, no production secret;
+`production_executed_true_count=0`.**
+
+- **WF1 (granted→resume).** `contract.action` (restricted, non-production) → `waiting_approval`/
+  `pending` → `/approval/approve` → orchestrator `stream.approvals` listener auto-resumed →
+  `completed`, `approval_status=approved`, ran the mock 5-agent pipeline, 23 audit events,
+  `production_executed=false`.
+- **WF2 (denied→terminal).** `contract.action` → `pending` → `/approval/reject` → `rejected`
+  (terminal), not resumed, `production_executed=false`.
+- **WF3 (production block).** `production.deploy` → `approval_required=true`, risk high →
+  `waiting_approval`, `blocked_pending_approval`, 0 agent hops, **left unapproved** (approving a
+  production action is forbidden), `production_executed=false`.
+- **Approval expired/timeout = tracked gap.** No safe expiry/timeout route exists in the
+  approval-engine or resume engine (read-only confirmed); simulating it would require DB manipulation
+  (forbidden) — recorded as a tracked gap, not executed.
+- **Evidence nuance.** `/operations/approval-decisions/{task_id}` is for Stage-52 operator actions
+  (count=0 here); approval evidence is the workflow `approval_status` + approval-engine status +
+  `/audit-evidence`.
+- **Safety (before=after).** `production_executed_true_count=0`; github/discord/llm external all
+  false (never enabled); `hard_policy_enforced=true`; no reset needed (no flag was enabled).
+- **Docs.** New `approval-governance-validation-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-known-gaps.md`, `-operator-validation-request.md`; updated functional-validation-roadmap +
+  functional-gap-register.
+- **Verifier + tests.** `scripts/verify_approval_governance_validation.py`
+  (`APPROVAL_GOVERNANCE_VALIDATION_VERIFY`) + `tests/test_approval_governance_validation.py`.
+- **Gate.** Awaiting operator UI validation on the formal Admin Console pages
+  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.3 (cancel/abort/ignore-after-abort) under
+  its own authorization. Claude Code does not decide staging functional acceptance. Not production
+  readiness.
