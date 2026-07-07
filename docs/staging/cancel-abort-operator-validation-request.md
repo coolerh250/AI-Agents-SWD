@@ -24,6 +24,11 @@ Record one of:
 - **NOT_VISIBLE** — evidence not visible.
 - **PARTIAL_WITH_GAPS** — some visible; note which are missing.
 
+## Operator response (recorded)
+- **Operator response: VISIBLE** — the operator confirmed the canceled / aborted / ignore-after-abort
+  evidence on the formal Admin Console pages (not `/demo-evidence`). The raw late-stream-event
+  injection remains an acknowledged tracked gap.
+
 ## Note on the tracked gap
 The raw late-**stream**-event injection variant was **not** executed (unsafe injection forbidden;
 recorded as a tracked gap). The late-event-ignored behavior was validated at the API level (HTTP 409
@@ -32,11 +37,11 @@ it.
 
 ## Rule
 Claude Code must not self-accept this validation or decide staging functional acceptance (that is the
-Step 65I operator verdict). Until the operator responds, Step 65H.3 remains **PASS_WITH_GAPS** with
-operator UI validation pending.
+Step 65I operator verdict). The operator has now confirmed **VISIBLE**.
 
 ## Status
-Step 65H.3: awaiting operator UI validation. `production_executed_true_count=0`.
+Step 65H.3: **PASS_WITH_GAPS** — operator confirmed **VISIBLE**; raw late-stream-event injection
+remains a tracked gap. `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

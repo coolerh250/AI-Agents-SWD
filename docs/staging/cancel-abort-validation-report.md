@@ -77,8 +77,7 @@ cancel before execution · cancel during workflow · abort during workflow · ig
 
 ## Status
 - Step 65H.3: **PASS_WITH_GAPS** (cancel/abort/ignore-after-abort validated; raw late-stream-event
-  injection = tracked gap). Awaiting operator UI validation (see
-  [cancel-abort-operator-validation-request.md](cancel-abort-operator-validation-request.md)). Not
+  injection = tracked gap). **Operator confirmed VISIBLE** on the formal Admin Console pages. Not
   production readiness.
 
 ---

@@ -188,7 +188,7 @@ explicit operator authorization; sandbox/non-production only.
   (stuck; in-flight pipeline ran 5 hops, `production_executed=false`); WF3 abort → `aborted`, and
   ignore-after-abort confirmed (**HTTP 409** on late re-cancel / re-abort / resume). Raw
   late-**stream**-event injection = tracked gap (unsafe injection forbidden). `production_executed_true_count=0`;
-  no external integration. Operator UI validation **pending**. See
+  no external integration. **Operator confirmed VISIBLE** on the formal pages. See
   [cancel-abort-validation-report.md](cancel-abort-validation-report.md).
 
 ## Step 65I — Staging Functional Acceptance Report

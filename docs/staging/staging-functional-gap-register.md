@@ -30,7 +30,7 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   canceled (stuck); abort-during → aborted; ignore-after-abort confirmed (HTTP 409 on late
   re-cancel/re-abort/resume; terminal state held); `production_executed_true_count=0`; no external
   integration. Raw late-**stream**-event injection = tracked gap (unsafe injection forbidden).
-  Operator UI validation pending. See
+  **Operator confirmed VISIBLE** on the formal pages. See
   [cancel-abort-validation-report.md](cancel-abort-validation-report.md).
 - **Approval paths (required / granted / denied / expired)** ~~exercised only in tests~~ →
   **VALIDATED (65H.2, PASS_WITH_GAPS):** required/granted/denied + production-block validated on

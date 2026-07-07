@@ -15,9 +15,8 @@
    pipeline ran its 5 hops. The **workflow** was canceled (terminal state held; `production_executed=false`),
    but workflow-level cancel does not retroactively stop already-emitted agent events. This is a
    documented characteristic of the async pipeline, not a safety issue (no production action; prod_exec=0).
-3. **[pending] Operator UI validation.** The technical execution succeeded and API evidence is
-   captured; the operator has not yet visually confirmed the evidence on the formal Admin Console
-   pages. Tracked in
+3. ~~Operator UI validation pending.~~ **RESOLVED** — the operator confirmed **VISIBLE** on the
+   formal Admin Console pages. See
    [cancel-abort-operator-validation-request.md](cancel-abort-operator-validation-request.md).
 
 ## Non-gaps (done)

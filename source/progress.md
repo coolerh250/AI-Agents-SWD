@@ -12670,7 +12670,8 @@ secret; `production_executed_true_count=0`.**
   functional-gap-register.
 - **Verifier + tests.** `scripts/verify_cancel_abort_validation.py`
   (`CANCEL_ABORT_VALIDATION_VERIFY`) + `tests/test_cancel_abort_validation.py`.
-- **Gate.** Awaiting operator UI validation on the formal Admin Console pages
-  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.4 (retry / DLQ / manual replay) under its
-  own authorization. Claude Code does not decide staging functional acceptance. Not production
-  readiness.
+- **Operator confirmation.** Operator confirmed **VISIBLE** on the formal Admin Console pages
+  (canceled / aborted / ignore-after-abort evidence). Step 65H.3 remains **PASS_WITH_GAPS** (the raw
+  late-stream-event injection tracked gap is acknowledged).
+- **Gate.** Next is Step 65H.4 (retry / DLQ / manual replay) under its own authorization. Claude
+  Code does not decide staging functional acceptance. Not production readiness.
