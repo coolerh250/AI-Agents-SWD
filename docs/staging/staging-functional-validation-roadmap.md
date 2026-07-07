@@ -180,6 +180,17 @@ explicit operator authorization; sandbox/non-production only.
   enabled. **Operator confirmed VISIBLE** on the formal pages. See
   [approval-governance-validation-report.md](approval-governance-validation-report.md).
 
+### Step 65H.3 — Cancel / Abort / Ignore-after-abort Validation (completed — PASS_WITH_GAPS)
+- **Purpose:** validate cancel-before / cancel-during / abort-during / ignore-after-abort.
+- **Allowed:** ≤3 controlled workflows; **no** external GitHub/Discord/LLM; no production action; no
+  DB manipulation / unsafe stream injection.
+- **Done:** WF1 cancel-before → `canceled` (0 hops); WF2 cancel-during (dispatched) → `canceled`
+  (stuck; in-flight pipeline ran 5 hops, `production_executed=false`); WF3 abort → `aborted`, and
+  ignore-after-abort confirmed (**HTTP 409** on late re-cancel / re-abort / resume). Raw
+  late-**stream**-event injection = tracked gap (unsafe injection forbidden). `production_executed_true_count=0`;
+  no external integration. Operator UI validation **pending**. See
+  [cancel-abort-validation-report.md](cancel-abort-validation-report.md).
+
 ## Step 65I — Staging Functional Acceptance Report
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.

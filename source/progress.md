@@ -12639,3 +12639,38 @@ workflows only; no external GitHub/Discord/LLM; no runtime flag change; no servi
   approval expired/timeout tracked gap is acknowledged).
 - **Gate.** Next is Step 65H.3 (cancel/abort/ignore-after-abort) under its own authorization. Claude
   Code does not decide staging functional acceptance. Not production readiness.
+
+## Stage 65H.3 — Cancel / Abort / Ignore-after-abort Validation (Step 65H.3)
+
+Executed a real controlled cancel / abort / ignore-after-abort validation on `10.0.1.32` under
+explicit operator authorization: three controlled workflows on `workflow_state` objects, with **no**
+external integration. **Status: completed (pass_with_gaps — raw late-stream-event injection is a
+tracked gap; operator UI validation pending).** **Marker:
+`CANCEL_ABORT_VALIDATION_VERIFY: PASS_WITH_GAPS`.** **Runtime posture: 3 controlled workflows only;
+no external GitHub/Discord/LLM; no runtime flag change; no service recreate; no DB manipulation; no
+stream injection.** **Production posture: no production action, no production deploy, no production
+secret; `production_executed_true_count=0`.**
+
+- **WF1 (cancel before execution).** `contract.action` → `waiting_approval` (not dispatched) →
+  `/workflow/cancel` → `canceled`, `production_executed=false`, 0 agent hops.
+- **WF2 (cancel during workflow).** `feature` → `/workflow/test` dispatched (`awaiting_agents`) →
+  immediate `/workflow/cancel` → HTTP 200 → `canceled` (stuck after the pipeline would finish).
+  Honest nuance: the already-dispatched mock pipeline ran its 5 hops, but the workflow terminated to
+  `canceled` and `production_executed=false` (cancel does not un-dispatch in-flight agent events).
+- **WF3 (abort + ignore-after-abort).** `contract.action` → `waiting_approval` → `/workflow/abort` →
+  `aborted`; late re-`cancel` / re-`abort` / `resume` all refused **HTTP 409** (terminal-state
+  protection); final stage stayed `aborted`.
+- **Late stream-event injection = tracked gap.** Validated at the API level (409 on late
+  resume/cancel/abort); a raw stream injection would be unsafe (forbidden) — recorded as a tracked
+  gap, not executed.
+- **Safety (before=after).** `production_executed_true_count=0`; github/discord/llm external all
+  false (never enabled); `hard_policy_enforced=true`; no reset needed (no flag was enabled).
+- **Docs.** New `cancel-abort-validation-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-known-gaps.md`, `-operator-validation-request.md`; updated functional-validation-roadmap +
+  functional-gap-register.
+- **Verifier + tests.** `scripts/verify_cancel_abort_validation.py`
+  (`CANCEL_ABORT_VALIDATION_VERIFY`) + `tests/test_cancel_abort_validation.py`.
+- **Gate.** Awaiting operator UI validation on the formal Admin Console pages
+  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.4 (retry / DLQ / manual replay) under its
+  own authorization. Claude Code does not decide staging functional acceptance. Not production
+  readiness.
