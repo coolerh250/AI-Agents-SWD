@@ -102,6 +102,13 @@ explicitly authorizes it; sandbox / non-production only.
   effect.
 - **Rollback/disable:** stop scenario; validate. **Audit:** per-scenario evidence. **User
   validation:** operator authorizes scenarios.
+- **65H.1 planned (completed):** grounded scenario matrix + risk register + execution split
+  (65H.2 approval/governance, 65H.3 cancel/abort, 65H.4 retry/DLQ, 65H.5 evidence review); default
+  external policy for 65H is GitHub/Discord/LLM = **NO**; HIGH-risk scenarios require explicit
+  operator authorization via
+  [failure-governance-operator-authorization-templates.md](failure-governance-operator-authorization-templates.md);
+  `production_executed_true_count=0`. See
+  [failure-governance-validation-plan.md](failure-governance-validation-plan.md).
 
 ## Step 65I — Staging Functional Acceptance Report
 - **Operator authorization:** the operator gives the verdict. **Resource:** consolidated evidence.

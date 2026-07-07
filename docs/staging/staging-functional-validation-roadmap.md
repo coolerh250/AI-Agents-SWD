@@ -153,6 +153,23 @@ explicit operator authorization; sandbox/non-production only.
 - **Acceptance:** each path exercised + evidence recorded; safety preserved. **Abort:** unexpected
   production effect.
 
+### Step 65H.1 — Failure / Recovery / Governance Validation Plan (completed)
+- **Purpose:** build a grounded, controlled, auditable scenario matrix + authorization plan for 65H.
+- **Allowed:** read-only inspection + planning. **Forbidden:** scenario execution, workflow
+  execution, approval/cancel/abort/retry/DLQ actions, external write, runtime change, production
+  action.
+- **Done:** mapped the real mechanisms — approval-engine (`/approval/request|approve|reject`),
+  cancel/abort (`/workflow/cancel|abort/{id}`, ignore-after-abort = 409 on terminal), retry/DLQ
+  (`max_retries=3`, `stream.deadletter`(`.terminal`), `/deadletter/replay`), kill switches
+  (`hard_policy_enforced=true`, external flags off). Produced 8 planning docs (plan, scenario matrix,
+  authorization matrix, Admin Console checklist, abort/reset plan, risk register, execution split,
+  operator-authorization templates); split into 65H.2–65H.5; UI gap noted (no dedicated
+  `/approvals`/`/dlq` page — evidence on `/task-graph`+`/audit-evidence`).
+  `production_executed_true_count=0`. See
+  [failure-governance-validation-plan.md](failure-governance-validation-plan.md).
+- **Step 65H status: PLANNED** (65H.2 pending operator authorization via
+  [failure-governance-operator-authorization-templates.md](failure-governance-operator-authorization-templates.md)).
+
 ## Step 65I — Staging Functional Acceptance Report
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.

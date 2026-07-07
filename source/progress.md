@@ -12560,3 +12560,43 @@ change. Production posture: no production action, no production deploy, no produ
 - **Gate.** Next is Step 65H (failure / recovery / governance validation) under its own explicit
   operator authorization. Claude Code does not decide staging functional acceptance. Not production
   readiness.
+
+## Stage 65H.1 — Failure / Recovery / Governance Validation Plan (Step 65H.1)
+
+Built a grounded, controlled, auditable scenario matrix + authorization plan for Step 65H via
+read-only inspection of the real staging failure/governance mechanisms — planning/readiness only, no
+scenario executed and no external action. **Status: completed.** **Marker:
+`FAILURE_GOVERNANCE_VALIDATION_PLAN_VERIFY: PASS`.** **Step 65H status: PLANNED.** **Runtime
+posture: planning/readiness only; no scenario execution, no external write, no workflow execution.**
+**Production posture: no production action, no production deploy, no production secret;
+`production_executed_true_count=0`.**
+
+- **Mechanisms mapped.** Approval-engine (`/approval/request` → pending, `/approval/approve|reject`,
+  resume via `stream.approvals`); cancel/abort (`/workflow/cancel|abort/{id}` → `_terminate_workflow`,
+  ignore-after-abort = **HTTP 409** on a terminal workflow, `production_executed=false` always);
+  retry/DLQ (`DEFAULT_MAX_RETRIES=3`, `stream.deadletter` + `stream.deadletter.terminal`,
+  retry-scheduler `/deadletter` + `/deadletter/replay/{id}`, `/operations/dlq`); kill switches
+  (`hard_policy_enforced=true`, `production_delegation_allowed=false`, external flags disabled at
+  rest).
+- **Scenario matrix.** Approval A1–A6, cancel/abort B1–B6, retry/DLQ C1–C7, safety/no-production
+  D1–D5, each with entry point, expected result, audit/evidence, risk, and abort condition.
+- **Execution split.** 65H.2 approval/governance · 65H.3 cancel/abort/ignore-after-abort · 65H.4
+  retry/DLQ/replay · 65H.5 operator evidence review — each under its own authorization template;
+  none executed in 65H.1.
+- **Risk + external policy.** HIGH-risk scenarios (state change / failure injection / DLQ-replay /
+  runtime flags / production risk) need explicit operator authorization; default for 65H is
+  GitHub/Discord/LLM = **NO**.
+- **Notes.** Cancel/abort/retry operate on `workflow_state` (the mock `/workflow/test` path), so 65H
+  uses controlled non-external workflows. UI gap: no dedicated `/approvals`/`/dlq` page — evidence on
+  `/task-graph` + `/audit-evidence`. `approval expired/timeout` mechanism is a tracked unknown for
+  65H.2.
+- **Docs.** New `failure-governance-validation-plan.md`, `-scenario-matrix.md`,
+  `-authorization-matrix.md`, `-admin-console-validation-checklist.md`, `-abort-reset-plan.md`,
+  `-risk-register.md`, `-execution-split.md`, `-operator-authorization-templates.md`; updated
+  functional-validation-roadmap + functional-gap-register + external-integration-authorization-gates.
+- **Verifier + tests.** `scripts/verify_failure_governance_validation_plan.py`
+  (`FAILURE_GOVERNANCE_VALIDATION_PLAN_VERIFY`) +
+  `tests/test_failure_governance_validation_plan.py`.
+- **Gate.** Step 65H.2 (approval & governance path validation) runs only after the operator returns
+  its authorization template. Claude Code does not decide staging functional acceptance. Not
+  production readiness.

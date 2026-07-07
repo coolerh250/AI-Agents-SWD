@@ -26,9 +26,18 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   must be invoked as separately-authorized correlated steps to produce real external artifacts in
   65G.2 (per the 65F-C guardrail).
 - **Workflow resume / cancel / abort / ignore-after-abort** exercised only in tests, not staging. →
-  65H.
-- **Approval paths (required / granted / denied / expired)** exercised only in tests. → 65H.
-- **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H.
+  65H. **65H.1 planned:** cancel/abort routes + ignore-after-abort (409-on-terminal) mapped;
+  controlled scenarios B1–B6 defined pending 65H.3 authorization.
+- **Approval paths (required / granted / denied / expired)** exercised only in tests. → 65H. **65H.1
+  planned:** approval-engine routes mapped; scenarios A1–A6 defined pending 65H.2 authorization
+  (`approval expired/timeout` path is a tracked unknown to confirm at 65H.2 start).
+- **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H. **65H.1
+  planned:** `max_retries=3`, `stream.deadletter`(`.terminal`), `/deadletter/replay` mapped;
+  scenarios C1–C7 defined pending 65H.4 authorization. See
+  [failure-governance-scenario-matrix.md](failure-governance-scenario-matrix.md).
+- **[65H.1 finding, non-blocking] No dedicated `/approvals` or `/dlq` Admin Console page.** Approval
+  + DLQ operator evidence surfaces on `/task-graph` (approval_status + retry_timeline) +
+  `/audit-evidence` (+ `/operations/approval-decisions/{task_id}` / `/operations/dlq` APIs).
 
 ## Integration gaps
 - **GitHub:** ~~dry-run/mock only; no controlled sandbox write validated~~ → **RESOLVED (65D)**:
