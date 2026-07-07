@@ -25,6 +25,11 @@ Record one of:
 - **NOT_VISIBLE** — evidence not visible.
 - **PARTIAL_WITH_GAPS** — some visible; note which are missing.
 
+## Operator response (recorded)
+- **Operator response: VISIBLE** — the operator confirmed the approval-granted / denied /
+  production-block evidence on the formal Admin Console pages (not `/demo-evidence`). The approval
+  expired/timeout path remains an acknowledged tracked gap.
+
 ## Note on the expired path
 The approval **expired / timeout** path was **not** executed (no safe route; recorded as a tracked
 gap per your authorization). No operator action is needed for it beyond acknowledging the tracked
@@ -32,11 +37,11 @@ gap.
 
 ## Rule
 Claude Code must not self-accept this validation or decide staging functional acceptance (that is the
-Step 65I operator verdict). Until the operator responds, Step 65H.2 remains **PASS_WITH_GAPS** with
-operator UI validation pending.
+Step 65I operator verdict). The operator has now confirmed **VISIBLE**.
 
 ## Status
-Step 65H.2: awaiting operator UI validation. `production_executed_true_count=0`.
+Step 65H.2: **PASS_WITH_GAPS** — operator confirmed **VISIBLE**; approval expired/timeout remains a
+tracked gap. `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

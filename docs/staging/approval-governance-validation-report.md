@@ -10,7 +10,9 @@ approval-denied, and production-block paths. No external integration was used.
 ## Overall result
 - Overall result: **PASS_WITH_GAPS** — the four executable paths (required / granted / denied /
   production-block) all passed; the **approval expired / timeout** path is a tracked gap (no safe
-  route — read-only confirmed, not executed). Operator UI validation pending.
+  route — read-only confirmed, not executed). **Operator confirmed VISIBLE** on the formal Admin
+  Console pages (see
+  [approval-governance-operator-validation-request.md](approval-governance-operator-validation-request.md)).
 - `production_executed_true_count=0` before, during, and after. **Claude Code does not decide staging
   functional acceptance.**
 
@@ -71,10 +73,8 @@ approval-denied, and production-block paths. No external integration was used.
   restart, no DB reset, no DB manipulation. Only 3 controlled workflows were created (≤3 authorized).
 
 ## Status
-- Step 65H.2: **PASS_WITH_GAPS** (4 paths validated; expiry = tracked gap). Awaiting operator UI
-  validation (see
-  [approval-governance-operator-validation-request.md](approval-governance-operator-validation-request.md)).
-  Not production readiness.
+- Step 65H.2: **PASS_WITH_GAPS** (4 paths validated; expiry = tracked gap). **Operator confirmed
+  VISIBLE** on the formal Admin Console pages. Not production readiness.
 
 ---
 _Staging only — non-production only. No production action. No production secret. No production data._

@@ -33,8 +33,8 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   controlled staging workflows (WF1 granted→resumed→completed; WF2 denied→rejected; WF3
   production.deploy blocked); `production_executed_true_count=0`; no external integration. The
   **approval expired/timeout** path is a **tracked gap** — no safe expiry route exists (read-only
-  confirmed; not executed, no DB manipulation). Operator UI validation pending. See
-  [approval-governance-validation-report.md](approval-governance-validation-report.md).
+  confirmed; not executed, no DB manipulation). **Operator confirmed VISIBLE** on the formal pages.
+  See [approval-governance-validation-report.md](approval-governance-validation-report.md).
 - **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H. **65H.1
   planned:** `max_retries=3`, `stream.deadletter`(`.terminal`), `/deadletter/replay` mapped;
   scenarios C1–C7 defined pending 65H.4 authorization. See

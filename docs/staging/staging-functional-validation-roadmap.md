@@ -177,7 +177,7 @@ explicit operator authorization; sandbox/non-production only.
   (terminal, not resumed); WF3 `production.deploy`→blocked at `waiting_approval` (0 hops, left
   unapproved). Approval **expired/timeout** = tracked gap (no safe route; read-only confirmed, not
   executed — no DB manipulation). `production_executed_true_count=0`; no external integration
-  enabled. Operator UI validation **pending**. See
+  enabled. **Operator confirmed VISIBLE** on the formal pages. See
   [approval-governance-validation-report.md](approval-governance-validation-report.md).
 
 ## Step 65I — Staging Functional Acceptance Report

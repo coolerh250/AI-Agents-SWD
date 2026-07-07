@@ -12634,7 +12634,8 @@ workflows only; no external GitHub/Discord/LLM; no runtime flag change; no servi
   functional-gap-register.
 - **Verifier + tests.** `scripts/verify_approval_governance_validation.py`
   (`APPROVAL_GOVERNANCE_VALIDATION_VERIFY`) + `tests/test_approval_governance_validation.py`.
-- **Gate.** Awaiting operator UI validation on the formal Admin Console pages
-  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.3 (cancel/abort/ignore-after-abort) under
-  its own authorization. Claude Code does not decide staging functional acceptance. Not production
-  readiness.
+- **Operator confirmation.** Operator confirmed **VISIBLE** on the formal Admin Console pages
+  (approval-granted / denied / production-block evidence). Step 65H.2 remains **PASS_WITH_GAPS** (the
+  approval expired/timeout tracked gap is acknowledged).
+- **Gate.** Next is Step 65H.3 (cancel/abort/ignore-after-abort) under its own authorization. Claude
+  Code does not decide staging functional acceptance. Not production readiness.

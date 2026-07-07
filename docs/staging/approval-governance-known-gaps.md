@@ -16,9 +16,8 @@
    operator-action decisions, not the workflow approval path. Approval evidence is on the workflow
    state (`approval_status`) + `/audit-evidence` + the approval-engine request status. A future UI
    enhancement could add a dedicated approvals view.
-3. **[pending] Operator UI validation.** The technical execution succeeded and API evidence is
-   captured; the operator has not yet visually confirmed the evidence on the formal Admin Console
-   pages. Tracked in
+3. ~~Operator UI validation pending.~~ **RESOLVED** — the operator confirmed **VISIBLE** on the
+   formal Admin Console pages. See
    [approval-governance-operator-validation-request.md](approval-governance-operator-validation-request.md).
 
 ## Non-gaps (done)
