@@ -12746,3 +12746,34 @@ change. Production posture: no production action, no production deploy, no produ
   `tests/test_failure_governance_operator_review.py`.
 - **Gate.** Next is Step 65I (staging functional acceptance report — the operator's verdict). Claude
   Code does not decide staging functional acceptance. Not production readiness.
+
+## Stage 65I — Staging Functional Acceptance Report (Step 65I)
+
+Consolidated the entire Step 65 staging functional validation track (65A–65H) into a full,
+operator-reviewable acceptance report — documentation / acceptance report only, no new workflow and
+no external action. **Status: completed.** **Marker:
+`STAGING_FUNCTIONAL_ACCEPTANCE_REPORT_VERIFY: PASS`.** **Step 65 status: ACCEPTANCE_REPORT_READY.**
+**Runtime posture: documentation/acceptance report only; no workflow execution, no external action,
+no runtime change. Production posture: no production action, no production deploy, no production
+secret; `production_executed_true_count=0`.** **Operator verdict: PENDING.**
+
+- **Track summary.** GitHub sandbox VALIDATED (65D); Discord VALIDATED (65E, operator VISIBLE); LLM
+  VALIDATED_WITH_GOVERNANCE_GAP (65F/65F-C); fresh E2E VALIDATED (65G, operator VISIBLE); failure /
+  recovery / governance COMPLETED_WITH_GAPS (65H, operator VISIBLE per sub-stage). Secret backend
+  validated for Step-65 scope; container registry + cloud storage deferred.
+- **Gap classification.** 11 remaining gaps classified (ACCEPTED_STAGING_GAP / OPERATOR_UX_GAP /
+  PRODUCTION_READINESS_GAP / DEFERRED_SCOPE / NON_BLOCKING_TECHNICAL_CHARACTERISTIC) — **no gap
+  blocks staging functional acceptance**; approval-expiry mechanism + DLQ/Retry operator console
+  flagged as production-readiness items (not staging blockers).
+- **Non-binding recommendation.** PASS_WITH_ACCEPTED_GAPS, subject to operator decision. Explicitly
+  **not** production readiness / deployment authorization.
+- **Decision.** Three operator options documented (PASS / PASS_WITH_ACCEPTED_GAPS / FAIL); production
+  readiness kept as a separate, still-blocked decision. Claude Code does not choose.
+- **Docs.** New `staging-functional-acceptance-report.md`, `-evidence-summary.md`, `-gap-register.md`,
+  `-decision-template.md`, `-production-readiness-separation.md`, `-next-actions.md`; updated
+  functional-validation-roadmap + functional-gap-register.
+- **Verifier + tests.** `scripts/verify_staging_functional_acceptance_report.py`
+  (`STAGING_FUNCTIONAL_ACCEPTANCE_REPORT_VERIFY`) +
+  `tests/test_staging_functional_acceptance_report.py`.
+- **Gate.** Awaiting the operator's Step 65I acceptance verdict. Claude Code does not decide staging
+  functional acceptance. Not production readiness.

@@ -6,6 +6,12 @@
 Blockers and gaps to staging functional acceptance, grouped by category, derived from
 [staging-functional-coverage-matrix.md](staging-functional-coverage-matrix.md).
 
+> **Step 65I acceptance:** all remaining gaps are consolidated and classified in
+> [staging-functional-acceptance-gap-register.md](staging-functional-acceptance-gap-register.md) —
+> **no gap blocks staging functional acceptance.** The operator records the final verdict via
+> [staging-functional-acceptance-decision-template.md](staging-functional-acceptance-decision-template.md)
+> (PENDING). Claude Code does not decide acceptance.
+
 ## Functional gaps
 - **No fresh end-to-end workflow from a real intake.** ~~All agent/workflow/QA/code/audit evidence
   is seeded/mock.~~ → **RESOLVED (65G.2) + OPERATOR_VISIBLE (65G.2-V):** fresh intake
