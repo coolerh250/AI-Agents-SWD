@@ -46,6 +46,15 @@ Proposed Step 66 sub-stages to deliver the AI Agents Team Work MVP experience on
 This roadmap is a recommendation. No sub-stage was implemented. No workflow ran; no external action;
 no production action. The operator decides scope, order, and kickoff.
 
+## Recorded decisions integrated (66A.2)
+
+The roadmap sequence is unchanged, now anchored on the recorded decisions: **D8 = A** keeps Approvals +
+DLQ/Retry pages at **P0 in 66D**; **D9 = A** makes the **full chat-style Agent Workroom an MVP
+deliverable in 66C** (66A.3 will cut the minimum-viable workroom vs. later advanced features); **D3 =
+B** / **D7 = B** drive 66F/66G channel phasing (Console+API + Discord first). **D10 = C** keeps web
+research out of MVP execution (whitelist + connector are future work). See
+`ai-team-work-step66a3-blueprint-inputs.md`.
+
 ---
 _Non-production only. No production action. No production data._
 

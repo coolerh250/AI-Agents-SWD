@@ -39,6 +39,14 @@ and a **recommended** MVP priority. Final priority is decision item **D2**.
 No task was executed. No external action occurred. No production action occurred. MVP priorities are
 recommendations only and require operator review (D2).
 
+## Recorded decision (66A.2)
+
+**D2 = B** — first-class MVP task types = **software delivery + documentation + platform improvement**;
+other AI-agent-capable types stay in the taxonomy/roadmap. **D6 = B** — the fixed team covers those
+three; other types enter the **intake/research queue** (no full pipeline until future templates).
+**D14 = B** — the MVP UI shows task-type selection; non-software tasks go through
+**intake / planning / documentation** first.
+
 ---
 _Non-production only. No production action. No production data._
 

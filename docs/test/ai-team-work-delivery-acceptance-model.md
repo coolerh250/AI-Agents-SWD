@@ -53,6 +53,15 @@ delivered-at, risk flag, pending-action.
 No delivery action was executed and no workflow ran. No external action occurred. No production action
 occurred. State transitions and limits are recommendations pending operator decisions (D5, D11, D12).
 
+## Recorded decision (66A.2)
+
+**D5 = B** — full action set adopted: Accept / Reject / Request Changes / Re-run QA / Escalate /
+Archive. **D11 = C** — Request Changes is **size-classified**: **small** changes continue as a revision
+cycle within the same workflow; **major** changes create a **new (or linked) workflow** — this
+**supersedes** the earlier same-workflow-only recommendation; classification criteria are defined at
+66A.3. **D12 = B** — Re-run QA: **PM / Engineering Lead / Reviewer only, max 3 per delivery**. **D13 =
+C** — retry / manual DLQ replay restricted to **Platform Admin / Agent Operator only**.
+
 ---
 _Non-production only. No production action. No production data._
 

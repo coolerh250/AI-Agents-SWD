@@ -55,6 +55,13 @@ preferences configurable.
 No notification was sent. No external action occurred. No production action occurred. Routing is a
 recommendation pending D7.
 
+## Recorded decision (66A.2)
+
+**D7 = B** — routing: **Admin Console notification center = P0**; **Discord lifecycle notification =
+P1** (reuse the Step 65-validated Discord rail); **Slack** after Discord; **Telegram** later. Redaction
+rules stand (summaries + link-backs only, no secrets/payloads). No send in test posture unless a
+controlled rail is separately authorized.
+
 ---
 _Non-production only. No production action. No production data._
 

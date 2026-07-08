@@ -62,6 +62,18 @@ approval-expiry/timeout mechanism). Final choice is **D4**.
 No clarification workflow was executed. No notification was sent. No external action occurred. No
 production action occurred. Timeout behavior is an open decision (D4).
 
+## Recorded decision (66A.2)
+
+**D4 = B** — timeout behavior: pause → notify → wait, then on timeout the task transitions to
+**blocked / clarification_expired**. Recommended defaults: first reminder after **24h**,
+blocked/expired after **72h**, **admin-configurable**. This **supersedes** the earlier wait-forever
+recommendation (§4 option A).
+
+**D9 = A** — a **full chat-style Agent Workroom is in MVP** (not phased/later). The clarification
+thread is part of that workroom, which also carries agent progress messages, request-changes and
+delivery-review discussion, pause/resume context, and audit linkage. 66A.3 separates the
+**minimum-viable workroom** from later advanced features.
+
 ---
 _Non-production only. No production action. No production data._
 

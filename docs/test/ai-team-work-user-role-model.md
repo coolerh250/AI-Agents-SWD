@@ -47,6 +47,13 @@ Legend: ✔ allowed (default) · ✖ not allowed (default) · "own only" = scope
 No permissions were implemented; this is a discovery model. Recommendations are non-final. No
 production action occurred.
 
+## Recorded decision (66A.2)
+
+**D1 = B — Conservative RBAC.** General users create + track tasks; PM / Engineering Lead / Reviewer
+review + accept delivery; Platform Admin / Agent Operator manage retry, replay, integrations, and
+higher-risk operations. The recommended default matrix in §2 stands as the **66A.3 starting point**
+(the exact per-capability matrix is still to be signed off by the operator at 66A.3).
+
 ---
 _Non-production only. No production action. No production data._
 

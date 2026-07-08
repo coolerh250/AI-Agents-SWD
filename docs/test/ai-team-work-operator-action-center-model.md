@@ -50,6 +50,13 @@ surfaces. Final priority is **D8**.
 No Action Center was implemented; no action was executed. No external action occurred. No production
 action occurred. Priorities are recommendations pending D8.
 
+## Recorded decision (66A.2)
+
+**D8 = A** — **Approvals UI and DLQ/Retry Admin Console are both P0**, closing the Step 65
+operator-flagged UX gaps (#7 `/approvals`, #6 DLQ/Retry) early. **D13 = C** — DLQ manual replay is
+restricted to **Platform Admin / Agent Operator only**; PMs / reviewers / requesters cannot trigger
+replay.
+
 ---
 _Non-production only. No production action. No production data._
 

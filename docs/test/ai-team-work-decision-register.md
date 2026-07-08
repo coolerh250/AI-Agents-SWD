@@ -1,39 +1,43 @@
 # AI Agents Team Work — Decision Register (Step 66A.1)
 
-> **Planning / discovery only. No UI implementation. No production action.**
-> **Claude Code did not finalize any product decision beyond the six operator-provided directions; all recommendations below are non-final and require operator review.**
+> **Updated 2026-07-08 (Step 66A.2): operator RECORDED decisions D1–D14 — see the Recorded column and
+> `ai-team-work-operator-decision-record.md`.** Documentation only; no UI/backend/runtime change.
+> **Claude Code did not change operator decisions.** Recommendations shown are the earlier non-final
+> proposals; the **Recorded** column is the operator's binding decision.
 
-The six operator-provided directions (D1 users, D2 task types, D3 channels, D4 clarification, D5
-delivery actions, D6 fixed team) are **integrated as requirements**. The items below are the detailed
-sub-decisions still needed to reach a final UX blueprint (66A.3).
+The six operator-provided directions plus the detailed sub-decisions are now **decided**. The
+**Recorded (66A.2)** column governs.
 
-| ID | Question | Operator context | Options | Recommendation (NON-FINAL) | Impact if deferred | Answer before 66A.3? |
-| --- | --- | --- | --- | --- | --- | --- |
-| **D1** | Detailed role permissions for the multi-role model | D1: multi-role | (a) recommended default matrix (b) stricter (c) looser | adopt default matrix in `user-role-model.md`, tighten retry/secret mgmt | RBAC ambiguity blocks 66B/66D | **yes** |
-| **D2** | MVP task-type priority within the broad taxonomy | D2: all AI-capable tasks | (a) software-only MVP (b) +docs/platform (c) +research | software delivery + docs + platform-improvement for MVP | scope creep in MVP | **yes** |
-| **D3** | Intake channel implementation order | D3: Console+Slack+Discord+Telegram+API | (a) Console+API first (b) +Discord (c) all at once | Console+API P0 → Slack/Discord P1 → Telegram P2 | rework if built out of order | **yes** |
-| **D4** | Clarification timeout behavior | D4: pause/notify/wait | (a) wait forever (b) escalate after N (c) auto-cancel after N | wait-forever MVP; add escalate pre-prod (ties gap #2) | stuck tasks with no policy | **yes** |
-| **D5** | Delivery acceptance state transitions | D5: Accept/Reject/Request-Changes/Re-run-QA | confirm transition table in delivery model | adopt table in `delivery-acceptance-model.md` | 66D acceptance gate blocked | **yes** |
-| **D6** | Fixed Software Delivery Team scope boundaries | D6: fixed team MVP | (a) software+docs+platform (b) software-only | software+docs+platform; others → "not supported yet" | unclear team scope | **yes** |
-| **D7** | Notification channel priority & routing | — | (a) Console-only P0 (b) +Discord (c) all | Console P0 + Discord P1 (existing rail); per-role routing | noisy/insufficient notifications | no (can start 66G with default) |
-| **D8** | Approval / DLQ / Retry UI priority | Step 65 gaps #6/#7 | (a) both P0 (b) approvals first (c) DLQ first | both P0 (close operator-flagged gaps first) | operator gaps persist | **yes** |
-| **D9** | Is a chat-style agent workroom MVP or later (66C)? | operator wants agent interaction | (a) MVP (b) 66C phased (c) later | phased 66C: clarification-first, chat later | interaction feels incomplete | no (66C decides) |
-| **D10** | Web research governance policy | D2 web research | (a) no connector MVP (b) governed rail later | no connector in MVP; governed rail later (off by default) | research tasks stay blocked | no (documented gap) |
-| **D11** | Request Changes: same workflow or new workflow | D5 | (a) same+note (b) new linked workflow | same workflow + change-request note for MVP | acceptance-loop ambiguity | **yes** |
-| **D12** | Re-run QA behavior & limits | D5 | (a) cap ≤3 (b) unlimited (c) cost-gated | cap ≤3, eng-lead/agent-op only, audit each | cost / loop risk | **yes** |
-| **D13** | Who can trigger retry / manual replay | Step 65 governance | (a) admin/agent-op only (b) +PM | admin + agent-operator only (governed, audited) | governance risk | **yes** |
-| **D14** | Non-software tasks in MVP UI or later via templates | D2/D6 | (a) MVP UI (b) later via templates | later via templates; MVP fixed team only | MVP scope creep | **yes** |
+| ID | Question | Options | Recommendation (was NON-FINAL) | **Recorded (66A.2)** |
+| --- | --- | --- | --- | --- |
+| **D1** | Detailed role permissions for the multi-role model | (a) default matrix (b) stricter (c) looser | default matrix, tighten retry/secret mgmt | **B — Conservative RBAC** |
+| **D2** | MVP task-type priority | (a) software-only (b) +docs/platform (c) +research | software + docs + platform | **B — software + documentation + platform improvement** |
+| **D3** | Intake channel implementation order | (a) Console+API first (b) +Discord (c) all at once | Console+API P0 → Slack/Discord P1 → Telegram P2 | **B — Console+API first; Slack/Discord second; Telegram third** |
+| **D4** | Clarification timeout behavior | (a) wait forever (b) reminder→blocked/expired (c) auto-cancel | wait-forever MVP; escalate pre-prod | **B — reminder, then blocked / clarification_expired** (24h/72h, admin-config) |
+| **D5** | Delivery acceptance state transitions | confirm full action set | adopt table in `delivery-acceptance-model.md` | **B — Accept / Reject / Request Changes / Re-run QA / Escalate / Archive** |
+| **D6** | Fixed Software Delivery Team boundary | (a) software+docs+platform (b) software-only | software+docs+platform; others "not supported yet" | **B — software+docs+platform; other types → intake/research queue** |
+| **D7** | Notification channel priority & routing | (a) Console-only (b) +Discord (c) all | Console P0 + Discord P1 | **B — Admin Console + Discord first; Slack next; Telegram later** |
+| **D8** | Approval / DLQ / Retry UI priority | (a) both P0 (b) approvals first (c) DLQ first | both P0 | **A — Approvals + DLQ/Retry both P0** |
+| **D9** | Chat-style agent workroom MVP or later? | (a) MVP (b) phased (c) later | phased: clarification-first | **A — full chat-style Agent Workroom in MVP** |
+| **D10** | Web research governance policy | (a) no connector (b) governed rail (c) whitelist-only | no connector in MVP | **C — whitelist sources only** (+ propose top-10, pending connector) |
+| **D11** | Request Changes: same vs new workflow | (a) same+note (b) new linked (c) size-classified | same workflow + note | **C — small→same workflow; major→new workflow** |
+| **D12** | Re-run QA behavior & limits | (a) cap ≤3 (b) roles+cap 3 (c) cost-gated | cap ≤3 | **B — PM/Lead/Reviewer; max 3 per delivery** |
+| **D13** | Who can trigger retry / manual replay | (a) admin/agent-op only (b) +PM (c) admin/agent-op only | admin + agent-operator only | **C — Platform Admin / Agent Operator only** |
+| **D14** | Non-software tasks in MVP UI or later | (a) MVP UI (b) selection + intake/planning first (c) later | later via templates | **B — UI shows task-type selection; non-software → intake/planning/documentation first** |
 
-## Summary buckets
+## Status
 
-- **Must decide before 66A.3:** D1, D2, D3, D4, D5, D6, D8, D11, D12, D13, D14.
-- **Can decide during 66B/66G:** D7.
-- **Can defer (documented):** D9 (66C), D10 (web connector future).
+- **All D1–D14 RECORDED (2026-07-08).** Operator overrides vs. the earlier recommendation: **D4=B,
+  D9=A, D11=C**. All others matched the recommendation. Verifier checks D7=B, D9=A, D10=C, D11=C.
+- Remaining detail to resolve at 66A.3 (not re-decisions): D11 size-classification criteria; D4
+  timeout-config surface; D1 exact permission matrix; D10 whitelist confirmation + connector auth;
+  D9 minimum-viable-workroom boundary; D12 admin-override proposal.
 
 ## Statement
 
-These are open decisions for the operator. Claude Code did **not** finalize them. No UI was
-implemented; no workflow ran; no external action; no production action.
+Operator decisions D1–D14 are recorded exactly as provided. Claude Code did not change operator
+decisions. No UI was implemented; no backend change; no workflow ran; no external action; no
+production action.
 
 ---
 _Non-production only. No production action. No production data._

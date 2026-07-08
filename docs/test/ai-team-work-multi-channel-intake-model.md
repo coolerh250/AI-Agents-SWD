@@ -46,6 +46,11 @@ No channel is dropped; sequencing balances existing plumbing (API/Discord) vs. n
 No intake channel was implemented; no message was sent. No external action occurred. No production
 action occurred. Sequencing is a recommendation only.
 
+## Recorded decision (66A.2)
+
+**D3 = B** — implementation order: **Admin Console + API = P0**; **Slack + Discord = P1**; **Telegram =
+P2**. No channel is dropped. (Related: notification routing **D7 = B** — Admin Console + Discord first.)
+
 ---
 _Non-production only. No production action. No production data._
 

@@ -50,6 +50,14 @@ These are **not** in MVP. MVP keeps the fixed team; non-software task types wait
 No team composition was implemented or executed. No external action occurred. No production action
 occurred. Future phases are recommendations only.
 
+## Recorded decision (66A.2)
+
+**D6 = B** — the fixed Software Delivery Team covers **software delivery, documentation, and platform
+improvement**; other task types are accepted at intake/planning level but enter the **intake/research
+queue** and do not run the full delivery pipeline until future templates exist. **D14 = B** — MVP UI
+offers task-type selection; non-software tasks route to intake/planning/documentation first. Future
+phases (templates → role-based → AI-suggested composition) remain out of MVP.
+
 ---
 _Non-production only. No production action. No production data._
 

@@ -46,6 +46,15 @@ does **not** claim the capability exists today.
 No web/browsing/search action was performed. No external action occurred. No production action
 occurred. The connector is a future requirement, not a current capability.
 
+## Recorded decision (66A.2)
+
+**D10 = C — whitelist sources only.** Web research is required but governed by an **operator-approved
+source whitelist**. A proposed **top-10** whitelist is in
+`ai-team-work-web-research-source-whitelist-proposal.md` — a **proposal pending operator confirmation**,
+not an approved final whitelist, and **not** evidence of live research. The runtime still has **no
+browsing/search connector** (missing capability); no web browsing was performed. Web research runs only
+once an approved connector exists and is explicitly authorized (future controlled rail).
+
 ---
 _Non-production only. No production action. No production data._
 

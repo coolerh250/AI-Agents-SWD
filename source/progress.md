@@ -12856,3 +12856,35 @@ no UI implementation, no workflow execution, no external action, no production a
 - **Gate.** Step 66 status: INTERACTION_MODEL_DISCOVERY_STARTED. Awaiting operator decisions
   (66A.2). Claude Code did not finalize product decisions beyond the six operator-provided ones. Not
   production readiness.
+
+## Stage 66A.2 — Operator Decision Review Record
+
+**Status: completed. Marker: `AI_TEAM_WORK_OPERATOR_DECISION_RECORD_VERIFY`.** Documentation only —
+no UI implementation, no backend change, no runtime change, no workflow execution, no external action,
+no production action. Baseline read-only: test host `10.0.1.31` HEAD `8aaf149`, 27/27 healthy,
+`production_executed_true_count=0`.
+
+- **Operator decisions D1–D14 RECORDED** (Zachary, 2026-07-08), exactly as provided; Claude Code did
+  not change them. Values: D1=B, D2=B, D3=B, D4=B, D5=B, D6=B, D7=B, D8=A, D9=A, D10=C, D11=C, D12=B,
+  D13=C, D14=B. Operator overrides vs. earlier recommendation: **D4=B** (timeout →
+  blocked/clarification_expired, 24h/72h), **D9=A** (full chat-style Agent Workroom in MVP), **D11=C**
+  (small→same workflow, major→new workflow).
+- **MVP scope lock** created (multi-role; Console+API intake first; Discord notify first; full chat
+  workroom; pause/notify/wait/resume; Delivery Inbox + Accept/Reject/Request-Changes/Re-run-QA/
+  Escalate/Archive; fixed Software Delivery Team; task-type selection; Approvals + DLQ/Retry P0; web
+  research whitelist-only pending connector) + explicit **out-of-scope** list.
+- **Web research top-10 source whitelist** proposed (Anthropic/OpenAI/MCP/LangChain/MS-Learn/GCP/AWS/
+  OWASP/NIST/arXiv) — a **proposal pending operator confirmation**, not an approved final whitelist;
+  connector is a **missing capability**; no browsing performed.
+- **66A.3 blueprint inputs** prepared (decisions, open questions, required backend/frontend/APIs/data
+  model/notifications/governance changes, test strategy, acceptance criteria, risks).
+- **Docs.** New: `ai-team-work-operator-decision-record.md`,
+  `ai-team-work-step66a3-blueprint-inputs.md`, `ai-team-work-web-research-source-whitelist-proposal.md`,
+  `ai-team-work-mvp-scope-lock.md` (all under `docs/test/`). Updated: decision register + 9 model docs
+  (recorded-decision notes) + this log.
+- **Verifier + tests.** `scripts/verify_ai_team_work_operator_decision_record.py` (PASS);
+  `tests/test_ai_team_work_operator_decision_record.py`.
+- **Gate.** Step 66 status: OPERATOR_DECISIONS_RECORDED. Next = **66A.3 Final UX Blueprint &
+  Implementation Scope**. Open items for 66A.3: D11 size-classification criteria, D4 timeout-config
+  surface, D1 exact permission matrix, D10 whitelist confirmation + connector auth, D9 minimum-viable
+  workroom boundary. Claude Code must not decide product acceptance. Not production readiness.
