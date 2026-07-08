@@ -14,17 +14,30 @@ Step 65 — Staging Functional Acceptance — operator verdict (choose ONE)
 [ ] PASS
     All required staging functional validation passed and the documented gaps are not material.
 
-[ ] PASS_WITH_ACCEPTED_GAPS   (Claude Code's non-binding recommendation)
+[x] PASS_WITH_ACCEPTED_GAPS   (RECORDED — operator verdict)
     Staging functional validation is accepted as sufficient, while acknowledging the documented gaps
     (see the gap register). The gaps enter backlog / pre-production planning. This does NOT authorize
     production.
 
 [ ] FAIL
-    One or more gaps block staging functional validation. (Name which gap(s): ____________________)
+    One or more gaps block staging functional validation.
 
-Operator: ____________________    Date: ____________________
-Notes / accepted gaps: __________________________________________
+Operator: Zachary            Date: 2026-07-08
+Notes / accepted gaps:
+  Step 65 is accepted as PASS_WITH_ACCEPTED_GAPS for staging PLATFORM functional validation — the
+  core engine, sandbox integrations, E2E workflow, and governance controls are validated with no
+  production execution. This does NOT yet satisfy the broader AI Agents Team Work product goal:
+  operator-facing task assignment, agent interaction, delivery inbox, approval/DLQ management UI, and
+  the end-to-end manager experience remain incomplete. Those items move to
+  **Step 66 — AI Agents Team Work MVP Experience** (see
+  [step65-to-step66-handoff.md](step65-to-step66-handoff.md)).
 ```
+
+## Recorded verdict
+- **Verdict: PASS_WITH_ACCEPTED_GAPS** (operator: Zachary, 2026-07-08).
+- **Scope of acceptance:** staging **platform** functional validation only.
+- **Handoff:** the incomplete operator-facing product-experience items → **Step 66 — AI Agents Team
+  Work MVP Experience**.
 
 ## What each verdict means (next actions in
 [staging-functional-acceptance-next-actions.md](staging-functional-acceptance-next-actions.md))
@@ -41,7 +54,9 @@ Notes / accepted gaps: __________________________________________
 - `production_executed_true_count=0` throughout Step 65.
 
 ## Status
-Operator verdict: **PENDING**. `production_executed_true_count=0`.
+Operator verdict: **PASS_WITH_ACCEPTED_GAPS** (recorded 2026-07-08). Step 65 track closes as
+**accepted-with-gaps**; product-experience items handed off to **Step 66**.
+`production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

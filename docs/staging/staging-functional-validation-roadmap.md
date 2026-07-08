@@ -216,7 +216,7 @@ explicit operator authorization; sandbox/non-production only.
   [failure-governance-operator-evidence-review.md](failure-governance-operator-evidence-review.md).
 - **Step 65H status: COMPLETED_WITH_GAPS** — ready for Step 65I.
 
-## Step 65I — Staging Functional Acceptance Report (completed — ACCEPTANCE_REPORT_READY, operator verdict PENDING)
+## Step 65I — Staging Functional Acceptance Report (completed — operator verdict PASS_WITH_ACCEPTED_GAPS)
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.
 - **Op-auth / user validation:** operator gives the acceptance verdict.
@@ -224,10 +224,22 @@ explicit operator authorization; sandbox/non-production only.
   complete.
 - **Done:** produced the full acceptance report + evidence summary + classified gap register (no
   BLOCKING gap) + operator decision template + production-readiness separation + next-actions;
-  non-binding recommendation = PASS_WITH_ACCEPTED_GAPS (subject to operator decision);
-  `production_executed_true_count=0`; no new execution / external / production action. **Claude Code
-  does not decide acceptance — operator verdict PENDING.** See
+  non-binding recommendation = PASS_WITH_ACCEPTED_GAPS;
+  `production_executed_true_count=0`; no new execution / external / production action. **Operator
+  verdict RECORDED: PASS_WITH_ACCEPTED_GAPS** (Zachary, 2026-07-08) — Step 65 closes
+  accepted-with-gaps; operator-facing product-experience items move to **Step 66 — AI Agents Team
+  Work MVP Experience** (see [step65-to-step66-handoff.md](step65-to-step66-handoff.md)). Not
+  production readiness. See
   [staging-functional-acceptance-report.md](staging-functional-acceptance-report.md).
+
+## Step 66 — AI Agents Team Work MVP Experience (next track, scoped)
+- **Purpose:** deliver the operator/manager-facing product experience on top of the validated
+  platform: task assignment, agent interaction, delivery inbox, approval/DLQ management UI, and the
+  end-to-end manager experience.
+- **Absorbs:** the 65H operator-flagged UX gaps (DLQ/Retry page, `/approvals` page).
+- **Standing constraints:** not production readiness; real external actions only via controlled rails
+  under explicit authorization; `production_executed_true_count=0`. Pending its own kickoff. See
+  [step65-to-step66-handoff.md](step65-to-step66-handoff.md).
 
 ## Gating
 65B → 65C → (65D/65E/65F, in-scope only) → 65G → 65H → 65I. No staging functional acceptance until

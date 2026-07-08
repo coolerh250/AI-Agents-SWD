@@ -11,8 +11,11 @@ executes none of these without a fresh explicit authorization.
 - Any residual gaps stay in the gap register as informational.
 - Production remains a separate, still-blocked decision.
 
-## If verdict = PASS_WITH_ACCEPTED_GAPS (recommended)
-- Record the verdict + the specific accepted gaps.
+## If verdict = PASS_WITH_ACCEPTED_GAPS (recommended) — **RECORDED (2026-07-08)**
+- **Operator verdict recorded: PASS_WITH_ACCEPTED_GAPS.** Step 65 closes as **accepted-with-gaps**.
+- **Handoff:** the operator-facing product-experience items (task assignment, agent interaction,
+  delivery inbox, approval/DLQ management UI, manager E2E) move to **Step 66 — AI Agents Team Work
+  MVP Experience**. See [step65-to-step66-handoff.md](step65-to-step66-handoff.md).
 - Move the accepted gaps and production-readiness items to backlog / pre-production planning:
   - **Recommended before production:** safe approval-expiry/timeout mechanism (gap #2); DLQ / Retry
     Admin Console operator page (gap #6).
@@ -36,7 +39,8 @@ executes none of these without a fresh explicit authorization.
 
 ## This stage's posture
 Documentation only. No new workflow executed; no external action; no production action.
-`production_executed_true_count=0`. Operator verdict **PENDING**.
+`production_executed_true_count=0`. Operator verdict **PASS_WITH_ACCEPTED_GAPS (recorded)**;
+Step 65 closed accepted-with-gaps; product-experience items → Step 66.
 
 ---
 _Staging only — non-production only. No production action. No production data._

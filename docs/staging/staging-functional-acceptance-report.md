@@ -87,15 +87,22 @@ planning — **not** staging blockers.
   does **not** close production rollout gaps. See
   [staging-functional-acceptance-production-readiness-separation.md](staging-functional-acceptance-production-readiness-separation.md).
 
-## 7. Operator decision required
-The operator records one verdict — **PASS / PASS_WITH_ACCEPTED_GAPS / FAIL** — in
-[staging-functional-acceptance-decision-template.md](staging-functional-acceptance-decision-template.md).
-**Claude Code does not choose.**
+## 7. Operator decision — RECORDED
+- **Operator verdict: PASS_WITH_ACCEPTED_GAPS** (Zachary, 2026-07-08) — accepted for staging
+  **platform** functional validation (core engine, sandbox integrations, E2E workflow, governance
+  controls) with no production execution.
+- **Not yet satisfied:** the broader AI Agents Team Work product goal — operator-facing task
+  assignment, agent interaction, delivery inbox, approval/DLQ management UI, and the end-to-end
+  manager experience — which move to **Step 66 — AI Agents Team Work MVP Experience**. See
+  [step65-to-step66-handoff.md](step65-to-step66-handoff.md).
+- Step 65 track closes as **accepted-with-gaps**. Not production readiness. Recorded in
+  [staging-functional-acceptance-decision-template.md](staging-functional-acceptance-decision-template.md).
 
 ## This stage's posture
 Documentation / acceptance report only. **No new workflow was executed; no external action; no
-production action; no runtime change.** `production_executed_true_count=0`. Operator final verdict is
-**required** and **PENDING**.
+production action; no runtime change.** `production_executed_true_count=0`. Operator final verdict:
+**PASS_WITH_ACCEPTED_GAPS (recorded)** — Step 65 closes accepted-with-gaps; product-experience items
+handed to Step 66. Not production readiness.
 
 ## Companion documents
 - [staging-functional-acceptance-evidence-summary.md](staging-functional-acceptance-evidence-summary.md) ·
