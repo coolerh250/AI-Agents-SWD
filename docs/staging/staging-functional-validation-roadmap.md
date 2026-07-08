@@ -191,7 +191,7 @@ explicit operator authorization; sandbox/non-production only.
   no external integration. **Operator confirmed VISIBLE** on the formal pages. See
   [cancel-abort-validation-report.md](cancel-abort-validation-report.md).
 
-### Step 65H.4 — Retry / DLQ / Manual Replay Validation (completed — PASS)
+### Step 65H.4 — Retry / DLQ / Manual Replay Validation (completed — PASS_WITH_GAPS)
 - **Purpose:** validate controlled failure / retry / DLQ / manual replay / terminal failure.
 - **Allowed:** ≤2 controlled-failure workflows; ≤1 manual replay; **no** external GitHub/Discord/LLM;
   no production action; no DB manipulation / unsafe stream injection.
@@ -199,7 +199,8 @@ explicit operator authorization; sandbox/non-production only.
   retry (retry_count 3→4) → DLQ creation → **1 manual replay** (`/deadletter/replay`); S2 → retry
   limit → **terminal failure** (`stream.deadletter.terminal` + sev2 incident + workflow `failed`).
   Retry-count limit respected (dead-letter at 3, terminal at >3; loops settled, no runaway).
-  `production_executed_true_count=0`; no external integration. Operator UI validation **pending**. See
+  `production_executed_true_count=0`; no external integration. **Operator confirmed VISIBLE with
+  gap** — flagged that the DLQ has no Admin Console page (backend-API-only); carried to 65I. See
   [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
 
 ## Step 65I — Staging Functional Acceptance Report

@@ -9,9 +9,11 @@ scheduler, DLQ creation, one manual replay, the retry-count limit, and terminal 
 integration was used; no DB manipulation; no unsafe stream injection.
 
 ## Overall result
-- Overall result: **PASS** (operator UI validation pending) — all authorized paths validated using
+- Overall result: **PASS_WITH_GAPS** — all authorized retry/DLQ/replay/terminal paths validated using
   the platform's built-in controlled-failure mechanism; the retry loops were bounded and settled
-  (no runaway). No tracked gap was needed (the safe trigger reliably produced DLQ + terminal).
+  (no runaway). **Operator confirmed VISIBLE with a gap** (`PARTIAL_WITH_GAPS`): the DLQ is not
+  surfaced on any Admin Console page — its counts/queue are backend-API-only. See the operator-flagged
+  UX gap in [retry-dlq-known-gaps.md](retry-dlq-known-gaps.md).
 - `production_executed_true_count=0` before, during, and after. **Claude Code does not decide staging
   functional acceptance.**
 
@@ -70,8 +72,9 @@ integration was used; no DB manipulation; no unsafe stream injection.
   replay.
 
 ## Status
-- Step 65H.4: **PASS** (operator UI validation pending; see
-  [retry-dlq-operator-validation-request.md](retry-dlq-operator-validation-request.md)). Not
+- Step 65H.4: **PASS_WITH_GAPS** — operator confirmed **VISIBLE with gap** (the DLQ has no Admin
+  Console page; backend-API-only). See
+  [retry-dlq-operator-validation-request.md](retry-dlq-operator-validation-request.md). Not
   production readiness.
 
 ---

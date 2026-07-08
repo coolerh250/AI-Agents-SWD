@@ -9,13 +9,19 @@
    incident records (S1 ×2, S2 ×1), left in status `open`. These are **expected controlled-test
    artifacts**; the operator may acknowledge/close them via the incident routes. Not a safety issue
    (sev2, no sev1; `production_executed_true_count=0`).
-2. **[non-blocking, evidence surface] No dedicated `/dlq` Admin Console page.** DLQ / retry / terminal
-   evidence is surfaced via the formal API `/operations/dlq`, the retry-scheduler `/deadletter`
-   endpoint, `/operations/incidents`, `/audit-evidence`, and the workflow_state (`failed`). Documented
-   in the 65H.1 plan; a future UI enhancement could add a dedicated DLQ view.
-3. **[pending] Operator UI validation.** The technical execution succeeded and API evidence is
-   captured; the operator has not yet visually confirmed the evidence on the formal Admin Console
-   pages / APIs. Tracked in
+2. **[OPERATOR-FLAGGED UX GAP] No dedicated DLQ / Retry Admin Console page.** During 65H.4 UI
+   validation the operator confirmed the evidence **VISIBLE with gap** and specifically flagged this:
+   the DLQ — an operator-facing failure indicator — is **not surfaced on any Admin Console page**. Its
+   queue depth, per-entry detail (`task_id` / `original_stream` / `failure_reason` / `retry_count`),
+   and the manual-replay action are **backend-API-only** (`:18000/operations/dlq`, retry-scheduler
+   `:18015/deadletter`). Terminal failures ARE surfaced indirectly (Incidents / Task Graph `failed` /
+   Audit-Evidence), but the DLQ-specific operator view (queue + per-message reason + one-click replay)
+   is missing. **Recommendation:** add a first-class **DLQ / Retry** Admin Console page (read the
+   `/operations/dlq` + `/deadletter` APIs; expose queue depth, terminal vs in-flight, per-entry
+   failure reason, and a controlled manual-replay control). Carry this into the Step 65I acceptance
+   review as a known UI/operator-visibility gap.
+3. ~~Operator UI validation pending.~~ **RESOLVED** — the operator confirmed **VISIBLE with gap**
+   (`PARTIAL_WITH_GAPS`); the gap is the DLQ-no-Admin-page item above. See
    [retry-dlq-operator-validation-request.md](retry-dlq-operator-validation-request.md).
 
 ## Non-gaps (done)
@@ -26,11 +32,12 @@
   integration; no DB manipulation; no unsafe stream injection.
 
 ## Blocking gaps
-- **None.** No gap blocks the technical result; the only open item is the pending operator UI
-  validation.
+- **None** for the technical retry/DLQ result. The operator-flagged **DLQ-no-Admin-page** item is a
+  non-blocking UX gap carried into the Step 65I acceptance review.
 
 ## Status
-Step 65H.4: **PASS** (operator UI validation pending). `production_executed_true_count=0`.
+Step 65H.4: **PASS_WITH_GAPS** — operator confirmed **VISIBLE with gap** (DLQ has no Admin Console
+page). `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

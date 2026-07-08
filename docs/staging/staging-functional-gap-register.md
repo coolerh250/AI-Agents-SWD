@@ -44,11 +44,18 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   3→4) → DLQ creation → 1 manual replay → terminal failure (`stream.deadletter.terminal` + sev2
   incident + workflow `failed`); retry-count limit respected (loops bounded/settled);
   `production_executed_true_count=0`; no external integration, no DB manipulation, no unsafe
-  injection. Operator UI validation pending. See
-  [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
-- **[65H.1 finding, non-blocking] No dedicated `/approvals` or `/dlq` Admin Console page.** Approval
-  + DLQ operator evidence surfaces on `/task-graph` (approval_status + retry_timeline) +
-  `/audit-evidence` (+ `/operations/approval-decisions/{task_id}` / `/operations/dlq` APIs).
+  injection. **Operator confirmed VISIBLE with gap** (PARTIAL_WITH_GAPS) — DLQ has no Admin Console
+  page. See [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
+- **[65H.4 OPERATOR-FLAGGED UX GAP → 65I] No dedicated DLQ / Retry Admin Console page.** During
+  65H.4 UI validation the operator confirmed VISIBLE-with-gap and flagged that the DLQ — an
+  operator-facing failure indicator — has **no Admin Console page**: queue depth, per-entry failure
+  reason (`task_id`/`original_stream`/`failure_reason`/`retry_count`), and manual replay are
+  backend-API-only (`/operations/dlq`, retry-scheduler `/deadletter`). Terminal failures surface
+  indirectly (Incidents / Task Graph `failed` / Audit-Evidence). **Recommendation:** add a
+  first-class DLQ / Retry Admin Console page. Carry to Step 65I acceptance.
+- **[65H.1 finding, non-blocking] No dedicated `/approvals` Admin Console page.** Approval operator
+  evidence surfaces on `/task-graph` (approval_status) + `/audit-evidence`
+  (+ `/operations/approval-decisions/{task_id}` API).
 
 ## Integration gaps
 - **GitHub:** ~~dry-run/mock only; no controlled sandbox write validated~~ → **RESOLVED (65D)**:

@@ -5,7 +5,7 @@ Confirms the 65H.4 records document a real controlled retry/DLQ run: a controlle
 platform's simulate_failure switch, retry-scheduler + DLQ creation, one manual replay, the
 retry-count limit (max_retries=3), and terminal failure -- with no external integration, no DB
 manipulation, no unsafe stream injection, and no production action (production_executed stays 0).
-Operator UI validation is pending.
+The operator confirmed VISIBLE-with-gap and flagged that the DLQ has no Admin Console page.
 
 Marker: RETRY_DLQ_VALIDATION_VERIFY: PASS | PASS_WITH_GAPS | FAIL
 """
@@ -107,6 +107,11 @@ def main() -> int:
         if TOKEN_ASSIGN.search(text):
             bad(f"{name} contains a stored token/key/secret value")
 
+    # Operator confirmed VISIBLE with a flagged UX gap (DLQ has no Admin Console page).
+    dlq_ui_gap = "no admin console page" in low or "no dedicated dlq" in low
+    if not dlq_ui_gap:
+        bad("docs do not record the operator-flagged DLQ-no-Admin-page UX gap")
+
     if failures:
         print(f"{MARKER}: FAIL")
         return 1
@@ -115,8 +120,10 @@ def main() -> int:
         "  [OK] controlled failure (simulate_failure) + retry scheduler + DLQ creation + 1 manual"
     )
     print("       replay + retry-count limit + terminal failure validated; no external/injection;")
-    print("       no production action; prod_exec=0")
-    print(f"{MARKER}: PASS")
+    print(
+        "       no production action; prod_exec=0; operator VISIBLE-with-gap (DLQ has no admin page)"
+    )
+    print(f"{MARKER}: PASS_WITH_GAPS")
     return 0
 
 

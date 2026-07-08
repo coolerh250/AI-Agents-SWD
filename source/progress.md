@@ -12681,8 +12681,9 @@ secret; `production_executed_true_count=0`.**
 Executed a real controlled retry / DLQ / manual-replay / terminal-failure validation on `10.0.1.32`
 under explicit operator authorization, using the platform's built-in `request.simulate_failure`
 switch (development-agent) — **no** external integration, no DB manipulation, no unsafe stream
-injection. **Status: completed (pass — operator UI validation pending).** **Marker:
-`RETRY_DLQ_VALIDATION_VERIFY: PASS`.** **Runtime posture: 2 controlled-failure workflows + 1 manual
+injection. **Status: completed (pass_with_gaps — operator confirmed VISIBLE with gap: DLQ has no
+Admin Console page).** **Marker: `RETRY_DLQ_VALIDATION_VERIFY: PASS_WITH_GAPS`.** **Runtime posture:
+2 controlled-failure workflows + 1 manual
 replay only; no external GitHub/Discord/LLM; no runtime flag change; no service recreate.**
 **Production posture: no production action, no production deploy, no production secret;
 `production_executed_true_count=0`.**
@@ -12707,6 +12708,9 @@ replay only; no external GitHub/Discord/LLM; no runtime flag change; no service 
   functional-gap-register.
 - **Verifier + tests.** `scripts/verify_retry_dlq_validation.py` (`RETRY_DLQ_VALIDATION_VERIFY`) +
   `tests/test_retry_dlq_validation.py`.
-- **Gate.** Awaiting operator UI validation on the formal Admin Console pages / APIs
-  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.5 (failure & governance operator evidence
-  review). Claude Code does not decide staging functional acceptance. Not production readiness.
+- **Operator confirmation.** Operator confirmed **VISIBLE with gap** (PARTIAL_WITH_GAPS) and flagged
+  an operator-facing UX gap: the **DLQ has no Admin Console page** (queue depth / per-entry reason /
+  manual replay are backend-API-only). Recommendation recorded — add a first-class DLQ/Retry Admin
+  Console page; carried to Step 65I acceptance. Step 65H.4 = **PASS_WITH_GAPS**.
+- **Gate.** Next is Step 65H.5 (failure & governance operator evidence review). Claude Code does not
+  decide staging functional acceptance. Not production readiness.

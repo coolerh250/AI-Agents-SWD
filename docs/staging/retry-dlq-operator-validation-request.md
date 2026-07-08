@@ -34,17 +34,26 @@ Record one of:
 - **NOT_VISIBLE** — evidence not visible.
 - **PARTIAL_WITH_GAPS** — some visible; note which are missing.
 
+## Operator response (recorded)
+- **Operator response: PARTIAL_WITH_GAPS ("Visible with gap")** — the operator confirmed the
+  terminal-failure / incident / audit / task-graph / safety evidence on the formal Admin Console
+  pages, **but flagged a UX gap**: the **DLQ has no Admin Console page** — its queue depth, per-entry
+  failure detail, and manual-replay action are backend-API-only (`:18000/operations/dlq`,
+  retry-scheduler `:18015/deadletter`). The operator's point: an operator-facing failure indicator
+  like the DLQ should have a first-class Admin Console surface, not only a backend API. Tracked as an
+  operator-flagged UX gap in [retry-dlq-known-gaps.md](retry-dlq-known-gaps.md).
+
 ## Note on incidents
 The 3 sev2 incidents are expected controlled-test artifacts (open). The operator may close them; no
 action is required for acceptance beyond acknowledging them.
 
 ## Rule
 Claude Code must not self-accept this validation or decide staging functional acceptance (that is the
-Step 65I operator verdict). Until the operator responds, Step 65H.4 remains **PASS** with operator UI
-validation pending.
+Step 65I operator verdict). The operator has now responded **PARTIAL_WITH_GAPS** (Visible with gap).
 
 ## Status
-Step 65H.4: awaiting operator UI validation. `production_executed_true_count=0`.
+Step 65H.4: **PASS_WITH_GAPS** — operator confirmed **VISIBLE with gap** (DLQ has no Admin Console
+page). `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._
