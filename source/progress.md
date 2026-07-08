@@ -1,5 +1,10 @@
 # Progress Log — AI-Agents-SWD
 
+> **Dev/test phase note (2026-07-08):** active environment is the TEST host `10.0.1.31`
+> (`aiagents-test`); staging `10.0.1.32` is decommissioned (Step 66A.0). Step 66 dev/test docs now
+> live under **`docs/test/`**; `docs/staging/*` is the historical Step 64–65 staging record
+> (`staging-cleanup-record.md` kept there as the staging-teardown record).
+
 Updated at every development stage. Each entry records: execution time,
 Git branch / commit hash, modified files, deployment target, test results,
 issues & blockers, and next-step suggestions.

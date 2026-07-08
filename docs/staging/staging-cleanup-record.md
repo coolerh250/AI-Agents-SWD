@@ -69,7 +69,7 @@ docker compose -p aiagents-staging \
 
 > Note: a related follow-up cleanup on the **test host `10.0.1.31`** (removing the obsolete `kind`
 > smoke-test node and unused images) is recorded separately in
-> `test-environment-reset-deployment-report.md`, since it concerns the test host, not staging.
+> `docs/test/test-environment-reset-deployment-report.md`, since it concerns the test host, not staging.
 
 ## 8. Plain statements (for verifier)
 

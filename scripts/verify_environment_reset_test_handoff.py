@@ -18,11 +18,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGING = ROOT / "docs" / "staging"
+TEST = ROOT / "docs" / "test"
 
-REPORT = STAGING / "environment-reset-and-test-handoff-report.md"
+REPORT = TEST / "environment-reset-and-test-handoff-report.md"
 CLEANUP = STAGING / "staging-cleanup-record.md"
-DEPLOY = STAGING / "test-environment-reset-deployment-report.md"
-SAFETY = STAGING / "test-runtime-safety-validation.md"
+DEPLOY = TEST / "test-environment-reset-deployment-report.md"
+SAFETY = TEST / "test-runtime-safety-validation.md"
 
 MARKER = "ENVIRONMENT_RESET_TEST_HANDOFF_VERIFY"
 

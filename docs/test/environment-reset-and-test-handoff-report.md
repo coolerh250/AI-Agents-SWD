@@ -46,7 +46,7 @@ unverified host.
 
 ## 4. Staging cleanup (10.0.1.32) — summary
 
-See `staging-cleanup-record.md` for the full record.
+See `docs/staging/staging-cleanup-record.md` for the full record.
 
 - Before: 22 containers (all healthy), 1 network, 5 project-scoped volumes.
 - Action: `docker compose -p aiagents-staging … down --volumes --remove-orphans` (scoped to the

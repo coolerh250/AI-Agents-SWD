@@ -17,22 +17,22 @@ import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-STAGING = ROOT / "docs" / "staging"
+TEST = ROOT / "docs" / "test"
 
 DOCS = {
-    "interaction-discovery": STAGING / "ai-team-work-interaction-model-discovery.md",
-    "current-gap-analysis": STAGING / "ai-team-work-current-gap-analysis.md",
-    "user-role-model": STAGING / "ai-team-work-user-role-model.md",
-    "task-type-taxonomy": STAGING / "ai-team-work-task-type-taxonomy.md",
-    "multi-channel-intake": STAGING / "ai-team-work-multi-channel-intake-model.md",
-    "clarification-model": STAGING / "ai-team-work-agent-clarification-model.md",
-    "delivery-acceptance": STAGING / "ai-team-work-delivery-acceptance-model.md",
-    "agent-team-model": STAGING / "ai-team-work-agent-team-model.md",
-    "lifecycle-notification": STAGING / "ai-team-work-lifecycle-notification-model.md",
-    "operator-action-center": STAGING / "ai-team-work-operator-action-center-model.md",
-    "web-research-capability": STAGING / "ai-team-work-web-research-capability-model.md",
-    "decision-register": STAGING / "ai-team-work-decision-register.md",
-    "step66-roadmap": STAGING / "ai-team-work-step66-roadmap-proposal.md",
+    "interaction-discovery": TEST / "ai-team-work-interaction-model-discovery.md",
+    "current-gap-analysis": TEST / "ai-team-work-current-gap-analysis.md",
+    "user-role-model": TEST / "ai-team-work-user-role-model.md",
+    "task-type-taxonomy": TEST / "ai-team-work-task-type-taxonomy.md",
+    "multi-channel-intake": TEST / "ai-team-work-multi-channel-intake-model.md",
+    "clarification-model": TEST / "ai-team-work-agent-clarification-model.md",
+    "delivery-acceptance": TEST / "ai-team-work-delivery-acceptance-model.md",
+    "agent-team-model": TEST / "ai-team-work-agent-team-model.md",
+    "lifecycle-notification": TEST / "ai-team-work-lifecycle-notification-model.md",
+    "operator-action-center": TEST / "ai-team-work-operator-action-center-model.md",
+    "web-research-capability": TEST / "ai-team-work-web-research-capability-model.md",
+    "decision-register": TEST / "ai-team-work-decision-register.md",
+    "step66-roadmap": TEST / "ai-team-work-step66-roadmap-proposal.md",
 }
 
 MARKER = "AI_TEAM_WORK_INTERACTION_DISCOVERY_VERIFY"
