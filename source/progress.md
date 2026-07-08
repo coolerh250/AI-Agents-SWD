@@ -12800,3 +12800,54 @@ only — no new workflow, no external action, no production action; `production_
 - **Gate.** Step 66 (AI Agents Team Work MVP Experience) is scoped, pending its own kickoff under
   explicit authorization. Claude Code does not decide functional/product acceptance. Not production
   readiness.
+
+## Stage 66A.0 — Environment Reset / Staging Cleanup / Switch Back to Test Runtime
+
+**Status: completed. Marker: `ENVIRONMENT_RESET_TEST_HANDOFF_VERIFY`.** Reset the validation
+environment and prepared the test runtime for Step 66 development. Hosts verified before any
+destructive action (`10.0.1.31`=`aiagent-swd` test, `10.0.1.32`=`agentai-swd-stage` staging).
+
+- **Evidence preserved.** Source/test + staging repos at `4e1b184` (= `origin/main`); all Step 65
+  acceptance docs present in git. Uncommitted files on the test host were disposable runtime
+  artifacts only (`source/dr-reports/`, `source/regression-reports/`), not source changes.
+- **Staging cleanup (10.0.1.32).** `docker compose -p aiagents-staging … down --volumes
+  --remove-orphans` (scoped): 22 containers / 1 network / 5 volumes → **0 / 0 / 0**. Staging secret
+  residue removed without printing (`infra/runtime/.env.staging.local`,
+  `.mock-vault-secrets.local.json`, both untracked). No unscoped docker prune.
+- **Test reset + redeploy (10.0.1.31).** Stale `aiagents-test` stack (32 svcs, all Exited 255)
+  reset via scoped `down --volumes`; redeployed `docker compose -f docker-compose.yml up -d` →
+  **27/27 running healthy**, orchestrator `/health` ok. Safety: `production_executed_true_count=0`,
+  GitHub/Discord/Slack/Telegram send + LLM real-call **disabled by default** (mock/dry-run, no
+  tokens). External validation credentials → operator rotation follow-up (not auto-revoked).
+- **Runtime posture.** Staging validation environment reset; test environment prepared for
+  development. No production action, no production deploy, no production secret.
+
+## Stage 66A.1 — AI Agents Team Work Interaction Model Discovery & Decision Brief
+
+**Status: completed. Marker: `AI_TEAM_WORK_INTERACTION_DISCOVERY_VERIFY`.** Planning/discovery only —
+no UI implementation, no workflow execution, no external action, no production action.
+
+- **Six operator decisions integrated** (multi-role users; all AI-capable task types incl. web
+  research; Admin+Slack+Discord+Telegram+API intake; pause/notify/wait clarification;
+  Accept/Reject/Request-Changes/Re-run-QA delivery; fixed Software Delivery Team MVP).
+- **Models produced.** 13 discovery docs: interaction-model, current-gap-analysis, user-role,
+  task-type-taxonomy, multi-channel-intake, clarification, delivery-acceptance, agent-team,
+  lifecycle-notification, operator-action-center, web-research-capability, decision-register,
+  step66-roadmap.
+- **Gap analysis grounded in real backend.** Existing: 5-agent pipeline, approval/policy/retry-DLQ
+  APIs, audit, Discord/GitHub/LLM controlled rails. Missing product UI: task assignment, agent
+  workroom, delivery inbox, acceptance gate, approvals page (#7), DLQ/Retry page (#6),
+  Slack/Telegram gateways, unified notifications, Action Center, **web browsing connector (flagged
+  missing — not fabricated)**.
+- **Decision register D1–D14** created; recommendations marked **non-final**; must-decide-before-66A.3
+  set identified (D1–D6, D8, D11–D14).
+- **Roadmap proposed:** 66A.2 decision review → 66A.3 blueprint → 66B assignment UI → 66C workroom →
+  66D delivery inbox + acceptance + approvals/DLQ pages → 66E fixed-team integration → 66F
+  multi-channel intake → 66G notifications + Action Center → 66H E2E pilot.
+- **Verifiers + tests.** `scripts/verify_environment_reset_test_handoff.py`,
+  `scripts/verify_ai_team_work_interaction_discovery.py`;
+  `tests/test_environment_reset_test_handoff.py`,
+  `tests/test_ai_team_work_interaction_discovery.py`.
+- **Gate.** Step 66 status: INTERACTION_MODEL_DISCOVERY_STARTED. Awaiting operator decisions
+  (66A.2). Claude Code did not finalize product decisions beyond the six operator-provided ones. Not
+  production readiness.
