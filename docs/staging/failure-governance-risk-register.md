@@ -45,9 +45,19 @@ injection; create DLQ/replay activity; touch runtime flags; or risk a production
 - **MEDIUM:** A1, B4, C6 → controlled, non-external state changes; still per-sub-stage authorized.
 - **LOW:** A5, B6, C7, D3, D5 → read-only, no authorization gate beyond the sub-stage itself.
 
+## Execution outcome (65H.2–65H.4) + review (65H.5)
+- All HIGH/MEDIUM scenarios were exercised under their per-sub-stage operator authorization and
+  passed, except the tracked gaps (approval expiry/timeout; raw late-stream-event injection), which
+  were not executed for safety reasons (no safe route / unsafe injection forbidden).
+- **65H.5** consolidated the results: **65H = COMPLETED_WITH_GAPS**, **no BLOCKING gap**; remaining
+  items are acceptable-for-staging or operator-UX / product-backlog (see
+  [failure-governance-gap-classification.md](failure-governance-gap-classification.md)). The
+  operator-flagged **DLQ / Retry Admin Console page** gap is registered in
+  [failure-governance-operator-ux-gap-register.md](failure-governance-operator-ux-gap-register.md).
+
 ## This stage's posture
-Planning only. No scenario executed; no external write; no LLM call; no Discord send; no production
-action. `production_executed_true_count=0`.
+Planning + review only. No scenario executed in the plan (65H.1) or the review (65H.5); no external
+write; no LLM call; no Discord send; no production action. `production_executed_true_count=0`.
 
 ---
 _Staging only — non-production only. No production action. No production data._

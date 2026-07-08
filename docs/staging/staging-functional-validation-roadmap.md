@@ -203,6 +203,19 @@ explicit operator authorization; sandbox/non-production only.
   gap** — flagged that the DLQ has no Admin Console page (backend-API-only); carried to 65I. See
   [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
 
+### Step 65H.5 — Failure & Governance Operator Evidence Review (completed — PASS)
+- **Purpose:** consolidate 65H.2/65H.3/65H.4 evidence + gaps into an operator-reviewable report
+  ahead of Step 65I.
+- **Allowed:** documentation / review consolidation. **Forbidden:** any new scenario, approval
+  action, cancel/abort, retry/DLQ replay, external integration, runtime change, production action.
+- **Done:** consolidated 65H.2 (VISIBLE) / 65H.3 (VISIBLE) / 65H.4 (VISIBLE-with-gap) →
+  **65H = COMPLETED_WITH_GAPS**; classified every gap (no BLOCKING gap); registered the
+  operator-flagged **DLQ / Retry Admin Console page** UX gap; safety summary
+  (`production_executed_true_count=0`, no external/production action across 65H); Step 65I readiness =
+  **READY**. `production_executed_true_count=0`. See
+  [failure-governance-operator-evidence-review.md](failure-governance-operator-evidence-review.md).
+- **Step 65H status: COMPLETED_WITH_GAPS** — ready for Step 65I.
+
 ## Step 65I — Staging Functional Acceptance Report
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.

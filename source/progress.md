@@ -12714,3 +12714,35 @@ replay only; no external GitHub/Discord/LLM; no runtime flag change; no service 
   Console page; carried to Step 65I acceptance. Step 65H.4 = **PASS_WITH_GAPS**.
 - **Gate.** Next is Step 65H.5 (failure & governance operator evidence review). Claude Code does not
   decide staging functional acceptance. Not production readiness.
+
+## Stage 65H.5 — Failure & Governance Operator Evidence Review (Step 65H.5)
+
+Consolidated the Step 65H.2/65H.3/65H.4 failure/recovery/governance validation results into an
+operator-reviewable evidence review ahead of Step 65I — documentation / review consolidation only,
+no scenario executed and no external action. **Status: completed (pass).** **Marker:
+`FAILURE_GOVERNANCE_OPERATOR_REVIEW_VERIFY: PASS`.** **Step 65H status: COMPLETED_WITH_GAPS.**
+**Runtime posture: documentation/review only; no scenario execution, no external action, no runtime
+change. Production posture: no production action, no production deploy, no production secret;
+`production_executed_true_count=0`.**
+
+- **Consolidated results.** 65H.2 PASS_WITH_GAPS (operator VISIBLE) · 65H.3 PASS_WITH_GAPS (operator
+  VISIBLE) · 65H.4 PASS_WITH_GAPS (operator VISIBLE with gap) → **65H = COMPLETED_WITH_GAPS**.
+- **Validated scenarios.** Approval required/granted/denied + production-block; cancel-before/during,
+  abort-during, ignore-after-abort (HTTP 409); controlled failure → retry → DLQ → 1 manual replay →
+  terminal failure; retry-count limit bounded. `production_executed_true_count=0` throughout.
+- **Gap classification (no BLOCKING gap).** Approval expiry/timeout (acceptable-for-staging +
+  requires-product-fix-before-production); raw late-stream-event injection (acceptable-for-staging;
+  API-level validated); cancel-during in-flight events (async characteristic); **DLQ/Retry Admin
+  Console page missing** (operator-UX + post-staging backlog); no `/approvals` page (UX).
+- **Safety summary.** Across 65H: no GitHub write, no Discord send, no LLM call, no production action,
+  no secrets, no DB manipulation, no unsafe stream injection; external flags disabled at rest.
+- **Step 65I readiness: READY** — no BLOCKING gap; the operator gives the acceptance verdict.
+- **Docs.** New `failure-governance-operator-evidence-review.md`,
+  `-validated-scenarios-summary.md`, `-gap-classification.md`, `-operator-ux-gap-register.md`,
+  `-safety-summary.md`, `-step65i-readiness.md`; updated functional-validation-roadmap +
+  functional-gap-register + failure-governance-risk-register.
+- **Verifier + tests.** `scripts/verify_failure_governance_operator_review.py`
+  (`FAILURE_GOVERNANCE_OPERATOR_REVIEW_VERIFY`) +
+  `tests/test_failure_governance_operator_review.py`.
+- **Gate.** Next is Step 65I (staging functional acceptance report — the operator's verdict). Claude
+  Code does not decide staging functional acceptance. Not production readiness.
