@@ -68,6 +68,33 @@ Full safety detail in `test-runtime-safety-validation.md`.
 - No blocker. Test environment prepared and healthy. Marker eligible for **PASS** (not
   `PASS_WITH_GAPS`).
 
+## 6b. Follow-up test-host runtime cleanup (Tier 1 — 2026-07-08)
+
+After the reset+redeploy, an inventory of the test host `10.0.1.31` found obsolete Docker artifacts
+unrelated to the `aiagents-test` platform stack. Operator authorized a **Tier 1** cleanup (keep
+`cadvisor`). This was **runtime-only** — no repo change — and did **not** touch the `aiagents-test`
+stack.
+
+Removed (all unrelated to the `aiagents-test` compose project):
+
+| Item | Detail |
+| --- | --- |
+| `aiagents-smoke-control-plane` container | leftover single-node **kind** (Kubernetes-in-Docker) smoke-test node |
+| `kindest/node:v1.31.2` image | 1.49 GB; only used by the removed kind node |
+| `kind` docker network | only the kind node was attached |
+| kind anonymous volume `455d5f9f…` | removed **by name** (held the kind node fs, ~3.6 GB) |
+| `alpine:latest` image | unused (only inactive image) |
+| build cache | `docker builder prune -f` (~226 MB) |
+
+Scoped-safety notes:
+- The kind volume was removed **by explicit name**, not via `docker volume prune` — after confirming
+  the other three anonymous volumes belong to `aiagents-test-redis-1` and `aiagents-test-vault-1`
+  (kept, verified intact after cleanup).
+- No unscoped docker prune of images/containers/volumes; no `rm -rf`; unrelated `cadvisor` left running.
+- Verified after: `aiagents-test` **27/27 healthy**, orchestrator `/health` ok.
+- Reclaimed ≈ 5.5 GB (images 6.72→5.03 GB; volumes 3.80→0.18 GB; build cache freed).
+- `production_executed_true_count=0` unaffected; no external action; no production action.
+
 ## 7. Plain statements (for verifier)
 
 - Test runtime deployment completed on the verified test host 10.0.1.31.
