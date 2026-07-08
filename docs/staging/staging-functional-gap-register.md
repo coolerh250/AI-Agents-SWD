@@ -39,10 +39,13 @@ Blockers and gaps to staging functional acceptance, grouped by category, derived
   **approval expired/timeout** path is a **tracked gap** — no safe expiry route exists (read-only
   confirmed; not executed, no DB manipulation). **Operator confirmed VISIBLE** on the formal pages.
   See [approval-governance-validation-report.md](approval-governance-validation-report.md).
-- **Retry / DLQ / manual replay / terminal-failure** exercised only in tests. → 65H. **65H.1
-  planned:** `max_retries=3`, `stream.deadletter`(`.terminal`), `/deadletter/replay` mapped;
-  scenarios C1–C7 defined pending 65H.4 authorization. See
-  [failure-governance-scenario-matrix.md](failure-governance-scenario-matrix.md).
+- **Retry / DLQ / manual replay / terminal-failure** ~~exercised only in tests~~ → **VALIDATED
+  (65H.4, PASS):** controlled failure via the platform `simulate_failure` switch → retry (retry_count
+  3→4) → DLQ creation → 1 manual replay → terminal failure (`stream.deadletter.terminal` + sev2
+  incident + workflow `failed`); retry-count limit respected (loops bounded/settled);
+  `production_executed_true_count=0`; no external integration, no DB manipulation, no unsafe
+  injection. Operator UI validation pending. See
+  [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
 - **[65H.1 finding, non-blocking] No dedicated `/approvals` or `/dlq` Admin Console page.** Approval
   + DLQ operator evidence surfaces on `/task-graph` (approval_status + retry_timeline) +
   `/audit-evidence` (+ `/operations/approval-decisions/{task_id}` / `/operations/dlq` APIs).

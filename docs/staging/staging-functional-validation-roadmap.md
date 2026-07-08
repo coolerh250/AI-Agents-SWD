@@ -191,6 +191,17 @@ explicit operator authorization; sandbox/non-production only.
   no external integration. **Operator confirmed VISIBLE** on the formal pages. See
   [cancel-abort-validation-report.md](cancel-abort-validation-report.md).
 
+### Step 65H.4 — Retry / DLQ / Manual Replay Validation (completed — PASS)
+- **Purpose:** validate controlled failure / retry / DLQ / manual replay / terminal failure.
+- **Allowed:** ≤2 controlled-failure workflows; ≤1 manual replay; **no** external GitHub/Discord/LLM;
+  no production action; no DB manipulation / unsafe stream injection.
+- **Done:** used the platform's built-in `request.simulate_failure` switch (development-agent). S1 →
+  retry (retry_count 3→4) → DLQ creation → **1 manual replay** (`/deadletter/replay`); S2 → retry
+  limit → **terminal failure** (`stream.deadletter.terminal` + sev2 incident + workflow `failed`).
+  Retry-count limit respected (dead-letter at 3, terminal at >3; loops settled, no runaway).
+  `production_executed_true_count=0`; no external integration. Operator UI validation **pending**. See
+  [retry-dlq-validation-report.md](retry-dlq-validation-report.md).
+
 ## Step 65I — Staging Functional Acceptance Report
 - **Purpose:** consolidate results and request the operator's functional-acceptance verdict.
 - **Allowed:** documentation. **Forbidden:** self-accepting acceptance.

@@ -12675,3 +12675,38 @@ secret; `production_executed_true_count=0`.**
   late-stream-event injection tracked gap is acknowledged).
 - **Gate.** Next is Step 65H.4 (retry / DLQ / manual replay) under its own authorization. Claude
   Code does not decide staging functional acceptance. Not production readiness.
+
+## Stage 65H.4 — Retry / DLQ / Manual Replay Validation (Step 65H.4)
+
+Executed a real controlled retry / DLQ / manual-replay / terminal-failure validation on `10.0.1.32`
+under explicit operator authorization, using the platform's built-in `request.simulate_failure`
+switch (development-agent) — **no** external integration, no DB manipulation, no unsafe stream
+injection. **Status: completed (pass — operator UI validation pending).** **Marker:
+`RETRY_DLQ_VALIDATION_VERIFY: PASS`.** **Runtime posture: 2 controlled-failure workflows + 1 manual
+replay only; no external GitHub/Discord/LLM; no runtime flag change; no service recreate.**
+**Production posture: no production action, no production deploy, no production secret;
+`production_executed_true_count=0`.**
+
+- **Scenario 1 (DLQ + replay).** S1 `simulate_failure=true` → development-agent failed → retried
+  (retry_count 1→2→3) → **dead-lettered** to `stream.deadletter` (entries at retry_count 3 and 4) →
+  **1 manual replay** (`POST :18015/deadletter/replay/{id}` → `replayed=true`, re-published to
+  `stream.development`).
+- **Scenario 2 (terminal).** S2 `simulate_failure=true` → retry limit → **terminal failure**
+  (`stream.deadletter.terminal`) → sev2 incident + `workflow_failed` audit + workflow_state
+  `stage=failed` (`production_executed=false`).
+- **Retry-count limit + no runaway.** Distinct dead-letter `retry_count` = [3, 4] (dead-letter at
+  `max_retries=3`, terminal at >3); `deadletter_length=5` / `terminal_length=3` stable across a 4s
+  re-check (bounded loops settled).
+- **Evidence surfaces.** `/operations/dlq`, retry-scheduler `/deadletter`, `/operations/incidents`
+  (3 sev2 controlled-test incidents), `/task-graph` (S2 failed), `/agent-executions` (4 failed
+  dev-agent hops), `/audit-evidence`. No dedicated `/dlq` page (documented; API-based evidence).
+- **Safety (before=after).** `production_executed_true_count=0`; github/discord/llm external all
+  false (never enabled); `hard_policy_enforced=true`; no reset needed.
+- **Docs.** New `retry-dlq-validation-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-known-gaps.md`, `-operator-validation-request.md`; updated functional-validation-roadmap +
+  functional-gap-register.
+- **Verifier + tests.** `scripts/verify_retry_dlq_validation.py` (`RETRY_DLQ_VALIDATION_VERIFY`) +
+  `tests/test_retry_dlq_validation.py`.
+- **Gate.** Awaiting operator UI validation on the formal Admin Console pages / APIs
+  (VISIBLE/NOT_VISIBLE/PARTIAL_WITH_GAPS). Next is Step 65H.5 (failure & governance operator evidence
+  review). Claude Code does not decide staging functional acceptance. Not production readiness.
