@@ -50,26 +50,30 @@ X-Task-Role: requester
 -> audit: task_submitted
 ```
 
-## 3. Live test-runtime smoke validation (10.0.1.31, `aiagents-test`)
+## 3. Live test-runtime smoke validation (10.0.1.31, `aiagents-test`) — actual results
 
-Performed after migration `029_operator_task_api_foundation.sql` was applied and the orchestrator
-service was rebuilt/restarted (orchestrator only — see `step66b1-test-deployment-record.md`).
+Performed with real `curl` calls against the live orchestrator after migration
+`029_operator_task_api_foundation.sql` was applied (following a full 001–029 bootstrap — see
+`step66b1-test-deployment-record.md` §1 for the pre-existing gap found and fixed) and the
+orchestrator service was rebuilt/restarted (orchestrator only).
 
 | Check | Result |
 | --- | --- |
 | `GET /health` | `{"service":"orchestrator","status":"ok"}` |
 | `GET /operations/safety` → `production_executed_true_count` | `0` |
 | `GET /operations/safety` → `task_api_enabled` / `task_api_write_enabled` | `true` / `true` |
-| `GET /operations/safety` → `task_api_test_auth_enabled` | `true` (test compose sets `TASK_API_TEST_AUTH_ENABLED=true`) |
-| `GET /operations/safety` → `task_api_workflow_dispatch_enabled` / `..._production_effect_enabled` / `..._external_integration_enabled` | `false` / `false` / `false` |
-| `POST /tasks` with test headers → 201, task recorded with `dispatch_enabled:false` | confirmed |
-| `GET /tasks` with test headers → 200, lists the created task | confirmed |
-| `GET /tasks/{id}` → 200, matches created task | confirmed |
-| `POST /tasks/{id}/submit` → 200, `status:"intake_review"`, `dispatch_enabled:false` | confirmed |
-| `POST /tasks` without `X-Task-Role` header → 401 | confirmed |
-| `production_executed_true_count` after all above | `0` (unchanged) |
+| `GET /operations/safety` → `task_api_test_auth_enabled` | `true` |
+| `GET /operations/safety` → `task_api_workflow_dispatch_enabled` / `..._production_effect_enabled` / `..._external_integration_enabled` / `..._github_write_enabled` / `..._discord_send_enabled` / `..._llm_call_enabled` | `false` / `false` / `false` / `false` / `false` / `false` |
+| `POST /tasks` (`X-Task-Actor: alice`, `X-Task-Role: requester`) | **201**, `id=1aaea422-2bde-4808-9ace-3a5d3d31ae94`, `status:"draft"`, `production_effect:false`, `dispatch_enabled:false` |
+| `GET /tasks` (same headers) | **200**, `{"tasks":[<the task above>],"count":1}` |
+| `GET /tasks/{id}` | **200**, matches the created task exactly |
+| `POST /tasks/{id}/submit` | **200**, `status:"intake_review"`, `updated_at` advanced, `dispatch_enabled:false` |
+| `POST /tasks` without `X-Task-Role` header | **401** |
+| `stream.audit` (`XREVRANGE`) | 2 real entries: `task_created` then `task_submitted`, `artifact_refs` carrying only opaque ids/labels/statuses + hard-`false` effect booleans — no secrets |
+| Container health after orchestrator restart | **27/27** `aiagents-test` containers healthy |
+| `production_executed_true_count` after all calls | **0** (unchanged) |
 
-Full container health + before/after safety snapshot in `step66b1-test-deployment-record.md`.
+Full remediation narrative + container/table detail in `step66b1-test-deployment-record.md`.
 
 ## 4. Statement
 

@@ -12939,9 +12939,15 @@ foundation implemented in test only; no workflow dispatch, no external action, n
   (`shared/sdk/tasks/audit_events.py`); `production_effect=true` is accepted but neutralized —
   forced into a non-dispatchable `blocked` status, never executed, policy decision audited.
   `tasks_safety_fields()` spliced into `GET /operations/safety`.
-- **Test deployment.** Migration applied + orchestrator-only rebuild/restart on `10.0.1.31`
-  (`aiagents-test`); no staging/production deployment; no unscoped docker prune.
-  `production_executed_true_count=0` verified after deploy.
+- **Test deployment.** Discovered the test Postgres DB had **zero tables** (66A.0's environment
+  reset never re-ran the migration bootstrap; `/health`/`/operations/safety` had masked this by
+  degrading gracefully) — remediated by applying the full `migrations/001`–`029` set (29 files, all
+  succeeded) + `scripts/init_redis_streams.sh` (idempotent), then orchestrator-only rebuild/restart
+  on `10.0.1.31` (`aiagents-test`, 27/27 healthy after). No staging/production deployment; no
+  unscoped docker prune; additive initialization only (no data existed to lose).
+  `production_executed_true_count=0` verified live before/after all smoke calls. Live-tested all 4
+  endpoints with real HTTP calls + confirmed 2 real audit-stream entries
+  (`task_created`/`task_submitted`, no secrets). See `step66b1-test-deployment-record.md`.
 - **Tests.** 16 pass (`tests/test_step66b1_task_api_foundation.py`, isolated router + in-memory
   fake store, no DB/Redis). No regression: `test_operations_safety.py` (3 pass) and orchestrator
   `/health` test still pass; mypy shows zero new errors vs. baseline.
