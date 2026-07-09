@@ -33,6 +33,7 @@ from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
 from project_api import router as project_router
+from task_api import router as task_router
 from workspace_api import router as workspace_router
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
@@ -258,6 +259,9 @@ if _os.path.isdir(_admin_dir):
     app.mount("/admin", StaticFiles(directory=_admin_dir, html=True), name="admin-console")
 # Stage 40: external alert receiver. Mounted on /alerts/*.
 app.include_router(alert_receiver_router)
+# Stage 66B.1 (Step 66): AI Agents Team Work task API foundation (create/list/detail/
+# submit; fail-closed test-only auth; no workflow dispatch; production blocked).
+app.include_router(task_router)
 
 
 @app.get("/health")

@@ -30,10 +30,21 @@ migration required.
 - `correlation_id` on `task_messages` ties workroom timeline ↔ audit events.
 - Migrations are proposals; none executed in 66A.3.
 
+## 66B.1 implementation status (2026-07-09)
+
+The `tasks` row above is **implemented**: table `operator_tasks` (migration
+`029_operator_task_api_foundation.sql`), named to avoid colliding with the legacy vestigial `tasks`
+table. Columns extend the proposal with `intake_planning_only`, `clarification_status`,
+`delivery_status`, `correlation_id`, and a `production_effect`/environment CHECK restricting
+`environment` to `test`/`staging` (defense in depth — no `production` value ever accepted). All
+other rows (`task_participants`, `task_messages`, `clarification_requests`, `deliveries`, …) remain
+proposals for their respective stages (66B.2+).
+
 ## Statement
 
-Data model blueprint only — nothing implemented or migrated; no runtime change; no external action; no
-production action.
+The `tasks` model is implemented (66B.1); the remaining models above are still proposals — nothing
+else implemented or migrated; no runtime change beyond 66B.1; no external action; no production
+action.
 
 ---
 _Non-production only. No production action. No production data._

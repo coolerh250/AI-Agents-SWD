@@ -12918,3 +12918,36 @@ action, no production action. Baseline read-only: test host `10.0.1.31` HEAD `08
 - **Gate.** Step 66 status: UX_BLUEPRINT_LOCKED. Next = **66B — Operator Task Assignment UI & Task
   API** (first build stage, needs explicit operator authorization; per-stage operator validation).
   Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66B.1 — Operator Task Assignment API Foundation
+
+**Status: completed. Marker: `STEP66B1_TASK_API_FOUNDATION_VERIFY`.** Step 66B status:
+TASK_API_FOUNDATION_STARTED. First Step 66 build stage — backend/data-model/API only. Task API
+foundation implemented in test only; no workflow dispatch, no external action, no production action.
+
+- **Data model.** New table `operator_tasks` (migration `029_operator_task_api_foundation.sql`,
+  named to avoid colliding with the legacy vestigial `tasks` table). Full 17-state lifecycle enum
+  defined; `environment` CHECK restricts to `test`/`staging` only (production value never accepted).
+- **APIs.** `POST /tasks`, `GET /tasks` (status/task_type/owner/created_by/priority/environment
+  filters), `GET /tasks/{id}`, `POST /tasks/{id}/submit` — `apps/orchestrator/src/task_api.py`,
+  mounted at `/tasks` per the 66A.3 API blueprint.
+- **RBAC.** Fail-closed test-only auth (`TASK_API_TEST_AUTH_ENABLED` + `X-Task-Actor`/`X-Task-Role`
+  headers, 6-role vocabulary from the RBAC blueprint); create/submit restricted to
+  Requester/PM-Eng-Lead/Platform-Admin, Requester scoped to own tasks. Documented gap: no real
+  identity/session model yet (see `step66b1-known-gaps.md`).
+- **Audit + safety.** `task_created` / `task_submitted` / `task_rejected_by_policy` events
+  (`shared/sdk/tasks/audit_events.py`); `production_effect=true` is accepted but neutralized —
+  forced into a non-dispatchable `blocked` status, never executed, policy decision audited.
+  `tasks_safety_fields()` spliced into `GET /operations/safety`.
+- **Test deployment.** Migration applied + orchestrator-only rebuild/restart on `10.0.1.31`
+  (`aiagents-test`); no staging/production deployment; no unscoped docker prune.
+  `production_executed_true_count=0` verified after deploy.
+- **Tests.** 16 pass (`tests/test_step66b1_task_api_foundation.py`, isolated router + in-memory
+  fake store, no DB/Redis). No regression: `test_operations_safety.py` (3 pass) and orchestrator
+  `/health` test still pass; mypy shows zero new errors vs. baseline.
+- **Docs.** New: `step66b1-task-api-foundation-report.md`, `-task-api-evidence.md`,
+  `-task-rbac-safety-record.md`, `-test-deployment-record.md`, `-known-gaps.md`. Updated:
+  `ai-team-work-mvp-implementation-scope.md`, `-api-blueprint.md`, `-data-model-blueprint.md`.
+- **Gate.** Step 66 status: TASK_API_FOUNDATION_STARTED. Next = **66B.2 — Admin Console Task
+  Assignment UI** (consumes this API), pending explicit operator authorization. Claude Code must not
+  decide product acceptance. Not production readiness.

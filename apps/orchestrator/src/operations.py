@@ -1773,6 +1773,9 @@ async def operations_safety() -> dict:
     # Stage 59A (Step 57) -- multi-project delivery + work-item dispatch fields.
     multi_project_safety = _multi_project_safety_summary()
 
+    # Step 66B.1 -- AI Agents Team Work task API foundation fields.
+    tasks_safety = _tasks_safety_summary()
+
     # Stage 60A (Step 58) -- Admin Console v2 operational metrics fields.
     operational_metrics_safety = _operational_metrics_safety_summary()
 
@@ -2205,6 +2208,9 @@ async def operations_safety() -> dict:
         **nonprod_runtime_smoke_safety,
         **nonprod_argocd_safety,
         **multi_project_safety,
+        # Step 66B.1 -- AI Agents Team Work task API foundation. Booleans only; no
+        # workflow dispatch, no external write, no production action.
+        **tasks_safety,
         **operational_metrics_safety,
         # Stage 61A (Step 59) -- sandbox GitHub draft PR flow. Booleans/enums/counts
         # only; sandbox-only; no merge, no ready-for-review, no workflow dispatch, no
@@ -4118,6 +4124,16 @@ def _multi_project_safety_summary() -> dict[str, Any]:
     from shared.sdk.work_items.safety import multi_project_safety_fields
 
     return multi_project_safety_fields()
+
+
+def _tasks_safety_summary() -> dict[str, Any]:
+    """Step 66B.1 -- AI Agents Team Work task API foundation safety fields. Env-based
+    (reads TASK_API_TEST_AUTH_ENABLED); no DB, no cluster. Dangerous-effect flags are
+    hard False -- the task API never dispatches a workflow or writes externally.
+    """
+    from shared.sdk.tasks.safety import tasks_safety_fields
+
+    return tasks_safety_fields()
 
 
 def _operational_metrics_safety_summary() -> dict[str, Any]:

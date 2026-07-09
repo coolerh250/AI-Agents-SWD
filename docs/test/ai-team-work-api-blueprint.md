@@ -39,6 +39,16 @@ Each endpoint: purpose · required role · request/response summary · audit eve
   (`production_executed_true_count=0`).
 - `web-research-sources` endpoints are design-only; the connector is future work.
 
+## 66B.1 implementation status (2026-07-09)
+
+`POST /tasks`, `GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}/submit` are **implemented and
+deployed** on the test runtime (`apps/orchestrator/src/task_api.py`), matching the paths specified
+above exactly (the deliberate `/tasks` vs. `/operations/*` deviation noted in the original blueprint).
+Auth is a fail-closed test-only header simulation (`TASK_API_TEST_AUTH_ENABLED` +
+`X-Task-Actor`/`X-Task-Role`), not a real session — documented gap, see
+`step66b1-known-gaps.md`. All other endpoints in the table above remain design-only, staged for
+66C–66G.
+
 ## Statement
 
 API blueprint only — no endpoint implemented; no runtime change; no external action; no production

@@ -277,6 +277,10 @@ services:
       ADMIN_CONSOLE_OIDC_ENABLED: ${ADMIN_CONSOLE_OIDC_ENABLED:-false}
       ADMIN_CONSOLE_COOKIE_SECURE: ${ADMIN_CONSOLE_COOKIE_SECURE:-false}
       ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS: ${ENABLE_ADMIN_CONSOLE_OPERATOR_ACTIONS:-true}
+      # Step 66B.1 -- task API fail-closed test-only auth (X-Task-Actor/X-Task-Role
+      # headers). No real identity/session model yet (documented gap); unset/false
+      # rejects every /tasks request. No workflow dispatch, no production action.
+      TASK_API_TEST_AUTH_ENABLED: ${TASK_API_TEST_AUTH_ENABLED:-true}
       OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
       OTEL_EXPORTER_OTLP_PROTOCOL: grpc
       OTEL_SERVICE_NAME: orchestrator

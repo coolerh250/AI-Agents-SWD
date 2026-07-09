@@ -41,10 +41,18 @@ Every mutating action emits an audit event (actor role, capability, target, corr
 messages carry correlation ids linking to audit; deliveries retain evidence (requirements/impl/QA/PR/
 cost/risks); notifications/messages redact secrets. `production_executed_true_count=0` invariant held.
 
+## 66B.1 status update (2026-07-09)
+
+**66B — first slice implemented (66B.1).** Task data model (`operator_tasks`, migration 029),
+task lifecycle enum, and `POST/GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}/submit` are live on
+the test runtime with RBAC + audit + `production_effect` safety. Admin Console UI (66B.2) not yet
+built. See `step66b1-task-api-foundation-report.md`.
+
 ## Statement
 
-Implementation scope only — nothing implemented; no runtime change; no external action; no production
-action.
+66B.1 (task API foundation) is implemented; the remaining scope (66B.2 UI onward through 66H) is
+still design-only — nothing else implemented; no runtime change beyond 66B.1; no external action; no
+production action.
 
 ---
 _Non-production only. No production action. No production data._
