@@ -12989,8 +12989,9 @@ production action.
 - **Docs.** New: `step66b2-task-assignment-ui-report.md`, `-evidence.md`, `-safety-record.md`,
   `-operator-validation-request.md`, `-known-gaps.md`. Updated: `ai-team-work-frontend-page-map.md`,
   `ai-team-work-mvp-implementation-scope.md`.
-- **Operator validation:** requested, **pending** operator response (`VISIBLE` /
-  `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`) — see `step66b2-task-assignment-ui-operator-validation-request.md`.
-- **Gate.** Step 66 status: TASK_ASSIGNMENT_UI_STARTED. Next = **66B.3 or 66C** per operator, pending
-  operator validation of this stage. Claude Code must not decide product acceptance. Not production
-  readiness.
+- **Operator validation:** **`VISIBLE`** (Zachary, 2026-07-09) — all 10 checklist items confirmed
+  from the operator's own browser walkthrough. Recorded verbatim in
+  `step66b2-task-assignment-ui-operator-validation-request.md`; this is the operator's own verdict,
+  not a Claude Code self-confirmation.
+- **Gate.** Step 66 status: TASK_ASSIGNMENT_UI_ACCEPTED. Next = **66B.3 or 66C** per operator
+  authorization. Claude Code must not decide product acceptance. Not production readiness.
