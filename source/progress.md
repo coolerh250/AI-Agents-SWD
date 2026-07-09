@@ -12995,3 +12995,21 @@ production action.
   not a Claude Code self-confirmation.
 - **Gate.** Step 66 status: TASK_ASSIGNMENT_UI_ACCEPTED. Next = **66B.3 or 66C** per operator
   authorization. Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66B.2-V — Operator UI Validation Record
+
+**Status: completed. Marker: `STEP66B2_OPERATOR_UI_VALIDATION_VERIFY: PASS`.** Step 66B.2 status:
+**PASS, operator VISIBLE**. Runtime posture: validation record only; no workflow execution, no
+external action. Production posture: no production action, no production deploy, no production
+secret.
+
+- **Operator response.** `VISIBLE` (Zachary, 2026-07-09), with a per-item checklist walkthrough (all
+  10 items VISIBLE) and one wording note: `/tasks/new` is labeled **"Create Task"**, not "New" —
+  operator confirmed this is an acceptable label difference, **not a functional gap**. Not classified
+  as `PARTIAL_WITH_GAPS`.
+- **Docs.** New: `step66b2-operator-ui-validation-record.md` (full per-item record). Updated:
+  `step66b2-task-assignment-ui-report.md`, `-operator-validation-request.md`, `-known-gaps.md`.
+- **Safety.** No workflow execution, no GitHub/Discord/Slack/Telegram/LLM/web call, no production
+  action in this record stage. `production_executed_true_count=0`.
+- **Gate.** Step 66B.2 final status: **PASS**. Next = **66B.3 or 66C** per operator authorization.
+  Claude Code must not decide product acceptance. Not production readiness.

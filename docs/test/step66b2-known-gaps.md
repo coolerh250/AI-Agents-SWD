@@ -4,9 +4,15 @@
 
 ## Blocking (none)
 
-No blocking gaps — 66B.2 PASS criteria met (see completion report).
+No blocking gaps — 66B.2 PASS criteria met (see completion report). Operator validation: VISIBLE
+(Zachary, 2026-07-09; see `step66b2-operator-ui-validation-record.md`).
 
 ## Non-blocking
+
+0. **UI wording note (operator-confirmed, not a gap).** The `/tasks/new` page is labeled
+   **"Create Task"**, not "New". Operator confirmed during validation this is an acceptable, clearer
+   wording and explicitly **not a functional gap** — recorded here for completeness only, not as an
+   open item.
 
 1. **No real identity/session model.** Carried over from 66B.1 — RBAC uses the fail-closed
    test-only header simulation; the UI's `TestRoleBanner` is a stand-in until a real

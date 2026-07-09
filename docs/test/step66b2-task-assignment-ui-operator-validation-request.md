@@ -50,6 +50,12 @@ described.
 operator's own browser walkthrough. Step 66B.2 is accepted as operator-validated;
 `production_executed_true_count=0` held throughout. No blocking gaps.
 
+**Step 66B.2-V update (2026-07-09):** operator provided a per-item checklist walkthrough with one
+wording note — item 3 (`/tasks/new`) is labeled **"Create Task"**, not "New"; operator confirmed this
+is an acceptable label difference and **not a functional gap**. Final status: **Step 66B.2 — PASS.
+Operator validation — VISIBLE.** Not classified as `PARTIAL_WITH_GAPS`. Full per-item record in
+`step66b2-operator-ui-validation-record.md`.
+
 ## Statement
 
 This is a request only — Claude Code does not decide operator acceptance. No workflow dispatch, no
