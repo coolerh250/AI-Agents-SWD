@@ -1,0 +1,72 @@
+# AI Agents Team Work — Agent Workroom Blueprint (Step 66A.3)
+
+> **Blueprint / scope only. No implementation, no runtime change, no workflow execution, no external
+> action, no production action.**
+> **Q3 confirmed: minimum-viable chat workroom scope (D9 full workroom in MVP).**
+
+## 1. Minimum viable workroom (MVP — must include)
+
+- task-level conversation thread
+- agent clarification question
+- human reply
+- agent progress message
+- system / audit event embedded timeline
+- request-changes discussion
+- delivery-review discussion
+- pause / resume context
+- role-based message visibility
+- message-to-audit correlation id
+
+## 2. Deferred workroom features (out of MVP)
+
+rich file annotation · multi-room per-agent private channels · voice input · real-time typing
+indicator · advanced threaded branching.
+
+## 3. Message types (minimum)
+
+| Type | Sender | Purpose | Visibility |
+| --- | --- | --- | --- |
+| `human_message` | human | free message | participants per RBAC |
+| `agent_message` | agent | free agent message | participants |
+| `clarification_question` | agent | blocking question (pauses task) | task owner + assignees |
+| `clarification_answer` | human | answer → resume | participants |
+| `system_event` | system | state changes (running, blocked…) | participants |
+| `audit_event` | system | audit timeline embed (corr id) | participants + Sec/Compliance |
+| `delivery_comment` | human | delivery-review discussion | review roles |
+| `request_changes_note` | human | change request detail | participants |
+| `qa_result_note` | system/agent | QA outcome summary | participants |
+| `approval_request_note` | system | governed-action approval ask | approvers + admin |
+
+## 4. Sender types & visibility
+
+- Sender types: `human`, `agent`, `system`.
+- **Visibility model:** role-based per message type (table above); Requester sees own-task messages;
+  Sec/Compliance sees audit/evidence messages read-only; no secrets/tokens/raw payloads in any message
+  (redaction).
+
+## 5. Threads, correlation, retention, RBAC, notifications
+
+- **Conversation threads:** one primary task thread; clarification and delivery-review are typed
+  sub-discussions within it (advanced branching deferred).
+- **Correlation id:** every message carries a `correlation_id` linking to the audit event / work-item
+  event, so the workroom timeline and audit trail reconcile.
+- **Retention:** messages retained with the task; audit-linked messages follow audit retention.
+- **RBAC:** posting a `clarification_answer` / `delivery_comment` / `request_changes_note` requires the
+  matching capability (see rbac blueprint).
+- **Notification rules:** `clarification_question`, `approval_request_note`, `delivery_comment` trigger
+  lifecycle notifications (Console P0 + Discord P1, D7); debounced; no sensitive data.
+
+## 6. Current-state grounding
+
+The platform records per-hop "discussion" today but has no operator-facing chat workroom; this is new
+work in **66C**, reusing discussion records + a new `task_messages` store (see data-model blueprint).
+
+## Statement
+
+Workroom blueprint only — no implementation, no workflow execution, no external action, no production
+action.
+
+---
+_Non-production only. No production action. No production data._
+
+<!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->

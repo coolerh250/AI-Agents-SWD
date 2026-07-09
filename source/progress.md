@@ -12888,3 +12888,33 @@ no production action. Baseline read-only: test host `10.0.1.31` HEAD `8aaf149`, 
   Implementation Scope**. Open items for 66A.3: D11 size-classification criteria, D4 timeout-config
   surface, D1 exact permission matrix, D10 whitelist confirmation + connector auth, D9 minimum-viable
   workroom boundary. Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66A.3 — Final UX Blueprint & Implementation Scope
+
+**Status: completed. Marker: `AI_TEAM_WORK_FINAL_BLUEPRINT_VERIFY`.** Blueprint/scope only — no UI
+implementation, no backend implementation, no runtime change, no workflow execution, no external
+action, no production action. Baseline read-only: test host `10.0.1.31` HEAD `0845f84`, orchestrator
+`/health` OK, `production_executed_true_count=0`.
+
+- **Locked from D1–D14 + Q1–Q5.** The five open items are now operator-confirmed: **Q1** exact RBAC
+  matrix (6 roles), **Q2** clarification timeout (24h reminder / 72h blocked-expired, project-config,
+  owner extend once), **Q3** minimum-viable chat workroom scope, **Q4** approved web-research
+  **whitelist v0.1** (10 sources; connector still not implemented/authorized), **Q5** Request-Changes
+  small-vs-major criteria.
+- **MVP UX blueprint** covers the 23 required areas: product vision, RBAC, task lifecycle (17 states),
+  14-page frontend map, chat-style Agent Workroom (MVP message types + deferred set), Delivery Inbox +
+  6-action acceptance gate, Operator Action Center (9 queues; **Approvals P0 + DLQ/Retry P0** closing
+  Step 65 gaps #6/#7), governed web research (whitelist v0.1, connector future), data-model additions
+  (14 models), API blueprint, and the 66B→66H sequence.
+- **Docs (14, under `docs/test/`):** final-ux-blueprint, mvp-implementation-scope, frontend-page-map,
+  task-lifecycle-model, agent-workroom-blueprint, delivery-inbox-blueprint,
+  operator-action-center-blueprint, web-research-governance-blueprint, data-model-blueprint,
+  api-blueprint, rbac-blueprint, step66-implementation-sequence, risk-register (10 risks),
+  acceptance-criteria.
+- **Verifier + tests.** `scripts/verify_ai_team_work_final_blueprint.py` (PASS);
+  `tests/test_ai_team_work_final_blueprint.py`.
+- **Web research:** NOT executed; runtime has no browsing/search connector (missing capability);
+  no browsing performed; whitelist v0.1 is operator-approved as a starting set.
+- **Gate.** Step 66 status: UX_BLUEPRINT_LOCKED. Next = **66B — Operator Task Assignment UI & Task
+  API** (first build stage, needs explicit operator authorization; per-stage operator validation).
+  Claude Code must not decide product acceptance. Not production readiness.
