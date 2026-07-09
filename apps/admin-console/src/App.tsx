@@ -28,12 +28,18 @@ import { DemoEvidence } from "./pages/DemoEvidence";
 import { AgentExecutions } from "./pages/AgentExecutions";
 import { QaCode } from "./pages/QaCode";
 import { AuditEvidence } from "./pages/AuditEvidence";
+import { TaskList } from "./pages/TaskList";
+import { TaskNew } from "./pages/TaskNew";
+import { TaskDetail } from "./pages/TaskDetail";
 
 export function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<ExecutiveOverview />} />
+        <Route path="/tasks" element={<TaskList />} />
+        <Route path="/tasks/new" element={<TaskNew />} />
+        <Route path="/tasks/:taskId" element={<TaskDetail />} />
         <Route path="/demo-evidence" element={<DemoEvidence />} />
         <Route path="/agent-executions" element={<AgentExecutions />} />
         <Route path="/qa-code" element={<QaCode />} />

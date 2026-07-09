@@ -8,6 +8,10 @@ import { join } from "node:path";
 // audited module) and is excluded here -- it is covered by the STRICTER
 // operatorActionGuard test instead. Everything else (all read-only views) must
 // remain write-free, so this invariant is unchanged for v0.
+//
+// Step 66B.2 adds a second write-capable module, ``src/tasks/`` (the task
+// assignment API client + test-role simulation), likewise excluded here and
+// covered by its own stricter taskApiGuard test instead.
 const SRC = join(__dirname, "..");
 
 function walk(dir: string): string[] {
@@ -15,7 +19,7 @@ function walk(dir: string): string[] {
   for (const name of readdirSync(dir)) {
     const p = join(dir, name);
     if (statSync(p).isDirectory()) {
-      if (name === "__tests__" || name === "operator") continue;
+      if (name === "__tests__" || name === "operator" || name === "tasks") continue;
       out.push(...walk(p));
     } else if (/\.(ts|tsx)$/.test(name)) {
       // OperatorConsole composes the operator module; skip the page shell only.

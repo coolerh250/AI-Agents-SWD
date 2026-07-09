@@ -48,11 +48,20 @@ task lifecycle enum, and `POST/GET /tasks`, `GET /tasks/{id}`, `POST /tasks/{id}
 the test runtime with RBAC + audit + `production_effect` safety. Admin Console UI (66B.2) not yet
 built. See `step66b1-task-api-foundation-report.md`.
 
+## 66B.2 status update (2026-07-09)
+
+**66B — second slice implemented (66B.2).** Admin Console Task Assignment UI (`/tasks`,
+`/tasks/new`, `/tasks/{id}`) is live on the test runtime, consuming the 66B.1 API via a new
+write-capable frontend module `src/tasks/` (mirroring `src/operator/`'s pattern but for the
+fail-closed test-only `/tasks` auth). Test-role simulation banner, production_effect safety
+warnings, and `dispatch_enabled: false` cues are all rendered. Operator validation requested but not
+yet confirmed. See `step66b2-task-assignment-ui-report.md`.
+
 ## Statement
 
-66B.1 (task API foundation) is implemented; the remaining scope (66B.2 UI onward through 66H) is
-still design-only — nothing else implemented; no runtime change beyond 66B.1; no external action; no
-production action.
+66B.1 (task API foundation) and 66B.2 (task assignment UI) are implemented; the remaining scope
+(66C onward through 66H) is still design-only — nothing else implemented; no runtime change beyond
+66B.1/66B.2; no external action; no production action.
 
 ---
 _Non-production only. No production action. No production data._

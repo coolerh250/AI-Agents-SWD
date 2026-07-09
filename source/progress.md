@@ -12957,3 +12957,38 @@ foundation implemented in test only; no workflow dispatch, no external action, n
 - **Gate.** Step 66 status: TASK_API_FOUNDATION_STARTED. Next = **66B.2 — Admin Console Task
   Assignment UI** (consumes this API), pending explicit operator authorization. Claude Code must not
   decide product acceptance. Not production readiness.
+
+## Stage 66B.2 — Admin Console Task Assignment UI
+
+**Status: completed. Marker: `STEP66B2_TASK_ASSIGNMENT_UI_VERIFY`.** Step 66B status:
+TASK_ASSIGNMENT_UI_STARTED. Test UI implemented; no workflow dispatch, no external action, no
+production action.
+
+- **Pages.** `/tasks` (list + filters), `/tasks/new` (create form), `/tasks/{id}` (detail + Submit
+  Draft) — `apps/admin-console/src/pages/TaskList.tsx` / `TaskNew.tsx` / `TaskDetail.tsx`. Nav entry
+  "Tasks" added.
+- **New write-capable frontend module `src/tasks/`** (mirrors `src/operator/`'s pattern): named-method
+  API client (`taskClient.ts`), TypeScript types mirroring the backend Pydantic models
+  (`taskTypes.ts`), test-only role identity (`testRole.ts`) + visible banner (`TestRoleBanner.tsx`,
+  default role **Requester**). `readOnlyGuard.test.ts` now excludes `src/tasks/`; a new
+  `taskApiGuard.test.ts` enforces its invariants (named methods only, required auth headers,
+  `/tasks`-only targets, no token/credential/csrf/cookie, no external-integration endpoints).
+- **Safety UI.** `production_effect=true` shows a non-dismissible warning (will not execute, requires
+  approval, recorded blocked/waiting-approval, no production action) on both create and detail pages;
+  detail page always states `dispatch_enabled: false` (a system-wide invariant this stage, not
+  conditionally read from the API since `GET /tasks/{id}` doesn't return that field).
+- **Test deployment.** Orchestrator-only rebuild (bundles the frontend via the existing `node:20-slim`
+  Docker stage) + restart on `10.0.1.31` (`aiagents-test`); 27/27 healthy after.
+  `production_executed_true_count=0` verified before/after. No staging/production deployment; no
+  unscoped docker prune.
+- **Tests.** 53/53 frontend vitest pass (34 pre-existing + 13 `TaskAssignmentUI.test.tsx` + 6
+  `taskApiGuard.test.ts`); `readOnlyGuard.test.ts` (3/3) and `operatorActionGuard.test.ts` (6/6)
+  unaffected. `npm run build` (tsc + vite) succeeds, no errors.
+- **Docs.** New: `step66b2-task-assignment-ui-report.md`, `-evidence.md`, `-safety-record.md`,
+  `-operator-validation-request.md`, `-known-gaps.md`. Updated: `ai-team-work-frontend-page-map.md`,
+  `ai-team-work-mvp-implementation-scope.md`.
+- **Operator validation:** requested, **pending** operator response (`VISIBLE` /
+  `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`) — see `step66b2-task-assignment-ui-operator-validation-request.md`.
+- **Gate.** Step 66 status: TASK_ASSIGNMENT_UI_STARTED. Next = **66B.3 or 66C** per operator, pending
+  operator validation of this stage. Claude Code must not decide product acceptance. Not production
+  readiness.

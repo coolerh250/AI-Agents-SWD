@@ -2,6 +2,8 @@ import { NavLink } from "react-router-dom";
 
 export const NAV_ITEMS: { to: string; label: string }[] = [
   { to: "/", label: "Executive Overview" },
+  // Step 66B.2 -- AI Agents Team Work operator task assignment (test-only auth).
+  { to: "/tasks", label: "Tasks" },
   { to: "/projects", label: "Projects" },
   { to: "/delivery", label: "Projects / Work Items" },
   { to: "/agent-executions", label: "Agent Executions" },

@@ -29,6 +29,15 @@ priority.
 - Requester sees only own tasks + relevant workrooms + notifications.
 - Operator surfaces (`/operator/*`) hidden from Requester/PM except where a specific capability applies.
 
+## 66B.2 implementation status (2026-07-09)
+
+`/tasks`, `/tasks/new`, `/tasks/{id}` are **implemented and deployed** on the test runtime
+(`apps/admin-console/src/pages/TaskList.tsx` / `TaskNew.tsx` / `TaskDetail.tsx`), with a nav entry
+("Tasks") and a full API client (`src/tasks/taskClient.ts`). Role-aware navigation is currently the
+**test-only role simulation** (`TestRoleBanner`, not a real session) — server-side RBAC (Step 66B.1)
+is the actual enforcement point. All other pages in the table above remain design-only, staged for
+66C–66G.
+
 ## Statement
 
 Frontend page map only — no page implemented, no runtime change, no external action, no production
