@@ -42,19 +42,26 @@ production deployment.
 
 ## 4. Live test-runtime validation (10.0.1.31, `aiagents-test`)
 
-| Check | Result |
+| Check | Result (actual) |
 | --- | --- |
 | `GET /health` | `{"service":"orchestrator","status":"ok"}` |
-| `GET /operations/safety` → `production_executed_true_count` | `0` |
-| `GET /admin/` | 200, serves the rebuilt bundle |
-| `GET /admin/assets/index-*.js` | 200, contains `/tasks` route strings |
-| `/tasks` page reachable via SPA nav | confirmed (tab click; hard-refresh deep-link 404 is a
-  pre-existing, documented, non-blocking SPA characteristic — not new to 66B.2) |
-| Create a safe validation task via UI/API (`environment=test`, `production_effect=false`) | created,
-  visible in the list, detail page shows `dispatch_enabled: false` |
-| Submit the validation task | `status` → `intake_review`, no dispatch |
-| Container health after orchestrator restart | 27/27 `aiagents-test` containers healthy |
-| `production_executed_true_count` after all above | `0` (unchanged) |
+| `GET /operations/safety` → `production_executed_true_count` (before) | `0` |
+| Docker build: `admin-console-build` stage (`npm ci` + `tsc -b && vite build`) | succeeded, no errors (verified with a forced `--no-cache` rebuild) |
+| `GET /admin/` | **200**, serves the rebuilt bundle (`assets/index-JBL6bEd_.js`) |
+| Rebuilt bundle contains the new UI | confirmed — `grep` on the served JS: `/tasks` (1), `Test role simulation` (1), `production_effect` (1) all present |
+| `POST /tasks` (`X-Task-Actor: ui-validation`, `X-Task-Role: requester`, same headers the UI sends) | **201**, `id=4919d34a-2883-47ce-af8e-8221a77c22cc`, `status:"draft"`, `production_effect:false`, `dispatch_enabled:false` |
+| `GET /tasks` | **200**, `count: 1`, includes the created task |
+| `GET /tasks/{id}` | **200**, matches the created task exactly |
+| `POST /tasks/{id}/submit` | **200**, `status:"intake_review"`, `dispatch_enabled:false` |
+| Container health after orchestrator restart | **27/27** `aiagents-test` containers healthy, none unhealthy |
+| `production_executed_true_count` after all above | **0** (unchanged) |
+
+Task creation/list/detail/submit above were exercised via the same `/tasks` API and headers the UI
+sends (`taskClient.ts`), end to end — this, combined with the 53/53 passing frontend vitest tests
+(which render the actual page components against a mocked `fetch`), gives full-stack confidence that
+the deployed UI code path works. The operator's own browser walkthrough is requested separately (see
+`step66b2-task-assignment-ui-operator-validation-request.md`) — Claude Code does not substitute for
+that visual confirmation.
 
 ## 5. Statement
 

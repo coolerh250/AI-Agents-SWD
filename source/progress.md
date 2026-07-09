@@ -12978,9 +12978,11 @@ production action.
   detail page always states `dispatch_enabled: false` (a system-wide invariant this stage, not
   conditionally read from the API since `GET /tasks/{id}` doesn't return that field).
 - **Test deployment.** Orchestrator-only rebuild (bundles the frontend via the existing `node:20-slim`
-  Docker stage) + restart on `10.0.1.31` (`aiagents-test`); 27/27 healthy after.
-  `production_executed_true_count=0` verified before/after. No staging/production deployment; no
-  unscoped docker prune.
+  Docker stage; verified with a forced `--no-cache` rebuild that `npm ci`+`tsc -b`+`vite build` ran
+  clean) + restart on `10.0.1.31` (`aiagents-test`); 27/27 healthy after. Live-exercised the same
+  `/tasks` API + headers the UI sends (create → list → detail → submit, all 200s,
+  `dispatch_enabled:false` throughout). `production_executed_true_count=0` verified before/after. No
+  staging/production deployment; no unscoped docker prune.
 - **Tests.** 53/53 frontend vitest pass (34 pre-existing + 13 `TaskAssignmentUI.test.tsx` + 6
   `taskApiGuard.test.ts`); `readOnlyGuard.test.ts` (3/3) and `operatorActionGuard.test.ts` (6/6)
   unaffected. `npm run build` (tsc + vite) succeeds, no errors.
