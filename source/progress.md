@@ -13115,3 +13115,31 @@ production deploy, no production secret. Operator validation: pending.
 - **Gate.** Step 66C.1 status: PASS (implementation); operator validation pending (`API_READY` /
   `NOT_READY` / `READY_WITH_GAPS`). Claude Code must not decide product acceptance. Not production
   readiness.
+
+## Stage 66C.1-V — Operator API Validation Record
+
+**Status: completed. Marker: `STEP66C1_OPERATOR_API_VALIDATION_VERIFY: PASS`.** Step 66C.1 status:
+**PASS, operator READY_WITH_GAPS**. Step 66C status: **WORKROOM_CLARIFICATION_API_READY_FOR_UI**.
+Runtime posture: validation record only; no workflow dispatch, no workflow resume, no external
+action. Production posture: no production action, no production deploy, no production secret.
+
+- **Operator response.** `READY_WITH_GAPS` — 66C.1 API foundation is ready for 66C.2 Workroom UI;
+  19 capabilities confirmed validated (data models, all 4 endpoints, state transitions,
+  `dispatch_enabled`/`resume_dispatch_enabled=false`, RBAC, audit incl. no-raw-body, no
+  dispatch/resume/external/production action, `production_executed_true_count=0`). Not marked
+  `FAIL`; does not block 66C.2.
+- **Gaps carried forward (non-blocking).** G1 (message visibility filtering) → 66C.3; G2
+  (clarification reminder/expiry scheduler) → 66C.4; G3 (per-task audit lookup) → 66C.3; G4
+  (project/team RBAC scoping) → 66S; G5 (answered-twice guard test) → 66C.3.
+- **Roadmap update.** New sub-stage breakdown recorded in
+  `ai-team-work-step66-implementation-sequence.md`: 66C.2 (Workroom UI, plain-text rendering only),
+  66C.3 (audit/visibility/edge-case hardening), 66C.4 (reminder/expiry scheduler), and a new
+  cross-cutting **66S** (real identity/session/CSRF/project RBAC foundation, replacing the test-only
+  header role simulation before broader deployment). Risk register updated with 4 new risk entries
+  (11–14) mapping to G1/G2/G4.
+- **Docs.** New: `step66c1-operator-api-validation-record.md`. Updated:
+  `step66c1-workroom-clarification-api-foundation-report.md`, `-operator-validation-request.md`,
+  `-known-gaps.md`, `ai-team-work-step66-implementation-sequence.md`, `ai-team-work-risk-register.md`.
+- **Gate.** Step 66C.1 final status: **PASS, operator READY_WITH_GAPS**. Step 66C status:
+  WORKROOM_CLARIFICATION_API_READY_FOR_UI. Next = **66C.2 — Admin Console Workroom UI** per operator
+  authorization. Claude Code must not decide product acceptance. Not production readiness.

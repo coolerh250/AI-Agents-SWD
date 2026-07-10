@@ -5,7 +5,22 @@
 ## Blocking (none)
 
 No blocking gaps — 66C.1 PASS criteria met (see
-`step66c1-workroom-clarification-api-foundation-report.md`).
+`step66c1-workroom-clarification-api-foundation-report.md`). Operator validation: `READY_WITH_GAPS`
+(see `step66c1-operator-api-validation-record.md`). Final status: Step 66C.1 — PASS. Operator
+validation — READY_WITH_GAPS. Does not block 66C.2.
+
+## Operator-assigned gap IDs (66C.1-V) and their future-stage assignment
+
+| ID | Gap | Assigned to |
+| --- | --- | --- |
+| **G1** | Message visibility filtering not implemented | 66C.3 |
+| **G2** | Clarification reminder / expiry scheduler not implemented | 66C.4 |
+| **G3** | Per-task audit lookup endpoint not implemented | 66C.3 |
+| **G4** | Project/team RBAC scoping not implemented | 66S |
+| **G5** | Answered-twice guard lacks a dedicated test | 66C.3 |
+
+These correspond to non-blocking items 9, 6, 7, 8, and 10 below respectively. See
+`step66c1-operator-api-validation-record.md` §5 for the full 66C.2/66C.3/66C.4/66S plan.
 
 ## Non-blocking
 
@@ -47,16 +62,18 @@ constraint), real-time/websocket delivery, operator validation of the visual wor
 
 ## Deferred to later stages
 
-Agent autonomy / LLM-generated clarification, workflow resume, reminder/expiry scheduler,
-per-task audit lookup, project/team RBAC scoping, message-visibility filtering, Delivery Inbox
-(66D), Accept/Reject/Request Changes/Re-run QA (66D), Approvals/DLQ-Retry UI (66D/66G), lifecycle
-notifications (66G), Slack/Discord/Telegram intake (66F), real identity/session model + CSRF
-(timing TBD).
+Agent autonomy / LLM-generated clarification, workflow resume, reminder/expiry scheduler (**G2** →
+66C.4), per-task audit lookup (**G3** → 66C.3), project/team RBAC scoping (**G4** → 66S),
+message-visibility filtering (**G1** → 66C.3), answered-twice guard test (**G5** → 66C.3), Delivery
+Inbox (66D), Accept/Reject/Request Changes/Re-run QA (66D), Approvals/DLQ-Retry UI (66D/66G),
+lifecycle notifications (66G), Slack/Discord/Telegram intake (66F), real identity/session model +
+CSRF (**66S**).
 
 ## Statement
 
-No production action occurred. No workflow dispatch occurred. No workflow resume occurred. No
-external action occurred. Gaps above are all non-blocking for the 66C.1 PASS criteria.
+Operator response is READY_WITH_GAPS. No production action occurred. No workflow dispatch occurred.
+No workflow resume occurred. No external action occurred. Gaps above are all non-blocking for the
+66C.1 PASS criteria and are planned into 66C.3, 66C.4, and 66S.
 
 ---
 _Non-production only. No production action. No production data._

@@ -24,12 +24,34 @@
   (project-config, owner extend once); message↔audit correlation.
 - **Out of scope:** deferred workroom features (voice, branching, per-agent rooms).
 - **Dependencies:** 66B tasks.
-- **Backend:** `task_messages`, `clarification_requests`; workroom + clarification endpoints.
+- **Backend:** `task_messages`, `operator_clarification_requests` (implemented name — renamed from
+  the originally proposed `clarification_requests` to avoid colliding with a pre-existing, unrelated
+  table; see `step66c1-test-deployment-record.md`); workroom + clarification endpoints.
 - **Frontend:** workroom UI, clarification reply.
-- **Data model:** task_messages, clarification_requests.
+- **Data model:** task_messages, operator_clarification_requests.
 - **Tests:** message posting RBAC, clarification pause/resume, timeout→expired, owner extend once.
 - **Acceptance:** converse with agents; answer a clarification; task resumes; timeout behaves.
 - **Operator validation:** required.
+
+### 66C sub-stage breakdown (operator-assigned, 2026-07-10, per 66C.1-V)
+
+66C is delivered incrementally; each sub-stage still needs its own operator authorization +
+validation:
+
+- **66C.1 — Agent Workroom & Clarification Data/API Foundation.** Backend only, no UI. **Status:
+  PASS, operator `READY_WITH_GAPS`** (see `step66c1-operator-api-validation-record.md`). Gaps
+  G1 (visibility filtering), G2 (reminder/expiry scheduler), G3 (audit lookup), G5 (answered-twice
+  test) carried forward — not blocking.
+- **66C.2 — Admin Console Workroom UI.** Consumes the 66C.1 APIs; renders messages as plain text
+  only (**no `dangerouslySetInnerHTML`**); shows the clarification question/answer;
+  shows `dispatch_enabled=false`/`resume_dispatch_enabled=false`; shows the known visibility
+  limitation (G1) if relevant.
+- **66C.3 — Workroom Audit / Visibility / Edge-case Hardening.** Implements message visibility
+  filtering (closes G1); adds a per-task audit lookup or task-scoped audit evidence endpoint (closes
+  G3); adds an answered-twice guard + dedicated test (closes G5); strengthens RBAC evidence.
+- **66C.4 — Clarification Reminder / Expiry Scheduler.** Implements the 24h reminder and 72h
+  `clarification_expired` transition (closes G2); implements one owner extension; no external
+  notification send unless separately authorized.
 
 ## 66D — Delivery Inbox & Acceptance Gate
 
@@ -100,6 +122,22 @@
 - **Tests:** full E2E; governance (RBAC, replay, limits, timeout).
 - **Acceptance:** operator completes the end-to-end journey with operator-visible evidence.
 - **Operator validation:** required — operator decides product acceptance (not Claude Code).
+
+## 66S — Identity / Session / CSRF / Project RBAC Foundation (operator-assigned, 2026-07-10)
+
+- **Goal:** replace the fail-closed test-only header role simulation (`TASK_API_TEST_AUTH_ENABLED` +
+  `X-Task-Actor`/`X-Task-Role`, carried since 66B.1) with a real identity/session model before any
+  broader-than-test deployment.
+- **Scope:** real identity/session model; CSRF protection; project/team RBAC scoping (closes **G4**
+  from 66C.1-V — the only-Requester-is-scoped fallback used throughout 66B/66C).
+- **Out of scope:** production deployment itself (this stage only builds the foundation for it).
+- **Dependencies:** none blocking — can run in parallel with 66C.2–66H, but must land before any
+  production or broader-audience deployment of the Task API / Workroom.
+- **Tests:** real session issuance/expiry, CSRF token validation, project/team-scoped RBAC checks
+  (Requester/PM/Reviewer/Admin/Agent-Op/Sec-Compliance all re-verified under project scoping).
+- **Acceptance:** the test-only header simulation is fully replaced; no regression in the RBAC
+  matrices already validated for 66B/66C.
+- **Operator validation:** required.
 
 ## Statement
 
