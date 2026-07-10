@@ -66,11 +66,27 @@ returns `dispatch_enabled`, readable role labels + current-identity readout + re
 messages + a concise safety panel in the Admin Console. Real identity/session/CSRF remains
 documented future work. See `step66b3-rbac-audit-safety-hardening-report.md`.
 
+## 66C.1 status update (2026-07-10)
+
+**66C — Agent Workroom & Clarification backend foundation (66C.1).** No Workroom UI was
+implemented. `task_messages` + `clarification_requests` (migration
+`030_workroom_clarification_foundation.sql`, additive) and four new endpoints are live on the test
+runtime: `GET /tasks/{id}/workroom`, `POST /tasks/{id}/workroom/messages`, `POST
+/tasks/{id}/clarifications`, `POST /tasks/{id}/clarifications/{id}/answer`. RBAC, audit
+(`task_message_created`/`clarification_requested`/`clarification_answered`/
+`task_workroom_rbac_denied`/`clarification_rbac_denied`), and safety
+(`dispatch_enabled`/`resume_dispatch_enabled` always `false`) are all in place. A security
+addendum (message-body length limits, audit-privacy body-hash-not-body, RBAC denial audit, no
+dispatch/resume/external-call static checks) was implemented alongside the functional scope — see
+`step66c1-rbac-audit-safety-record.md`. Operator validation requested (API-level only) but not yet
+confirmed. See `step66c1-workroom-clarification-api-foundation-report.md`.
+
 ## Statement
 
-66B.1 (task API foundation), 66B.2 (task assignment UI), and 66B.3 (RBAC/audit/safety hardening) are
-implemented; the remaining scope (66C onward through 66H) is still design-only — nothing else
-implemented; no runtime change beyond 66B.1/66B.2/66B.3; no external action; no production action.
+66B.1 (task API foundation), 66B.2 (task assignment UI), 66B.3 (RBAC/audit/safety hardening), and
+66C.1 (Workroom/Clarification backend foundation) are implemented; the remaining scope (66C.2
+onward through 66H) is still design-only — nothing else implemented; no runtime change beyond
+66B.1/66B.2/66B.3/66C.1; no external action; no production action.
 
 ---
 _Non-production only. No production action. No production data._

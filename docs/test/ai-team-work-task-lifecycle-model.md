@@ -40,7 +40,20 @@ reopening the same one (see delivery-inbox blueprint).
   (`clarification_expired` → `clarification_needed`), after which no further auto-extension.
 - All reminders/extensions/expiries emit audit + notification events.
 
-## 3. Statement
+## 3. Step 66C.1 implementation status (2026-07-10)
+
+**`clarification_needed` and its answered-transition are implemented (66C.1)** — `POST
+/tasks/{id}/clarifications` sets `task.status=clarification_needed`; `POST
+/tasks/{id}/clarifications/{id}/answer` transitions the task to **`intake_review`** (the
+conservative, documented choice — not `running`, and no new `approved_for_execution_candidate`
+state was introduced since it does not exist in this enum). `clarification_expired` and the
+24h-reminder/72h-expiry **transition itself** are **not implemented** — `reminder_at`/`due_at` are
+computed and stored (matching the D4/Q2 hours exactly) but nothing currently reads them; no
+scheduler exists yet to fire the reminder or perform the expiry transition. Owner-extend-once is
+therefore also not implemented (nothing to extend from). See
+`step66c1-clarification-flow-evidence.md` and `step66c1-known-gaps.md`.
+
+## 4. Statement
 
 Task lifecycle model only. No implementation, no workflow execution, no external action, no production
 action.

@@ -124,6 +124,25 @@ class TaskStore:
         finally:
             await conn.close()
 
+    async def set_clarification_state(
+        self, task_id: str, *, status: str, clarification_status: str
+    ) -> dict[str, Any]:
+        """Step 66C.1 -- transitions task.status + task.clarification_status together
+        (e.g. clarification_needed/open at request time, intake_review/answered
+        once answered). Never dispatches or resumes a workflow."""
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                "UPDATE operator_tasks SET status=$2, clarification_status=$3, updated_at=now() "
+                "WHERE id=$1 RETURNING *",
+                uuid.UUID(task_id),
+                status,
+                clarification_status,
+            )
+            return self._row(row)
+        finally:
+            await conn.close()
+
     @staticmethod
     def _row(row: asyncpg.Record) -> dict[str, Any]:
         d = dict(row)

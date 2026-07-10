@@ -61,6 +61,20 @@ indicator · advanced threaded branching.
 The platform records per-hop "discussion" today but has no operator-facing chat workroom; this is new
 work in **66C**, reusing discussion records + a new `task_messages` store (see data-model blueprint).
 
+## Step 66C.1 implementation status (2026-07-10)
+
+**Backend data/API foundation implemented (66C.1)** — no UI. `task_messages` (migration
+`030_workroom_clarification_foundation.sql`) implements the message model above with
+`message_type`/`visibility`/`sender_type` exactly as specified; `correlation_id` ties workroom
+messages to audit events (§5, unchanged). Only `human_message`, `clarification_question`, and
+`clarification_answer` are actually produced by the API today (no agent connector, delivery flow,
+or QA flow exists yet to emit `agent_message`/`system_event`/`delivery_comment`/etc.) — modeled, not
+fabricated. Role-based message **visibility filtering** (§4) is **not yet implemented**: all messages
+are created with `visibility: task_participants` and returned to any caller who can view the
+workroom, regardless of role — a documented gap, not the full visibility model. Notification rules
+(§5) are **not implemented** — no Console/Discord notification fires on any message type in 66C.1.
+See `step66c1-workroom-clarification-api-foundation-report.md`.
+
 ## Statement
 
 Workroom blueprint only — no implementation, no workflow execution, no external action, no production

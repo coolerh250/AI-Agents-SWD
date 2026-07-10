@@ -58,6 +58,19 @@ Auth is a fail-closed test-only header simulation (`TASK_API_TEST_AUTH_ENABLED` 
 (`missing_actor` / `missing_role` / `invalid_role`) instead of two. No endpoint's request/response
 shape or required role changed otherwise. See `step66b3-rbac-audit-safety-hardening-report.md`.
 
+## Step 66C.1 implementation status (2026-07-10)
+
+`GET /tasks/{id}/workroom`, `POST /tasks/{id}/workroom/messages`, `POST /tasks/{id}/clarifications`,
+and `POST /tasks/{id}/clarifications/{id}/answer` are **implemented and deployed** on the test
+runtime (`apps/orchestrator/src/workroom_api.py`), replacing the originally proposed
+`GET/POST .../workroom/messages` clarification-answer path
+(`POST /tasks/{id}/clarifications/{cid}/answer`) with the exact path above — a minor path
+refinement, not a behavior change. Auth is the same fail-closed test-only header simulation reused
+from 66B.1/66B.3 (no new auth mechanism). All four responses state `dispatch_enabled: false`; the
+three mutating endpoints also state `resume_dispatch_enabled: false`. `GET /deliveries` and
+everything below it in the table above remain design-only, staged for 66D–66G. See
+`step66c1-workroom-clarification-api-foundation-report.md`.
+
 ## Statement
 
 API blueprint only — no endpoint implemented; no runtime change; no external action; no production

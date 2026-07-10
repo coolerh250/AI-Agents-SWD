@@ -34,6 +34,7 @@ from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
 from project_api import router as project_router
 from task_api import router as task_router
+from workroom_api import router as workroom_router
 from workspace_api import router as workspace_router
 from resume_engine import ResumeEngine, ResumeError
 from shared.sdk.agent_execution.store import AgentExecutionStore
@@ -262,6 +263,9 @@ app.include_router(alert_receiver_router)
 # Stage 66B.1 (Step 66): AI Agents Team Work task API foundation (create/list/detail/
 # submit; fail-closed test-only auth; no workflow dispatch; production blocked).
 app.include_router(task_router)
+# Stage 66C.1 (Step 66): Agent Workroom & Clarification data/API foundation (workroom
+# messages + clarification requests/answers; no UI, no workflow dispatch/resume).
+app.include_router(workroom_router)
 
 
 @app.get("/health")

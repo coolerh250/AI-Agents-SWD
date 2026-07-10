@@ -12,6 +12,12 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from shared.sdk.tasks.workroom_models import (
+    CLARIFICATION_ANSWER_MAX_LENGTH,
+    CLARIFICATION_QUESTION_MAX_LENGTH,
+    MESSAGE_BODY_MAX_LENGTH,
+)
+
 
 def tasks_safety_fields() -> dict[str, Any]:
     test_auth_enabled = (
@@ -30,6 +36,18 @@ def tasks_safety_fields() -> dict[str, Any]:
         # Step 66B.3 hardening: every RBAC denial (403) now emits a task_rbac_denied
         # audit event (see shared/sdk/tasks/audit_events.py + task_api.py::_deny).
         "task_api_rbac_denied_audit_enabled": True,
+        # Step 66C.1 -- Agent Workroom & Clarification backend foundation. No UI,
+        # no real-time, no agent autonomy, no LLM, no workflow dispatch/resume.
+        "task_workroom_enabled": True,
+        "task_workroom_ui_enabled": False,
+        "task_workroom_dispatch_enabled": False,
+        "task_workroom_resume_dispatch_enabled": False,
+        "task_workroom_external_integration_enabled": False,
+        "task_workroom_rbac_denied_audit_enabled": True,
+        "clarification_rbac_denied_audit_enabled": True,
+        "task_message_body_max_length": MESSAGE_BODY_MAX_LENGTH,
+        "clarification_question_max_length": CLARIFICATION_QUESTION_MAX_LENGTH,
+        "clarification_answer_max_length": CLARIFICATION_ANSWER_MAX_LENGTH,
     }
 
 

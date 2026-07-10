@@ -13068,3 +13068,47 @@ posture: no production action, no production deploy, no production secret.
 - **Gate.** Step 66B.3 final status: **PASS, operator VISIBLE**. Step 66B (task assignment API + UI
   + hardening) is fully closed. Next = **66C — Agent Workroom & Clarification Layer** per operator
   authorization. Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66C.1 — Agent Workroom & Clarification Data/API Foundation
+
+**Status: completed. Marker: `STEP66C1_WORKROOM_CLARIFICATION_API_VERIFY: PASS`.** Step 66C status:
+WORKROOM_CLARIFICATION_API_STARTED. Runtime posture: test backend foundation only; no workflow
+dispatch, no workflow resume, no external action. Production posture: no production action, no
+production deploy, no production secret. Operator validation: pending.
+
+- **Data models (additive).** `migrations/030_workroom_clarification_foundation.sql` adds
+  `task_messages` (10 message types, 4 visibility values, `sender_type`, `body` 1-8000 chars
+  CHECK-constrained) and `clarification_requests` (`open`/`answered`/`expired`/`canceled`, question
+  1-4000 chars CHECK-constrained, `due_at`=+72h/`reminder_at`=+24h). No existing table changed.
+- **APIs.** New router `apps/orchestrator/src/workroom_api.py`: `GET /tasks/{id}/workroom`, `POST
+  /tasks/{id}/workroom/messages`, `POST /tasks/{id}/clarifications`, `POST
+  /tasks/{id}/clarifications/{id}/answer`. Reuses the 66B.1/66B.3 fail-closed test-only auth via
+  `import task_api` (module reference, not a copied `from...import`) so `task_api._authenticate`/
+  `_audit`/`_store` are shared consistently. Clarification create sets
+  `task.status=clarification_needed`; answer sets `task.status=intake_review` (conservative,
+  documented design choice — not a new execution state). `resume_dispatch_enabled=false` always.
+- **RBAC.** `shared/sdk/tasks/workroom_rbac.py`: view = all six roles (Requester scoped to own
+  task); post-message excludes only Security/Compliance Reviewer; create-clarification = PM/Eng
+  Lead + Platform Admin + Agent Operator only (Requester denied by default); answer-clarification =
+  Requester (own task) + PM/Eng Lead + Platform Admin.
+- **Audit.** New decision types `task_message_created`, `clarification_requested`,
+  `clarification_answered`, `task_workroom_rbac_denied`, `clarification_rbac_denied`. New
+  `safe_workroom_refs()` builder — never includes the raw message/question/answer body, only its
+  length + a SHA-256 hash (security addendum).
+- **Security addendum (merged into this stage).** Prior Step 66B.3 security review (no HIGH/MEDIUM
+  findings) carried forward. New controls: parameterized SQL only; message/question/answer treated
+  as untrusted plain text (never rendered as HTML — binding constraint for 66C.2 UI); DB + Pydantic
+  length limits (8000/4000/8000 chars); audit privacy (body never logged, only length+hash); RBAC
+  denial audit on every 403; static source tests proving no workflow dispatch/resume and no
+  external-integration reference. See `step66c1-rbac-audit-safety-record.md`.
+- **Tests.** New `tests/test_step66c1_workroom_clarification_api.py` (20 tests). Existing
+  66B.1/66B.2/66B.3/66B.3-V backend tests (71) unaffected — 91/91 passing together.
+- **Docs.** New: `step66c1-workroom-clarification-api-foundation-report.md`, `-workroom-api-evidence.md`,
+  `-clarification-flow-evidence.md`, `-rbac-audit-safety-record.md`, `-test-deployment-record.md`,
+  `-known-gaps.md`, `-operator-validation-request.md`. Updated:
+  `ai-team-work-agent-workroom-blueprint.md`, `ai-team-work-task-lifecycle-model.md`,
+  `ai-team-work-api-blueprint.md`, `ai-team-work-data-model-blueprint.md`,
+  `ai-team-work-mvp-implementation-scope.md`.
+- **Gate.** Step 66C.1 status: PASS (implementation); operator validation pending (`API_READY` /
+  `NOT_READY` / `READY_WITH_GAPS`). Claude Code must not decide product acceptance. Not production
+  readiness.
