@@ -43,11 +43,29 @@ function detailOf(body: unknown): string | undefined {
   return undefined;
 }
 
+// Step 66B.3 -- readable RBAC/auth error messages (safety UX hardening). Falls
+// back to the raw backend detail code for anything not mapped here.
+const READABLE_ERRORS: Record<string, string> = {
+  task_api_test_auth_disabled: "Task API test-auth is disabled in this environment.",
+  missing_actor: "Missing actor identity — set a test actor in the role banner.",
+  missing_role: "Missing role — select a role in the role banner.",
+  invalid_role: "Unrecognized role — select a valid role in the role banner.",
+  role_cannot_create_task: "Your simulated role cannot create tasks.",
+  role_cannot_view_tasks: "Your simulated role cannot view tasks.",
+  role_cannot_submit_task: "Your simulated role cannot submit tasks.",
+  not_own_task: "You can only access your own tasks with this role.",
+  task_not_found: "Task not found.",
+};
+
 async function handle<T>(res: Response): Promise<T> {
   const body = await readBody(res);
   if (!res.ok) {
     const detail = detailOf(body);
-    throw new TaskApiError(`${detail || "task_api_error"} (HTTP ${res.status})`, res.status, detail);
+    const readable = detail ? READABLE_ERRORS[detail] : undefined;
+    const message = readable
+      ? `${readable} (${detail})`
+      : `${detail || "task_api_error"} (HTTP ${res.status})`;
+    throw new TaskApiError(message, res.status, detail);
   }
   return body as T;
 }

@@ -13013,3 +13013,37 @@ secret.
   action in this record stage. `production_executed_true_count=0`.
 - **Gate.** Step 66B.2 final status: **PASS**. Next = **66B.3 or 66C** per operator authorization.
   Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66B.3 — RBAC / Audit / Safety Hardening
+
+**Status: completed. Marker: `STEP66B3_RBAC_AUDIT_SAFETY_VERIFY: PASS`.** Step 66B status:
+TASK_ASSIGNMENT_HARDENING_STARTED. Runtime posture: test hardening only; no workflow dispatch, no
+external action. Production posture: no production action, no production deploy, no production
+secret. Operator validation: pending.
+
+- **RBAC hardening.** Fail-closed auth now returns three distinct codes: `missing_actor` /
+  `missing_role` (previously indistinguishable from `invalid_role`) / `invalid_role` — all still
+  401, still fail-closed. Permission matrix unchanged in substance from 66B.1; documented exact
+  enforced subset (not overclaimed) in `ai-team-work-rbac-blueprint.md` §6.
+- **Audit hardening.** New `task_rbac_denied` audit event (`shared/sdk/tasks/audit_events.py`) now
+  emitted on **every** 403 RBAC denial via a new `_deny()` helper in `task_api.py` — previously
+  denied attempts left no audit trail at all. `GET /tasks/{id}` now also returns
+  `dispatch_enabled: false` (previously only create/submit did).
+- **Safety UI hardening.** Readable role labels in the role dropdown (`TASK_ROLE_LABELS`), a visible
+  current-identity readout (`data-testid="current-identity"`), readable RBAC/auth error messages
+  (`READABLE_ERRORS` in `taskClient.ts`), and a concise safety panel on `/tasks/{id}`
+  (`data-testid="safety-panel"`: environment/production_effect/requires_approval/dispatch_enabled/
+  external_actions_enabled/production_executed).
+- **Tests.** New `tests/test_step66b3_rbac_audit_safety.py` (22 tests: fail-closed auth, own-task
+  scoping, Platform Admin view-all, production_effect=true blocked, audit evidence for all 4
+  decision types, static no-dispatch/no-external-integration source checks). Existing 66B.1/66B.2/
+  66B.2-V backend tests (40) unaffected — 62/62 passing together. Frontend: 5 new vitest tests
+  (current-identity, readable role labels, safety panel, readable RBAC errors ×2) — 58/58 passing;
+  `npm run build` succeeds.
+- **Docs.** New: `step66b3-rbac-audit-safety-hardening-report.md`, `-rbac-validation-evidence.md`,
+  `-audit-evidence-record.md`, `-safety-validation-record.md`, `-test-deployment-record.md`,
+  `-known-gaps.md`. Updated: `step66b1-task-rbac-safety-record.md`,
+  `step66b2-task-assignment-ui-safety-record.md`, `ai-team-work-rbac-blueprint.md`,
+  `ai-team-work-api-blueprint.md`, `ai-team-work-mvp-implementation-scope.md`.
+- **Gate.** Step 66B.3 status: PASS (implementation); operator validation pending. Claude Code must
+  not decide product acceptance. Not production readiness.

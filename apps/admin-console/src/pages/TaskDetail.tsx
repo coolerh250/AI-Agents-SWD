@@ -1,7 +1,8 @@
-// Step 66B.2 -- Task detail page (/tasks/:taskId). dispatch_enabled is always
-// rendered as a static false: GET /tasks/{id} does not return that field (only
-// create/submit do), and it is true system-wide in Step 66B.2 regardless -- no
-// workflow dispatch path exists anywhere in this stage.
+// Step 66B.2 -- Task detail page (/tasks/:taskId).
+// Step 66B.3 -- GET /tasks/{id} now also returns dispatch_enabled (hardening: the
+// value is data-driven from the API, not hardcoded); a concise safety panel
+// summarizes environment/production_effect/requires_approval/dispatch_enabled/
+// external_actions_enabled/production_executed for at-a-glance review.
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AsyncView } from "../components/AsyncView";
@@ -46,14 +47,37 @@ export function TaskDetail() {
         {(task: Task) => (
           <>
             <KeyValueTable data={task as unknown as Record<string, unknown>} />
+            <div className="safety-panel" data-testid="safety-panel">
+              <h3>Safety</h3>
+              <ul>
+                <li>
+                  Environment: <strong>{task.environment}</strong>
+                </li>
+                <li>
+                  production_effect: <StatusBadge value={task.production_effect} />
+                </li>
+                <li>
+                  requires_approval: <StatusBadge value={task.requires_approval} />
+                </li>
+                <li>
+                  dispatch_enabled: <StatusBadge value={task.dispatch_enabled ?? false} />
+                </li>
+                <li>
+                  external_actions_enabled: <StatusBadge value={false} />
+                </li>
+                <li>
+                  production_executed: <StatusBadge value={false} />
+                </li>
+              </ul>
+            </div>
             <p className="note" data-testid="dispatch-enabled-note">
-              dispatch_enabled: <StatusBadge value={false} /> (no workflow dispatch occurs in this
-              stage)
+              dispatch_enabled: <StatusBadge value={task.dispatch_enabled ?? false} /> (no workflow
+              dispatch occurs in this stage)
             </p>
             {task.production_effect && (
               <div className="warn-banner" data-testid="production-effect-warning">
-                <strong>production_effect = true</strong> — this task requires approval and will not
-                be dispatched.
+                <strong>production_effect = true</strong> — this task requires approval, is
+                blocked / approval-required, and will not be dispatched. No production action occurs.
               </div>
             )}
             {task.status === "draft" && (

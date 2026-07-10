@@ -2,6 +2,12 @@
 
 > **No workflow dispatch occurred. No external action occurred. No production action occurred.
 > production_executed_true_count=0. Test-only role simulation is not production auth.**
+>
+> **Step 66B.3 update:** the role dropdown now shows readable labels ("PM / Engineering Lead", etc.
+> — `TASK_ROLE_LABELS`) instead of raw role strings; a visible `current-identity` readout shows the
+> active simulated actor/role; RBAC/auth errors now render a readable sentence alongside the raw
+> detail code; a concise safety panel was added to `/tasks/{id}`. See
+> `step66b3-rbac-audit-safety-hardening-report.md`.
 
 ## 1. Test-only role simulation (not production auth)
 

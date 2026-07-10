@@ -5,11 +5,16 @@ from __future__ import annotations
 DECISION_TASK_CREATED = "task_created"
 DECISION_TASK_SUBMITTED = "task_submitted"
 DECISION_TASK_REJECTED_BY_POLICY = "task_rejected_by_policy"
+# Step 66B.3 -- emitted on every RBAC denial (403): role lacks the capability, or a
+# Requester targets another actor's task. Hardens the audit evidence surface so
+# denied attempts are traceable, not just successful actions.
+DECISION_TASK_RBAC_DENIED = "task_rbac_denied"
 
 TASK_DECISION_TYPES: tuple[str, ...] = (
     DECISION_TASK_CREATED,
     DECISION_TASK_SUBMITTED,
     DECISION_TASK_REJECTED_BY_POLICY,
+    DECISION_TASK_RBAC_DENIED,
 )
 
 
@@ -53,6 +58,7 @@ __all__ = [
     "DECISION_TASK_CREATED",
     "DECISION_TASK_SUBMITTED",
     "DECISION_TASK_REJECTED_BY_POLICY",
+    "DECISION_TASK_RBAC_DENIED",
     "TASK_DECISION_TYPES",
     "safe_task_refs",
 ]

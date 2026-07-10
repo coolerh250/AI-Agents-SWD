@@ -49,6 +49,15 @@ Auth is a fail-closed test-only header simulation (`TASK_API_TEST_AUTH_ENABLED` 
 `step66b1-known-gaps.md`. All other endpoints in the table above remain design-only, staged for
 66C–66G.
 
+## Step 66B.3 hardening status (2026-07-09)
+
+`GET /tasks/{id}` now also returns `dispatch_enabled: false` (previously only `POST /tasks` and
+`POST /tasks/{id}/submit` did). Every RBAC denial (403) across all four endpoints now emits a
+`task_rbac_denied` audit event in addition to the existing `task_created` / `task_submitted` /
+`task_rejected_by_policy` events. Fail-closed auth errors are now three distinct codes
+(`missing_actor` / `missing_role` / `invalid_role`) instead of two. No endpoint's request/response
+shape or required role changed otherwise. See `step66b3-rbac-audit-safety-hardening-report.md`.
+
 ## Statement
 
 API blueprint only — no endpoint implemented; no runtime change; no external action; no production

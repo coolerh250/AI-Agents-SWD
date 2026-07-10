@@ -57,11 +57,20 @@ fail-closed test-only `/tasks` auth). Test-role simulation banner, production_ef
 warnings, and `dispatch_enabled: false` cues are all rendered. Operator validation requested but not
 yet confirmed. See `step66b2-task-assignment-ui-report.md`.
 
+## 66B.3 status update (2026-07-09)
+
+**66B — RBAC / audit / safety hardening (66B.3).** No product scope was added — Task API (66B.1)
+and Task Assignment UI (66B.2) were hardened: `task_rbac_denied` audit event on every RBAC denial,
+distinct `missing_actor`/`missing_role`/`invalid_role` fail-closed codes, `GET /tasks/{id}` now
+returns `dispatch_enabled`, readable role labels + current-identity readout + readable RBAC error
+messages + a concise safety panel in the Admin Console. Real identity/session/CSRF remains
+documented future work. See `step66b3-rbac-audit-safety-hardening-report.md`.
+
 ## Statement
 
-66B.1 (task API foundation) and 66B.2 (task assignment UI) are implemented; the remaining scope
-(66C onward through 66H) is still design-only — nothing else implemented; no runtime change beyond
-66B.1/66B.2; no external action; no production action.
+66B.1 (task API foundation), 66B.2 (task assignment UI), and 66B.3 (RBAC/audit/safety hardening) are
+implemented; the remaining scope (66C onward through 66H) is still design-only — nothing else
+implemented; no runtime change beyond 66B.1/66B.2/66B.3; no external action; no production action.
 
 ---
 _Non-production only. No production action. No production data._

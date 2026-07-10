@@ -55,6 +55,31 @@ Legend: ✔ allowed · ✖ denied · (own) scoped to own tasks.
 Security & RBAC model only — no implementation, no runtime change, no external action, no production
 action. The MVP matrix is the operator-confirmed default (Q1).
 
+## 6. Step 66B.1/66B.3 enforcement status (implemented subset — do not overclaim)
+
+The Task API (66B.1, hardened in 66B.3) implements only the **create / view / submit** capabilities
+of the matrix above — the rest of the matrix (review delivery, accept/reject/request-changes,
+re-run QA, approve/reject gated action, retry/replay, incident operation, manage integrations/RBAC/
+settings, web-research source management) is **not yet implemented**; it is deferred to 66C+ stages
+per `ai-team-work-step66-implementation-sequence.md`.
+
+Exact enforced behavior for the implemented subset (`shared/sdk/tasks/rbac.py`,
+`apps/orchestrator/src/task_api.py`):
+
+| Capability | requester | pm_engineering_lead | reviewer_approver | platform_admin | agent_operator | security_compliance_reviewer |
+| --- | --- | --- | --- | --- | --- | --- |
+| Create task | ✔ | ✔ | ✖ | ✔ | ✖ | ✖ |
+| View task (own only for Requester; all others unscoped) | ✔ (own) | ✔ (all) | ✔ (all) | ✔ (all) | ✔ (all) | ✔ (all) |
+| Submit task (own only for Requester) | ✔ (own) | ✔ | ✖ | ✔ | ✖ | ✖ |
+
+- Denied role → `403 role_cannot_create_task` / `role_cannot_view_tasks` / `role_cannot_submit_task`.
+- Requester targeting another actor's task (view or submit) → `403 not_own_task`.
+- Every denial (Step 66B.3) is audited as `task_rbac_denied` — see
+  `step66b3-audit-evidence-record.md`.
+- `role_cannot_view_tasks` has no live trigger today (all six roles are view-allowed) — the code
+  path exists for forward-compatibility only (documented in `step66b3-known-gaps.md`, not a gap in
+  the current matrix).
+
 ---
 _Non-production only. No production action. No production data._
 

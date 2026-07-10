@@ -27,6 +27,9 @@ def tasks_safety_fields() -> dict[str, Any]:
         "task_api_github_write_enabled": False,
         "task_api_discord_send_enabled": False,
         "task_api_llm_call_enabled": False,
+        # Step 66B.3 hardening: every RBAC denial (403) now emits a task_rbac_denied
+        # audit event (see shared/sdk/tasks/audit_events.py + task_api.py::_deny).
+        "task_api_rbac_denied_audit_enabled": True,
     }
 
 

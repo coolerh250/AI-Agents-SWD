@@ -174,3 +174,47 @@ describe("Tasks in navigation", () => {
     expect(NAV_ITEMS.map((i) => i.to)).toContain("/tasks");
   });
 });
+
+describe("Step 66B.3 -- RBAC/audit/safety hardening", () => {
+  it("shows a readable current-identity label with the role's display name", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ tasks: [], count: 0 }));
+    renderWithRouter();
+    await waitFor(() => expect(screen.getByTestId("current-identity")).toBeDefined());
+    expect(screen.getByTestId("current-identity").textContent).toMatch(/Requester/);
+  });
+
+  it("shows readable role labels (not raw role strings) in the role dropdown", () => {
+    renderWithRouter(["/tasks/new"]);
+    expect(screen.getByText("PM / Engineering Lead")).toBeDefined();
+    expect(screen.getByText("Security / Compliance Reviewer")).toBeDefined();
+  });
+
+  it("shows a safety panel on task detail with environment/production_effect/requires_approval/dispatch_enabled", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce(SAMPLE_TASK));
+    renderWithRouter(["/tasks/11111111-1111-1111-1111-111111111111"]);
+    await waitFor(() => expect(screen.getByTestId("safety-panel")).toBeDefined());
+    const panel = screen.getByTestId("safety-panel").textContent || "";
+    expect(panel).toMatch(/Environment/);
+    expect(panel).toMatch(/production_effect/);
+    expect(panel).toMatch(/requires_approval/);
+    expect(panel).toMatch(/dispatch_enabled/);
+    expect(panel).toMatch(/external_actions_enabled/);
+    expect(panel).toMatch(/production_executed/);
+  });
+
+  it("shows a readable RBAC error message on a 403 role denial", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ detail: "role_cannot_view_tasks" }, 403));
+    renderWithRouter();
+    await waitFor(() =>
+      expect(screen.getByText(/Your simulated role cannot view tasks/)).toBeDefined(),
+    );
+  });
+
+  it("shows a readable RBAC error message for not_own_task on task detail", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce({ detail: "not_own_task" }, 403));
+    renderWithRouter(["/tasks/11111111-1111-1111-1111-111111111111"]);
+    await waitFor(() =>
+      expect(screen.getByText(/You can only access your own tasks with this role/)).toBeDefined(),
+    );
+  });
+});

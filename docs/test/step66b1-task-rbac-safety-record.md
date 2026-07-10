@@ -1,6 +1,11 @@
 # Step 66B.1 — Task API RBAC & Safety Record
 
 > **Backend/API safety documentation only. No production action. No external action.**
+>
+> **Step 66B.3 update:** `missing_actor` / `missing_role` / `invalid_role` are now three distinct
+> 401 codes (previously missing role fell through to `invalid_role`); every 403 RBAC denial now
+> also emits a `task_rbac_denied` audit event; `GET /tasks/{id}` now also returns
+> `dispatch_enabled: false`. See `step66b3-rbac-audit-safety-hardening-report.md`.
 
 ## 1. Auth model (fail-closed, test-only)
 

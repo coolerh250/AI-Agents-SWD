@@ -90,6 +90,9 @@ export interface Task {
   metadata: Record<string, unknown>;
   created_at: string | null;
   updated_at: string | null;
+  // Step 66B.3 -- GET /tasks/{id} now also returns dispatch_enabled (always false;
+  // matches create/submit). Optional so older cached responses still type-check.
+  dispatch_enabled?: boolean;
 }
 
 export interface TaskListFilters {

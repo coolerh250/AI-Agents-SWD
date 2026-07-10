@@ -18,6 +18,7 @@ from fastapi import APIRouter, HTTPException, Request
 
 from shared.sdk.tasks.audit_events import (
     DECISION_TASK_CREATED,
+    DECISION_TASK_RBAC_DENIED,
     DECISION_TASK_REJECTED_BY_POLICY,
     DECISION_TASK_SUBMITTED,
     safe_task_refs,
@@ -60,7 +61,9 @@ class _AuthContext:
 
 def _authenticate(request: Request) -> _AuthContext:
     """Fail-closed: TASK_API_TEST_AUTH_ENABLED must be exactly 'true'. There is no
-    non-test auth path yet -- unset/false rejects every request (403)."""
+    non-test auth path yet -- unset/false rejects every request (403). Step 66B.3:
+    missing_actor / missing_role / invalid_role are distinct detail codes (each still
+    401, still fail-closed) so client-side error messages can be specific."""
     enabled = os.environ.get("TASK_API_TEST_AUTH_ENABLED", "false").strip().lower() == "true"
     if not enabled:
         raise HTTPException(status_code=403, detail="task_api_test_auth_disabled")
@@ -68,16 +71,29 @@ def _authenticate(request: Request) -> _AuthContext:
     role = request.headers.get("X-Task-Role", "").strip()
     if not actor:
         raise HTTPException(status_code=401, detail="missing_actor")
+    if not role:
+        raise HTTPException(status_code=401, detail="missing_role")
     if role not in TASK_ROLES:
         raise HTTPException(status_code=401, detail="invalid_role")
     return _AuthContext(actor=actor, role=role)
+
+
+async def _deny(ctx: _AuthContext, action: str, reason: str, task_id: str | None = None) -> None:
+    """Step 66B.3: every RBAC denial (403) is audited as task_rbac_denied before the
+    HTTPException is raised, so denied attempts are traceable evidence, not just
+    successful actions. No production effect, no dispatch -- denial only."""
+    refs = safe_task_refs(
+        task_id=task_id, actor=ctx.actor, role=ctx.role, action=action, status=reason
+    )
+    await _audit(DECISION_TASK_RBAC_DENIED, f"rbac denied: {reason}", "denied", refs)
+    raise HTTPException(status_code=403, detail=reason)
 
 
 @router.post("", status_code=201)
 async def create_task(payload: TaskCreate, request: Request) -> dict[str, Any]:
     ctx = _authenticate(request)
     if not can_create(ctx.role):
-        raise HTTPException(status_code=403, detail="role_cannot_create_task")
+        await _deny(ctx, "create", "role_cannot_create_task")
 
     intake_planning_only = payload.task_type not in FIRST_CLASS_TASK_TYPES
     requires_approval = payload.requires_approval or payload.production_effect
@@ -140,7 +156,7 @@ async def list_tasks(
 ) -> dict[str, Any]:
     ctx = _authenticate(request)
     if not can_view(ctx.role):
-        raise HTTPException(status_code=403, detail="role_cannot_view_tasks")
+        await _deny(ctx, "list", "role_cannot_view_tasks")
     # Requester is scoped to own tasks regardless of the created_by filter requested.
     scope_created_by = ctx.actor if ctx.role == "requester" else created_by
     tasks = await _store().list_tasks(
@@ -158,25 +174,25 @@ async def list_tasks(
 async def get_task(task_id: str, request: Request) -> dict[str, Any]:
     ctx = _authenticate(request)
     if not can_view(ctx.role):
-        raise HTTPException(status_code=403, detail="role_cannot_view_tasks")
+        await _deny(ctx, "get", "role_cannot_view_tasks", task_id=task_id)
     task = await _store().get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task_not_found")
     if ctx.role == "requester" and task["created_by"] != ctx.actor:
-        raise HTTPException(status_code=403, detail="not_own_task")
-    return task
+        await _deny(ctx, "get", "not_own_task", task_id=task_id)
+    return {**task, "dispatch_enabled": False}
 
 
 @router.post("/{task_id}/submit")
 async def submit_task(task_id: str, request: Request) -> dict[str, Any]:
     ctx = _authenticate(request)
     if not can_submit(ctx.role):
-        raise HTTPException(status_code=403, detail="role_cannot_submit_task")
+        await _deny(ctx, "submit", "role_cannot_submit_task", task_id=task_id)
     task = await _store().get_task(task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="task_not_found")
     if ctx.role == "requester" and task["created_by"] != ctx.actor:
-        raise HTTPException(status_code=403, detail="not_own_task")
+        await _deny(ctx, "submit", "not_own_task", task_id=task_id)
     if task["status"] not in ("draft", "submitted"):
         raise HTTPException(status_code=409, detail=f"invalid_state_for_submit:{task['status']}")
 

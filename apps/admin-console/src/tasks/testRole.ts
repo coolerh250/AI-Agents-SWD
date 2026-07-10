@@ -18,6 +18,16 @@ export const TASK_ROLES = [
 
 export type TaskRole = (typeof TASK_ROLES)[number];
 
+// Step 66B.3 -- readable labels for the RBAC role dropdown (safety UX hardening).
+export const TASK_ROLE_LABELS: Record<TaskRole, string> = {
+  requester: "Requester",
+  pm_engineering_lead: "PM / Engineering Lead",
+  reviewer_approver: "Reviewer / Approver",
+  platform_admin: "Platform Admin",
+  agent_operator: "Agent Operator",
+  security_compliance_reviewer: "Security / Compliance Reviewer",
+};
+
 const STORAGE_KEY = "aiagents.taskApi.testRole.v1";
 const DEFAULT_ACTOR = "test-operator";
 // Least-privilege default (documented): Requester can only create/view/submit

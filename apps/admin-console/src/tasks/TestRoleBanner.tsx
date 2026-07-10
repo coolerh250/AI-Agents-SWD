@@ -3,7 +3,7 @@
 // every taskApi call reads at request time -- see taskClient.ts. This is NOT
 // production auth and has no production-mode equivalent.
 import { useState } from "react";
-import { TASK_ROLES, getTestRole, setTestRole } from "./testRole";
+import { TASK_ROLES, TASK_ROLE_LABELS, getTestRole, setTestRole } from "./testRole";
 import type { TaskRole } from "./testRole";
 
 export function TestRoleBanner(): JSX.Element {
@@ -30,11 +30,14 @@ export function TestRoleBanner(): JSX.Element {
         <select value={role} onChange={(e) => apply(actor, e.target.value as TaskRole)}>
           {TASK_ROLES.map((r) => (
             <option key={r} value={r}>
-              {r}
+              {TASK_ROLE_LABELS[r]}
             </option>
           ))}
         </select>
-      </label>
+      </label>{" "}
+      <span data-testid="current-identity" className="current-identity">
+        Current: <strong>{actor}</strong> as <strong>{TASK_ROLE_LABELS[role]}</strong>
+      </span>
     </div>
   );
 }
