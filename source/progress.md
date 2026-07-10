@@ -13034,7 +13034,7 @@ secret. Operator validation: pending.
   (`READABLE_ERRORS` in `taskClient.ts`), and a concise safety panel on `/tasks/{id}`
   (`data-testid="safety-panel"`: environment/production_effect/requires_approval/dispatch_enabled/
   external_actions_enabled/production_executed).
-- **Tests.** New `tests/test_step66b3_rbac_audit_safety.py` (22 tests: fail-closed auth, own-task
+- **Tests.** New `tests/test_step66b3_rbac_audit_safety.py` (21 tests: fail-closed auth, own-task
   scoping, Platform Admin view-all, production_effect=true blocked, audit evidence for all 4
   decision types, static no-dispatch/no-external-integration source checks). Existing 66B.1/66B.2/
   66B.2-V backend tests (40) unaffected — 62/62 passing together. Frontend: 5 new vitest tests

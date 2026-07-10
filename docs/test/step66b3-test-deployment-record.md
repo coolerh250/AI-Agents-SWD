@@ -24,40 +24,42 @@ staging or production deployment.
 ## 3. Baseline (before deployment)
 
 ```
-git status --short   -> clean (test host)
-git log -1 --oneline  -> a96d655 docs(ai-team-work): record task ui operator validation
-GET /health           -> {"service":"orchestrator","status":"ok"}
+git status --short    -> clean (test host)
+git log -1 --oneline   -> a96d655 docs(ai-team-work): record task ui operator validation
+GET /health            -> {"service":"orchestrator","status":"ok"}
 GET /operations/safety -> production_executed_true_count: 0
 ```
 
-## 4. Deployment commands
+## 4. Deployment commands (executed)
 
 ```bash
 cd /home/itadmin/AI-Agents-SWD
-git pull --ff-only origin main
+git pull --ff-only origin main   # -> 8b68609 feat(ai-team-work): harden task rbac audit safety
 docker compose -f infra/docker-compose/docker-compose.yml build orchestrator
 docker compose -f infra/docker-compose/docker-compose.yml up -d orchestrator
 ```
 
-## 5. Live validation (after deployment)
+Build succeeded (bundles the hardened `task_api.py`/`shared/sdk/tasks/*` and the hardened frontend
+via the existing `node:20-slim` stage). Only the `orchestrator` container was recreated;
+postgres/redis and the other 25 services were untouched (`Waiting` → `Healthy` in the compose output
+refers to the pre-existing dependency health checks, not a restart of those services).
 
-_Filled in from the actual test-host run performed for this stage — see the completion report for
-the exact command outputs. Summary:_
+## 5. Live validation (after deployment) — actual results, 2026-07-10
 
-| Check | Result |
+| Check | Result (actual) |
 | --- | --- |
-| `GET /health` | `200 ok` |
-| `GET /operations/safety` → `task_api_rbac_denied_audit_enabled` | `true` (new field, confirms hardening deployed) |
-| Missing `X-Task-Role` → `POST /tasks` | `401 missing_role` |
-| Invalid `X-Task-Role` → `POST /tasks` | `401 invalid_role` |
-| Requester creates own task | `201`, `dispatch_enabled: false` |
-| Requester views own task | `200` |
-| Requester views another actor's task | `403 not_own_task` |
-| Platform Admin views all tasks | `200`, includes tasks from multiple actors |
-| `production_effect=true`, submitted | `201`, `status: blocked`, `dispatch_enabled: false` |
-| `GET /tasks/{id}` includes `dispatch_enabled` | `true` (field present, value `false`) |
-| Container health after orchestrator restart | all `aiagents-test` containers healthy, none unhealthy |
-| `production_executed_true_count` after all checks | `0` (unchanged) |
+| `GET /health` | `{"service":"orchestrator","status":"ok"}` |
+| `GET /operations/safety` → `task_api_rbac_denied_audit_enabled` | `True` (new field, confirms hardening deployed) |
+| Missing `X-Task-Role` → `POST /tasks` | `401 {"detail":"missing_role"}` |
+| Invalid `X-Task-Role` → `POST /tasks` | `401 {"detail":"invalid_role"}` |
+| Requester (`alice`) creates own task | `201`, `created_by:"alice"`, `dispatch_enabled:false` |
+| `alice` views own task (`GET /tasks/{id}`) | `200`, `dispatch_enabled:false` |
+| **`bob` (requester) views `alice`'s task** | `403 {"detail":"not_own_task"}` |
+| Platform Admin (`admin1`) views all tasks | `200`, `count:6`, includes tasks created by `bob`, `alice`, `test-operator`, `ui-validation` (multiple actors, not scoped) |
+| `production_effect=true`, `initial_status=submitted` | `201`, `status:"blocked"`, `requires_approval:true`, `dispatch_enabled:false` |
+| `GET /tasks/{id}` includes `dispatch_enabled` | confirmed present, value `false` |
+| Container health after orchestrator restart | **27/27** `aiagents-test` containers healthy, none unhealthy |
+| `production_executed_true_count` after all checks above | **`0`** (unchanged before/after) |
 
 ## 6. Statement
 
