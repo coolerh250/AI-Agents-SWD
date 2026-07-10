@@ -48,27 +48,34 @@ docker compose -f infra/docker-compose/docker-compose.yml build orchestrator
 docker compose -f infra/docker-compose/docker-compose.yml up -d orchestrator
 ```
 
-## 5. Live validation (after deployment)
+## 5. Live validation (after deployment) — actual results, 2026-07-10
 
-_Filled in from the actual test-host run performed for this stage — see the completion report for
-exact command outputs. Summary:_
+**First apply attempt failed to create the intended table** (see §1 note): `CREATE TABLE IF NOT
+EXISTS clarification_requests` silently no-op'd against the pre-existing, differently-shaped legacy
+table, causing `GET /tasks/{id}/workroom` to 500
+(`asyncpg.exceptions.DataError: invalid input for query argument $1 ... expected str, got UUID`,
+from `list_clarifications` querying the legacy TEXT `task_id` column with a UUID parameter).
+Diagnosed via `docker logs aiagents-test-orchestrator-1`, confirmed via `\d clarification_requests`
+showing the legacy `007_flexible_task_execution_loop.sql` schema (`clarification_id` PK,
+`workflow_id`, `requested_by_agent`, ...). Fixed by renaming the new table to
+`operator_clarification_requests` (migration + `workroom_store.py` + docs), re-applying the
+corrected migration (fresh `CREATE TABLE` this time, no collision), rebuilding, and restarting.
+All checks below are from the **post-fix** re-run:
 
-| Check | Result |
+| Check | Result (actual) |
 | --- | --- |
-| Migration apply | succeeded |
-| `GET /health` | `200 ok` |
-| `GET /operations/safety` → `task_workroom_enabled` | `true` (new field, confirms deployment) |
-| Create safe task (test, `production_effect=false`) | `201` |
-| `GET /tasks/{id}/workroom` (empty) | `200`, `messages: []`, `clarification_requests: []` |
-| `POST /tasks/{id}/workroom/messages` | `201`, `dispatch_enabled: false` |
-| `POST /tasks/{id}/clarifications` | `201`, `task_status: clarification_needed` |
-| `GET /tasks/{id}/workroom` (shows clarification) | `200`, 1 clarification, `clarification_question` message present |
-| `POST /tasks/{id}/clarifications/{id}/answer` | `200`, `status: answered`, `task_status: intake_review`, `resume_dispatch_enabled: false` |
-| RBAC: Requester on another actor's workroom | `403 not_own_task` |
-| RBAC: unauthorized role creates clarification | `403 role_cannot_create_clarification` |
-| RBAC: missing/invalid role | `401` |
-| Container health after orchestrator restart | all `aiagents-test` containers healthy, none unhealthy |
-| `production_executed_true_count` after all checks | `0` (unchanged) |
+| Migration apply (corrected) | succeeded — `operator_clarification_requests` created fresh, no collision |
+| `GET /health` | `{"service":"orchestrator","status":"ok"}` |
+| Create safe task (`alice2-c1`, requester, test, `production_effect=false`) | `201`, `dispatch_enabled:false` |
+| `GET /tasks/{id}/workroom` (empty) | `200`, `messages: []`, `clarification_requests: []`, `dispatch_enabled:false`, `resume_dispatch_enabled:false` |
+| `POST /tasks/{id}/workroom/messages` | `201`, `message_type:"human_message"`, `dispatch_enabled:false` |
+| `POST /tasks/{id}/clarifications` (`pm1-c1`, pm_engineering_lead) | `201`, `status:"open"`, `task_status:"clarification_needed"`, `due_at`=created+72h, `reminder_at`=created+24h (verified: due 2026-07-13, reminder 2026-07-11 vs. created 2026-07-10) |
+| `GET /tasks/{id}/workroom` (shows clarification) | `200`, 1 message + 1 `clarification_question` message, 1 `clarification_requests` entry |
+| `POST /tasks/{id}/clarifications/{id}/answer` (`alice2-c1`, task owner) | `200`, `status:"answered"`, `task_status:"intake_review"`, `dispatch_enabled:false`, `resume_dispatch_enabled:false` |
+| RBAC: `bob-c1` (other actor) views `alice2-c1`'s workroom | `403 {"detail":"not_own_task"}` |
+| RBAC: Requester (`alice2-c1`) creates a clarification | `403 {"detail":"role_cannot_create_clarification"}` |
+| Container health after orchestrator restart | **27/27** `aiagents-test` containers healthy, none unhealthy |
+| `production_executed_true_count` after all checks above | **`0`** (unchanged before/after) |
 
 ## 6. Statement
 
