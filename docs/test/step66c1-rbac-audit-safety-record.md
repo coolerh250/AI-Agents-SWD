@@ -76,7 +76,7 @@ no string-concatenated SQL, no dynamic unescaped fragments, no user input in SQL
 migration is additive only (two new tables; no change to `operator_tasks` or any other table).
 
 ### 4.2 Message body safety
-`task_messages.body`, `clarification_requests.question`, and clarification answers (also stored as
+`task_messages.body`, `operator_clarification_requests.question`, and clarification answers (also stored as
 a `task_messages.body` row) are treated as **untrusted plain text**: stored as `TEXT`, never rendered
 as HTML, never executed as markdown/template/script — there is no UI in 66C.1 to render them at all.
 Length limits: message body / clarification answer ≤ **8000** characters, clarification question ≤

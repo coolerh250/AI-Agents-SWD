@@ -42,12 +42,15 @@ proposals for their respective stages (66B.2+).
 
 ## Step 66C.1 implementation status (2026-07-10)
 
-Two more rows from the proposal above are now **implemented**: `task_messages` and
-`clarification_requests` (migration `030_workroom_clarification_foundation.sql`, additive only — no
-change to `operator_tasks`). `task_messages` extends the proposal with `visibility`,
-`reply_to_message_id`, and `audit_ref`; `clarification_requests` uses `due_at`/`reminder_at` in
-place of the proposal's `expire_at`/implicit-24h naming, with the same 72h/24h values, plus
-`answered_at`/`answer_message_id`. `task_participants` (RBAC scoping is still handled entirely via
+Two more rows from the proposal above are now **implemented**: `task_messages` and, under the name
+**`operator_clarification_requests`** (not `clarification_requests` — a pre-existing, unrelated table
+of that exact name already exists from the Discord requirement-agent pipeline,
+`007_flexible_task_execution_loop.sql`; renamed to avoid the collision, discovered during live
+deployment) — migration `030_workroom_clarification_foundation.sql`, additive only — no change to
+`operator_tasks` or the legacy `clarification_requests`. `task_messages` extends the proposal with
+`visibility`, `reply_to_message_id`, and `audit_ref`; `operator_clarification_requests` uses
+`due_at`/`reminder_at` in place of the proposal's `expire_at`/implicit-24h naming, with the same
+72h/24h values, plus `answered_at`/`answer_message_id`. `task_participants` (RBAC scoping is still handled entirely via
 the `X-Task-Role` header + Requester-own-task check, not a separate participants table) and
 `deliveries`/`delivery_reviews`/`delivery_actions`/`qa_rerun_requests`/`operator_action_items`/
 `notification_events`/`web_research_*`/`role_permissions` remain proposals for their respective
@@ -55,7 +58,7 @@ stages (66C.2+/66D+).
 
 ## Statement
 
-The `tasks` model (66B.1) and the `task_messages`/`clarification_requests` models (66C.1) are
+The `tasks` model (66B.1) and the `task_messages`/`operator_clarification_requests` models (66C.1) are
 implemented; the remaining models above are still proposals — nothing else implemented or migrated;
 no runtime change beyond 66B.1/66C.1; no external action; no production action.
 

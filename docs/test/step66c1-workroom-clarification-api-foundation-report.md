@@ -35,7 +35,8 @@ changed:
   `body` (TEXT, 1–8000 chars, CHECK-constrained), `visibility` (`task_participants`/`operators`/
   `audit_only`/`private_system`), `reply_to_message_id` (self-FK, optional), `audit_ref` (optional),
   `created_at`, `updated_at`.
-- **`clarification_requests`**: `id`, `task_id` (FK), `question_message_id` (FK →
+- **`operator_clarification_requests`** (named with the `operator_` prefix, not
+  `clarification_requests` — see §3 note below): `id`, `task_id` (FK), `question_message_id` (FK →
   `task_messages`), `status` (`open`/`answered`/`expired`/`canceled`), `question` (TEXT, 1–4000
   chars, CHECK-constrained), `requested_by_type`, `requested_by_id`, `assigned_to`, `due_at`
   (created + 72h), `reminder_at` (created + 24h), `answered_at`, `answer_message_id` (FK), timestamps.
@@ -56,9 +57,18 @@ same `/tasks` prefix, no path collisions):
 - **`POST /tasks/{task_id}/workroom/messages`** — creates a `human_message`; 201 with the created
   message + `dispatch_enabled: false`.
 - **`POST /tasks/{task_id}/clarifications`** — creates a `clarification_question` message +
-  `clarification_requests` row; sets `task.status=clarification_needed`,
+  an `operator_clarification_requests` row; sets `task.status=clarification_needed`,
   `task.clarification_status=open`; 201 with the clarification + `task_status` +
   `dispatch_enabled`/`resume_dispatch_enabled: false`.
+
+**Table naming note:** the clarification table is named `operator_clarification_requests`, not the
+originally planned `clarification_requests` — a pre-existing, differently-shaped
+`clarification_requests` table already exists (Discord requirement-agent pipeline,
+`007_flexible_task_execution_loop.sql`, unrelated subsystem), discovered when the first migration
+apply silently no-op'd against it (`CREATE TABLE IF NOT EXISTS` matched the existing name). Renamed
+before the corrected migration was (re-)applied; the JSON response field is still named
+`clarification_requests` (matches the spec's required response shape) — only the underlying SQL
+table name changed. See `step66c1-test-deployment-record.md` §1/§5 for the full discovery record.
 - **`POST /tasks/{task_id}/clarifications/{id}/answer`** — creates a `clarification_answer`
   message; sets `clarification.status=answered`, `task.status=intake_review`,
   `task.clarification_status=answered`; 200 with the updated clarification + `task_status` +

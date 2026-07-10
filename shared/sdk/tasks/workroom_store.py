@@ -1,4 +1,4 @@
-"""Step 66C.1 -- asyncpg store for task_messages / clarification_requests.
+"""Step 66C.1 -- asyncpg store for task_messages / operator_clarification_requests.
 
 No production action; no workflow dispatch or resume is ever triggered from
 here. Message/question/answer bodies are stored as opaque TEXT -- never parsed,
@@ -88,7 +88,7 @@ class WorkroomStore:
         try:
             row = await conn.fetchrow(
                 """
-                INSERT INTO clarification_requests
+                INSERT INTO operator_clarification_requests
                   (task_id, question_message_id, question, requested_by_type, requested_by_id,
                    assigned_to, due_at, reminder_at)
                 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
@@ -111,7 +111,7 @@ class WorkroomStore:
         conn = await self._connect()
         try:
             rows = await conn.fetch(
-                "SELECT * FROM clarification_requests WHERE task_id=$1 ORDER BY created_at ASC",
+                "SELECT * FROM operator_clarification_requests WHERE task_id=$1 ORDER BY created_at ASC",
                 uuid.UUID(task_id),
             )
             return [self._clar_row(r) for r in rows]
@@ -122,7 +122,8 @@ class WorkroomStore:
         conn = await self._connect()
         try:
             row = await conn.fetchrow(
-                "SELECT * FROM clarification_requests WHERE id=$1", uuid.UUID(clarification_id)
+                "SELECT * FROM operator_clarification_requests WHERE id=$1",
+                uuid.UUID(clarification_id),
             )
             return self._clar_row(row) if row else None
         finally:
@@ -135,7 +136,7 @@ class WorkroomStore:
         try:
             row = await conn.fetchrow(
                 """
-                UPDATE clarification_requests
+                UPDATE operator_clarification_requests
                 SET status='answered', answered_at=now(), answer_message_id=$2, updated_at=now()
                 WHERE id=$1
                 RETURNING *

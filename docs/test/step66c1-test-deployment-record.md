@@ -8,12 +8,16 @@
 new tables:
 
 - Migration name: `030_workroom_clarification_foundation.sql`
-- Tables added: `task_messages`, `clarification_requests`
-- Additive: **yes** — no existing table (including `operator_tasks`) is altered
+- Tables added: `task_messages`, `operator_clarification_requests` (named with the `operator_`
+  prefix, not `clarification_requests`, to avoid colliding with the pre-existing, differently-shaped
+  `clarification_requests` table from the unrelated Discord requirement-agent pipeline —
+  `007_flexible_task_execution_loop.sql`; discovered during live deployment, see §5)
+- Additive: **yes** — no existing table (including `operator_tasks` and the legacy
+  `clarification_requests`) is altered
 - Rollback note: no down-script exists (repo convention, matches all prior migrations); rollback
-  would be `DROP TABLE IF EXISTS clarification_requests; DROP TABLE IF EXISTS task_messages;`
-  (drop order respects the FK from `clarification_requests` to `task_messages`) — not executed in
-  this stage
+  would be `DROP TABLE IF EXISTS operator_clarification_requests; DROP TABLE IF EXISTS
+  task_messages;` (drop order respects the FK from `operator_clarification_requests` to
+  `task_messages`) — not executed in this stage
 - Test data created: rows created only by the live validation smoke checks below (safe test-runtime
   task, its workroom messages, and one clarification request/answer)
 

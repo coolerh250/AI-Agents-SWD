@@ -8,7 +8,7 @@
 ## Context
 
 Step 66C.1 added the Agent Workroom & Clarification backend: `task_messages` +
-`clarification_requests` tables, and four new endpoints (`GET .../workroom`, `POST
+`operator_clarification_requests` tables, and four new endpoints (`GET .../workroom`, `POST
 .../workroom/messages`, `POST .../clarifications`, `POST .../clarifications/{id}/answer`) mounted on
 the same test-only `/tasks` auth as Step 66B. Full evidence in
 `step66c1-workroom-api-evidence.md` / `step66c1-clarification-flow-evidence.md` /

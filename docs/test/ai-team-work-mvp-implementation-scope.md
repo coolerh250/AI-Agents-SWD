@@ -69,8 +69,11 @@ documented future work. See `step66b3-rbac-audit-safety-hardening-report.md`.
 ## 66C.1 status update (2026-07-10)
 
 **66C — Agent Workroom & Clarification backend foundation (66C.1).** No Workroom UI was
-implemented. `task_messages` + `clarification_requests` (migration
-`030_workroom_clarification_foundation.sql`, additive) and four new endpoints are live on the test
+implemented. `task_messages` + `operator_clarification_requests` (migration
+`030_workroom_clarification_foundation.sql`, additive; named `operator_clarification_requests` to
+avoid colliding with a pre-existing, unrelated `clarification_requests` table from the Discord
+requirement-agent pipeline — discovered during live deployment) and four new endpoints are live on
+the test
 runtime: `GET /tasks/{id}/workroom`, `POST /tasks/{id}/workroom/messages`, `POST
 /tasks/{id}/clarifications`, `POST /tasks/{id}/clarifications/{id}/answer`. RBAC, audit
 (`task_message_created`/`clarification_requested`/`clarification_answered`/

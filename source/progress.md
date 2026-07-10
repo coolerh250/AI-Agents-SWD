@@ -13078,8 +13078,11 @@ production deploy, no production secret. Operator validation: pending.
 
 - **Data models (additive).** `migrations/030_workroom_clarification_foundation.sql` adds
   `task_messages` (10 message types, 4 visibility values, `sender_type`, `body` 1-8000 chars
-  CHECK-constrained) and `clarification_requests` (`open`/`answered`/`expired`/`canceled`, question
-  1-4000 chars CHECK-constrained, `due_at`=+72h/`reminder_at`=+24h). No existing table changed.
+  CHECK-constrained) and `operator_clarification_requests` (named with the `operator_` prefix, not
+  `clarification_requests` — that name collided with a pre-existing, unrelated Discord
+  requirement-agent table, discovered during live deployment and fixed before the migration was
+  re-applied) (`open`/`answered`/`expired`/`canceled`, question 1-4000 chars CHECK-constrained,
+  `due_at`=+72h/`reminder_at`=+24h). No existing table changed.
 - **APIs.** New router `apps/orchestrator/src/workroom_api.py`: `GET /tasks/{id}/workroom`, `POST
   /tasks/{id}/workroom/messages`, `POST /tasks/{id}/clarifications`, `POST
   /tasks/{id}/clarifications/{id}/answer`. Reuses the 66B.1/66B.3 fail-closed test-only auth via
