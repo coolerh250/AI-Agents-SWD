@@ -5,6 +5,8 @@
 ## Blocking (none)
 
 No blocking gaps — 66B.3 PASS criteria met (see `step66b3-rbac-audit-safety-hardening-report.md`).
+Operator validation: VISIBLE (see `step66b3-operator-validation-record.md`). Final status:
+Step 66B.3 — PASS. Operator validation — VISIBLE.
 
 ## Non-blocking
 

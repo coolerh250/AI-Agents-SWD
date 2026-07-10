@@ -2,6 +2,9 @@
 
 > **Claude Code does not decide operator acceptance. This is a request for the operator's own
 > verdict.**
+> **Operator response: `VISIBLE`.** Recorded verbatim in `step66b3-operator-validation-record.md` —
+> this is the operator's own verdict, not a self-confirmation by Claude Code. Final status:
+> **Step 66B.3 — PASS. Operator validation — VISIBLE.**
 
 ## How to access
 

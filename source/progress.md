@@ -13047,3 +13047,24 @@ secret. Operator validation: pending.
   `ai-team-work-api-blueprint.md`, `ai-team-work-mvp-implementation-scope.md`.
 - **Gate.** Step 66B.3 status: PASS (implementation); operator validation pending. Claude Code must
   not decide product acceptance. Not production readiness.
+
+## Stage 66B.3-V — Operator Validation Record
+
+**Status: completed. Marker: `STEP66B3_OPERATOR_VALIDATION_VERIFY: PASS`.** Step 66B.3 status:
+**PASS, operator VISIBLE**. Step 66B status: **TASK_ASSIGNMENT_API_UI_HARDENED_AND_OPERATOR_VALIDATED**.
+Runtime posture: validation record only; no workflow execution, no external action. Production
+posture: no production action, no production deploy, no production secret.
+
+- **Operator response.** `VISIBLE` — all 10 checklist items (`/tasks` page, test role banner,
+  current actor/role readout, readable role labels, safety panel, `production_effect` warning,
+  `dispatch_enabled=false`, `production_effect=true` blocked/not-executed, RBAC error readability,
+  `production_executed_true_count=0`) confirmed VISIBLE. Not classified as `PARTIAL_WITH_GAPS`. No
+  blocking gaps.
+- **Docs.** New: `step66b3-operator-validation-record.md`. Updated:
+  `step66b3-rbac-audit-safety-hardening-report.md`, `-operator-validation-request.md`,
+  `-known-gaps.md`.
+- **Safety.** No workflow execution, no GitHub/Discord/Slack/Telegram/LLM/web call, no production
+  action in this record stage. `production_executed_true_count=0`.
+- **Gate.** Step 66B.3 final status: **PASS, operator VISIBLE**. Step 66B (task assignment API + UI
+  + hardening) is fully closed. Next = **66C — Agent Workroom & Clarification Layer** per operator
+  authorization. Claude Code must not decide product acceptance. Not production readiness.
