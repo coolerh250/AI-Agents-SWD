@@ -3,6 +3,9 @@
 > **66C.3 hardens the Step 66C.1/66C.2 Workroom and Clarification capabilities only. No workflow
 > dispatch occurred. No workflow resume occurred. No external action occurred. No production action
 > occurred. production_executed_true_count=0.**
+>
+> **Final status: `PASS, operator VISIBLE`.** Operator confirmed all 12 items in the Step 66C.3-V
+> validation record. See `step66c3-operator-validation-record.md`. Step 66C.4 is READY_TO_START.
 
 Closes three non-blocking gaps carried forward from Step 66C.1-V operator validation
 (`step66c1-operator-api-validation-record.md` §5): **G1** (message visibility filtering), **G3**
@@ -86,6 +89,13 @@ has zero side effects. The stable error code is `409 clarification_already_answe
 - No external action occurred.
 - No production action occurred.
 - production_executed_true_count=0.
+
+## 7. Step 66C.3-V operator validation (2026-07-11)
+
+Operator confirmed **`VISIBLE`** against all 12 items in
+`step66c3-operator-validation-request.md`. **G1, G3, and G5 are fixed.** Step 66C.3 final status:
+**`PASS, operator VISIBLE`**. Step 66C.4 is READY_TO_START. See
+`step66c3-operator-validation-record.md`.
 
 ---
 _Non-production only. No production action. No production data._

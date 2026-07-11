@@ -13370,3 +13370,30 @@ Production posture: no production action, no production deploy, no production se
 - **Gate.** Step 66TEAM.1 status: PASS. This is process/structure only — not itself an operator
   validation gate (no UI to validate). Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66C.3-V — Operator Validation Record
+
+**Status: completed. Marker: `STEP66C3_OPERATOR_VALIDATION_VERIFY: PASS`.** Step 66C.3 status:
+**PASS, operator VISIBLE**. Step 66C.4: **READY_TO_START**. Runtime posture: validation record
+only; no workflow dispatch, no workflow resume, no external action. Production posture: no
+production action, no production deploy, no production secret.
+
+- **Operator response.** `VISIBLE` (Zachary). All 12 checklist items confirmed: Workroom visible;
+  visibility note visible; Audit Evidence section visible; allowed role can view safe audit
+  evidence; restricted role gets a readable restricted message; Audit Evidence does not expose raw
+  message body; does not expose raw clarification answer; second answer attempt is blocked;
+  `clarification_already_answered` readable error works; `dispatch_enabled: false` visible;
+  `resume_dispatch_enabled: false` visible; `production_executed_true_count = 0`.
+- **Gap status.** **G1** (message visibility filtering), **G3** (per-task audit evidence endpoint),
+  and **G5** (answered-twice guard) are fixed, operator-confirmed. Remaining: G2 (clarification
+  reminder/expiry scheduler) → 66C.4; G4 (project/team RBAC scoping) → 66S; G6 (real-time Workroom
+  delivery) → later; audit evidence pagination → later; client-hidden RBAC improvements → later.
+- **Docs.** New: `step66c3-operator-validation-record.md`. Updated:
+  `step66c3-workroom-audit-visibility-hardening-report.md`,
+  `step66c3-operator-validation-request.md`, `step66c3-known-gaps.md`.
+- **Safety.** No workflow dispatch. No workflow resume. No GitHub write. No Discord send. No Slack
+  send. No Telegram send. No LLM call. No web call. No production action.
+  `production_executed_true_count=0`. No secret exposure (critical=0, high=0).
+- **Gate.** Step 66C.3 final status: **PASS, operator VISIBLE**. Step 66C.4: **READY_TO_START**,
+  pending operator authorization to begin. Claude Code must not decide product acceptance. Not
+  production readiness.
