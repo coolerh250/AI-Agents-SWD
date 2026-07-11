@@ -107,6 +107,20 @@ rendering were all validated. **Step 66C.2 final status: `PASS_AFTER_REMEDIATION
 READY_TO_UNBLOCK. Project/team RBAC scoping (G4) remains a documented gap, deferred to 66S. See
 `step66c2-remediation-operator-validation-record.md`.
 
+## Step 66C.3 implementation status (2026-07-11)
+
+**Workroom Audit / Visibility / Edge-case Hardening implemented.** Closes G1, G3, G5 from
+Step 66C.1-V. Role-based message **visibility filtering** (§4) is now implemented server-side
+(`shared/sdk/tasks/workroom_rbac.py::filter_messages_by_visibility`, enforced in
+`GET /tasks/{id}/workroom`) — the enforced matrix is deliberately conservative and documented in
+`step66c3-message-visibility-evidence.md` rather than an attempt to fully reproduce every cell of an
+illustrative table. A new **`GET /tasks/{id}/audit-evidence`** endpoint provides task-scoped audit
+evidence (safe metadata only, allowlisted, RBAC-gated) — the first "per-task audit lookup" surface
+for this subsystem (§6 current-state grounding is updated: the platform now has more than
+per-hop "discussion", it has both a chat workroom AND a safe audit-evidence view). The
+answered-twice guard (previously a non-atomic pre-check) is now atomic at the store level, closing a
+real race-condition gap. See `step66c3-workroom-audit-visibility-hardening-report.md`.
+
 ## Statement
 
 Workroom blueprint only — no implementation, no workflow execution, no external action, no production

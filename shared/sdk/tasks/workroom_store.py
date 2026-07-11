@@ -129,7 +129,34 @@ class WorkroomStore:
         finally:
             await conn.close()
 
-    async def answer_clarification(
+    async def claim_clarification_answer(self, clarification_id: str) -> dict[str, Any] | None:
+        """Step 66C.3 (G5) -- atomically transition open -> answered.
+
+        The WHERE clause (`AND status='open'`) is what makes this race-safe:
+        concurrent answer attempts on the same clarification will only ever
+        have exactly one UPDATE match a row (Postgres row-level locking serializes
+        the two UPDATEs). The loser gets `None` back and must not create an
+        answer message or emit a `clarification_answered` audit event -- see
+        `answer_clarification` in workroom_api.py, which calls this BEFORE
+        creating the answer message specifically so a lost race never has a
+        message/audit side effect.
+        """
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                """
+                UPDATE operator_clarification_requests
+                SET status='answered', answered_at=now(), updated_at=now()
+                WHERE id=$1 AND status='open'
+                RETURNING *
+                """,
+                uuid.UUID(clarification_id),
+            )
+            return self._clar_row(row) if row else None
+        finally:
+            await conn.close()
+
+    async def set_answer_message(
         self, clarification_id: str, *, answer_message_id: str
     ) -> dict[str, Any]:
         conn = await self._connect()
@@ -137,7 +164,7 @@ class WorkroomStore:
             row = await conn.fetchrow(
                 """
                 UPDATE operator_clarification_requests
-                SET status='answered', answered_at=now(), answer_message_id=$2, updated_at=now()
+                SET answer_message_id=$2, updated_at=now()
                 WHERE id=$1
                 RETURNING *
                 """,

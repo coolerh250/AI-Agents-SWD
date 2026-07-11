@@ -5,14 +5,23 @@
 // docs/test/step66c2-remediation-report.md). "Send Message" and "Create
 // Clarification" are now two clearly separate actions; posting a normal
 // message never turns it into a clarification.
+// Step 66C.3 -- messages returned by GET .../workroom are now server-side
+// visibility-filtered by role (G1, shared/sdk/tasks/workroom_rbac.py) -- this
+// page never re-filters, it only renders what the API already let through,
+// plus a note that some messages may be hidden. Added an Audit Evidence
+// section (G3) that shows safe metadata only for roles the backend allows
+// (platform_admin/agent_operator/security_compliance_reviewer/
+// pm_engineering_lead) and a readable restricted message for everyone else.
 //
-// SAFETY: messages/questions/answers are rendered as PLAIN TEXT ONLY -- via
-// ordinary React text-content interpolation ({m.body}); React's raw-HTML
-// escape hatch is never used, no markdown-to-HTML rendering, no URL
-// auto-linking. dispatch_enabled / resume_dispatch_enabled are always read
-// from the API response (never hardcoded) and are always false -- no workflow
-// dispatch or resume path exists anywhere in this stage.
-import { useState } from "react";
+// SAFETY: messages/questions/answers/audit evidence are rendered as PLAIN
+// TEXT ONLY -- via ordinary React text-content interpolation ({m.body});
+// React's raw-HTML escape hatch is never used, no markdown-to-HTML rendering,
+// no URL auto-linking. dispatch_enabled / resume_dispatch_enabled are always
+// read from the API response (never hardcoded) and are always false -- no
+// workflow dispatch or resume path exists anywhere in this stage. Audit
+// evidence never includes a raw message/answer body -- only body_length /
+// body_hash (see workroomClient.ts / shared/sdk/tasks/audit_events.py).
+import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AsyncView } from "../components/AsyncView";
 import { StatusBadge } from "../components/StatusBadge";
@@ -23,7 +32,12 @@ import {
   CLARIFICATION_QUESTION_MAX_LENGTH,
   MESSAGE_BODY_MAX_LENGTH,
 } from "../tasks/workroomTypes";
-import type { ClarificationRequest, TaskMessage, WorkroomResponse } from "../tasks/workroomTypes";
+import type {
+  AuditEvidenceEntry,
+  ClarificationRequest,
+  TaskMessage,
+  WorkroomResponse,
+} from "../tasks/workroomTypes";
 
 export function TaskWorkroom() {
   const { taskId = "" } = useParams();
@@ -88,6 +102,7 @@ function WorkroomContent({
         onAnswered={onChanged}
         onCreated={onChanged}
       />
+      <AuditEvidenceSection taskId={taskId} />
     </>
   );
 }
@@ -96,6 +111,9 @@ function MessageList({ messages }: { messages: TaskMessage[] }) {
   return (
     <div className="workroom-section">
       <h3>Messages</h3>
+      <p className="note" data-testid="workroom-visibility-note">
+        Some operator-only or audit-only messages may be hidden based on your role.
+      </p>
       {!messages.length && <div className="empty">No messages yet</div>}
       {messages.length > 0 && (
         <ul className="workroom-messages" data-testid="workroom-messages">
@@ -399,6 +417,78 @@ function AnswerForm({
       >
         Submit Answer
       </button>
+    </div>
+  );
+}
+
+function AuditEvidenceSection({ taskId }: { taskId: string }) {
+  const [state, setState] = useState<
+    | { kind: "loading" }
+    | { kind: "restricted"; message: string }
+    | { kind: "error"; message: string }
+    | { kind: "ready"; events: AuditEvidenceEntry[] }
+  >({ kind: "loading" });
+
+  useEffect(() => {
+    let cancelled = false;
+    setState({ kind: "loading" });
+    workroomApi
+      .getAuditEvidence(taskId)
+      .then((data) => {
+        if (!cancelled) setState({ kind: "ready", events: data.events });
+      })
+      .catch((e: unknown) => {
+        if (cancelled) return;
+        if (e instanceof WorkroomApiError && e.code === 403) {
+          setState({ kind: "restricted", message: e.message });
+        } else {
+          setState({
+            kind: "error",
+            message: e instanceof Error ? e.message : "Unable to load audit evidence.",
+          });
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId]);
+
+  return (
+    <div className="workroom-section" data-testid="workroom-audit-evidence">
+      <h3>Audit Evidence</h3>
+      {state.kind === "loading" && <div className="empty">Loading audit evidence…</div>}
+      {state.kind === "restricted" && (
+        <div className="note" data-testid="workroom-audit-evidence-restricted">
+          {state.message}
+        </div>
+      )}
+      {state.kind === "error" && (
+        <div className="error" data-testid="workroom-audit-evidence-error">
+          {state.message}
+        </div>
+      )}
+      {state.kind === "ready" && !state.events.length && (
+        <div className="empty">No audit evidence for this task yet.</div>
+      )}
+      {state.kind === "ready" && state.events.length > 0 && (
+        <ul className="workroom-audit-events" data-testid="workroom-audit-events">
+          {state.events.map((ev) => (
+            <li
+              key={ev.audit_event_id}
+              className="workroom-audit-event"
+              data-testid="workroom-audit-event"
+            >
+              {/* Plain text only -- React text interpolation, no HTML rendering. Safe
+                  metadata only: never a raw message/answer body. */}
+              <span className="badge b-neutral">{ev.event_type}</span> {ev.actor}
+              {ev.role ? ` (${ev.role})` : ""} &middot; {ev.created_at}
+              {ev.status ? ` · status: ${ev.status}` : ""}
+              {typeof ev.body_length === "number" ? ` · body_length: ${ev.body_length}` : ""}
+              {ev.body_hash ? ` · body_hash: ${ev.body_hash.slice(0, 12)}…` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
   );
 }

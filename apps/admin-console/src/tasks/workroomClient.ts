@@ -2,17 +2,25 @@
 // Step 66C.2-R -- added createClarification() (was deferred in 66C.2; operator
 // validation found no way to raise a clarification from the UI at all -- see
 // docs/test/step66c2-remediation-report.md).
+// Step 66C.3 -- added getAuditEvidence() (G3) and readable errors for the
+// answered-twice guard (G5) and audit-evidence RBAC denial.
 //
 // SAFETY: this client exposes ONLY explicit, named, typed methods against the
-// /tasks/{id}/workroom and /tasks/{id}/clarifications endpoints (Step 66C.1).
-// There is no generic verb+URL helper. Every call sends the fail-closed
-// test-only X-Task-Actor / X-Task-Role headers (see testRole.ts). No workflow
-// is ever dispatched or resumed from this client -- the backend guarantees
-// dispatch_enabled=false / resume_dispatch_enabled=false on every response.
+// /tasks/{id}/workroom, /tasks/{id}/clarifications, and
+// /tasks/{id}/audit-evidence endpoints (Step 66C.1/66C.3). There is no generic
+// verb+URL helper. Every call sends the fail-closed test-only X-Task-Actor /
+// X-Task-Role headers (see testRole.ts). No workflow is ever dispatched or
+// resumed from this client -- the backend guarantees dispatch_enabled=false /
+// resume_dispatch_enabled=false on every response.
 
 import { API_BASE } from "../api/client";
 import { getTestRole } from "./testRole";
-import type { ClarificationRequest, TaskMessage, WorkroomResponse } from "./workroomTypes";
+import type {
+  AuditEvidenceResponse,
+  ClarificationRequest,
+  TaskMessage,
+  WorkroomResponse,
+} from "./workroomTypes";
 
 const TASKS = API_BASE + "/tasks";
 
@@ -57,9 +65,11 @@ const READABLE_ERRORS: Record<string, string> = {
   role_cannot_post_message: "Your simulated role cannot post messages here.",
   role_cannot_create_clarification: "Your simulated role cannot create a clarification request.",
   role_cannot_answer_clarification: "Your simulated role cannot answer this clarification.",
+  role_cannot_view_audit_evidence: "Audit evidence is restricted for your current role.",
   not_own_task: "You can only access your own tasks with this role.",
   task_not_found: "Task not found.",
   clarification_not_found: "Clarification not found.",
+  clarification_already_answered: "This clarification has already been answered.",
 };
 
 function readableMessage(detail: string | undefined, status: number): string {
@@ -143,5 +153,8 @@ export const workroomApi = {
     }
   > {
     return workroomPost(`/${taskId}/clarifications/${clarificationId}/answer`, { answer });
+  },
+  getAuditEvidence(taskId: string): Promise<AuditEvidenceResponse> {
+    return workroomGet<AuditEvidenceResponse>(`/${taskId}/audit-evidence`);
   },
 };

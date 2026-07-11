@@ -74,3 +74,32 @@ export interface WorkroomResponse {
   dispatch_enabled: boolean;
   resume_dispatch_enabled: boolean;
 }
+
+// Step 66C.3 -- task-scoped audit evidence (G3). Safe metadata only, allowlisted
+// server-side (shared/sdk/tasks/workroom_api.py::_AUDIT_EVIDENCE_REF_FIELDS) --
+// never a raw message body, raw clarification answer, HTTP header value, session
+// identifier, or secret value.
+export interface AuditEvidenceEntry {
+  audit_event_id: string;
+  task_id: string;
+  event_type: string;
+  created_at: string | null;
+  correlation_id?: string;
+  actor?: string;
+  role?: string;
+  action?: string;
+  status?: string;
+  message_id?: string;
+  clarification_id?: string;
+  message_type?: string;
+  visibility?: string;
+  body_length?: number;
+  body_hash?: string;
+}
+
+export interface AuditEvidenceResponse {
+  task_id: string;
+  events: AuditEvidenceEntry[];
+  dispatch_enabled: boolean;
+  resume_dispatch_enabled: boolean;
+}

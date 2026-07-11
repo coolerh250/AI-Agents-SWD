@@ -163,13 +163,20 @@ class InMemoryWorkroomStore:
         row = self.clarifications.get(clarification_id)
         return dict(row) if row else None
 
-    async def answer_clarification(
+    async def claim_clarification_answer(self, clarification_id: str) -> dict[str, Any] | None:
+        row = self.clarifications[clarification_id]
+        if row["status"] != "open":
+            return None
+        row["status"] = "answered"
+        row["answered_at"] = datetime.now(timezone.utc).isoformat()
+        row["updated_at"] = datetime.now(timezone.utc).isoformat()
+        return dict(row)
+
+    async def set_answer_message(
         self, clarification_id: str, *, answer_message_id: str
     ) -> dict[str, Any]:
         row = self.clarifications[clarification_id]
-        row["status"] = "answered"
         row["answer_message_id"] = answer_message_id
-        row["answered_at"] = datetime.now(timezone.utc).isoformat()
         row["updated_at"] = datetime.now(timezone.utc).isoformat()
         return dict(row)
 

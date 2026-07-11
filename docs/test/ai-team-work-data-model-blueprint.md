@@ -56,11 +56,23 @@ the `X-Task-Role` header + Requester-own-task check, not a separate participants
 `notification_events`/`web_research_*`/`role_permissions` remain proposals for their respective
 stages (66C.2+/66D+).
 
+## Step 66C.3 implementation status (2026-07-11)
+
+**No new table and no new migration.** `task_messages.visibility` (already modeled since 66C.1) is
+now actually enforced — `GET /tasks/{id}/workroom` filters by it server-side per caller role (G1).
+The existing `audit_logs` table (Stage 19, `001_init_core_tables.sql`) is reused, not extended, by
+the new `GET /tasks/{id}/audit-evidence` endpoint (G3) — it reads
+`audit_logs.artifact_refs` and projects an allowlisted subset; no new column, no new table.
+`operator_clarification_requests.status` transitions (`open` → `answered`) are now enforced with an
+atomic `UPDATE ... WHERE status='open'` (G5) instead of a non-atomic read-then-write — a query-level
+fix, not a schema change.
+
 ## Statement
 
 The `tasks` model (66B.1) and the `task_messages`/`operator_clarification_requests` models (66C.1) are
 implemented; the remaining models above are still proposals — nothing else implemented or migrated;
-no runtime change beyond 66B.1/66C.1; no external action; no production action.
+no runtime change beyond 66B.1/66C.1/66C.3 (query/logic changes only in 66C.3, no schema change); no
+external action; no production action.
 
 ---
 _Non-production only. No production action. No production data._

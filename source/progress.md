@@ -13269,3 +13269,50 @@ deploy, no production secret. Step 66C.3: **READY_TO_START**.
 - **Gate.** Step 66C.2 final status: **PASS_AFTER_REMEDIATION**. Step 66C.3: **READY_TO_START**,
   pending operator authorization to begin. Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66C.3 — Workroom Audit / Visibility / Edge-case Hardening
+
+**Status: completed. Marker: `STEP66C3_WORKROOM_AUDIT_VISIBILITY_VERIFY: PASS`.** Step 66C status:
+**WORKROOM_AUDIT_VISIBILITY_HARDENING**. Runtime posture: test hardening only; no workflow
+dispatch, no workflow resume, no external action. Production posture: no production action, no
+production deploy, no production secret. Operator validation: pending.
+
+- **G1 — message visibility filtering (closed).** `shared/sdk/tasks/workroom_rbac.py` adds
+  `_VISIBILITY_ROLES` (a conservative, fail-closed per-visibility role allowlist) and
+  `filter_messages_by_visibility()`, applied server-side in `GET /tasks/{id}/workroom`. The Workroom
+  UI never re-filters — it renders exactly what the API returns, plus a note that some messages may
+  be hidden based on role. See `step66c3-message-visibility-evidence.md`.
+- **G3 — task-scoped audit evidence endpoint (closed).** New `GET /tasks/{id}/audit-evidence` reads
+  the existing `audit_logs` table (Stage 19, no new table/migration) and projects each row through an
+  **allowlist** (`_AUDIT_EVIDENCE_REF_FIELDS`) — never a raw message/answer body, header, cookie,
+  token, or secret, even if a future producer stuffed one into `artifact_refs` (proven by
+  deliberately-seeded negative tests). RBAC: Platform Admin/Agent Operator/Security-Compliance
+  Reviewer/PM-Engineering Lead allowed; Requester/Reviewer-Approver denied by default. New Workroom UI
+  "Audit Evidence" section renders the safe fields only; a denied role sees a readable restricted
+  message, not a page-breaking error. See `step66c3-task-audit-evidence-endpoint-record.md`.
+- **G5 — answered-twice guard (closed), real race-condition bug fixed.** The 66C.1 guard was a
+  non-atomic read-then-write (`UPDATE ... WHERE id=$1`, no status condition) — two concurrent answer
+  requests could both succeed, creating two answer messages and two `clarification_answered` audit
+  events. `workroom_store.py` now does an atomic `UPDATE ... WHERE id=$1 AND status='open'`
+  (`claim_clarification_answer`) **before** the answer message/audit event are created; a lost race
+  gets `409 clarification_already_answered` with zero side effects. See
+  `step66c3-answered-twice-guard-record.md`.
+- **Tests.** New `tests/test_step66c3_workroom_audit_visibility.py` (24 tests: visibility matrix per
+  role, fail-closed unknown-visibility, server-side-not-frontend-only proof, audit-evidence RBAC +
+  safe-metadata-only + forbidden-field-stripping, answered-twice 409 + no-extra-message +
+  no-extra-audit-event + store-level atomicity). New
+  `apps/admin-console/src/__tests__/WorkroomAuditVisibility.test.tsx` (7 tests: visibility note,
+  Audit Evidence rendering/empty-state/restricted-message, answered-twice readable error). 97/97
+  scoped backend tests passing (57 pre-existing + adjustments to `InMemoryWorkroomStore` for the new
+  atomic store interface + 24 new); 101/101 frontend vitest passing (94 pre-existing + 7 new).
+  `npm run build` succeeds, 94 modules, no TypeScript errors.
+- **Docs.** New: `step66c3-workroom-audit-visibility-hardening-report.md`,
+  `-message-visibility-evidence.md`, `-task-audit-evidence-endpoint-record.md`,
+  `-answered-twice-guard-record.md`, `-security-record.md`, `-safety-record.md`,
+  `-test-deployment-record.md`, `-known-gaps.md`, `-operator-validation-request.md`. Updated:
+  `step66c1-known-gaps.md`, `step66c2-known-gaps.md`, `ai-team-work-agent-workroom-blueprint.md`,
+  `ai-team-work-api-blueprint.md`, `ai-team-work-data-model-blueprint.md`,
+  `ai-team-work-risk-register.md`.
+- **Gate.** Step 66C.3 status: PASS (implementation); operator validation pending (`VISIBLE` /
+  `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`). Claude Code must not decide product acceptance. Not
+  production readiness.

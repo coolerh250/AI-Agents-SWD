@@ -95,8 +95,28 @@ function workroomResponse(overrides: Record<string, unknown> = {}) {
   };
 }
 
+// Step 66C.3 -- TaskWorkroom now always fires a second, independent fetch for
+// the Audit Evidence section (GET .../audit-evidence) alongside the main
+// workroom GET. mockFetchOnce routes that URL to a safe empty default so
+// every pre-existing test (most of which only care about the workroom
+// response) does not have to know about it.
+function auditEvidenceResponse(overrides: Record<string, unknown> = {}) {
+  return {
+    task_id: SAMPLE_TASK.id,
+    events: [],
+    dispatch_enabled: false,
+    resume_dispatch_enabled: false,
+    ...overrides,
+  };
+}
+
 function mockFetchOnce(body: unknown, status = 200) {
-  return vi.fn().mockResolvedValue({ ok: status < 400, status, json: async () => body });
+  return vi.fn(async (url: string) => {
+    if (String(url).includes("/audit-evidence")) {
+      return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+    }
+    return { ok: status < 400, status, json: async () => body };
+  });
 }
 
 function renderWithRouter(initialEntries: string[]) {
@@ -214,15 +234,20 @@ describe("Message composer", () => {
   });
 
   it("posts a message with the required auth headers and refreshes on success", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({ ...SAMPLE_MESSAGE, dispatch_enabled: false }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/audit-evidence")) {
+        return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+      }
+      if (u.includes("/workroom/messages")) {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ ...SAMPLE_MESSAGE, dispatch_enabled: false }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => workroomResponse() };
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
     await waitFor(() => expect(screen.getByTestId("workroom-composer")).toBeDefined());
@@ -230,8 +255,13 @@ describe("Message composer", () => {
       target: { value: "New workroom message" },
     });
     fireEvent.click(screen.getByTestId("workroom-post-message"));
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const [url, init] = fetchMock.mock.calls[1] as [
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes("/workroom/messages")),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/workroom/messages"));
+    const [url, init] = call as unknown as [
       string,
       { method: string; headers: Record<string, string>; body: string },
     ];
@@ -279,21 +309,26 @@ describe("Clarification answer form", () => {
   });
 
   it("submits an answer with the required auth headers and refreshes on success", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => ({
-          ...OPEN_CLARIFICATION,
-          status: "answered",
-          task_status: "intake_review",
-          dispatch_enabled: false,
-          resume_dispatch_enabled: false,
-        }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/audit-evidence")) {
+        return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+      }
+      if (u.includes("/answer")) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            ...OPEN_CLARIFICATION,
+            status: "answered",
+            task_status: "intake_review",
+            dispatch_enabled: false,
+            resume_dispatch_enabled: false,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => workroomResponse() };
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
     await waitFor(() => expect(screen.getByTestId("workroom-answer-form")).toBeDefined());
@@ -301,8 +336,11 @@ describe("Clarification answer form", () => {
       target: { value: "Use the test environment." },
     });
     fireEvent.click(screen.getByTestId("workroom-submit-answer"));
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const [url, init] = fetchMock.mock.calls[1] as [
+    await waitFor(() =>
+      expect(fetchMock.mock.calls.some(([u]) => String(u).includes("/answer"))).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/answer"));
+    const [url, init] = call as unknown as [
       string,
       { method: string; headers: Record<string, string>; body: string },
     ];
@@ -328,15 +366,20 @@ describe("Step 66C.2-R -- Create Clarification", () => {
   });
 
   it("Send Message never becomes a clarification -- posts only to /workroom/messages", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({ ...SAMPLE_MESSAGE, dispatch_enabled: false }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    const fetchMock = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes("/audit-evidence")) {
+        return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+      }
+      if (u.includes("/workroom/messages")) {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({ ...SAMPLE_MESSAGE, dispatch_enabled: false }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => workroomResponse() };
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
     await waitFor(() => expect(screen.getByTestId("workroom-composer")).toBeDefined());
@@ -344,8 +387,13 @@ describe("Step 66C.2-R -- Create Clarification", () => {
       target: { value: "Just a normal message, not a question needing an answer." },
     });
     fireEvent.click(screen.getByTestId("workroom-post-message"));
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const [url] = fetchMock.mock.calls[1] as [string];
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([u]) => String(u).includes("/workroom/messages")),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(([u]) => String(u).includes("/workroom/messages"));
+    const [url] = call as unknown as [string];
     expect(String(url)).toContain(`/tasks/${SAMPLE_TASK.id}/workroom/messages`);
     expect(String(url)).not.toContain("/clarifications");
   });
@@ -375,24 +423,26 @@ describe("Step 66C.2-R -- Create Clarification", () => {
   });
 
   it("creates a clarification via POST /tasks/{id}/clarifications and refreshes to show it open", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 200,
-        json: async () => workroomResponse({ clarification_requests: [] }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        status: 201,
-        json: async () => ({
-          ...OPEN_CLARIFICATION,
-          task_status: "clarification_needed",
-          dispatch_enabled: false,
-          resume_dispatch_enabled: false,
-        }),
-      })
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      void init;
+      const u = String(url);
+      if (u.includes("/audit-evidence")) {
+        return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+      }
+      if (u.includes("/clarifications") && !u.includes("/answer")) {
+        return {
+          ok: true,
+          status: 201,
+          json: async () => ({
+            ...OPEN_CLARIFICATION,
+            task_status: "clarification_needed",
+            dispatch_enabled: false,
+            resume_dispatch_enabled: false,
+          }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => workroomResponse() };
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
     await waitFor(() =>
@@ -402,8 +452,23 @@ describe("Step 66C.2-R -- Create Clarification", () => {
       target: { value: "Which environment should this target?" },
     });
     fireEvent.click(screen.getByTestId("workroom-submit-create-clarification"));
-    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
-    const [url, init] = fetchMock.mock.calls[1] as [
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(
+          ([u, init]) =>
+            String(u).includes("/clarifications") &&
+            !String(u).includes("/answer") &&
+            (init as { method?: string } | undefined)?.method === "POST",
+        ),
+      ).toBe(true),
+    );
+    const call = fetchMock.mock.calls.find(
+      ([u, init]) =>
+        String(u).includes("/clarifications") &&
+        !String(u).includes("/answer") &&
+        (init as { method?: string } | undefined)?.method === "POST",
+    );
+    const [url, init] = call as unknown as [
       string,
       { method: string; headers: Record<string, string>; body: string },
     ];
@@ -420,14 +485,20 @@ describe("Step 66C.2-R -- Create Clarification", () => {
   });
 
   it("shows a readable RBAC error when the current role cannot create a clarification", async () => {
-    const fetchMock = vi
-      .fn()
-      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
-      .mockResolvedValueOnce({
-        ok: false,
-        status: 403,
-        json: async () => ({ detail: "role_cannot_create_clarification" }),
-      });
+    const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/audit-evidence")) {
+        return { ok: true, status: 200, json: async () => auditEvidenceResponse() };
+      }
+      if (u.includes("/clarifications") && !u.includes("/answer") && init?.method === "POST") {
+        return {
+          ok: false,
+          status: 403,
+          json: async () => ({ detail: "role_cannot_create_clarification" }),
+        };
+      }
+      return { ok: true, status: 200, json: async () => workroomResponse() };
+    });
     vi.stubGlobal("fetch", fetchMock);
     renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
     await waitFor(() =>

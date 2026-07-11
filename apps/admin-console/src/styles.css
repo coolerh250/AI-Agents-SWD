@@ -66,3 +66,7 @@ pre { background: #0d1117; border: 1px solid var(--line); border-radius: 6px; pa
 .workroom-create-clarification { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
 .workroom-create-clarification input[type="text"] { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 13px; font-family: inherit; }
 .workroom-clarification { margin-bottom: 12px; }
+
+/* Step 66C.3 -- Audit Evidence section. */
+.workroom-audit-events { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.workroom-audit-event { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: var(--muted); }

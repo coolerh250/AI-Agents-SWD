@@ -18,6 +18,9 @@ DECISION_CLARIFICATION_REQUESTED = "clarification_requested"
 DECISION_CLARIFICATION_ANSWERED = "clarification_answered"
 DECISION_TASK_WORKROOM_RBAC_DENIED = "task_workroom_rbac_denied"
 DECISION_CLARIFICATION_RBAC_DENIED = "clarification_rbac_denied"
+# Step 66C.3 -- emitted when a role without audit-evidence read access is denied
+# by GET /tasks/{id}/audit-evidence.
+DECISION_AUDIT_EVIDENCE_RBAC_DENIED = "audit_evidence_rbac_denied"
 
 TASK_DECISION_TYPES: tuple[str, ...] = (
     DECISION_TASK_CREATED,
@@ -32,6 +35,7 @@ WORKROOM_DECISION_TYPES: tuple[str, ...] = (
     DECISION_CLARIFICATION_ANSWERED,
     DECISION_TASK_WORKROOM_RBAC_DENIED,
     DECISION_CLARIFICATION_RBAC_DENIED,
+    DECISION_AUDIT_EVIDENCE_RBAC_DENIED,
 )
 
 
@@ -131,6 +135,7 @@ __all__ = [
     "DECISION_CLARIFICATION_ANSWERED",
     "DECISION_TASK_WORKROOM_RBAC_DENIED",
     "DECISION_CLARIFICATION_RBAC_DENIED",
+    "DECISION_AUDIT_EVIDENCE_RBAC_DENIED",
     "TASK_DECISION_TYPES",
     "WORKROOM_DECISION_TYPES",
     "safe_task_refs",

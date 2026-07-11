@@ -17,20 +17,28 @@
 | 11 | Test-only header role simulation used beyond test scope | high | low | fail-closed `TASK_API_TEST_AUTH_ENABLED` gate; real identity/session/CSRF replaces it before broader deployment (G4) | Platform Admin | 66S |
 | 12 | No project/team RBAC scoping (only Requester is own-task scoped) | med | med | documented fallback (not overclaimed); closed by project/team RBAC scoping (G4) | Platform Admin | 66S |
 | 13 | Clarification reminder/expiry never fires (no scheduler) | med | med | `due_at`/`reminder_at` computed now; scheduler consumer built in 66C.4 (G2) | Eng Lead | 66C.4 |
-| 14 | Workroom message visibility not filtered by role | med | low | all messages currently `task_participants`-only in practice; per-visibility filtering built in 66C.3 (G1) | Eng Lead | 66C.3 |
+| 14 | Workroom message visibility not filtered by role | med | low | **closed 66C.3** — server-side filtering (`filter_messages_by_visibility`) enforced in `GET .../workroom` (G1) | Eng Lead | 66C.3 |
 
 ## Step 66C.1-V operator-assigned gap tracking (2026-07-10)
 
 Operator response to the Step 66C.1 API validation request: **`READY_WITH_GAPS`** (see
 `step66c1-operator-api-validation-record.md`). Non-blocking gaps G1–G5 map to risks/stages above:
 
-| Gap | Description | Risk # | Stage |
-| --- | --- | --- | --- |
-| G1 | Message visibility filtering not implemented | 14 | 66C.3 |
-| G2 | Clarification reminder / expiry scheduler not implemented | 13 | 66C.4 |
-| G3 | Per-task audit lookup endpoint not implemented | — (carried from 66B.1/66B.3) | 66C.3 |
-| G4 | Project/team RBAC scoping not implemented | 11, 12 | 66S |
-| G5 | Answered-twice guard lacks a dedicated test | — | 66C.3 |
+| Gap | Description | Risk # | Stage | Status |
+| --- | --- | --- | --- | --- |
+| G1 | Message visibility filtering not implemented | 14 | 66C.3 | **closed** |
+| G2 | Clarification reminder / expiry scheduler not implemented | 13 | 66C.4 | open |
+| G3 | Per-task audit lookup endpoint not implemented | — (carried from 66B.1/66B.3) | 66C.3 | **closed** |
+| G4 | Project/team RBAC scoping not implemented | 11, 12 | 66S | open |
+| G5 | Answered-twice guard lacks a dedicated test | — | 66C.3 | **closed** |
+
+## Step 66C.3 closure (2026-07-11)
+
+G1, G3, G5 closed — see `step66c3-workroom-audit-visibility-hardening-report.md`. Risk #14 above is
+resolved (server-side visibility filtering now enforced). G5's closure also fixed a real
+(previously undocumented) race-condition bug: the 66C.1 answer-clarification guard was a
+non-atomic read-then-write, so two concurrent answer requests could both succeed — now an atomic
+`UPDATE ... WHERE status='open'` at the store level. See `step66c3-answered-twice-guard-record.md`.
 
 ## Non-goals (MVP)
 

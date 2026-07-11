@@ -11,16 +11,17 @@ validation — READY_WITH_GAPS. Does not block 66C.2.
 
 ## Operator-assigned gap IDs (66C.1-V) and their future-stage assignment
 
-| ID | Gap | Assigned to |
-| --- | --- | --- |
-| **G1** | Message visibility filtering not implemented | 66C.3 |
-| **G2** | Clarification reminder / expiry scheduler not implemented | 66C.4 |
-| **G3** | Per-task audit lookup endpoint not implemented | 66C.3 |
-| **G4** | Project/team RBAC scoping not implemented | 66S |
-| **G5** | Answered-twice guard lacks a dedicated test | 66C.3 |
+| ID | Gap | Assigned to | Status |
+| --- | --- | --- | --- |
+| **G1** | Message visibility filtering not implemented | 66C.3 | **closed (66C.3)** |
+| **G2** | Clarification reminder / expiry scheduler not implemented | 66C.4 | open |
+| **G3** | Per-task audit lookup endpoint not implemented | 66C.3 | **closed (66C.3)** |
+| **G4** | Project/team RBAC scoping not implemented | 66S | open |
+| **G5** | Answered-twice guard lacks a dedicated test | 66C.3 | **closed (66C.3)** |
 
 These correspond to non-blocking items 9, 6, 7, 8, and 10 below respectively. See
-`step66c1-operator-api-validation-record.md` §5 for the full 66C.2/66C.3/66C.4/66S plan.
+`step66c1-operator-api-validation-record.md` §5 for the full 66C.2/66C.3/66C.4/66S plan. G1/G3/G5
+closed in Step 66C.3 — see `step66c3-workroom-audit-visibility-hardening-report.md`.
 
 ## Non-blocking
 

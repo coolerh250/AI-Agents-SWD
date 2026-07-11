@@ -71,6 +71,20 @@ three mutating endpoints also state `resume_dispatch_enabled: false`. `GET /deli
 everything below it in the table above remain design-only, staged for 66D–66G. See
 `step66c1-workroom-clarification-api-foundation-report.md`.
 
+## Step 66C.3 implementation status (2026-07-11)
+
+A new endpoint, not in the original blueprint table above, is **implemented and deployed**:
+`GET /tasks/{id}/audit-evidence` (task-scoped audit evidence, safe metadata only — allowlisted
+fields, never a raw message/answer body). Required role:
+Platform Admin/Agent Operator/Security-Compliance Reviewer/PM-Engineering Lead (Requester and
+Reviewer/Approver denied by default). Response: `— → {task_id, events:[{audit_event_id, event_type,
+actor, role, action, status, message_id, clarification_id, message_type, visibility, body_length,
+body_hash, created_at}], dispatch_enabled:false, resume_dispatch_enabled:false}`. Audit event on
+denial: `audit_evidence_rbac_denied`. Risk: low (read-only, allowlist-projected). Stage: 66C.
+`GET /tasks/{id}/workroom` now also applies server-side message-visibility filtering by role (no
+request/response shape change, fewer messages returned for restricted roles). See
+`step66c3-workroom-audit-visibility-hardening-report.md`.
+
 ## Statement
 
 API blueprint only — no endpoint implemented; no runtime change; no external action; no production
