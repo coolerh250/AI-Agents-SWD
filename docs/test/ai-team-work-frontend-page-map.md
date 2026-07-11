@@ -38,6 +38,16 @@ priority.
 is the actual enforcement point. All other pages in the table above remain design-only, staged for
 66C–66G.
 
+## 66C.2 implementation status (2026-07-11)
+
+`/tasks/{id}/workroom` is **implemented and deployed** on the test runtime
+(`apps/admin-console/src/pages/TaskWorkroom.tsx`), reached via an "Open Workroom" link on
+`/tasks/{id}`, consuming the Step 66C.1 API via a new write-capable client
+`src/tasks/workroomClient.ts` (same pattern as `taskClient.ts`). Messages render as plain text only
+— no `dangerouslySetInnerHTML`. "message, answer clarification" actions are implemented;
+"role-based msg visibility" is not yet implemented (all messages the API returns are shown to any
+caller who can view the workroom — carried-over gap, see `step66c2-known-gaps.md`).
+
 ## Statement
 
 Frontend page map only — no page implemented, no runtime change, no external action, no production

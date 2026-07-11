@@ -13143,3 +13143,41 @@ action. Production posture: no production action, no production deploy, no produ
 - **Gate.** Step 66C.1 final status: **PASS, operator READY_WITH_GAPS**. Step 66C status:
   WORKROOM_CLARIFICATION_API_READY_FOR_UI. Next = **66C.2 — Admin Console Workroom UI** per operator
   authorization. Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66C.2 — Admin Console Workroom UI
+
+**Status: completed. Marker: `STEP66C2_WORKROOM_UI_VERIFY: PASS`.** Step 66C status:
+WORKROOM_UI_STARTED. Runtime posture: test UI only; no workflow dispatch, no workflow resume, no
+external action. Production posture: no production action, no production deploy, no production
+secret. Operator validation: pending.
+
+- **Pages.** `/tasks/{id}/workroom` (`apps/admin-console/src/pages/TaskWorkroom.tsx`) — message
+  list, message composer, clarification list with inline answer form, safety panel
+  (`dispatch_enabled`/`resume_dispatch_enabled` data-driven from the API). "Open Workroom" link
+  added to `/tasks/{id}` (existing task safety panel unchanged).
+- **New write-capable frontend module `src/tasks/workroomClient.ts`** (mirrors `taskClient.ts`'s
+  pattern): named methods only (`get`/`postMessage`/`answerClarification`), no generic
+  `request(method,url)`, `X-Task-Actor`/`X-Task-Role` on every call, readable RBAC/state error
+  messages. `createClarification()` intentionally not implemented (deferred, per spec). The
+  pre-existing `taskApiGuard.test.ts` automatically covers the new files (it walks all of
+  `src/tasks/`) — no guard test modification needed.
+- **Plain-text rendering (blocking security requirement).** Message/question/answer bodies render
+  via ordinary React text interpolation only — no `dangerouslySetInnerHTML` anywhere (static source
+  test) — no markdown rendering, no URL auto-linking. A malicious-looking body
+  (`<img src=x onerror=alert(1)>`) is verified to render as literal text with no `<img>` DOM element
+  created.
+- **Input limits.** Message body and clarification answer both capped at 8000 chars
+  (`<textarea maxLength={8000}>` + client validation), matching the 66C.1 backend exactly.
+- **Tests.** New `apps/admin-console/src/__tests__/WorkroomUI.test.tsx` (21 tests: rendering,
+  XSS guardrails, composer/answer-form validation, auth headers, RBAC error readability, empty/
+  loading/error states). 79/79 frontend vitest passing (58 pre-existing + 21 new);
+  `readOnlyGuard.test.ts` (3/3) and `taskApiGuard.test.ts` (6/6) unaffected. `npm run build`
+  succeeds, 94 modules, no errors.
+- **Docs.** New: `step66c2-workroom-ui-report.md`, `-workroom-ui-evidence.md`,
+  `-workroom-ui-security-record.md`, `-workroom-ui-safety-record.md`, `-test-deployment-record.md`,
+  `-known-gaps.md`, `-operator-validation-request.md`. Updated:
+  `ai-team-work-agent-workroom-blueprint.md`, `ai-team-work-frontend-page-map.md`,
+  `ai-team-work-mvp-implementation-scope.md`.
+- **Gate.** Step 66C.2 status: PASS (implementation); operator validation pending (`VISIBLE` /
+  `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`). Claude Code must not decide product acceptance. Not
+  production readiness.

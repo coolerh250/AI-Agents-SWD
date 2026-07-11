@@ -75,6 +75,20 @@ workroom, regardless of role — a documented gap, not the full visibility model
 (§5) are **not implemented** — no Console/Discord notification fires on any message type in 66C.1.
 See `step66c1-workroom-clarification-api-foundation-report.md`.
 
+## Step 66C.2 implementation status (2026-07-11)
+
+**Admin Console Workroom UI implemented (66C.2)** — `/tasks/{id}/workroom`
+(`apps/admin-console/src/pages/TaskWorkroom.tsx`), reached via an "Open Workroom" link from
+`/tasks/{id}`. Renders messages and clarification questions/answers as **plain text only** (React
+text interpolation, no raw-HTML rendering escape hatch) — satisfies the "no secrets/tokens/raw
+payloads" redaction intent from §4 by construction, since nothing is ever interpreted as markup.
+Message composer (human message) and clarification answer form are implemented; **clarification
+creation is not implemented in the UI** in this stage (deferred, see `step66c2-known-gaps.md`) —
+clarifications are created via the API and displayed/answered through the UI. Role-based message
+**visibility filtering** (§4) remains not implemented (carried over from 66C.1's gap G1, now
+assigned to 66C.3) — the UI shows every message the API returns. Notification rules (§5) remain not
+implemented.
+
 ## Statement
 
 Workroom blueprint only — no implementation, no workflow execution, no external action, no production

@@ -31,6 +31,7 @@ import { AuditEvidence } from "./pages/AuditEvidence";
 import { TaskList } from "./pages/TaskList";
 import { TaskNew } from "./pages/TaskNew";
 import { TaskDetail } from "./pages/TaskDetail";
+import { TaskWorkroom } from "./pages/TaskWorkroom";
 
 export function App() {
   return (
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/" element={<ExecutiveOverview />} />
         <Route path="/tasks" element={<TaskList />} />
         <Route path="/tasks/new" element={<TaskNew />} />
+        <Route path="/tasks/:taskId/workroom" element={<TaskWorkroom />} />
         <Route path="/tasks/:taskId" element={<TaskDetail />} />
         <Route path="/demo-evidence" element={<DemoEvidence />} />
         <Route path="/agent-executions" element={<AgentExecutions />} />

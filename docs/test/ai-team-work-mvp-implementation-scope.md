@@ -84,12 +84,23 @@ dispatch/resume/external-call static checks) was implemented alongside the funct
 `step66c1-rbac-audit-safety-record.md`. Operator validation requested (API-level only) but not yet
 confirmed. See `step66c1-workroom-clarification-api-foundation-report.md`.
 
+## 66C.2 status update (2026-07-11)
+
+**66C — Admin Console Workroom UI (66C.2).** `/tasks/{id}/workroom` is live on the test runtime,
+consuming the 66C.1 API via a new write-capable frontend module `src/tasks/workroomClient.ts`
+(mirroring `taskClient.ts`'s pattern). Messages/clarification questions/answers render as **plain
+text only** — no `dangerouslySetInnerHTML` anywhere (statically verified). Message posting and
+clarification answering are implemented; clarification *creation* is deferred (not in this UI, per
+explicit spec allowance). `dispatch_enabled`/`resume_dispatch_enabled` are always shown, data-driven
+from the API, always `false`. Operator validation requested but not yet confirmed. See
+`step66c2-workroom-ui-report.md`.
+
 ## Statement
 
-66B.1 (task API foundation), 66B.2 (task assignment UI), 66B.3 (RBAC/audit/safety hardening), and
-66C.1 (Workroom/Clarification backend foundation) are implemented; the remaining scope (66C.2
-onward through 66H) is still design-only — nothing else implemented; no runtime change beyond
-66B.1/66B.2/66B.3/66C.1; no external action; no production action.
+66B.1 (task API foundation), 66B.2 (task assignment UI), 66B.3 (RBAC/audit/safety hardening), 66C.1
+(Workroom/Clarification backend foundation), and 66C.2 (Admin Console Workroom UI) are implemented;
+the remaining scope (66C.3 onward through 66H) is still design-only — nothing else implemented; no
+runtime change beyond 66B.1/66B.2/66B.3/66C.1/66C.2; no external action; no production action.
 
 ---
 _Non-production only. No production action. No production data._

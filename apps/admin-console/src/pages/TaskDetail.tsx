@@ -42,6 +42,11 @@ export function TaskDetail() {
       <p className="note">
         No workflow dispatch occurs in Step 66B.2. This is task assignment UI foundation only.
       </p>
+      <p className="note">
+        <Link to={`/tasks/${taskId}/workroom`} data-testid="open-workroom-link">
+          Open Workroom
+        </Link>
+      </p>
       <TestRoleBanner />
       <AsyncView key={refreshKey} load={() => taskApi.get(taskId)}>
         {(task: Task) => (
