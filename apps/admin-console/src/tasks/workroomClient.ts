@@ -1,4 +1,7 @@
 // Step 66C.2 -- workroom/clarification API client.
+// Step 66C.2-R -- added createClarification() (was deferred in 66C.2; operator
+// validation found no way to raise a clarification from the UI at all -- see
+// docs/test/step66c2-remediation-report.md).
 //
 // SAFETY: this client exposes ONLY explicit, named, typed methods against the
 // /tasks/{id}/workroom and /tasks/{id}/clarifications endpoints (Step 66C.1).
@@ -6,11 +9,6 @@
 // test-only X-Task-Actor / X-Task-Role headers (see testRole.ts). No workflow
 // is ever dispatched or resumed from this client -- the backend guarantees
 // dispatch_enabled=false / resume_dispatch_enabled=false on every response.
-//
-// createClarification() is intentionally NOT implemented in 66C.2 (deferred,
-// per spec) -- clarifications for UI validation are created via the API
-// directly; this client only reads the workroom and answers open
-// clarifications. See docs/test/step66c2-known-gaps.md.
 
 import { API_BASE } from "../api/client";
 import { getTestRole } from "./testRole";
@@ -116,6 +114,22 @@ export const workroomApi = {
       `/${taskId}/workroom/messages`,
       { body },
     );
+  },
+  createClarification(
+    taskId: string,
+    question: string,
+    assignedTo?: string,
+  ): Promise<
+    ClarificationRequest & {
+      task_status: string;
+      dispatch_enabled: boolean;
+      resume_dispatch_enabled: boolean;
+    }
+  > {
+    return workroomPost(`/${taskId}/clarifications`, {
+      question,
+      assigned_to: assignedTo || null,
+    });
   },
   answerClarification(
     taskId: string,

@@ -13181,3 +13181,55 @@ secret. Operator validation: pending.
 - **Gate.** Step 66C.2 status: PASS (implementation); operator validation pending (`VISIBLE` /
   `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`). Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66C.2-V — Operator UI Validation Record (failed)
+
+**Status: operator validation returned `NOT_VISIBLE`.** Step 66C.2 status:
+**FAILED_OPERATOR_VALIDATION**. Step 66C.3 status: **BLOCKED**.
+
+- **Operator response.** `NOT_VISIBLE` (Zachary). Failed items: (7) a question sent from the
+  Workroom did not appear as a Clarification; (8) no answer-clarification functionality was visible;
+  (9) no related information or functionality was visible.
+- **Root cause (to be confirmed/remediated in 66C.2-R).** The Workroom UI could display and answer
+  clarifications that already existed, but had no way to create one — `createClarification()` was
+  intentionally deferred in 66C.2. A typed question could only ever become a normal `human_message`.
+- **Gate.** Step 66C.2: FAILED_OPERATOR_VALIDATION. Step 66C.3: BLOCKED pending remediation. Claude
+  Code must not decide product acceptance.
+
+## Stage 66C.2-R — Clarification UI Remediation
+
+**Status: completed. Marker: `STEP66C2_CLARIFICATION_UI_REMEDIATION_VERIFY: PASS`.** Step 66C.2
+status: **REMEDIATED, pending re-validation**. Step 66C.3 status: still BLOCKED pending operator
+re-validation. Runtime posture: test UI only; no workflow dispatch, no workflow resume, no external
+action. Production posture: no production action, no production deploy, no production secret.
+
+- **Root cause confirmed from source.** `apps/admin-console/src/tasks/workroomClient.ts` had no
+  `createClarification()` method and `TaskWorkroom.tsx` had no create-clarification UI element — the
+  backend (`POST /tasks/{id}/clarifications`, Step 66C.1) was already fully functional and required
+  **no backend change**.
+- **Remediation.** Added `workroomApi.createClarification()` (calls the unmodified backend endpoint)
+  and a new **Create Clarification** form in the Workroom's Clarifications section
+  (`data-testid="workroom-create-clarification"`), with a required question (max 4000 chars, matches
+  `ClarificationCreate.question`) and optional `assigned_to`. The message composer is relabeled
+  **"Send Message"** with an inline note distinguishing it from **"Create Clarification"** — posting
+  a normal message never becomes a clarification (dedicated test asserts the composer only ever
+  calls `POST /tasks/{id}/workroom/messages`). RBAC is server-enforced only (unchanged pattern): a
+  disallowed role's create attempt surfaces the existing readable
+  `role_cannot_create_clarification` error; server RBAC is not bypassed or duplicated client-side.
+- **Tests.** `apps/admin-console/src/__tests__/WorkroomUI.test.tsx` grew from 21 to 29 tests (new
+  describe blocks: create-clarification rendering/validation/RBAC-error/refresh-to-open, malicious
+  clarification question and malicious clarification-answer message both render as literal text).
+  87/87 frontend vitest passing (up from 79); `readOnlyGuard.test.ts` (3/3) and
+  `taskApiGuard.test.ts` (6/6) unaffected. `npm run build` succeeds, 94 modules, no TypeScript
+  errors.
+- **Docs.** New: `step66c2-remediation-report.md`, `-clarification-ui-evidence.md`,
+  `-remediation-safety-record.md`, `-remediation-operator-validation-request.md`. Updated:
+  `step66c2-workroom-ui-report.md`, `-known-gaps.md`, `ai-team-work-agent-workroom-blueprint.md`.
+- **Safety.** No workflow dispatch. No workflow resume. No GitHub write. No Discord send. No Slack
+  send. No Telegram send. No LLM call. No web call. No production action.
+  `production_executed_true_count=0`. `dispatch_enabled`/`resume_dispatch_enabled` remain always
+  data-driven from the API, always `false`.
+- **Gate.** Step 66C.2-R status: PASS (implementation); operator re-validation requested
+  (`step66c2-remediation-operator-validation-request.md`, response `VISIBLE` / `NOT_VISIBLE` /
+  `PARTIAL_WITH_GAPS`). Step 66C.3 remains BLOCKED until the operator confirms. Claude Code must not
+  decide product acceptance. Not production readiness.

@@ -58,6 +58,14 @@ const MALICIOUS_MESSAGE = {
   body: MALICIOUS_BODY,
 };
 
+const MALICIOUS_ANSWER_MESSAGE = {
+  ...SAMPLE_MESSAGE,
+  id: "88888888-8888-8888-8888-888888888888",
+  sender_type: "human",
+  message_type: "clarification_answer",
+  body: MALICIOUS_BODY,
+};
+
 const OPEN_CLARIFICATION = {
   id: "66666666-6666-6666-6666-666666666666",
   task_id: SAMPLE_TASK.id,
@@ -306,6 +314,162 @@ describe("Clarification answer form", () => {
     expect(init.headers["X-Task-Role"]).toBeTruthy();
     const body = JSON.parse(init.body) as { answer: string };
     expect(body.answer).toBe("Use the test environment.");
+  });
+});
+
+describe("Step 66C.2-R -- Create Clarification", () => {
+  it("renders the Create Clarification form in the Clarifications section", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce(workroomResponse()));
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification")).toBeDefined(),
+    );
+    expect(screen.getByTestId("workroom-submit-create-clarification")).toBeDefined();
+  });
+
+  it("Send Message never becomes a clarification -- posts only to /workroom/messages", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({ ...SAMPLE_MESSAGE, dispatch_enabled: false }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() => expect(screen.getByTestId("workroom-composer")).toBeDefined());
+    fireEvent.change(screen.getByTestId("workroom-message-input"), {
+      target: { value: "Just a normal message, not a question needing an answer." },
+    });
+    fireEvent.click(screen.getByTestId("workroom-post-message"));
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    const [url] = fetchMock.mock.calls[1] as [string];
+    expect(String(url)).toContain(`/tasks/${SAMPLE_TASK.id}/workroom/messages`);
+    expect(String(url)).not.toContain("/clarifications");
+  });
+
+  it("requires a non-empty question before creating a clarification", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce(workroomResponse()));
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification")).toBeDefined(),
+    );
+    fireEvent.click(screen.getByTestId("workroom-submit-create-clarification"));
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification-field-error")).toBeDefined(),
+    );
+  });
+
+  it("caps the clarification question textarea at 4000 characters", async () => {
+    vi.stubGlobal("fetch", mockFetchOnce(workroomResponse()));
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification")).toBeDefined(),
+    );
+    const textarea = screen.getByTestId(
+      "workroom-clarification-question-input",
+    ) as HTMLTextAreaElement;
+    expect(textarea.maxLength).toBe(4000);
+  });
+
+  it("creates a clarification via POST /tasks/{id}/clarifications and refreshes to show it open", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: async () => workroomResponse({ clarification_requests: [] }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 201,
+        json: async () => ({
+          ...OPEN_CLARIFICATION,
+          task_status: "clarification_needed",
+          dispatch_enabled: false,
+          resume_dispatch_enabled: false,
+        }),
+      })
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() });
+    vi.stubGlobal("fetch", fetchMock);
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification")).toBeDefined(),
+    );
+    fireEvent.change(screen.getByTestId("workroom-clarification-question-input"), {
+      target: { value: "Which environment should this target?" },
+    });
+    fireEvent.click(screen.getByTestId("workroom-submit-create-clarification"));
+    await waitFor(() => expect(fetchMock.mock.calls.length).toBeGreaterThan(1));
+    const [url, init] = fetchMock.mock.calls[1] as [
+      string,
+      { method: string; headers: Record<string, string>; body: string },
+    ];
+    expect(String(url)).toContain(`/tasks/${SAMPLE_TASK.id}/clarifications`);
+    expect(String(url)).not.toContain("/answer");
+    expect(init.method).toBe("POST");
+    expect(init.headers["X-Task-Actor"]).toBeTruthy();
+    expect(init.headers["X-Task-Role"]).toBeTruthy();
+    const body = JSON.parse(init.body) as { question: string };
+    expect(body.question).toBe("Which environment should this target?");
+    // After the refresh, the newly-created open clarification is visible with an answer form.
+    await waitFor(() => expect(screen.getByTestId("workroom-clarification-card")).toBeDefined());
+    expect(screen.getByTestId("workroom-answer-form")).toBeDefined();
+  });
+
+  it("shows a readable RBAC error when the current role cannot create a clarification", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({ ok: true, status: 200, json: async () => workroomResponse() })
+      .mockResolvedValueOnce({
+        ok: false,
+        status: 403,
+        json: async () => ({ detail: "role_cannot_create_clarification" }),
+      });
+    vi.stubGlobal("fetch", fetchMock);
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-create-clarification")).toBeDefined(),
+    );
+    fireEvent.change(screen.getByTestId("workroom-clarification-question-input"), {
+      target: { value: "Which environment should this target?" },
+    });
+    fireEvent.click(screen.getByTestId("workroom-submit-create-clarification"));
+    await waitFor(() =>
+      expect(screen.getByText(/Your simulated role cannot create a clarification request/)).toBeDefined(),
+    );
+  });
+});
+
+describe("Step 66C.2-R -- malicious text in clarifications", () => {
+  it("renders a malicious-looking clarification question as literal text", async () => {
+    const maliciousQuestion = { ...OPEN_CLARIFICATION, question: MALICIOUS_BODY };
+    vi.stubGlobal(
+      "fetch",
+      mockFetchOnce(workroomResponse({ clarification_requests: [maliciousQuestion] })),
+    );
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() =>
+      expect(screen.getByTestId("workroom-clarification-question").textContent).toBe(
+        MALICIOUS_BODY,
+      ),
+    );
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(document.querySelector("img")).toBeNull();
+  });
+
+  it("renders a malicious-looking clarification answer message as literal text", async () => {
+    vi.stubGlobal(
+      "fetch",
+      mockFetchOnce(workroomResponse({ messages: [MALICIOUS_ANSWER_MESSAGE] })),
+    );
+    renderWithRouter([`/tasks/${SAMPLE_TASK.id}/workroom`]);
+    await waitFor(() => expect(screen.getByTestId("workroom-messages")).toBeDefined());
+    expect(screen.getByText(MALICIOUS_BODY)).toBeDefined();
+    expect(screen.queryByRole("img")).toBeNull();
+    expect(document.querySelector("img")).toBeNull();
   });
 });
 

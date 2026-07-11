@@ -46,8 +46,9 @@ Step 66A.3 blueprint (`ai-team-work-frontend-page-map.md`) and the Step 66C.1-V 
 `readOnlyGuard.test.ts` already excludes `src/tasks/`; the existing `taskApiGuard.test.ts` (which
 walks the whole `src/tasks/` directory) automatically covers the new files without modification.
 
-`createClarification()` is **intentionally not implemented** in this client/UI — deferred per spec,
-see `step66c2-known-gaps.md`.
+`createClarification()` was **deferred, then implemented in Step 66C.2-R** (remediation, 2026-07-11)
+after operator validation returned `NOT_VISIBLE` — the initial deferral meant there was no way to
+raise a clarification from the UI at all. See `step66c2-remediation-report.md`.
 
 ## 4. Message rendering (plain text only)
 
@@ -64,6 +65,17 @@ response (never hardcoded) and are always `false` — no workflow dispatch or re
 anywhere in the 66C.1 backend this UI calls. No GitHub/Discord/Slack/Telegram/LLM/web endpoint is
 ever called from `workroomClient.ts` (enforced by the existing `taskApiGuard.test.ts`, which now
 also covers this file).
+
+## 6-R. Step 66C.2-R remediation (2026-07-11)
+
+Operator validation of the original 66C.2 UI returned `NOT_VISIBLE` — a question typed into the only
+available input (the message composer) became a normal `human_message`, never a
+`clarification_request`, so no answer form could ever appear. Remediation added
+`workroomApi.createClarification()` (calls the pre-existing, unmodified
+`POST /tasks/{id}/clarifications`) and a **Create Clarification** form in the Clarifications section
+of `TaskWorkroom.tsx`. The message composer was relabeled **"Send Message"** with an inline note
+distinguishing it from **"Create Clarification"**. See `step66c2-remediation-report.md`,
+`step66c2-clarification-ui-evidence.md`, `step66c2-remediation-safety-record.md`.
 
 ## 6. Plain statements (for verifier)
 

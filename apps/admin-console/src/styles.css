@@ -61,6 +61,8 @@ pre { background: #0d1117; border: 1px solid var(--line); border-radius: 6px; pa
 .workroom-message { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; }
 .workroom-message-meta { font-size: 11px; color: var(--muted); margin-bottom: 4px; }
 .workroom-message-body { white-space: pre-wrap; word-break: break-word; margin: 0; font-size: 13px; }
-.workroom-composer, .workroom-answer-form { display: flex; flex-direction: column; gap: 6px; max-width: 560px; margin-top: 10px; }
-.workroom-composer textarea, .workroom-answer-form textarea { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 13px; min-height: 80px; font-family: inherit; }
+.workroom-composer, .workroom-answer-form, .workroom-create-clarification { display: flex; flex-direction: column; gap: 6px; max-width: 560px; margin-top: 10px; }
+.workroom-composer textarea, .workroom-answer-form textarea, .workroom-create-clarification textarea { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 13px; min-height: 80px; font-family: inherit; }
+.workroom-create-clarification { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; }
+.workroom-create-clarification input[type="text"] { background: var(--card); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-size: 13px; font-family: inherit; }
 .workroom-clarification { margin-bottom: 12px; }

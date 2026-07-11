@@ -82,12 +82,21 @@ See `step66c1-workroom-clarification-api-foundation-report.md`.
 `/tasks/{id}`. Renders messages and clarification questions/answers as **plain text only** (React
 text interpolation, no raw-HTML rendering escape hatch) — satisfies the "no secrets/tokens/raw
 payloads" redaction intent from §4 by construction, since nothing is ever interpreted as markup.
-Message composer (human message) and clarification answer form are implemented; **clarification
-creation is not implemented in the UI** in this stage (deferred, see `step66c2-known-gaps.md`) —
-clarifications are created via the API and displayed/answered through the UI. Role-based message
+Message composer (human message) and clarification answer form are implemented. Role-based message
 **visibility filtering** (§4) remains not implemented (carried over from 66C.1's gap G1, now
 assigned to 66C.3) — the UI shows every message the API returns. Notification rules (§5) remain not
 implemented.
+
+## Step 66C.2-R implementation status (2026-07-11)
+
+**Clarification creation UI added (remediation).** Operator validation of 66C.2 returned
+`NOT_VISIBLE` — the initial deferral of `createClarification()` meant a typed question could only
+ever become a normal message, never a clarification, so no answer form could appear. Fixed: a
+**Create Clarification** form now lives in the Workroom's Clarifications section, calling the
+pre-existing, unmodified `POST /tasks/{id}/clarifications` backend endpoint (Step 66C.1). The message
+composer is relabeled "Send Message" with an inline note distinguishing it from "Create
+Clarification" — a normal message is never silently converted into a clarification. See
+`step66c2-remediation-report.md`.
 
 ## Statement
 

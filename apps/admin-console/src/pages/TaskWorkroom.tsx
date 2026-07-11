@@ -1,20 +1,28 @@
 // Step 66C.2 -- Task-level Agent Workroom page (/tasks/:taskId/workroom).
+// Step 66C.2-R -- added the Create Clarification form (operator validation
+// found no way to raise a clarification from the UI at all -- a typed
+// question only ever became a normal message; see
+// docs/test/step66c2-remediation-report.md). "Send Message" and "Create
+// Clarification" are now two clearly separate actions; posting a normal
+// message never turns it into a clarification.
 //
 // SAFETY: messages/questions/answers are rendered as PLAIN TEXT ONLY -- via
 // ordinary React text-content interpolation ({m.body}); React's raw-HTML
 // escape hatch is never used, no markdown-to-HTML rendering, no URL
 // auto-linking. dispatch_enabled / resume_dispatch_enabled are always read
 // from the API response (never hardcoded) and are always false -- no workflow
-// dispatch or resume path exists anywhere in this stage. createClarification()
-// is deferred (see docs/test/step66c2-known-gaps.md) -- this page shows and
-// answers clarifications created via the API, it does not create them.
+// dispatch or resume path exists anywhere in this stage.
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { AsyncView } from "../components/AsyncView";
 import { StatusBadge } from "../components/StatusBadge";
 import { TestRoleBanner } from "../tasks/TestRoleBanner";
 import { workroomApi, WorkroomApiError } from "../tasks/workroomClient";
-import { CLARIFICATION_ANSWER_MAX_LENGTH, MESSAGE_BODY_MAX_LENGTH } from "../tasks/workroomTypes";
+import {
+  CLARIFICATION_ANSWER_MAX_LENGTH,
+  CLARIFICATION_QUESTION_MAX_LENGTH,
+  MESSAGE_BODY_MAX_LENGTH,
+} from "../tasks/workroomTypes";
 import type { ClarificationRequest, TaskMessage, WorkroomResponse } from "../tasks/workroomTypes";
 
 export function TaskWorkroom() {
@@ -78,6 +86,7 @@ function WorkroomContent({
         taskId={taskId}
         clarifications={data.clarification_requests}
         onAnswered={onChanged}
+        onCreated={onChanged}
       />
     </>
   );
@@ -143,7 +152,12 @@ function MessageComposer({ taskId, onPosted }: { taskId: string; onPosted: () =>
 
   return (
     <div className="workroom-composer" data-testid="workroom-composer">
-      <h3>Post a message</h3>
+      <h3>Send Message</h3>
+      <p className="note">
+        A normal workroom message. It does not require an answer and does not change the task
+        status. To ask a question that needs a required human answer, use{" "}
+        <strong>Create Clarification</strong> below instead.
+      </p>
       <textarea
         value={body}
         onChange={(e) => setBody(e.target.value)}
@@ -165,7 +179,7 @@ function MessageComposer({ taskId, onPosted }: { taskId: string; onPosted: () =>
         </div>
       )}
       <button disabled={submitting} onClick={() => void handlePost()} data-testid="workroom-post-message">
-        Post Message
+        Send Message
       </button>
     </div>
   );
@@ -175,18 +189,106 @@ function ClarificationList({
   taskId,
   clarifications,
   onAnswered,
+  onCreated,
 }: {
   taskId: string;
   clarifications: ClarificationRequest[];
   onAnswered: () => void;
+  onCreated: () => void;
 }) {
   return (
     <div className="workroom-section" data-testid="workroom-clarifications">
       <h3>Clarifications</h3>
+      <CreateClarificationForm taskId={taskId} onCreated={onCreated} />
       {!clarifications.length && <div className="empty">No clarification requests</div>}
       {clarifications.map((c) => (
         <ClarificationCard key={c.id} taskId={taskId} clarification={c} onAnswered={onAnswered} />
       ))}
+    </div>
+  );
+}
+
+function CreateClarificationForm({
+  taskId,
+  onCreated,
+}: {
+  taskId: string;
+  onCreated: () => void;
+}) {
+  const [question, setQuestion] = useState("");
+  const [assignedTo, setAssignedTo] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [fieldError, setFieldError] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  async function handleCreate(): Promise<void> {
+    setFieldError(null);
+    setError(null);
+    const trimmed = question.trim();
+    if (!trimmed) {
+      setFieldError("Question is required.");
+      return;
+    }
+    if (trimmed.length > CLARIFICATION_QUESTION_MAX_LENGTH) {
+      setFieldError(`Question must be ${CLARIFICATION_QUESTION_MAX_LENGTH} characters or fewer.`);
+      return;
+    }
+    setSubmitting(true);
+    try {
+      await workroomApi.createClarification(taskId, trimmed, assignedTo.trim() || undefined);
+      setQuestion("");
+      setAssignedTo("");
+      onCreated();
+    } catch (e) {
+      setError(
+        e instanceof WorkroomApiError ? e.message : e instanceof Error ? e.message : "Unknown error",
+      );
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="workroom-create-clarification" data-testid="workroom-create-clarification">
+      <h4>Create Clarification</h4>
+      <p className="note">
+        Ask a question that requires a human answer before this task can proceed. This moves the
+        task to <code>clarification_needed</code> and is separate from a normal message.
+      </p>
+      <textarea
+        value={question}
+        onChange={(e) => setQuestion(e.target.value)}
+        maxLength={CLARIFICATION_QUESTION_MAX_LENGTH}
+        placeholder="What do you need clarified?"
+        data-testid="workroom-clarification-question-input"
+      />
+      <p className="note">
+        {question.length} / {CLARIFICATION_QUESTION_MAX_LENGTH} characters
+      </p>
+      <input
+        type="text"
+        value={assignedTo}
+        onChange={(e) => setAssignedTo(e.target.value)}
+        placeholder="Assigned to (optional)"
+        data-testid="workroom-clarification-assigned-to-input"
+      />
+      {fieldError && (
+        <div className="error" data-testid="workroom-create-clarification-field-error">
+          {fieldError}
+        </div>
+      )}
+      {error && (
+        <div className="error" data-testid="workroom-create-clarification-error">
+          {error}
+        </div>
+      )}
+      <button
+        disabled={submitting}
+        onClick={() => void handleCreate()}
+        data-testid="workroom-submit-create-clarification"
+      >
+        Create Clarification
+      </button>
     </div>
   );
 }
