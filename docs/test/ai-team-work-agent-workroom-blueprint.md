@@ -98,6 +98,15 @@ composer is relabeled "Send Message" with an inline note distinguishing it from 
 Clarification" — a normal message is never silently converted into a clarification. See
 `step66c2-remediation-report.md`.
 
+## Step 66C.2-R-V operator validation (2026-07-11)
+
+Operator confirmed **`VISIBLE`** against all 14 items in the Step 66C.2-R operator validation
+request — Send Message stays a normal message, Create Clarification works, `clarification_needed`
+transition, answer flow, `dispatch_enabled`/`resume_dispatch_enabled=false`, and plain-text
+rendering were all validated. **Step 66C.2 final status: `PASS_AFTER_REMEDIATION`.** Step 66C.3 is
+READY_TO_UNBLOCK. Project/team RBAC scoping (G4) remains a documented gap, deferred to 66S. See
+`step66c2-remediation-operator-validation-record.md`.
+
 ## Statement
 
 Workroom blueprint only — no implementation, no workflow execution, no external action, no production

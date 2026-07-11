@@ -53,6 +53,11 @@ See `step66c2-clarification-ui-evidence.md` for full test/build evidence and
 No workflow dispatch occurred. No workflow resume occurred. No external action occurred. No
 production action occurred. production_executed_true_count=0.
 
+## 5. Operator validation (Step 66C.2-R-V, 2026-07-11)
+
+Operator confirmed **`VISIBLE`** — see `step66c2-remediation-operator-validation-record.md`. Step
+66C.2 final status: **`PASS_AFTER_REMEDIATION`**. Step 66C.3: READY_TO_UNBLOCK.
+
 ---
 _Non-production only. No production action. No production data._
 

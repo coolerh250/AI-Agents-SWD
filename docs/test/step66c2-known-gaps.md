@@ -58,6 +58,19 @@ Clarification reminder/expiry scheduler + any UI surfacing of it (66C.4), real i
 replacing the test-role banner (66S), Delivery Inbox / Approvals / DLQ-Retry UI / notifications
 (66D+).
 
+## Gap ID mapping (Step 66C.2-R-V, 2026-07-11)
+
+Clarification creation UI is no longer a gap (fixed in Step 66C.2-R). Remaining non-blocking gaps,
+mapped to the IDs used in the Step 66C.2-R-V operator validation record:
+
+- **G1** — message visibility filtering not implemented (item 6 above) → 66C.3
+- **G2** — clarification reminder / expiry scheduler not implemented (see "Deferred to 66C.4" above) → 66C.4
+- **G3** — per-task audit lookup endpoint not implemented (item 7 above) → 66C.3
+- **G4** — project/team RBAC scoping not implemented (carried from 66C.1, see
+  `ai-team-work-agent-workroom-blueprint.md`) → 66S
+- **G5** — answered-twice guard dedicated test (item 9 above) → 66C.3
+- **G6** — real-time/websocket Workroom delivery not implemented (item 1 above) → later
+
 ## Statement
 
 No production action occurred. No workflow dispatch occurred. No workflow resume occurred. No
