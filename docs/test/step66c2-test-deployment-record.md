@@ -54,6 +54,36 @@ docker compose -f infra/docker-compose/docker-compose.yml up -d orchestrator
 No workflow dispatch occurred. No workflow resume occurred. No external action occurred. No
 production action occurred. production_executed_true_count=0.
 
+## 7. Step 66C.2-R remediation — live validation (after deployment) — actual results, 2026-07-11
+
+Deployed the same way as §4 (orchestrator-only rebuild + restart, no migration). Baseline before
+this remediation deploy: `git log -1 --oneline` -> `713b9f6 docs(ai-team-work): record 66C.2 test
+deployment evidence`, `GET /health` -> `{"service":"orchestrator","status":"ok"}`,
+`production_executed_true_count: 0`.
+
+| Check | Result (actual) |
+| --- | --- |
+| `git pull --ff-only origin main` | fast-forward, `713b9f6..4c61ed7`, 14 files changed |
+| Docker build (`admin-console-build` stage) | succeeded, no errors |
+| `GET /admin/` serves rebuilt bundle | `200`, `assets/index-sRqLCgKv.js` (same hash as the local `npm run build`) |
+| Rebuilt bundle contains the new Create Clarification UI | confirmed — grep on the served JS: `Create Clarification` (1), `Send Message` (1), `workroom-create-clarification` (1), `workroom-submit-create-clarification` (1) all present |
+| Create safe task (`alice-r`, requester) | `201`, `status:"draft"`, `dispatch_enabled:false` |
+| `GET /tasks/{id}/workroom` (empty, UI request pattern) | `200`, `messages:[]`, `clarification_requests:[]` |
+| `POST /tasks/{id}/workroom/messages` (**Send Message**, normal body) | `201`, `message_type:"human_message"` |
+| `GET /tasks/{id}/workroom` after Send Message | `task_status` still `"draft"`, `clarification_requests:[]` — **confirms a normal message never becomes a clarification** |
+| `POST /tasks/{id}/clarifications` (**Create Clarification**, `pm-r`/pm_engineering_lead, UI request pattern, XSS-shaped question `<img src=x onerror=alert(1)> Which environment should this target?`) | `201`, `status:"open"`, `task_status:"clarification_needed"` |
+| `GET /tasks/{id}/workroom` after create | `clarification_requests:1` with `status:"open"`, question stored verbatim as opaque text |
+| `POST /tasks/{id}/clarifications/{id}/answer` (`alice-r`, task owner, UI request pattern, XSS-shaped answer `<img src=x onerror=alert(2)> Use the test environment.`) | `200`, `status:"answered"`, `task_status:"intake_review"`, `dispatch_enabled:false`, `resume_dispatch_enabled:false` |
+| `GET /tasks/{id}/workroom` after answer | answer message present (`message_type:"clarification_answer"`), body stored verbatim as opaque text |
+| RBAC-denied create-clarification attempt (`alice-r`/requester, disallowed role) | `403`, `detail:"role_cannot_create_clarification"` — matches the frontend's readable-error mapping |
+| Container health after orchestrator restart | **27 containers**, 26 report `healthy` (the 27th, `vault`, has no configured healthcheck — same as every prior stage), none `unhealthy` |
+| `production_executed_true_count` after all checks above | **`0`** (unchanged before/after) |
+
+## 8. Statement (Step 66C.2-R)
+
+No workflow dispatch occurred. No workflow resume occurred. No external action occurred. No
+production action occurred. production_executed_true_count=0.
+
 ---
 _Non-production only. No production action. No production data._
 
