@@ -13316,3 +13316,57 @@ production deploy, no production secret. Operator validation: pending.
 - **Gate.** Step 66C.3 status: PASS (implementation); operator validation pending (`VISIBLE` /
   `NOT_VISIBLE` / `PARTIAL_WITH_GAPS`). Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66TEAM.1 — GitHub Team Collaboration Hub & Development Protocol
+
+**Status: completed. Marker: `STEP66TEAM1_COLLABORATION_HUB_VERIFY: PASS`.** Purpose: establish
+GitHub-based information exchange and collaboration protocol for Claude Code, Codex, Claude Design,
+ChatGPT PM coordination, and Operator validation. Runtime posture: documentation/process only; no
+backend/frontend runtime change; no workflow dispatch; no workflow resume; no external action.
+Production posture: no production action, no production deploy, no production secret.
+
+- **Role model.** `docs/process/role-responsibility-matrix.md` defines five roles: Zachary
+  (Product Owner/Operator — owns direction, priority, and final validation), ChatGPT (Project
+  Architect/PM Coordinator — writes stage prompts, does not decide acceptance), Claude Code (Lead
+  Engineer — owns architecture/backend/API/database/safety/contract, cannot decide acceptance),
+  Codex (Frontend Engineer — owns Admin Console implementation, works only from design + contract),
+  Claude Design (UI/UX Designer — owns IA/wireframes/flows/component specs, no runtime code). Claude
+  Design and Codex are development-team members, not product-internal Agents — explicitly
+  distinguished from the "Agent Operator" product RBAC role.
+- **Collaboration protocol.** `docs/process/frontend-design-engineering-collaboration-protocol.md`
+  defines the 8-step flow (direction → stage prompt → design brief → contract → frontend
+  implementation → integration/review/deploy → operator validation → validation record committed)
+  and states explicitly: design ≠ implementation; frontend does not change backend contract;
+  backend/API changes go through Claude Code; operator is the only final acceptance authority.
+- **GitHub data-sharing architecture.** `docs/process/github-collaboration-hub.md` documents GitHub
+  as the single source of truth and the exchange paths: `docs/design/<stage>/` (Claude Design) →
+  `docs/contracts/<stage>/` (Claude Code) → `docs/frontend/<stage>/` (Codex) →
+  `docs/test/<stage>/` (Claude Code integration) → `docs/test/<stage>-operator-validation-record.md`
+  (Operator) → `docs/decisions/*` (long-term) → `source/progress.md`.
+- **Branch/PR standard + operator validation standard.** New `branch-pr-naming-standard.md`
+  (`design/`, `contract/`, `frontend/`, `backend/`, `docs/`, `fix/` branch prefixes; 11 required PR
+  sections) and `operator-validation-standard.md` (response values `VISIBLE`/`NOT_VISIBLE`/
+  `PARTIAL_WITH_GAPS` and `PASS`/`PASS_WITH_GAPS`/`FAIL`; Claude Code/Codex/Claude Design must not
+  decide final product acceptance).
+- **Directory structure created.** `docs/design/` (README + 5 templates + retroactive
+  `66c3-workroom-audit-visibility/` record), `docs/contracts/` (README + 4 templates + the retroactive
+  66C.3 `frontend-contract.md`), `docs/frontend/` (README + 3 templates + retroactive 66C.3 record),
+  `docs/handoffs/` (README + 4 templates + retroactive 66C.3 `handoff-index.md`), `docs/decisions/`
+  (README + `adr-template.md`, empty index — no ADRs retroactively migrated). `.github/ISSUE_TEMPLATE/`
+  (5 templates) + `.github/pull_request_template.md`.
+- **66C.3 frontend contract.** `docs/contracts/66c3-workroom-audit-visibility/frontend-contract.md`
+  documents `GET /tasks/{id}/workroom` (server-side visibility filtering) and
+  `GET /tasks/{id}/audit-evidence` (14 allowed fields, 8 forbidden-field categories, RBAC mapping,
+  readable-error mapping) as the worked example for future stages.
+- **Public repo masking rule** restated in every new doc (39 files): no internal IP, SSH alias,
+  private hostname, real token, credential, private URL, or environment secret — use neutral labels
+  ("test host", "internal test runtime", "admin console local tunnel", "sandbox repo").
+- **Tests.** New `tests/test_step66team1_collaboration_hub.py` (16 tests: structure existence across
+  all 6 new `docs/` subdirectories + `.github/`, role-matrix names all 5 roles, operator-validation
+  response values, 66C.3 contract allowed/forbidden fields, masking rule present in all 39 files,
+  branch-naming examples, no-secret-shapes). Ruff/Black/Mypy clean. No frontend/backend files
+  touched — `npm test`/`npm run build` not required for this stage (spec's own "if frontend changed"
+  conditional).
+- **Gate.** Step 66TEAM.1 status: PASS. This is process/structure only — not itself an operator
+  validation gate (no UI to validate). Claude Code must not decide product acceptance. Not
+  production readiness.
