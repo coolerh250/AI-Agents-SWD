@@ -35,7 +35,7 @@ New test coverage (`WorkroomUI.test.tsx`):
 66B.2/66B.3), output `static/dist/index.html` + `assets/index-*.js` (245 kB / 73.6 kB gzip) +
 `assets/index-*.css` (4.24 kB / 1.26 kB gzip). No TypeScript errors, no build warnings.
 
-## 3. Live test-runtime validation (10.0.1.31, `aiagents-test`)
+## 3. Live test-runtime validation (test host, `aiagents-test`)
 
 See `step66c2-test-deployment-record.md` for the deployment steps and captured live results.
 

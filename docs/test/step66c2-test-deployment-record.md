@@ -10,7 +10,7 @@ change. `migrations/030_workroom_clarification_foundation.sql` (66C.1) is unchan
 ## 2. Deployment scope
 
 Orchestrator-only rebuild (bundles the new Workroom UI via the existing `node:20-slim` Docker build
-stage — `npm ci && npm run build`) + restart on `10.0.1.31` (`aiagents-test`). postgres/redis and
+stage — `npm ci && npm run build`) + restart on the test host (`aiagents-test`). postgres/redis and
 the other services were **not** restarted. No full-stack rebuild, no `docker compose down`, no
 unscoped `docker system prune`/`docker volume prune`. No staging or production deployment.
 
@@ -26,7 +26,7 @@ GET /operations/safety -> production_executed_true_count: 0
 ## 4. Deployment commands
 
 ```bash
-cd /home/itadmin/AI-Agents-SWD
+cd <test-host-repo-path>
 git pull --ff-only origin main
 docker compose -f infra/docker-compose/docker-compose.yml build orchestrator
 docker compose -f infra/docker-compose/docker-compose.yml up -d orchestrator

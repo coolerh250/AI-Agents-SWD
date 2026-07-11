@@ -5,11 +5,8 @@
 
 ## How to access
 
-SSH tunnel to the test host, then open the Admin Console:
-```
-ssh -L 8000:127.0.0.1:8000 aiagent-swd
-```
-Browse to `http://localhost:8000/admin/` and navigate to **Tasks** → open any task → **Open
+SSH-tunnel to the test host as usual (see your own SSH configuration), then open the Admin
+Console at `http://localhost:8000/admin/` and navigate to **Tasks** → open any task → **Open
 Workroom**.
 
 If you'd like to see a clarification in the workroom, ask Claude Code to create one via the API
