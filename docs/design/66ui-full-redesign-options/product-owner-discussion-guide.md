@@ -4,6 +4,9 @@
 > a decision. **No further design or implementation work proceeds until this is filled in and
 > committed back to this file or a follow-up doc.**
 
+> **Decision recorded.** Zachary selected **Hybrid**. Full detail:
+> `product-owner-decision-summary.md`.
+
 ## Decision requested
 
 Choose one:
@@ -11,9 +14,11 @@ Choose one:
 - [ ] **Option 1** — Operations Command Center (`layout-option-1-operations-command-center.md`)
 - [ ] **Option 2** — Task Workspace (`layout-option-2-task-workspace.md`)
 - [ ] **Option 3** — Lifecycle Pipeline (`layout-option-3-lifecycle-pipeline.md`)
-- [ ] **Hybrid** — describe which elements of which options (see `layout-comparison.md` "Hybrid
-      possibility" for one worked example: Option 1 nav/IA + Option 2 tabbed workspace + Option 3
-      pipeline as a view toggle, deferred until 66D)
+- [x] **Hybrid** — Option 1 (IA/Navigation) + Option 2 (Task Workspace interaction model) +
+      Option 3 deferred as a future read-only Task List view toggle. See
+      `product-owner-decision-summary.md` for the full decision record (near-term priority,
+      Category H scope, DeliveryPackage/Delivery Inbox sequencing, Lifecycle Pipeline read-only
+      constraint, placeholder policy).
 - [ ] **Need another round** — none of the three fit; describe what's missing so Claude Design can
       produce revised options
 
