@@ -13397,3 +13397,37 @@ production action, no production deploy, no production secret.
 - **Gate.** Step 66C.3 final status: **PASS, operator VISIBLE**. Step 66C.4: **READY_TO_START**,
   pending operator authorization to begin. Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66UI.1-R — Claude Code Review of Full UI/UX Redesign Options
+
+**Status: completed. Marker: `STEP66UI1_DESIGN_REVIEW_VERIFY: PASS`.** Runtime posture: review/
+architecture documentation only; no runtime code, no backend, no frontend implementation change; no
+design PR merged; no Codex implementation enabled. Production posture: no production action, no
+production deploy, no production secret.
+
+- **Reviewed.** Branch `design/66ui-full-redesign-options` (commits `bc6c5b3`, `00d1191`; Draft PR
+  #1, `draft: true`, `open`, 2 commits, 10 files, +1236/-0, no non-doc paths touched). All 10
+  expected design files present and internally consistent.
+- **Decision confirmed.** Hybrid (Option 1 IA/Nav + Option 2 Task Workspace + Option 3 deferred
+  read-only view toggle); Category H included as "Platform Ops," grouping-only in round 1;
+  DeliveryPackage/Delivery Inbox integration deferred to 66D; Lifecycle Pipeline drag-and-drop
+  explicitly prohibited pending a future Product Owner decision; placeholder policy for
+  not-yet-available areas documented.
+- **Architecture-safety findings.** No doc asserts workflow dispatch/resume/production action/
+  external integrations as active; Option 3's original open question about drag-and-drop is
+  superseded by the Product Owner's decision doc, which prohibits it — no contradiction found; zero
+  runtime/backend/frontend files touched by the design branch; zero sensitive identifiers found.
+- **Output docs.** `docs/design/66ui-full-redesign-options/claude-code-architecture-review.md`
+  (verdict: PASS), `docs/contracts/66ui-full-redesign-options/frontend-implementation-boundary.md`
+  (no contract change required; Delivery/Reminder/Pipeline items each need a future contract before
+  Codex builds past a placeholder), `docs/frontend/66ui-full-redesign-options/codex-readiness-boundary.md`
+  (nav/IA/tab-shell/placeholder work permitted once authorized; Codex not yet authorized to
+  implement — awaiting explicit Product Owner sign-off).
+- **Git handling.** Design branch **not merged**. Review docs committed directly to `main`
+  (established repository convention throughout this project — every prior stage commits directly
+  to `main`; the spec's "main or a review branch" choice was resolved in favor of existing policy).
+- **Tests.** New `tests/test_step66ui1_design_review.py` (13 tests, reading the design branch via
+  `git show <ref>:<path>` — never checked out or merged). Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.1-R status: PASS. Codex implementation remains **not authorized** pending
+  Product Owner sign-off following this review. Claude Code must not decide product acceptance. Not
+  production readiness.
