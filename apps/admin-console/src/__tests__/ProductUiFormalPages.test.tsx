@@ -1,6 +1,8 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { AgentExecutions } from "../pages/AgentExecutions";
 import { QaCode } from "../pages/QaCode";
 import { AuditEvidence } from "../pages/AuditEvidence";
@@ -128,11 +130,14 @@ describe("Product UI formal pages surface demo evidence", () => {
 });
 
 describe("Demo Evidence is diagnostic-only in navigation", () => {
-  it("labels the demo-evidence nav entry as Diagnostics and lists it last", () => {
+  it("removes the demo-evidence entry from grouped navigation", () => {
     const demo = NAV_ITEMS.find((i) => i.to === "/demo-evidence");
-    expect(demo).toBeDefined();
-    expect(demo?.label.toLowerCase()).toContain("diagnostic");
-    expect(NAV_ITEMS[NAV_ITEMS.length - 1].to).toBe("/demo-evidence");
+    expect(demo).toBeUndefined();
+  });
+
+  it("preserves the direct demo-evidence route", () => {
+    const appSource = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf-8");
+    expect(appSource).toContain('path="/demo-evidence"');
   });
 
   it("exposes the formal evidence pages in navigation", () => {

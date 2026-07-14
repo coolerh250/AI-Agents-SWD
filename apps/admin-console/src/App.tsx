@@ -32,18 +32,53 @@ import { TaskList } from "./pages/TaskList";
 import { TaskNew } from "./pages/TaskNew";
 import { TaskDetail } from "./pages/TaskDetail";
 import { TaskWorkroom } from "./pages/TaskWorkroom";
+import { PlaceholderPage } from "./pages/PlaceholderPage";
 
 export function App() {
   return (
     <Layout>
       <Routes>
         <Route path="/" element={<ExecutiveOverview />} />
+        <Route
+          path="/notifications"
+          element={
+            <PlaceholderPage
+              title="Notifications"
+              requiredStep="future notifications stage"
+              note="External notification channels are not connected in this shell."
+            />
+          }
+        />
         <Route path="/tasks" element={<TaskList />} />
         <Route path="/tasks/new" element={<TaskNew />} />
         <Route path="/tasks/:taskId/workroom" element={<TaskWorkroom />} />
         <Route path="/tasks/:taskId" element={<TaskDetail />} />
+        <Route
+          path="/clarifications"
+          element={
+            <PlaceholderPage
+              title="Clarifications"
+              requiredStep="66C.4"
+              note="Task-level clarification flows remain available from each task workroom."
+            />
+          }
+        />
+        <Route
+          path="/clarification-reminders"
+          element={<PlaceholderPage title="Reminder / Expiry" requiredStep="66C.4" />}
+        />
+        <Route
+          path="/delivery-inbox"
+          element={<PlaceholderPage title="Delivery Inbox" requiredStep="66D" />}
+        />
+        <Route
+          path="/delivery-detail"
+          element={<PlaceholderPage title="Delivery Detail" requiredStep="66D" />}
+        />
         <Route path="/demo-evidence" element={<DemoEvidence />} />
         <Route path="/agent-executions" element={<AgentExecutions />} />
+        <Route path="/approvals" element={<PlaceholderPage title="Approvals" requiredStep="66D" />} />
+        <Route path="/dlq-retry" element={<PlaceholderPage title="DLQ / Retry" requiredStep="66D" />} />
         <Route path="/qa-code" element={<QaCode />} />
         <Route path="/audit-evidence" element={<AuditEvidence />} />
         <Route path="/projects" element={<Projects />} />
@@ -69,6 +104,26 @@ export function App() {
         <Route path="/backup-dr" element={<BackupDr />} />
         <Route path="/production-readiness" element={<ProductionReadiness />} />
         <Route path="/controlled-rollout-review" element={<ControlledRolloutReview />} />
+        <Route
+          path="/settings/roles-permissions"
+          element={<PlaceholderPage title="Roles & Permissions" requiredStep="66S" />}
+        />
+        <Route
+          path="/settings/identity-session"
+          element={<PlaceholderPage title="Identity / Session" requiredStep="66S" />}
+        />
+        <Route
+          path="/settings/integrations"
+          element={<PlaceholderPage title="Integrations" requiredStep="66S or later" />}
+        />
+        <Route
+          path="/settings/web-research-sources"
+          element={<PlaceholderPage title="Web Research Sources" requiredStep="66S or later" />}
+        />
+        <Route
+          path="/settings/approval-policy"
+          element={<PlaceholderPage title="Approval Policy" requiredStep="66S or later" />}
+        />
       </Routes>
     </Layout>
   );
