@@ -13732,3 +13732,46 @@ production action, no external action.
   clean.
 - **Gate.** Step 66UI.2-FE.1-D status: PASS. Navigation Grouping / IA Shell is now live on the test
   runtime. Not staging. Not production. Not production readiness.
+
+## Stage 66UI.4-R — Review Phase 1 Product Visual Language Brief and Design Source-of-Truth
+
+- **Scope.** Claude Code (Lead Engineer / Architecture Owner) reviewed Claude Design's Phase 1
+  Product Visual Language brief (Draft PR #5, `design/66ui4-phase1-product-visual-language`, commit
+  `c37c88d`) and the DESIGN-66UI.3 decision context that authorizes it (Draft PR #4,
+  `design/66ui3-product-ux-visual-direction`, commit `1f1d1d1`). Design/architecture/source-of-truth
+  review only — no runtime code, no backend, no API, no database, no workflow, no production action,
+  no Codex authorization, no PR merged.
+- **Product Owner decisions confirmed binding.** Hybrid direction (A for Dashboard/Overview/
+  cross-task, B for Task Detail/Workroom/Clarification/future Delivery Review, C as language/style
+  principles only); Delivery Package stays under Platform Ops; Delivery Inbox/Detail stay under
+  Deliveries; the two must not merge before the Step 66D contract; PR #2 closed as superseded by
+  merged main/test-runtime state; Codex not yet authorized to implement from DESIGN-66UI.3 or
+  DESIGN-66UI.4.
+- **Phase 1 brief review.** All 9 expected files present and reviewed in full (design brief, visual
+  language, calm safety posture, Overview dashboard, navigation visual polish, engineering-field
+  reduction map, product microcopy guide, Codex implementation notes, Product Owner review
+  checklist). All 14 required review areas passed with no gaps: no runtime/backend/API/database
+  change, no workflow dispatch/resume, no production/external action, no Delivery/Reminder real UI
+  before their contracts, no Pipeline board/drag-and-drop, no client-side-only RBAC, safety posture
+  stays server-data-based, engineering-field reduction relocates (never hides) safety-relevant
+  fields, microcopy does not overclaim automation, Overview cleanup uses only existing data plus
+  honest 66D-gated placeholders, changes are feasible as frontend-only work, and Codex notes are
+  narrowly scoped for staged future implementation. Every referenced component/token/endpoint
+  (`styles.css` tokens, `SafetyStatusBar.tsx`, `ExecutiveOverview.tsx`, `Nav.tsx`/`NavGroup.tsx`,
+  `/operations/admin-console/overview`, `/operations/safety`) verified to exist in the actual
+  codebase, confirming the brief is grounded, not speculative.
+- **Source-of-truth review.** Neither PR #4 nor PR #5 is merged, so their content is not yet on
+  `main` — the same systemic risk Claude Design itself flagged. Recommended: merge PR #4 then PR #5
+  (documentation-only, zero runtime risk, in that dependency order), close PR #2 without merge per
+  the Product Owner's own recorded decision, and let the Product Owner decide PR #1's disposition
+  (merge as historical archive, or close). No PR merged or closed in this stage — recommendations
+  only.
+- **Output docs.** `docs/design/66ui4-phase1-product-visual-language/claude-code-architecture-review.md`,
+  `docs/contracts/66ui4-phase1-product-visual-language/frontend-implementation-boundary.md`,
+  `docs/frontend/66ui4-phase1-product-visual-language/codex-readiness-boundary.md`,
+  `docs/design/66ui4-phase1-product-visual-language/design-pr-source-of-truth-review.md`.
+- **Tests.** New `scripts/verify_step66ui4_phase1_design_review.py` +
+  `tests/test_step66ui4_phase1_design_review.py`. Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.4-R status: PASS. Phase 1 brief may serve as Phase 1 design source of truth
+  once merged. Codex remains unauthorized pending explicit Product Owner authorization. Not
+  runtime. Not production.
