@@ -12,6 +12,8 @@ Draft PR: branch pushed; Draft PR must be created from the shared branch because
 
 Implementation commit: `8fd406a feat(admin-console): group navigation by ai teamwork ia`
 
+FIX1 remediation commit: see branch history after the remediation commit is pushed.
+
 Shared branch: `origin/frontend/66ui2-navigation-grouping`
 
 ## Files Changed
@@ -49,10 +51,10 @@ Implemented groups:
 
 - Overview: Dashboard, Notifications placeholder.
 - Team Work: Tasks, Create Task, Clarifications placeholder, Reminder / Expiry placeholder. Task Detail and Task Workroom routes remain direct routes.
-- Deliveries: Delivery Inbox placeholder, Delivery Detail placeholder, Delivery Package.
+- Deliveries: Delivery Inbox placeholder, Delivery Detail placeholder.
 - Operator Center: Operator Console, Incidents, Agent Executions, Approvals placeholder, DLQ / Retry placeholder.
 - Governance: Safety Center, Audit Evidence.
-- Platform Ops: Projects, Projects / Work Items, Workflows / Task Graph, QA / Code, Design Review, Workspace Execution, Mini Delivery Pilot, Regression, Cost / LLM, Runtime Baseline, Identity Posture, Secret Posture, Security / Supply Chain, Operational Metrics, Sandbox GitHub Draft PR, Release Governance, Backup / Restore / DR, Production Readiness Gate, Controlled Rollout Review.
+- Platform Ops: Projects, Projects / Work Items, Workflows / Task Graph, QA / Code, Design Review, Workspace Execution, Mini Delivery Pilot, Delivery Package, Regression, Cost / LLM, Runtime Baseline, Identity Posture, Secret Posture, Security / Supply Chain, Operational Metrics, Sandbox GitHub Draft PR, Release Governance, Backup / Restore / DR, Production Readiness Gate, Controlled Rollout Review.
 - Settings: Roles & Permissions placeholder, Identity / Session placeholder, Integrations placeholder, Web Research Sources placeholder, Approval Policy placeholder.
 
 Platform Ops is configured with `collapsible: true` and `defaultExpanded: false`. If the active route belongs to Platform Ops, the group opens automatically.
@@ -116,9 +118,15 @@ Reminder / Expiry 66C.4 real UI implemented: no, placeholder only.
 
 Pipeline board or drag-and-drop implemented: no.
 
+## Step 66UI.2-FE.1-FIX1 Remediation
+
+- Delivery Package moved back to Platform Ops per Product Owner decision.
+- Deliveries remains placeholder-only until Step 66D.
+- Clarifications placeholder confirmed safe: `Not yet available.`, `Requires Step 66C.4.`, and `No workflow action available.`
+
 ## Known Notes
 
-The authorized FE.1 task text places Delivery Package under Deliveries. The current `66UI.2-R` summary on `main` says DeliveryPackage remains under Platform Ops. This implementation follows the latest authorized FE.1 task text and preserves the route; Claude Code should reconcile the design/review documentation before the next IA iteration.
+Delivery Package and Delivery Inbox remain separate until Step 66D API / data contract work decides any future integration.
 
 `npm ci` reported existing dependency vulnerabilities through npm audit: 3 moderate, 1 high, and 1 critical. No dependency upgrade was performed because this IA task should not introduce unrelated package churn or breaking upgrades.
 
@@ -144,7 +152,7 @@ Commands run:
 
 Results:
 
-- Frontend tests: 14 files, 103 tests passed.
+- Frontend tests: 14 files, 106 tests passed after FIX1.
 - Typecheck: passed.
 - Build: passed.
 - Verifier: `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`.
@@ -152,7 +160,7 @@ Results:
 
 ## Recommended Next Phase
 
-Product Owner: confirm whether Delivery Package should remain in Deliveries or return to Platform Ops before Step 66D.
+Product Owner: validate Delivery Package under Platform Ops and Deliveries as placeholder-only until Step 66D.
 
 Claude Code: reconcile the FE.1 grouping decision against the 66UI.2-R summary and decide whether to merge/refresh the design branch docs.
 

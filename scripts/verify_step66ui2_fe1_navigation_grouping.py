@@ -78,6 +78,7 @@ EXISTING_ROUTES = (
 PLACEHOLDER_ROUTES = {
     "/delivery-inbox": "66D",
     "/delivery-detail": "66D",
+    "/clarifications": "66C.4",
     "/clarification-reminders": "66C.4",
     "/approvals": "66D",
     "/dlq-retry": "66D",
@@ -183,8 +184,16 @@ def main() -> int:
         bad("Platform Ops is not expandable")
 
     deliveries_section = re.search(r'id: "deliveries".*?id: "operator-center"', nav, re.DOTALL)
-    if not deliveries_section or 'to: "/delivery-package"' not in deliveries_section.group(0):
-        bad("Delivery Package is not preserved under the Deliveries group")
+    if not deliveries_section:
+        bad("Deliveries group not found")
+    elif 'to: "/delivery-package"' in deliveries_section.group(0):
+        bad("Delivery Package must not be in the Deliveries group")
+    elif 'to: "/delivery-inbox"' not in deliveries_section.group(0) or 'to: "/delivery-detail"' not in deliveries_section.group(0):
+        bad("Deliveries group must keep only the 66D delivery placeholders")
+
+    platform_ops_section = re.search(r'id: "platform-ops".*?id: "settings"', nav, re.DOTALL)
+    if not platform_ops_section or 'to: "/delivery-package"' not in platform_ops_section.group(0):
+        bad("Delivery Package must be preserved under the Platform Ops group")
 
     if "/demo-evidence" in nav:
         bad("Demo Evidence still appears in navigation")
@@ -214,6 +223,7 @@ def main() -> int:
         "renders the seven required navigation groups",
         "Requires Step 66D.",
         "Requires Step 66C.4.",
+        "Delivery Package under Platform Ops",
         "does not introduce drag/drop",
     ):
         assert_contains(nav_test, text, "NavigationGrouping frontend test")

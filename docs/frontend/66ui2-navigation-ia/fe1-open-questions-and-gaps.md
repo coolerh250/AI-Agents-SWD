@@ -10,9 +10,9 @@ This document records design gaps, implementation limits, and review questions t
 
 ## Open Questions
 
-1. Delivery Package group placement
+1. Delivery Package group placement - resolved by FIX1
 
-   The authorized FE.1 task places Delivery Package under Deliveries. The current 66UI.2-R summary on `main` says DeliveryPackage remains under Platform Ops. The implementation follows the authorized FE.1 task text and keeps the route unchanged. Product Owner and Claude Code should confirm the final IA placement before Step 66D.
+   Product Owner confirmed Delivery Package must move back to Platform Ops. Deliveries remains placeholder-only with Delivery Inbox and Delivery Detail until Step 66D API / data contract work decides any future integration.
 
 2. Safety status bar field contract
 
@@ -33,7 +33,10 @@ This document records design gaps, implementation limits, and review questions t
 ## Implementation Limits
 
 - No Delivery 66D real UI was implemented.
+- Deliveries remains placeholder-only until Step 66D.
+- Delivery Package remains an existing Platform Ops page and route.
 - No Reminder / Expiry 66C.4 real UI was implemented.
+- Clarifications remains a safe Step 66C.4 placeholder with no fake queue, fake reminder controls, fake expiry controls, workflow resume, or workflow dispatch controls.
 - No Approvals or DLQ / Retry real UI was implemented.
 - No Settings 66S real UI was implemented.
 - No Pipeline board was implemented.
@@ -51,7 +54,7 @@ This document records design gaps, implementation limits, and review questions t
 
 Product Owner:
 
-- Confirm Delivery Package placement.
+- Validate Delivery Package under Platform Ops after FIX1.
 - Confirm seven group labels and order.
 - Confirm direct-route-only Demo Evidence behavior.
 - Confirm placeholder wording and required stages.
@@ -61,7 +64,7 @@ Claude Code:
 - Confirm branch base and no design-branch merge.
 - Confirm no forbidden scope changes.
 - Confirm verifier coverage.
-- Decide whether to adjust the 66UI.2-R summary or the implementation for Delivery Package grouping.
+- Confirm the FIX1 remediation satisfies the 66UI.2-R PASS_WITH_GAPS merge-blocking item.
 
 Claude Design:
 

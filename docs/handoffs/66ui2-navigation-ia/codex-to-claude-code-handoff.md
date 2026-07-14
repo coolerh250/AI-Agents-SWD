@@ -4,7 +4,9 @@ Marker: `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`
 
 Branch: `frontend/66ui2-navigation-grouping`
 
-Commit: `8fd406a feat(admin-console): group navigation by ai teamwork ia`
+Implementation commit: `8fd406a feat(admin-console): group navigation by ai teamwork ia`
+
+FIX1 remediation commit: see branch history after the remediation commit is pushed.
 
 Draft PR: branch pushed; Draft PR must be created from the shared branch because the local environment does not provide a PR CLI.
 
@@ -90,10 +92,10 @@ Implemented seven groups:
 
 - Overview: Dashboard, Notifications.
 - Team Work: Tasks, Create Task, Clarifications, Reminder / Expiry.
-- Deliveries: Delivery Inbox, Delivery Detail, Delivery Package.
+- Deliveries: Delivery Inbox, Delivery Detail.
 - Operator Center: Operator Console, Incidents, Agent Executions, Approvals, DLQ / Retry.
 - Governance: Safety Center, Audit Evidence.
-- Platform Ops: existing runtime, metrics, release, backup, readiness, security, project, QA/code, workspace, and rollout pages.
+- Platform Ops: existing runtime, metrics, release, backup, readiness, security, project, QA/code, workspace, Delivery Package, and rollout pages.
 - Settings: Roles & Permissions, Identity / Session, Integrations, Web Research Sources, Approval Policy.
 
 Platform Ops is configured as collapsible and default-collapsed. If a Platform Ops route is active, the group auto-expands.
@@ -137,6 +139,9 @@ Coverage:
 - Platform Ops is grouped and not first-level flat noise.
 - Demo Evidence is absent from nav while direct route remains.
 - Delivery placeholder shows Step 66D and no workflow action.
+- Delivery Package is under Platform Ops and not in Deliveries.
+- Delivery Detail placeholder shows Step 66D and no workflow action.
+- Clarifications placeholder shows Step 66C.4 and no workflow action.
 - Reminder placeholder shows Step 66C.4 and no workflow action.
 - Settings placeholder does not render fake controls.
 - No drag/drop markers introduced by the new shell files.
@@ -148,7 +153,7 @@ Updated `apps/admin-console/src/__tests__/ProductUiFormalPages.test.tsx` so Demo
 
 Last full frontend verification for the implementation branch:
 
-- `npm.cmd --prefix apps/admin-console test`: passed, 14 test files and 103 tests.
+- `npm.cmd --prefix apps/admin-console test`: passed, 14 test files and 106 tests after FIX1.
 - `npm.cmd --prefix apps/admin-console run typecheck`: passed.
 - `npm.cmd --prefix apps/admin-console run build`: passed.
 - `python scripts/verify_step66ui2_fe1_navigation_grouping.py`: passed.
@@ -174,26 +179,32 @@ Preserved constraints:
 
 The top `SafetyStatusBar` reads existing `getSafety()` data only. Missing safety fields display `not reported`; the frontend does not infer safety state.
 
-## 9. Known Gaps
+## 9. Step 66UI.2-FE.1-FIX1 Remediation
 
-- Delivery Package grouping needs final confirmation. The authorized FE.1 task placed it under Deliveries, while the 66UI.2-R summary on `main` stated it should remain under Platform Ops.
+- Delivery Package moved back to Platform Ops per Product Owner decision.
+- Deliveries remains placeholder-only until Step 66D.
+- Clarifications placeholder confirmed safe: `Not yet available.`, `Requires Step 66C.4.`, and `No workflow action available.`
+
+## 10. Known Gaps
+
+- Delivery Package and Delivery Inbox remain separate until Step 66D API / data contract work decides any future integration.
 - The top safety bar depends on fields returned by the existing safety endpoint; absent fields remain `not reported`.
 - Notifications, Clarifications overview, Reminder / Expiry, Delivery Inbox/Detail, Approvals, DLQ / Retry, and Settings pages are placeholders only.
 - Existing npm audit findings remain out of scope for this IA task.
 
-## 10. Items Requiring Claude Code Review
+## 11. Items Requiring Claude Code Review
 
 - Confirm the implementation branch is correctly based on latest `origin/main` and does not merge the design branch.
-- Review whether Delivery Package should remain in Deliveries or move back to Platform Ops.
+- Review that Delivery Package is back under Platform Ops and Deliveries is placeholder-only.
 - Review the verifier scope for shared-doc expectations and sensitive-content checks.
 - Confirm the safety bar wording is acceptable when fields are absent from existing endpoint data.
 - Confirm whether `apps/admin-console/tsconfig.tsbuildinfo` should remain tracked as updated build metadata.
 
-## 11. Items Requiring Product Owner Validation
+## 12. Items Requiring Product Owner Validation
 
 - Validate the seven IA groups and labels.
 - Validate Demo Evidence as direct-route-only.
-- Validate Delivery Package group placement.
+- Validate Delivery Package under Platform Ops.
 - Validate placeholder wording and stage references.
 - Validate that Settings placeholders are acceptable until Step 66S or later.
 - Validate that Platform Ops default-collapsed behavior is acceptable for operators.

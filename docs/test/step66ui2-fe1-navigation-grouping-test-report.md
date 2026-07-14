@@ -40,7 +40,7 @@ pytest tests/test_step66ui2_fe1_navigation_grouping.py
 
 - Result: pass.
 - Test files: 14 passed.
-- Tests: 103 passed.
+- Tests: 106 passed after FIX1.
 - Notes: React Router v7 future-flag warnings appeared in test stderr; these are pre-existing warning class and not a Step 66UI.2-FE.1 failure.
 
 `npm.cmd --prefix apps/admin-console run typecheck`
@@ -62,7 +62,7 @@ pytest tests/test_step66ui2_fe1_navigation_grouping.py
 
 - Result: pass.
 - Tests: 1 passed.
-- After shared handoff/open-questions docs, the current shell no longer exposed `pytest` on PATH; the same wrapper test function was invoked directly with the bundled Python runtime and passed.
+- Rerun after FIX1: pass.
 
 ## Frontend Test Coverage Added
 
@@ -76,6 +76,9 @@ Coverage:
 - Platform Ops is grouped and collapsed by default.
 - Demo Evidence is absent from nav and preserved as a direct route.
 - Delivery placeholder shows Step 66D and no workflow action.
+- Delivery Detail placeholder shows Step 66D and no workflow action.
+- Delivery Package is not in Deliveries and appears under Platform Ops.
+- Clarifications placeholder shows Step 66C.4 and no workflow action.
 - Reminder placeholder shows Step 66C.4 and no workflow action.
 - Settings placeholders render no fake controls.
 - No drag/drop source markers introduced in new navigation shell files.
@@ -95,7 +98,8 @@ Verifier checks:
 
 - `NAV_GROUPS` contains the seven required group labels.
 - Platform Ops is collapsible and default-collapsed.
-- Delivery Package is preserved under Deliveries per the authorized FE.1 task text.
+- Delivery Package is preserved under Platform Ops per Product Owner FIX1 decision.
+- Delivery Package is not present in the Deliveries group.
 - Demo Evidence is not present in navigation.
 - Existing routes are preserved in `App.tsx`.
 - Required placeholder routes and steps exist.
@@ -110,5 +114,13 @@ Verifier checks:
 ## Residual Risk
 
 - The top safety bar can only display fields returned by the existing safety endpoint. It shows `not reported` for absent fields instead of inferring false/true on the client.
-- The Delivery Package group placement should be reconciled with the current 66UI.2-R summary on `main`.
+- Delivery Package and Delivery Inbox remain separate until Step 66D API / data contract work.
 - npm audit vulnerabilities remain out of scope for this task and should be handled in a dependency maintenance step.
+
+## Step 66UI.2-FE.1-FIX1 Remediation
+
+- Delivery Package moved back to Platform Ops per Product Owner decision.
+- Deliveries remains placeholder-only until Step 66D.
+- Clarifications placeholder confirmed safe / adjusted: `Not yet available.`, `Requires Step 66C.4.`, and `No workflow action available.`
+- `git diff --check`: pass.
+- Secret scan over FE.1-authored frontend/shared docs/verifier/test files: no matches.

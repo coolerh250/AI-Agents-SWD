@@ -90,6 +90,19 @@ describe("Step 66UI.2-FE.1 navigation grouping", () => {
     expect(NAV_ITEMS.some((item) => item.to === "/runtime")).toBe(true);
   });
 
+  it("keeps Delivery Package under Platform Ops and out of Deliveries", () => {
+    renderNav("/delivery-package");
+
+    const deliveries = screen.getByTestId("nav-group-deliveries");
+    expect(within(deliveries).queryByRole("link", { name: "Delivery Package" })).toBeNull();
+    expect(within(deliveries).getByRole("link", { name: "Delivery Inbox" })).toBeDefined();
+    expect(within(deliveries).getByRole("link", { name: "Delivery Detail" })).toBeDefined();
+
+    const platformOps = screen.getByTestId("nav-group-platform-ops");
+    expect(within(platformOps).getByRole("link", { name: "Delivery Package" })).toBeDefined();
+    expect(appSource()).toContain('path="/delivery-package"');
+  });
+
   it("removes Demo Evidence from navigation but preserves its direct route", () => {
     renderNav();
 
@@ -105,6 +118,31 @@ describe("Step 66UI.2-FE.1 navigation grouping", () => {
     const panel = screen.getByTestId("placeholder-panel");
     expect(within(panel).getByText("Not yet available.")).toBeDefined();
     expect(within(panel).getByText("Requires Step 66D.")).toBeDefined();
+    expect(within(panel).getByText("No workflow action available.")).toBeDefined();
+    expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("renders the 66D delivery detail placeholder without workflow actions", async () => {
+    renderApp("/delivery-detail");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Delivery Detail" })).toBeDefined(),
+    );
+    const panel = screen.getByTestId("placeholder-panel");
+    expect(within(panel).getByText("Requires Step 66D.")).toBeDefined();
+    expect(within(panel).getByText("No workflow action available.")).toBeDefined();
+    expect(within(panel).queryByRole("button")).toBeNull();
+  });
+
+  it("renders the 66C.4 clarifications placeholder without fake controls", async () => {
+    renderApp("/clarifications");
+
+    await waitFor(() =>
+      expect(screen.getByRole("heading", { name: "Clarifications" })).toBeDefined(),
+    );
+    const panel = screen.getByTestId("placeholder-panel");
+    expect(within(panel).getByText("Not yet available.")).toBeDefined();
+    expect(within(panel).getByText("Requires Step 66C.4.")).toBeDefined();
     expect(within(panel).getByText("No workflow action available.")).toBeDefined();
     expect(within(panel).queryByRole("button")).toBeNull();
   });

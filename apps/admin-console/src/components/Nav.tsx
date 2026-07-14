@@ -39,7 +39,6 @@ export const NAV_GROUPS: NavGroupConfig[] = [
     items: [
       { to: "/delivery-inbox", label: "Delivery Inbox", end: true },
       { to: "/delivery-detail", label: "Delivery Detail", end: true },
-      { to: "/delivery-package", label: "Delivery Package" },
     ],
   },
   {
@@ -74,6 +73,7 @@ export const NAV_GROUPS: NavGroupConfig[] = [
       { to: "/design-review", label: "Design Review" },
       { to: "/workspace", label: "Workspace Execution" },
       { to: "/mini-delivery", label: "Mini Delivery Pilot" },
+      { to: "/delivery-package", label: "Delivery Package" },
       { to: "/regression", label: "Regression" },
       { to: "/cost-llm", label: "Cost / LLM" },
       { to: "/runtime", label: "Runtime Baseline" },
