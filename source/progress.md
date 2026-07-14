@@ -13649,3 +13649,48 @@ database change; no workflow executed; no external action; no production action;
   branch/remote access). Ruff/Black/Mypy clean. Secret scan critical=0/high=0.
 - **Gate.** Step 66UI.2-FE.1-V status: PASS. Merge authorization remains a Product Owner decision,
   not yet granted. Claude Code must not decide product acceptance. Not production readiness.
+
+## Stage 66UI.2-FE.1-M — Merge Navigation Grouping / IA Shell into Main
+
+**Status: completed. Marker: `STEP66UI2_FE1_MERGE_VERIFY: PASS`.** Runtime posture: merge only; no
+backend, API contract, database, workflow, policy, approval, audit service, or infra change. No
+production action, no external action.
+
+- **Shared context preflight.** `main` synced (already at `622c1b3`, the prior PO-validation commit;
+  no new commits since); frontend branch unchanged since FIX1 (`ce8ab2f`); no conflicts found between
+  shared docs and the Product Owner's merge authorization.
+- **Authorization.** Product Owner explicitly authorized: "授權 merge frontend/66ui2-navigation-grouping
+  到 main." Accepted gap carried forward: Demo Evidence direct-route verification deferred. Blocking
+  gaps: none.
+- **Pre-merge checks.** All 8 confirmed: branch/commit existence, Delivery Package under Platform
+  Ops, Deliveries placeholder-only, Clarifications placeholder safety, Demo Evidence gap
+  accepted/non-blocking, zero backend/API/database/workflow/production/external diff, and the
+  previously-flagged untracked `docs/product/platform-progress-admin-console-proposal.md` confirmed
+  absent.
+- **Merge executed.** `git merge --no-ff origin/frontend/66ui2-navigation-grouping` — merge commit
+  `7ae6975`, pushed `622c1b3..7ae6975`. **One conflict**, in `source/progress.md` only (pure
+  documentation reconciliation: both sides had independently appended stage entries); resolved by
+  chronological reordering, preserving all content from both sides. No backend/API/workflow/
+  security/production file was ever in conflict — everything else auto-merged cleanly.
+- **Post-merge verification.** `npm test` reproduced 14 test files / 106 tests passing; `npm run
+  build`/`typecheck` both passed; `verify_step66ui2_fe1_navigation_grouping.py` and the Product Owner
+  validation verifier both PASS. `verify_step66ui2_fe1_review.py` and
+  `verify_step66ui2_fe1_fix1_review.py` now correctly report FAIL — both were pre-merge "must not be
+  merged yet" gates from the review stages, and merging is exactly the event that closes that gate;
+  this is the intended lifecycle outcome, not a regression, and is documented rather than silently
+  left unexplained. `git diff --check` clean; secret scan critical=0/high=0.
+- **Gap status after merge.** Closed: Delivery Package placement conflict, navigation grouping
+  implementation, Product Owner validation. Accepted deferred: Demo Evidence direct-route
+  verification/cleanup. Deferred future work: Step 66D Delivery Inbox/Detail, Step 66C.4 Reminder/
+  Expiry, Step 66S Roles/Identity/Session, Lifecycle Pipeline read-only view, Task Workspace tab
+  merge.
+- **Output docs.** `docs/frontend/66ui2-navigation-ia/merge-record.md`,
+  `docs/test/step66ui2-fe1-merge-record.md`.
+- **Git handling.** Branch **not deleted** (no explicit Product Owner authorization for cleanup was
+  given).
+- **Tests.** New `tests/test_step66ui2_fe1_merge.py` (14 tests, docs + local-repo-state checks).
+  Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.2-FE.1-M status: PASS. `frontend/66ui2-navigation-grouping` is now merged into
+  `main`. Navigation Grouping / IA Shell is live on `main`, pending the next authorized deployment
+  (a real, non-temporary rollout to the test runtime remains a separate future action). Not
+  production readiness.
