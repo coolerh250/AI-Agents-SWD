@@ -13845,3 +13845,27 @@ production action, no external action.
 - **Gate.** Step 66UI.4-SOT-M status: PASS. `main` is now source of truth for the Hybrid direction,
   Delivery Package placement, and Phase 1 Product Visual Language brief. Codex remains unauthorized.
   Not runtime. Not production.
+
+## Stage 66GOV.1-M — Merge Stage Gate & Context Guard Skill Pack to Main
+
+- **Authorization.** Product Owner explicitly authorized: "授權 merge docs/66gov1-stage-gate-context-guard
+  到 main。"
+- **Merged.** `docs/66gov1-stage-gate-context-guard` (commit `97c44eb`) merged to `main` via
+  `git merge --no-ff` at commit `206518f`. Pre-merge scope confirmed limited to `.agents/`,
+  `docs/process/`, `docs/stages/`, `.github/pull_request_template.md`,
+  `scripts/verify_stage_gate_compliance.py`, `tests/test_stage_gate_compliance.py`, and
+  `source/progress.md` — no forbidden runtime/backend/API/database/workflow path.
+- **Conflict.** One conflict, in `source/progress.md` only (both `main`, via the intervening Step
+  66UI.4-SOT-M merges, and this branch had independently appended stage entries since the branch
+  was cut). Resolved by chronological reordering (Stage 66GOV.1's entry placed before Stage
+  66UI.4-SOT-M's, matching authorship order), preserving all content from both sides.
+- **Source of truth.** `.agents/` (5 skills + README), `docs/stages/` (manifest standard, receipt
+  template, gate report template, 3 examples), 5 `docs/process/` governance docs, and the updated
+  `.github/pull_request_template.md` are now on `main` — the Stage Gate & Context Guard Skill Pack
+  is repo-level source of truth for all partners going forward.
+- **Verification.** `verify_stage_gate_compliance.py` → PASS; `test_stage_gate_compliance.py` 14/14
+  passed; `git diff --check` clean; `git status --short` clean; secret scan critical=0/high=0.
+- **Output docs.** `docs/test/step66gov1-merge-record.md`.
+- **Gate.** Step 66GOV.1-M status: PASS. Codex remains unauthorized. Not runtime. Not production.
+  Not deployment. No CI enforcement or CODEOWNERS work performed in this stage (deferred, per
+  explicit instruction).
