@@ -33,18 +33,16 @@ only: `git diff 62c5852..cf6c086 --name-only` shows every changed path under
 | PR | Branch | Disposition | Status |
 | --- | --- | --- | --- |
 | #1 | `design/66ui-full-redesign-options` | **Retained as historical reference.** Not merged, not closed. Its concrete recommendations (Option 1 → IA, Option 2 → task workspace, Option 3 → deferred) have been superseded in specificity by the merged 66UI.2/66UI.3/66UI.4 decisions now on `main`, but the PR itself stays open per explicit Product Owner instruction. | Open, historical reference only — **not** current implementation source. |
-| #2 | `design/66ui2-navigation-ia` | **Superseded — close without merge.** Not merged in this stage. | Requires manual close (see "PR #2 close status" below). |
+| #2 | `design/66ui2-navigation-ia` | **Superseded — closed without merge.** Not merged. | **Closed** (confirmed by Product Owner, see "PR #2 close status" below). |
 | #4 | `design/66ui3-product-ux-visual-direction` | **Merged to main** at commit `a47f205`. | Merged — now source of truth. |
 | #5 | `design/66ui4-phase1-product-visual-language` | **Merged to main** at commit `cf6c086`. | Merged — now source of truth. |
 
 ### PR #2 close status
 
-PR #2 could not be closed via GitHub in this stage: no `gh` CLI is available in this environment and
-no GitHub token is present (checked `GITHUB_TOKEN` / `GH_TOKEN` — both unset; no credential
-extraction attempted, per the explicit "do not extract credentials, do not use unsafe token methods"
-instruction). **PR #2 still requires a manual close by the Product Owner or repo admin.**
-
-Recommended close comment (for whoever closes it manually):
+PR #2 could not be closed via GitHub tooling in this stage: no `gh` CLI is available in this
+environment and no GitHub token is present (checked `GITHUB_TOKEN` / `GH_TOKEN` — both unset; no
+credential extraction attempted, per the explicit "do not extract credentials, do not use unsafe
+token methods" instruction). Manual close was recommended, with the following comment text:
 
 ```text
 Superseded by:
@@ -54,7 +52,13 @@ Superseded by:
 Not merged. Branch not deleted pending separate Product Owner authorization.
 ```
 
-Manual PR URL: `https://github.com/coolerh250/AI-Agents-SWD/pull/2`
+**Update — PR #2 confirmed closed.** The Product Owner manually closed PR #2 via the GitHub UI and
+confirmed via screenshot (`design: define navigation / information architecture detailed brief #2`,
+red "Closed" badge, closed by `coolerh250`). PR #2 is now closed, not merged, per the original
+authorization. The `design/66ui2-navigation-ia` branch was not deleted (no separate authorization
+given for branch cleanup).
+
+PR URL: `https://github.com/coolerh250/AI-Agents-SWD/pull/2`
 
 **Important finding from this stage's Shared Context Preflight:** PR #2's branch received a new
 commit (`7c95483`, 2026-07-14 09:16, "record PO decisions and sync DeliveryPackage placement")
@@ -93,10 +97,9 @@ with the actual deployed/merged `main` state (Delivery Package under Platform Op
 As of this record, `main` contains the full text of both the DESIGN-66UI.3 decision record and the
 DESIGN-66UI.4 Phase 1 brief. The divergence risk flagged in
 `docs/design/66ui4-phase1-product-visual-language/design-pr-source-of-truth-review.md` §3 ("neither
-PR #4 nor PR #5 is merged...") is now resolved for those two PRs. The remaining open items are PR
-#1's continued-open status (explicitly authorized, not a gap) and PR #2's pending manual close
-(a GitHub housekeeping action, not a content divergence risk — its content is now formally
-superseded on `main`, regardless of the PR's own open/closed state on GitHub).
+PR #4 nor PR #5 is merged...") is now resolved for those two PRs, and PR #2's disposition is now
+fully closed out (confirmed closed by the Product Owner). The only remaining open item is PR #1's
+continued-open status, which is explicitly authorized and not a gap.
 
 ## Statement
 

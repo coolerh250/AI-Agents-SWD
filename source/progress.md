@@ -13869,3 +13869,16 @@ production action, no external action.
 - **Gate.** Step 66GOV.1-M status: PASS. Codex remains unauthorized. Not runtime. Not production.
   Not deployment. No CI enforcement or CODEOWNERS work performed in this stage (deferred, per
   explicit instruction).
+
+## Update — PR #2 confirmed closed
+
+- Product Owner manually closed PR #2 (`design: define navigation / information architecture
+  detailed brief #2`) via the GitHub UI, confirmed by screenshot showing the red "Closed" badge.
+- Not merged — closed, exactly per the original Step 66UI.4-SOT-M authorization ("關閉 PR #2 不
+  merge"). Branch `design/66ui2-navigation-ia` not deleted (no separate branch-cleanup
+  authorization given).
+- `docs/design/66ui-source-of-truth-record.md` updated to reflect PR #2's disposition as fully
+  closed out — the only remaining open PR-disposition item is PR #1's explicitly-authorized
+  continued-open (historical reference) status.
+- No runtime/backend/API/database/workflow change. No production/external action. No Codex
+  authorization change.
