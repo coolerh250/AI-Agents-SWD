@@ -13471,3 +13471,40 @@ action, no production deploy, no production secret.
 - **Gate.** Step 66UI.2-R status: PASS. Codex implementation remains **not authorized** pending
   Product Owner sign-off following this review. Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66UI.2-FE.1 - Navigation Grouping / IA Shell
+
+**Status: completed. Marker: `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`.** Runtime posture:
+frontend-only Admin Console IA shell implementation; no backend, API contract, database, workflow,
+policy, approval, audit service, infra, external integration, or production behavior change.
+Production posture: no workflow dispatch, no workflow resume, no production action, no fake delivery/
+approval/retry/reminder controls.
+
+- **Implemented.** Replaced the flat Admin Console navigation with seven grouped sections:
+  Overview, Team Work, Deliveries, Operator Center, Governance, Platform Ops, and Settings.
+  Platform Ops is collapsible and default-collapsed, while active Platform Ops routes auto-expand.
+  Existing routes remain preserved, including `/tasks/:taskId`, `/tasks/:taskId/workroom`,
+  `/delivery-package`, and `/demo-evidence`.
+- **Placeholders.** Added safe placeholder pages for deferred Notifications, Clarifications,
+  Reminder / Expiry (`66C.4`), Delivery Inbox/Detail (`66D`), Approvals/DLQ-Retry (`66D`), and
+  Settings (`66S` or later). Placeholders use the required "Not yet available / Requires Step /
+  No workflow action available" pattern and render no fake controls.
+- **Safety.** Added a top `SafetyStatusBar` that reads existing `getSafety()` data only. Missing
+  fields render as `not reported`; the frontend does not infer safety state. Existing Workroom
+  RBAC/audit readable states remain unchanged.
+- **Demo Evidence.** Removed Diagnostics / Demo Evidence from navigation while preserving direct
+  route access at `/demo-evidence`.
+- **Known note.** The authorized FE.1 task places Delivery Package under Deliveries, while the
+  current 66UI.2-R summary on `main` says DeliveryPackage stays under Platform Ops. This
+  implementation follows the latest authorized FE.1 task text; Claude Code should reconcile the
+  review/design docs before the next IA iteration.
+- **Tests.** `npm.cmd --prefix apps/admin-console test` passed (14 test files, 103 tests).
+  `npm.cmd --prefix apps/admin-console run typecheck` passed. `npm.cmd --prefix apps/admin-console
+  run build` passed. `scripts/verify_step66ui2_fe1_navigation_grouping.py` passed and emitted
+  `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`. `pytest
+  tests/test_step66ui2_fe1_navigation_grouping.py` passed.
+- **Docs.** Added `docs/frontend/66ui2-navigation-ia/fe1-navigation-grouping-implementation-report.md`
+  and `docs/test/step66ui2-fe1-navigation-grouping-test-report.md`.
+- **Git handling.** Work performed on branch `frontend/66ui2-navigation-grouping`. Commit and Draft
+  PR were not created in this pass because the local project instruction says to ask before
+  committing.
