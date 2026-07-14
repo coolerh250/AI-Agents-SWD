@@ -13775,3 +13775,37 @@ production action, no external action.
 - **Gate.** Step 66UI.4-R status: PASS. Phase 1 brief may serve as Phase 1 design source of truth
   once merged. Codex remains unauthorized pending explicit Product Owner authorization. Not
   runtime. Not production.
+
+## Stage 66UI.4-SOT-M — Merge Design Source-of-Truth PRs
+
+- **Authorization.** Product Owner explicitly authorized: "授權 Claude Code 依序 merge PR #4、PR #5
+  到 main；關閉 PR #2 不 merge；PR #1 暫時保留；不授權 Codex 實作。"
+- **PR #4 merged.** `design/66ui3-product-ux-visual-direction` merged to `main` via
+  `git merge --no-ff` at commit `a47f205` — 11 files, +1033 lines, zero conflicts, docs-only
+  (`docs/design/66ui3-product-ux-visual-direction/**`). Hybrid direction (A for Dashboard/Overview/
+  cross-task, B for Task Detail/Workroom/Clarification/future Delivery Review, C as language/style
+  principles), Delivery Package-stays-under-Platform-Ops decision, and PR #2-superseded ruling are
+  now on `main`.
+- **PR #5 merged.** `design/66ui4-phase1-product-visual-language` merged to `main` via
+  `git merge --no-ff` at commit `cf6c086` — 9 files, +818 lines, zero conflicts, docs-only
+  (`docs/design/66ui4-phase1-product-visual-language/**`). The Phase 1 Product Visual Language
+  brief (reviewed PASS in Step 66UI.4-R) is now on `main`.
+- **Preflight finding.** PR #2's branch received an unreviewed commit (`7c95483`, 09:16) recording
+  an *earlier* Product Owner decision that placed Delivery Package under Deliveries — this predates
+  and is exactly what the merged 66UI.3 decision (`1f1d1d1`, 15:00 same day) explicitly names and
+  supersedes. Confirms, rather than complicates, the close-without-merge instruction.
+- **PR #2.** Not merged, per authorization. Could not be closed via GitHub in this environment (no
+  `gh` CLI, no `GITHUB_TOKEN`/`GH_TOKEN` present; no credential extraction attempted). Recorded as
+  requiring manual close — `https://github.com/coolerh250/AI-Agents-SWD/pull/2`.
+- **PR #1.** Kept open, marked historical reference only, not current implementation source, per
+  explicit instruction. Not merged, not closed.
+- **Verification.** `git diff 62c5852..cf6c086 --name-only` — 20 files, all under the two design
+  stage directories, zero `apps/`/`shared/`/`infra/` paths. `Nav.tsx` Delivery Package placement
+  confirmed unchanged (still under `platform-ops`). Secret scan critical=0/high=0.
+- **Output docs.** `docs/design/66ui-source-of-truth-record.md`,
+  `docs/test/step66ui4-source-of-truth-merge-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_source_of_truth_merge.py` +
+  `tests/test_step66ui4_source_of_truth_merge.py`. Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.4-SOT-M status: PASS. `main` is now source of truth for the Hybrid direction,
+  Delivery Package placement, and Phase 1 Product Visual Language brief. Codex remains unauthorized.
+  Not runtime. Not production.
