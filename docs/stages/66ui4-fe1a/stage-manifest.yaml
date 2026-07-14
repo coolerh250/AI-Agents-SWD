@@ -1,0 +1,86 @@
+stage: "66UI.4-FE.1A"
+owner: "Codex"
+task_type: "frontend"
+status: "implementation"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "a64daa9"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/design/66ui3-product-ux-visual-direction/product-owner-decision-record.md
+    - docs/design/66ui4-phase1-product-visual-language/design-brief.md
+    - docs/design/66ui4-phase1-product-visual-language/visual-language-spec.md
+    - docs/design/66ui4-phase1-product-visual-language/engineering-field-reduction-map.md
+    - docs/design/66ui4-phase1-product-visual-language/product-microcopy-guide.md
+    - docs/contracts/66ui4-phase1-product-visual-language/frontend-implementation-boundary.md
+    - docs/frontend/66ui4-phase1-product-visual-language/codex-readiness-boundary.md
+  related_prs:
+    - "PR #4 merged to main as 66UI.3 source of truth"
+    - "PR #5 merged to main as 66UI.4 source of truth"
+    - "PR #2 closed/superseded; not an implementation source"
+
+allowed_paths:
+  - "apps/admin-console/**"
+  - "docs/stages/66ui4-fe1a/**"
+  - "docs/frontend/66ui4-phase1-product-visual-language/**"
+  - "docs/handoffs/66ui4-fe1a/**"
+  - "docs/test/**"
+  - "source/progress.md"
+  - "scripts/verify_step66ui4_fe1a_visual_polish.py"
+  - "tests/test_step66ui4_fe1a_visual_polish.py"
+forbidden_paths:
+  - "apps/orchestrator/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+  - "shared/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+  - implementation_report
+  - test_results
+  - build_result
+
+codex_authorized: true
+design_only: false
+frontend_only: true
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
