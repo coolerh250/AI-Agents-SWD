@@ -1,0 +1,71 @@
+# Example stage manifest — design-only review stage.
+#
+# Modeled on Step 66UI.4-R (review of the DESIGN-66UI.4 Phase 1 Product Visual Language brief).
+# Process documentation only. No backend/frontend runtime change. No production action.
+
+stage: "66ui4-r-phase1-visual-language-review"
+owner: "Claude Code"
+task_type: "review"
+status: "PASS"
+
+source_of_truth:
+  main_required: true
+  required_docs:
+    - source/progress.md
+    - docs/design/66ui3-product-ux-visual-direction/product-owner-decision-record.md
+    - docs/design/66ui4-phase1-product-visual-language/design-brief.md
+  related_prs:
+    - "PR #1 (design/66ui-full-redesign-options) - historical context"
+    - "PR #2 (design/66ui2-navigation-ia) - superseded, not source of truth"
+    - "PR #4 (design/66ui3-product-ux-visual-direction) - binding decision context"
+    - "PR #5 (design/66ui4-phase1-product-visual-language) - review target"
+
+allowed_paths:
+  - "docs/design/66ui4-phase1-product-visual-language/**"
+  - "docs/contracts/66ui4-phase1-product-visual-language/**"
+  - "docs/frontend/66ui4-phase1-product-visual-language/**"
+  - "scripts/verify_step66ui4_phase1_design_review.py"
+  - "tests/test_step66ui4_phase1_design_review.py"
+  - "source/progress.md"
+forbidden_paths:
+  - "apps/**"
+  - "shared/**"
+  - "infra/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+codex_authorized: false
+design_only: true
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true # governs the design PR itself, not this review stage
+deployment_authorization_required: false
+product_owner_validation_required: false # this stage is a technical review, not a UI validation
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found

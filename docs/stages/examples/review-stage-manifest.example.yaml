@@ -1,0 +1,70 @@
+# Example stage manifest — review/governance-only stage.
+#
+# Modeled on this stage, Step 66GOV.1 (Stage Gate & Context Guard Skill Pack).
+# Process documentation only. No backend/frontend runtime change. No production action.
+
+stage: "66gov1-stage-gate-context-guard"
+owner: "Claude Code"
+task_type: "governance"
+status: "PASS"
+
+source_of_truth:
+  main_required: true
+  required_docs:
+    - source/progress.md
+    - docs/process/role-responsibility-matrix.md
+    - docs/process/github-collaboration-hub.md
+  related_prs:
+    - "PR #1, #4, #5 reviewed for context continuity; none merged/closed by this stage"
+
+allowed_paths:
+  - ".agents/**"
+  - "docs/stages/**"
+  - "docs/process/**"
+  - "docs/decisions/README.md"
+  - ".github/pull_request_template.md"
+  - "scripts/verify_stage_gate_compliance.py"
+  - "tests/test_stage_gate_compliance.py"
+  - "source/progress.md"
+forbidden_paths:
+  - "apps/**"
+  - "shared/**"
+  - "infra/**"
+  - ".github/workflows/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+codex_authorized: false
+design_only: false
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true
+deployment_authorization_required: false
+product_owner_validation_required: false # process/governance stages are technical PASS only
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found

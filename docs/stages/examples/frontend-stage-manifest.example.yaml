@@ -1,0 +1,73 @@
+# Example stage manifest — authorized frontend-implementation stage.
+#
+# Modeled on Step 66UI.2-FE.1 (Navigation Grouping / IA Shell implementation by Codex).
+# Process documentation only. This example itself makes no runtime change; it illustrates what a
+# real authorized implementation stage's manifest should declare.
+
+stage: "66ui2-fe1-navigation-grouping"
+owner: "Codex"
+task_type: "frontend-implementation"
+status: "PASS"
+
+source_of_truth:
+  main_required: true
+  required_docs:
+    - source/progress.md
+    - docs/design/66ui2-navigation-ia/design-brief.md
+    - docs/contracts/66ui2-navigation-ia/frontend-implementation-boundary.md
+    - docs/frontend/66ui2-navigation-ia/codex-implementation-plan-boundary.md
+  related_prs:
+    - "frontend/66ui2-navigation-grouping (implementation branch, based on main, not the design branch)"
+
+allowed_paths:
+  - "apps/admin-console/src/**"
+  - "docs/frontend/66ui2-navigation-ia/**"
+  - "docs/handoffs/66ui2-navigation-ia/**"
+  - "docs/test/step66ui2-fe1-*.md"
+  - "source/progress.md"
+forbidden_paths:
+  - "apps/orchestrator/**"
+  - "shared/**"
+  - "infra/**"
+  - "docs/contracts/**" # Codex reads contracts, does not author them
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+  - implementation_report
+  - test_results
+  - build_result
+
+codex_authorized: true # explicit Product Owner authorization recorded for this specific stage
+design_only: false
+frontend_only: true
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true # not yet granted at implementation time; granted in a later, separate stage
+deployment_authorization_required: true # not yet granted at implementation time; granted in a later, separate stage
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
