@@ -13431,3 +13431,43 @@ production deploy, no production secret.
 - **Gate.** Step 66UI.1-R status: PASS. Codex implementation remains **not authorized** pending
   Product Owner sign-off following this review. Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66UI.2-R — Claude Code Review of Navigation / IA Detailed Design
+
+**Status: completed. Marker: `STEP66UI2_NAVIGATION_IA_REVIEW_VERIFY: PASS`.** Runtime posture:
+review/architecture documentation only; no runtime code, no backend, no frontend implementation
+change; no design PR merged; no Codex implementation enabled. Production posture: no production
+action, no production deploy, no production secret.
+
+- **Reviewed.** Branch `design/66ui2-navigation-ia` (commit `edda1b0`; Draft PR #2, `draft: true`,
+  `open`, 1 commit, 8 files, +898/-0, no non-doc paths touched). All 8 expected design files present
+  and internally consistent. Product Owner result: `READY_FOR_CODE_REVIEW`.
+- **Decision confirmed.** Dashboard and Operational Metrics stay separate this round; DeliveryPackage
+  stays under Platform Ops unmerged with Delivery Inbox (still 66D-gated); Deliveries group is
+  visible-but-placeholder in round 1; Security/Compliance cross-group access accepted where
+  server-side RBAC allows; Notifications in-app only, external channels "Coming later." Both open
+  items from the 66UI.1 review (`ExecutiveOverview`/`OperationalMetrics` merge question left open;
+  `OperatorConsole` vs. Approvals/DLQ resolved as separate pages under one group) are correctly
+  handled — one resolved, one still explicitly deferred to the Product Owner.
+- **Architecture-safety findings.** No doc asserts workflow dispatch/resume/production action/
+  external integrations as active. One sentence in `design-brief.md` contains the literal substring
+  "production action is enabled" inside an explicit prohibition ("No nav item... may imply that...
+  is enabled") — confirmed a false-positive risk, not a violation, and handled in the verifier with a
+  negation-aware check rather than requiring the (unowned) design branch text be reworded. All 28
+  current flat nav items are accounted for with routes preserved; zero runtime/backend/frontend
+  files touched by the design branch; zero sensitive identifiers found.
+- **Output docs.** `docs/design/66ui2-navigation-ia/claude-code-architecture-review.md` (verdict:
+  PASS), `docs/contracts/66ui2-navigation-ia/frontend-implementation-boundary.md` (no contract change
+  required for round-1 nav shell; Delivery/Reminder/Settings/Pipeline items each still need a future
+  contract before Codex builds past a placeholder), `docs/frontend/66ui2-navigation-ia/codex-implementation-plan-boundary.md`
+  (nav grouping/IA shell/placeholder work permitted once authorized; recommends
+  `Step 66UI.2-FE.1 — Navigation Grouping / IA Shell` as the first safe frontend task; Codex not yet
+  authorized to implement — awaiting explicit Product Owner sign-off).
+- **Git handling.** Design branch **not merged**. Review docs committed directly to `main`
+  (same established convention as 66UI.1-R).
+- **Tests.** New `tests/test_step66ui2_navigation_ia_review.py` (19 tests, reading the design branch
+  via `git show <ref>:<path>` — never checked out or merged). Ruff/Black/Mypy clean. Secret scan
+  critical=0/high=0.
+- **Gate.** Step 66UI.2-R status: PASS. Codex implementation remains **not authorized** pending
+  Product Owner sign-off following this review. Claude Code must not decide product acceptance. Not
+  production readiness.
