@@ -13471,3 +13471,51 @@ action, no production deploy, no production secret.
 - **Gate.** Step 66UI.2-R status: PASS. Codex implementation remains **not authorized** pending
   Product Owner sign-off following this review. Claude Code must not decide product acceptance. Not
   production readiness.
+
+## Stage 66UI.2-FE.1-R — Claude Code Review of Navigation Grouping / IA Shell Implementation
+
+**Status: completed. Marker: `STEP66UI2_FE1_REVIEW_VERIFY: PASS_WITH_GAPS`.** Runtime posture: no
+runtime code changed by this review; no backend, database, workflow, or production behavior
+changed. PR not merged by this review; Codex not authorized for further implementation by this
+document. Production posture: no production action, no production deploy, no production secret.
+
+- **Reviewed.** Branch `frontend/66ui2-navigation-grouping` (commits `8fd406a` implementation,
+  `469b980` shared handoff/docs). No Draft PR existed at review time (confirmed via the public
+  GitHub API); this environment has no `gh` CLI and no `GITHUB_TOKEN`/`GH_TOKEN` in the process
+  environment, so a Draft PR could not be created via an authenticated call — no credential
+  extraction was attempted. A manual compare URL was produced
+  (`.../compare/main...frontend/66ui2-navigation-grouping?expand=1`) and the review proceeded
+  directly against the pushed branch via a temporary, since-removed `git worktree`.
+- **Scope confirmed.** Diff touches only `apps/admin-console/src/**`, the pre-existing tracked
+  `tsconfig.tsbuildinfo`, this stage's own verifier/test/doc set, and `source/progress.md`. Zero
+  `shared/`, `migrations/`, or other backend paths touched. The previously-flagged untracked
+  `docs/product/platform-progress-admin-console-proposal.md` is confirmed absent from the branch.
+- **Independent re-verification.** `npm test` reproduced 14 test files / 103 tests passing;
+  `npm run typecheck` and `npm run build` both passed; Codex's own
+  `verify_step66ui2_fe1_navigation_grouping.py` and its pytest wrapper both passed; no frontend lint
+  script exists (pre-existing condition, documented rather than worked around); secret scan
+  critical=0/high=0; zero forbidden capability claims or sensitive identifiers found by direct grep
+  across the full diff.
+- **Finding requiring remediation.** `Delivery Package` is grouped under **Deliveries** in the
+  implementation, contradicting the Step 66UI.2-R-reviewed decision
+  (`page-grouping.md`: DeliveryPackage stays under Platform Ops, unmerged with Deliveries). Codex
+  proactively self-disclosed this exact conflict in all three of its own shared documents and asked
+  for Claude Code/Product Owner reconciliation — this is the disclosure this review stage exists to
+  catch, handled correctly by Codex. Recommendation: move the item back to Platform Ops, or obtain
+  explicit Product Owner authorization to change the recorded decision, before merge.
+- **Non-blocking observations.** A new top-level "Clarifications" placeholder/route not specified in
+  the design brief (safe, placeholder-only, self-disclosed by Codex, needs Product Owner/Claude
+  Design confirmation); a `Layout.tsx` header label change ("READ-ONLY" → "NON-PRODUCTION", accurate,
+  not unsafe); pre-existing npm audit findings (3 moderate, 1 high, 1 critical) unrelated to this
+  change.
+- **Output docs.** `docs/frontend/66ui2-navigation-ia/claude-code-fe1-review.md` (verdict:
+  PASS_WITH_GAPS), `docs/test/step66ui2-fe1-navigation-grouping-review.md` (independent
+  re-verification report).
+- **Git handling.** Frontend branch **not merged**; confirmed via `git merge-base --is-ancestor`.
+  Review docs committed directly to `main` (same established convention as prior review stages).
+- **Tests.** New `tests/test_step66ui2_fe1_review.py` (15 tests, reading the frontend branch via
+  `git show <ref>:<path>` / `git diff --name-only` — never checked out or merged). Ruff/Black/Mypy
+  clean.
+- **Gate.** Step 66UI.2-FE.1-R status: PASS_WITH_GAPS. Merge authorization and any further Codex
+  implementation scope remain Product Owner decisions following this review. Claude Code must not
+  decide product acceptance. Not production readiness.
