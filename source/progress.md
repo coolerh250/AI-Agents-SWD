@@ -13554,3 +13554,53 @@ document. Production posture: no production action, no production deploy, no pro
 - **Gate.** Step 66UI.2-FE.1-FIX1-R status: PASS. Branch is, from Claude Code's architecture/safety
   perspective, ready for Product Owner UI validation. Merge authorization remains a Product Owner
   decision. Claude Code must not decide product acceptance. Not production readiness.
+
+## Interim — Temporary test-runtime deployment for Product Owner UI validation
+
+**No merge to main. No backend/API/database/workflow change.** The Admin Console static bundle
+built from `frontend/66ui2-navigation-grouping` (commit `ce8ab2f`) was temporarily swapped into the
+already-running orchestrator container on the test host (`docker cp` of the built `static/dist/`
+only — no image rebuild, no container restart, no other container touched, the test host's `main`
+repo clone untouched at its existing commit). `production_executed_true_count: 0` confirmed before,
+during, and after. Access was via a local SSH port-forward to the test host (`/admin/`, not publicly
+exposed). Product Owner performed UI validation against this temporary deployment (see Stage
+66UI.2-FE.1-V below), after which the deployment was **rolled back**: the pre-deployment `dist/` was
+restored from a backup taken before the swap, `/admin/` re-verified serving the original bundle
+(`index-4xVzIrBt.js`), and `production_executed_true_count: 0` re-confirmed. No lasting change to
+the test host.
+
+## Stage 66UI.2-FE.1-V — Product Owner UI Validation Record
+
+**Status: completed. Marker: `STEP66UI2_FE1_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.** Runtime
+posture: documentation/validation-record only; no runtime code, no backend, no frontend runtime, no
+database change; no workflow executed; no external action; no production action; PR not merged.
+
+- **Shared context preflight.** `main` synced (already at `0e1ef44`, the prior FIX1-R review commit;
+  no new commits since); frontend branch unchanged since FIX1 (`ce8ab2f`); no conflicts found between
+  shared docs and this stage's prompt.
+- **Product Owner response (verbatim):** `VISIBLE` / "Demo Evidence direct route deferred."
+  Interpreted as **`VISIBLE_WITH_ACCEPTED_GAP`** — accepted gap: Demo Evidence direct-route
+  verification deferred by the Product Owner (not a finding that the route is missing; Claude Code's
+  own prior review already confirmed the route via source inspection and a passing test); blocking
+  gap: none.
+- **Recorded as accepted:** seven navigation groups; Platform Ops grouping; the Delivery Package
+  placement remediation (Platform Ops, Deliveries placeholder-only); all safe placeholders (66D/66C.4
+  references, "No workflow action available"); the full safety posture (no dispatch/resume/
+  production/external action, no fake controls).
+- **Gap status.** Demo Evidence direct-route verification: `ACCEPTED_DEFERRED_NON_BLOCKING`, does
+  not block FE.1 or merge readiness unless the Product Owner later revisits it. Delivery Package
+  placement conflict: `CLOSED` by FIX1 and accepted by this validation.
+- **Merge status.** Merge readiness from the Product Owner validation perspective: ready. Actual
+  merge authorization: **not yet granted** in this step — explicit authorization is still required
+  separately.
+- **Note on `fe1-open-questions-and-gaps.md`.** That file is Codex's own shared artifact and exists
+  only on the unmerged frontend branch, not on `main`. Rather than create a second, diverging copy of
+  the same filename on `main` (which would produce an avoidable merge conflict), this validation's
+  findings were recorded in the new `product-owner-ui-validation-record.md` instead; the branch's own
+  copy should be reconciled with this record at merge time.
+- **Output docs.** `docs/frontend/66ui2-navigation-ia/product-owner-ui-validation-record.md`,
+  `docs/test/step66ui2-fe1-product-owner-validation.md`.
+- **Tests.** New `tests/test_step66ui2_fe1_product_owner_validation.py` (12 tests, docs-only, no
+  branch/remote access). Ruff/Black/Mypy clean. Secret scan critical=0/high=0.
+- **Gate.** Step 66UI.2-FE.1-V status: PASS. Merge authorization remains a Product Owner decision,
+  not yet granted. Claude Code must not decide product acceptance. Not production readiness.
