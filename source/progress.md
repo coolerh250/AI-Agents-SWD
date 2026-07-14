@@ -13694,3 +13694,41 @@ production action, no external action.
   `main`. Navigation Grouping / IA Shell is live on `main`, pending the next authorized deployment
   (a real, non-temporary rollout to the test runtime remains a separate future action). Not
   production readiness.
+
+## Stage 66UI.2-FE.1-D — Deploy Merged Navigation Grouping / IA Shell to Test Runtime
+
+**Status: completed. Marker: `STEP66UI2_FE1_TEST_DEPLOYMENT_VERIFY: PASS`.** Runtime posture: test
+runtime only — no staging, no production. No backend, API, database, or workflow change. No
+production action, no external action.
+
+- **Shared context preflight.** `main` synced, already at `ac11bea` (the prior merge-record commit;
+  matches the spec's expected `7ae6975`/`ac11bea`); no new commits since; no conflicts found between
+  shared docs and the Product Owner's deployment authorization.
+- **Authorization.** Product Owner explicitly authorized: "授權部署 merged main 到 test runtime."
+- **Pre-deployment baseline.** Test host repo clone was at `23fe24f` (several stages behind `main`;
+  confirmed zero backend/infra diff between `23fe24f` and `ac11bea`).
+  `production_executed_true_count: 0`; orchestrator and admin console both healthy before
+  deployment.
+- **Deployed.** `git pull --ff-only origin main` (`23fe24f..ac11bea`, fast-forward, 44 files, zero
+  backend/infra paths) + `docker compose build orchestrator` + `up -d orchestrator`. Only the
+  `orchestrator` container was recreated; every other service (`postgres`, `redis`,
+  `policy-engine`, `audit-service`, `approval-engine`, etc.) remained running/untouched.
+- **UI verification.** All 7 nav groups confirmed live in the served bundle; Platform Ops
+  collapsible/grouped; Delivery Package confirmed under Platform Ops; Deliveries confirmed
+  placeholder-only (Inbox/Detail); Delivery (66D) and Clarifications (66C.4) placeholders both
+  confirmed rendering the required safe text; every "dispatch"/"resume"/"production action"/
+  "external send" string found in the bundle confirmed to be a negation/prohibition statement or a
+  pre-existing, already-audited Step 57 label — no new control. Core pages' backing endpoints
+  (`/operations/admin-console/overview`, `/tasks` with test-auth headers, `/operations/safety`,
+  `/operations/delivery/projects`) all confirmed responding correctly.
+- **Safety.** `production_executed_true_count` remained `0` before/after; no workflow
+  dispatch/resume triggered; no external/production action; secret scan critical=0/high=0; all 28
+  containers healthy throughout.
+- **Rollback.** Not required — no failure encountered. Demo Evidence direct-route verification
+  remains accepted-deferred-non-blocking (Step 66UI.2-FE.1-V) and did not block this deployment.
+- **Output docs.** `docs/frontend/66ui2-navigation-ia/test-runtime-deployment-record.md`,
+  `docs/test/step66ui2-fe1-test-runtime-deployment.md`.
+- **Tests.** New `tests/test_step66ui2_fe1_test_deployment.py` (13 tests, docs-only). Ruff/Black/Mypy
+  clean.
+- **Gate.** Step 66UI.2-FE.1-D status: PASS. Navigation Grouping / IA Shell is now live on the test
+  runtime. Not staging. Not production. Not production readiness.
