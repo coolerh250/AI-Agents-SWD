@@ -24,7 +24,8 @@ Left navigation (grouped, collapsible):
       └ Clarifications                       (section within Workroom)
       └ Reminder / Expiry                    [placeholder · Requires Step 66C.4]
 
-▸ Deliveries                                 [placeholder group · Requires Step 66D]
+▸ Deliveries                                 [active · contains placeholders]
+    Delivery Package                         → /delivery-package  (existing evidence/package record)
     Delivery Inbox                           [placeholder · Requires Step 66D]
     Delivery Detail                          [placeholder · Requires Step 66D]
 
@@ -48,7 +49,6 @@ Left navigation (grouped, collapsible):
     Design Review                            → /design-review
     Workspace Execution                      → /workspace
     Mini Delivery Pilot                      → /mini-delivery
-    Delivery Package                         → /delivery-package
     Regression                               → /regression
     Cost / LLM                               → /cost-llm
     Runtime Baseline                         → /runtime

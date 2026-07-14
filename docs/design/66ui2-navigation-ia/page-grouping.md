@@ -34,13 +34,15 @@
 
 | Page | New group | Visibility | Status | Dependencies | Notes |
 | --- | --- | --- | --- | --- | --- |
+| Delivery Package | Deliveries | role-scoped | active | none | `/delivery-package` (`DeliveryPackage.tsx`). Existing delivery evidence/package record. Placed here per Product Owner decision #2; the one active item in this group. Not merged with Delivery Inbox — final integration waits for the 66D contract. |
 | Delivery Inbox | Deliveries | role-scoped | placeholder `[new placeholder route]` | **Requires Step 66D** | Human-acceptance entry point for task-linked deliveries. No Accept/Reject/etc. controls in placeholder. |
 | Delivery Detail | Deliveries | role-scoped | placeholder `[new placeholder route]` | **Requires Step 66D** | Delivery review workspace (future Option-2 tab). Opens from Inbox. Placeholder only. |
 
-> **DeliveryPackage is intentionally NOT in this group.** Per the Product Owner decision (don't
-> merge; treat as existing evidence/package record), `DeliveryPackage.tsx` stays under **Platform
-> Ops** as the pre-Step-66 delivery evidence surface. Whether it should later surface inside
-> Deliveries once 66D lands is an open question (see `product-owner-review-checklist.md`).
+> **DeliveryPackage placement resolved (Product Owner decision #2).** `DeliveryPackage.tsx` sits in
+> the **Deliveries** group as the existing delivery evidence/package record, distinct from and
+> **not merged with** the 66D Delivery Inbox/Detail. Final integration between the legacy package
+> record and the 66D task-linked flow waits for Claude Code's 66D API/data contract. See
+> `product-owner-decision-record.md`.
 
 ## Operator Center
 
@@ -72,7 +74,6 @@
 | Design Review | Platform Ops | role-scoped | active | none | `/design-review`. |
 | Workspace Execution | Platform Ops | role-scoped | active | none | `/workspace`. |
 | Mini Delivery Pilot | Platform Ops | role-scoped | active | none | `/mini-delivery`. |
-| Delivery Package | Platform Ops | role-scoped | active | none | `/delivery-package` (`DeliveryPackage.tsx`). Existing delivery evidence/package record; not merged with Deliveries (PO decision). |
 | Regression | Platform Ops | operator/admin | active | none | `/regression`. |
 | Cost / LLM | Platform Ops | operator/admin | active | none | `/cost-llm`. |
 | Runtime Baseline | Platform Ops | operator/admin | active | none | `/runtime`. Read-only posture. |
@@ -104,8 +105,9 @@
 ## Rollup
 
 - **First-level items:** 28 flat → **7 groups**.
-- **Active (existing routes preserved, regrouped):** Dashboard + 5 Team Work + 3 Operator Center +
-  2 Governance + 20 Platform Ops ≈ **31 existing route targets, all unchanged**.
+- **Active (existing routes preserved, regrouped):** Dashboard + 5 Team Work + 1 Deliveries
+  (Delivery Package) + 3 Operator Center + 2 Governance + 19 Platform Ops ≈ **31 existing route
+  targets, all unchanged**.
 - **Placeholders (new placeholder routes):** Delivery Inbox, Delivery Detail, Approvals, DLQ/Retry,
   Reminder/Expiry (section), Roles & Permissions, Integrations, Web Research Sources, Approval
   Policy, Identity/Session, Notifications (in-app only).

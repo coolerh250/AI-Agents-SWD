@@ -33,7 +33,7 @@ Rollout Review, Diagnostics (Demo Evidence)`.
 | Design Review | `/design-review` | Platform Ops | Preserved. |
 | Workspace Execution | `/workspace` | Platform Ops | Preserved. |
 | Mini Delivery Pilot | `/mini-delivery` | Platform Ops | Preserved. |
-| Delivery Package | `/delivery-package` | Platform Ops | Preserved; stays legacy evidence record (not merged into Deliveries). |
+| Delivery Package | `/delivery-package` | Deliveries | Preserved; existing evidence/package record, the one active item in Deliveries (PO decision #2). Not merged with Delivery Inbox. |
 | Regression | `/regression` | Platform Ops | Preserved. |
 | Cost / LLM | `/cost-llm` | Platform Ops | Preserved. |
 | Runtime Baseline | `/runtime` | Platform Ops | Preserved. |

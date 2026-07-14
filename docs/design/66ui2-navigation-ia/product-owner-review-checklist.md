@@ -19,24 +19,30 @@
 | 9 | Role-based default entry points make sense per persona | `role-based-entry-points.md` | ☐ |
 | 10 | `OperatorConsole` vs Approvals/DLQ resolved (separate pages under one group) | `design-brief.md`, `page-grouping.md` | ☐ |
 
-## Open questions for the Product Owner
+> **Resolved.** The Product Owner returned **READY_FOR_CODE_REVIEW** and answered all five open
+> questions below. See `product-owner-decision-record.md` for the binding answers. In short:
+> (1) Dashboard and Operational Metrics stay separate this round; (2) DeliveryPackage moves **into
+> the Deliveries group** as the existing evidence/package record (docs updated accordingly);
+> (3) show the Deliveries group with safe placeholders; (4) Security/Compliance cross-group access
+> is acceptable with server-side RBAC as the authority; (5) Notifications are in-app only this round.
 
-1. **Dashboard overlap.** Should the Overview `Dashboard` (extending `ExecutiveOverview.tsx`) and
-   the Platform Ops `Operational Metrics` (`OperationalMetrics.tsx`) eventually merge into one
-   dashboard, or stay as two? Round 1 keeps them separate; this does not block the nav shell.
+## Open questions for the Product Owner (now answered — see decision record)
+
+1. **Dashboard overlap.** _[ANSWERED: keep separate this round.]_ Dashboard stays the Overview
+   landing page; `Operational Metrics` stays separate under Platform Ops. No merge this round.
    (Raised by Claude Code review §6.1.)
-2. **DeliveryPackage placement.** This brief keeps `Delivery Package` under **Platform Ops** (legacy
-   evidence record) and reserves the **Deliveries** group for the future 66D task-linked flow.
-   Confirm that is what you want, or whether `Delivery Package` should instead appear inside the
-   Deliveries group (still as a distinct, non-merged item).
-3. **Empty Deliveries group in round 1.** The Deliveries group is entirely placeholder until 66D.
-   Do you want it shown-but-marked in round 1 (current recommendation, makes the target IA legible),
-   or hidden entirely until 66D ships?
-4. **Security/Compliance cross-group span.** That role's material spans Governance (Safety/Audit)
-   and Platform Ops (Identity/Secret/Security Posture). Accept this for round 1, or should a
-   consolidated "Security posture" view be prioritized sooner?
-5. **Notifications scope.** Round 1 shows Notifications as in-app only (external channels "Coming
-   later"). Confirm that in-app-only is the intended round-1 scope.
+2. **DeliveryPackage placement.** _[ANSWERED: place under Deliveries.]_ The brief now places
+   `Delivery Package` inside the **Deliveries** group as the existing evidence/package record — a
+   distinct, non-merged item alongside the 66D placeholders. (The original draft had it under
+   Platform Ops; superseded by decision #2.)
+3. **Empty Deliveries group in round 1.** _[ANSWERED: show with safe placeholders.]_ The group is
+   shown in the nav shell; it now contains the active `Delivery Package` plus compliant 66D
+   placeholders (Delivery Inbox/Detail), so it is not empty.
+4. **Security/Compliance cross-group span.** _[ANSWERED: acceptable.]_ The role may enter from
+   Governance / Safety Center and access audit/safety views across groups where server-side RBAC
+   allows; the frontend is not the access-control authority.
+5. **Notifications scope.** _[ANSWERED: in-app only.]_ Round 1 is in-app notifications only;
+   external Slack / Discord / Telegram behavior is out of scope for this IA shell.
 
 ## For Claude Code (architecture review)
 
@@ -54,13 +60,17 @@
 ## Verdict values (per `docs/process/operator-validation-standard.md`)
 
 This is a design artifact, so the applicable Product-Owner responses are the design-readiness
-equivalents. Please record one of:
+equivalents. **Recorded verdict:**
 
 ```text
-READY_FOR_CODE_REVIEW   — design accepted; forward to Claude Code architecture review
+READY_FOR_CODE_REVIEW   ← selected by the Product Owner; forward to Claude Code architecture review
 PARTIAL_WITH_GAPS       — accepted with noted gaps to address in a follow-up
 NEEDS_ANOTHER_ROUND     — send back to Claude Design with required changes
 ```
+
+Next step: Claude Code executes **Step 66UI.2-R — Navigation / IA Architecture Review**. Codex
+remains unauthorized until that review completes and the Product Owner explicitly authorizes the
+first frontend implementation stage. Draft PR #2 stays open and draft — not merged.
 
 (Final product acceptance of any *implemented* result remains a separate operator verdict —
 `VISIBLE` / `NOT_VISIBLE` / `PARTIAL_WITH_GAPS` — given only after Codex builds and Claude Code
