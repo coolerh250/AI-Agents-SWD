@@ -8,9 +8,11 @@ Step 66UI.2-FE.1 implemented the first frontend-only Admin Console navigation gr
 
 Branch: `frontend/66ui2-navigation-grouping`
 
-Draft PR: not opened from this environment.
+Draft PR: branch pushed; Draft PR must be created from the shared branch because the local environment does not provide a PR CLI.
 
-Commit: not created yet; local preference requires explicit confirmation before committing.
+Implementation commit: `8fd406a feat(admin-console): group navigation by ai teamwork ia`
+
+Shared branch: `origin/frontend/66ui2-navigation-grouping`
 
 ## Files Changed
 
@@ -36,6 +38,8 @@ Verification/docs:
 - `scripts/verify_step66ui2_fe1_navigation_grouping.py`
 - `tests/test_step66ui2_fe1_navigation_grouping.py`
 - `docs/frontend/66ui2-navigation-ia/fe1-navigation-grouping-implementation-report.md`
+- `docs/frontend/66ui2-navigation-ia/fe1-open-questions-and-gaps.md`
+- `docs/handoffs/66ui2-navigation-ia/codex-to-claude-code-handoff.md`
 - `docs/test/step66ui2-fe1-navigation-grouping-test-report.md`
 - `source/progress.md`
 
@@ -117,6 +121,15 @@ Pipeline board or drag-and-drop implemented: no.
 The authorized FE.1 task text places Delivery Package under Deliveries. The current `66UI.2-R` summary on `main` says DeliveryPackage remains under Platform Ops. This implementation follows the latest authorized FE.1 task text and preserves the route; Claude Code should reconcile the design/review documentation before the next IA iteration.
 
 `npm ci` reported existing dependency vulnerabilities through npm audit: 3 moderate, 1 high, and 1 critical. No dependency upgrade was performed because this IA task should not introduce unrelated package churn or breaking upgrades.
+
+## Shared Artifacts
+
+- Frontend implementation report: `docs/frontend/66ui2-navigation-ia/fe1-navigation-grouping-implementation-report.md`
+- Codex to Claude Code handoff: `docs/handoffs/66ui2-navigation-ia/codex-to-claude-code-handoff.md`
+- Test report: `docs/test/step66ui2-fe1-navigation-grouping-test-report.md`
+- Open questions / gaps: `docs/frontend/66ui2-navigation-ia/fe1-open-questions-and-gaps.md`
+- Progress update: `source/progress.md`
+- Draft PR: branch pushed; create Draft PR from `frontend/66ui2-navigation-grouping`.
 
 ## Verification
 

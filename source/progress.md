@@ -13503,8 +13503,12 @@ approval/retry/reminder controls.
   run build` passed. `scripts/verify_step66ui2_fe1_navigation_grouping.py` passed and emitted
   `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`. `pytest
   tests/test_step66ui2_fe1_navigation_grouping.py` passed.
-- **Docs.** Added `docs/frontend/66ui2-navigation-ia/fe1-navigation-grouping-implementation-report.md`
-  and `docs/test/step66ui2-fe1-navigation-grouping-test-report.md`.
-- **Git handling.** Work performed on branch `frontend/66ui2-navigation-grouping`. Commit and Draft
-  PR were not created in this pass because the local project instruction says to ask before
-  committing.
+- **Shared docs.** Added
+  `docs/frontend/66ui2-navigation-ia/fe1-navigation-grouping-implementation-report.md`,
+  `docs/frontend/66ui2-navigation-ia/fe1-open-questions-and-gaps.md`,
+  `docs/handoffs/66ui2-navigation-ia/codex-to-claude-code-handoff.md`, and
+  `docs/test/step66ui2-fe1-navigation-grouping-test-report.md`.
+- **Git handling.** Work performed on branch `frontend/66ui2-navigation-grouping`, based on
+  `origin/main` commit `69efc89`. Implementation commit `8fd406a feat(admin-console): group
+  navigation by ai teamwork ia` was pushed to `origin/frontend/66ui2-navigation-grouping`. Draft PR
+  must be created from the pushed branch by a GitHub-capable environment.

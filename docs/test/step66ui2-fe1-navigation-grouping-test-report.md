@@ -56,11 +56,13 @@ pytest tests/test_step66ui2_fe1_navigation_grouping.py
 
 - Result: pass.
 - Marker: `STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS`.
+- Rerun after shared handoff/open-questions docs: pass.
 
 `pytest tests/test_step66ui2_fe1_navigation_grouping.py`
 
 - Result: pass.
 - Tests: 1 passed.
+- After shared handoff/open-questions docs, the current shell no longer exposed `pytest` on PATH; the same wrapper test function was invoked directly with the bundled Python runtime and passed.
 
 ## Frontend Test Coverage Added
 
@@ -102,7 +104,8 @@ Verifier checks:
 - No forbidden backend/API-contract/infra/shared paths are changed.
 - No `dangerouslySetInnerHTML`, drag/drop markers, write client helpers, or workflow/production action button labels are introduced in scoped source.
 - No secret-shaped or internal-infra content is present in authored frontend/report content.
-- Docs and progress contain the Step 66UI.2-FE.1 marker.
+- Shared docs and progress contain the Step 66UI.2-FE.1 marker.
+- Handoff and open-questions/gaps documents exist in shared repo paths.
 
 ## Residual Risk
 

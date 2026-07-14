@@ -25,6 +25,8 @@ SAFETY_BAR = ROOT / "apps" / "admin-console" / "src" / "components" / "SafetySta
 NAV_TEST = ROOT / "apps" / "admin-console" / "src" / "__tests__" / "NavigationGrouping.test.tsx"
 
 REPORT = ROOT / "docs" / "frontend" / "66ui2-navigation-ia" / "fe1-navigation-grouping-implementation-report.md"
+GAPS = ROOT / "docs" / "frontend" / "66ui2-navigation-ia" / "fe1-open-questions-and-gaps.md"
+HANDOFF = ROOT / "docs" / "handoffs" / "66ui2-navigation-ia" / "codex-to-claude-code-handoff.md"
 TEST_REPORT = ROOT / "docs" / "test" / "step66ui2-fe1-navigation-grouping-test-report.md"
 PROGRESS = ROOT / "source" / "progress.md"
 
@@ -163,6 +165,8 @@ def main() -> int:
     safety = read(SAFETY_BAR)
     nav_test = read(NAV_TEST)
     report = read(REPORT)
+    gaps = read(GAPS)
+    handoff = read(HANDOFF)
     test_report = read(TEST_REPORT)
     progress = read(PROGRESS)
 
@@ -223,7 +227,33 @@ def main() -> int:
         if pattern.search(scoped_source):
             bad(f"forbidden source pattern found: {pattern.pattern}")
 
-    authored_text = "\n".join([app, nav, nav_group, placeholder, safety, nav_test, report, test_report])
+    for text in (
+        "What Changed",
+        "Files Changed",
+        "Routes Preserved",
+        "Navigation Groups Implemented",
+        "Placeholder Pages Implemented",
+        "Tests Added",
+        "Build Result",
+        "Safety Constraints Preserved",
+        "Known Gaps",
+        "Items Requiring Claude Code Review",
+        "Items Requiring Product Owner Validation",
+    ):
+        assert_contains(handoff, text, "Codex to Claude Code handoff")
+
+    for text in (
+        "Open Questions",
+        "Delivery Package group placement",
+        "Safety status bar field contract",
+        "Implementation Limits",
+        "Review Requests",
+    ):
+        assert_contains(gaps, text, "Open questions and gaps")
+
+    authored_text = "\n".join(
+        [app, nav, nav_group, placeholder, safety, nav_test, report, gaps, handoff, test_report]
+    )
     if SECRET_SHAPES.search(authored_text) or INFRA_SHAPES.search(authored_text):
         bad("authored frontend/report content contains secret-shaped or internal-infra content")
 
@@ -231,7 +261,7 @@ def main() -> int:
         "STEP66UI2_FE1_NAVIGATION_GROUPING_VERIFY: PASS",
         "Navigation Grouping / IA Shell",
     ):
-        assert_contains(report + "\n" + test_report + "\n" + progress, text, "Docs/progress")
+        assert_contains(report + "\n" + gaps + "\n" + handoff + "\n" + test_report + "\n" + progress, text, "Docs/progress")
 
     if failures:
         print(f"{MARKER}: FAIL")
