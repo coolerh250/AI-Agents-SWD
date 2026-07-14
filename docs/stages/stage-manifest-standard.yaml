@@ -1,0 +1,58 @@
+# Stage Manifest Standard
+#
+# Process documentation only. No backend/frontend runtime change. No production action.
+#
+# Every field below is the schema a stage manifest should follow. See docs/stages/examples/ for
+# three worked examples (design-only, frontend-implementation, review/governance-only). A manifest
+# for a real stage lives at docs/stages/<stage-slug>-manifest.yaml and fills in every field for
+# that specific stage; this file is the standard/schema itself, not a manifest for any one stage.
+
+stage: "" # e.g. "66ui4-fe1-phase1-visual-language"
+owner: "" # e.g. "Claude Code" | "Claude Design" | "Codex"
+task_type: "" # "design" | "review" | "frontend-implementation" | "backend" | "governance" | "deployment" | "merge"
+status: "" # "not-started" | "in-progress" | "PASS" | "PASS_WITH_GAPS" | "FAIL"
+
+source_of_truth:
+  main_required: true
+  required_docs: [] # paths under docs/ that must be read before this stage starts
+  related_prs: [] # e.g. ["PR #4", "PR #5"]
+
+allowed_paths: [] # glob patterns this stage may create/modify
+forbidden_paths: [] # glob patterns this stage must never touch (e.g. apps/orchestrator/src/**)
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+codex_authorized: false
+design_only: false
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found

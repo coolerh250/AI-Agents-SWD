@@ -13776,6 +13776,42 @@ production action, no external action.
   once merged. Codex remains unauthorized pending explicit Product Owner authorization. Not
   runtime. Not production.
 
+## Stage 66GOV.1 — Stage Gate & Context Guard Skill Pack
+
+- Status: PASS
+- Marker: `STEP66GOV1_STAGE_GATE_CONTEXT_GUARD_VERIFY: PASS`
+- Purpose: build a repo-level mechanism so no partner (Claude Code, Claude Design, Codex, or any
+  future partner) relies on session memory to recall project rules — the repo itself becomes the
+  memory. Created `.agents/` (README + 5 skills: shared-context, stage-gate, security-governance,
+  design-collaboration, frontend-implementation), `docs/stages/` (README, stage manifest standard,
+  context receipt template, stage gate report template, 3 worked examples modeled on real prior
+  stages), 5 new `docs/process/` protocol docs (stage gate checkpoint protocol, context guard
+  protocol, source-of-truth policy, stop conditions, partner handoff standard), and updated
+  `.github/pull_request_template.md` with Shared Context / Scope / Authorization / Safety /
+  Evidence sections layered into the existing template without removing prior content.
+- Runtime posture: no runtime code changed; no backend, frontend runtime, API, database, or
+  workflow file touched (confirmed via `git diff --name-only origin/main...HEAD` — every changed
+  path is under `.agents/`, `docs/`, `.github/pull_request_template.md`, `scripts/`, `tests/`, or
+  `source/progress.md`).
+- Security posture: no production action, no external action, no workflow dispatch/resume, no
+  Codex authorization, no design PR merged or closed. Secret scan clean at the established
+  baseline (critical=0, high=0).
+- Source-of-truth posture: this skill pack formalizes, but does not change, the source-of-truth
+  rules already in practice (`main` + `source/progress.md` + `docs/decisions/` authoritative;
+  Draft PRs discussion-only until merged or explicitly accepted) — see
+  `docs/process/source-of-truth-policy.md`.
+- Output docs: `.agents/README.md` + 5 `SKILL.md` files; `docs/stages/README.md`,
+  `stage-manifest-standard.yaml`, `context-receipt-template.md`, `stage-gate-report-template.md`,
+  3 example manifests; `docs/process/stage-gate-checkpoint-protocol.md`,
+  `context-guard-protocol.md`, `source-of-truth-policy.md`, `stop-conditions.md`,
+  `partner-handoff-standard.md`; `.github/pull_request_template.md` (updated).
+- Tests: new `scripts/verify_stage_gate_compliance.py` + `tests/test_stage_gate_compliance.py` (14
+  tests). Ruff/Black/Mypy clean.
+- Next recommended phase: Product Owner decides whether to authorize a future CI check enforcing
+  context-receipt/stage-manifest presence on PRs, whether to add a `CODEOWNERS` file, and whether
+  to merge this branch (`docs/66gov1-stage-gate-context-guard`) to `main` — not merged in this
+  stage.
+
 ## Stage 66UI.4-SOT-M — Merge Design Source-of-Truth PRs
 
 - **Authorization.** Product Owner explicitly authorized: "授權 Claude Code 依序 merge PR #4、PR #5
