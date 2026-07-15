@@ -13882,3 +13882,48 @@ production action, no external action.
   continued-open (historical reference) status.
 - No runtime/backend/API/database/workflow change. No production/external action. No Codex
   authorization change.
+
+## Stage 66UI.4-FE.1A-R — Review Visual Tokens / Typography / Card Polish
+
+- **Note on review-doc location.** Per this stage's explicit instruction, the review artifacts
+  (`fe1a-claude-code-review.md`, `step66ui4-fe1a-review-record.md`,
+  `verify_step66ui4_fe1a_review.py` + test) were committed to a dedicated review branch
+  (`review/66ui4-fe1a-visual-polish`, commit `63bd227`, pushed to origin) rather than to `main`, to
+  keep review-only work separate from `main` until the Product Owner authorizes otherwise. This
+  entry records the outcome for continuity; the full content lives on that branch.
+- **Reviewed.** Branch `frontend/66ui4-fe1a-visual-polish` (PR #6, commit `7e6422f`). Verdict:
+  **PASS**. Marker `STEP66UI4_FE1A_REVIEW_VERIFY: PASS`.
+- **Scope confirmed.** Exactly one runtime file changed (`apps/admin-console/src/styles.css`, 127
+  lines); all 23 required review checks passed; no FE.1B/FE.1C/FE.1D content found; muted-text
+  contrast independently measured at 6.02:1 → 8.68:1 (AA → AAA).
+- **Independent re-verification.** Codex's verifier/tests and the full frontend suite (14 files/106
+  tests, build, typecheck) re-run in an isolated, removed-after `git worktree` — all reproduced.
+- **Gate.** Ready for Product Owner UI validation. Not merged. FE.1B/FE.1C/FE.1D remain
+  unauthorized.
+
+## Stage 66UI.4-FE.1A-V — Product Owner UI Validation
+
+- **Authorization.** Product Owner explicitly authorized: "授權 Claude Code 將 PR #6
+  frontend/66ui4-fe1a-visual-polish 部署到 test runtime 供 UI validation；不 merge main；不授權
+  FE.1B/FE.1C/FE.1D。"
+- **Deployment.** Temporary, static-file-only swap of the Admin Console bundle built from
+  `frontend/66ui4-fe1a-visual-polish` (commit `7e6422f`) into the already-running orchestrator
+  container — no image rebuild, no restart, no repo change on the test host, no merge to `main`.
+  Bundle hash `index-DZBN-FWE.js`/`index-Cnlye4s4.css` confirmed deterministic (matches Claude
+  Code's own local review-stage build). Pre-deployment bundle backed up on the test host for
+  rollback if requested.
+- **Product Owner response.** `VISIBLE` — unqualified, no caveat.
+- **Safety.** `production_executed_true_count` remained `0` throughout; no workflow dispatch/resume;
+  no production/external action; all 28 containers unaffected.
+- **Deployment disposition.** Remains live as of this record (no rollback requested); a
+  pre-deployment backup is available on the test host for immediate rollback if the Product Owner
+  requests it.
+- **Output docs.** `docs/frontend/66ui4-phase1-product-visual-language/fe1a-product-owner-ui-validation-record.md`,
+  `docs/test/step66ui4-fe1a-product-owner-validation.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1a_product_owner_validation.py` +
+  `tests/test_step66ui4_fe1a_product_owner_validation.py`. Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.4-FE.1A-V status: PASS. Marker
+  `STEP66UI4_FE1A_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`. Merge readiness: ready from the Product
+  Owner's perspective; explicit merge authorization still required and not granted by this
+  document. FE.1B/FE.1C/FE.1D remain unauthorized. Not runtime. Not production. Not deployment
+  (beyond the temporary validation swap already described).
