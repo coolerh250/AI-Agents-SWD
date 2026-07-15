@@ -13882,3 +13882,42 @@ production action, no external action.
   continued-open (historical reference) status.
 - No runtime/backend/API/database/workflow change. No production/external action. No Codex
   authorization change.
+
+## Stage 66UI.4-FE.1A-R — Review Visual Tokens / Typography / Card Polish
+
+- **Reviewed.** Branch `frontend/66ui4-fe1a-visual-polish` (commit `7e6422f`), Draft PR #6, against
+  latest `main` (`a64daa9`), the merged Phase 1 Product Visual Language brief, and the Stage Gate &
+  Context Guard Skill Pack. Review only — no runtime change beyond this stage's own review
+  docs/verifier/tests/progress record; no merge; no deployment; no FE.1B/FE.1C/FE.1D authorization.
+- **Scope confirmed.** `git diff origin/main...origin/frontend/66ui4-fe1a-visual-polish` — 10 files,
+  exactly one runtime file (`apps/admin-console/src/styles.css`, 127 lines). No component/route/API
+  client file, no backend/API/database/workflow/infra path. No `.tools/`, no unrelated
+  `docs/product/platform-progress-admin-console-proposal.md`.
+- **All 23 required review checks PASS** (scope, safety, no FE.1B/FE.1C/FE.1D content, no hidden
+  audit/safety evidence, muted-text contrast improved, visual polish consistent with the merged
+  design brief) — no forbidden-scope change found.
+- **Token correspondence.** Every new/changed token (`--surface-raised/base/quiet`, spacing scale
+  `4/8/12/16/24/32`, typography scale, focus ring) matches the merged
+  `visual-language-spec.md` token-for-token where specified.
+- **Muted-text contrast independently measured** (WCAG relative luminance): old `#8b949e` vs `--bg`
+  = 6.02:1 (already AA); new `#a8b3bd` vs `--bg` = 8.68:1 (now AAA); `--muted-strong` `#c3ccd5` =
+  11.39:1. Real, measured improvement satisfying the Product Owner's decision.
+- **Independent re-verification.** Used a temporary, detached `git worktree` (never merged, removed
+  after) to re-run Codex's own verifier/tests plus the frontend suite: `verify_step66ui4_fe1a_visual_polish.py`
+  PASS, its pytest 1 passed, `npm test` **14 files/106 tests passed**, `npm run build` passed,
+  `npm run typecheck` passed, no lint script (matches Codex's report), secret scan
+  critical=0/high=0/informational=98 (matches baseline) — all independently reproduced, not taken on
+  faith.
+- **Minor non-blocking notes.** (1) Comfortable-vs-compact table density for Platform Ops is not yet
+  implemented — expected FE.1A-scope limitation, natural fit for FE.1D. (2) Codex's own verifier's
+  path-scope check uses `git diff --name-only HEAD` (empty on a clean checkout) rather than diffing
+  against `origin/main`; this review independently confirmed real branch scope via the correct diff
+  command, so this is a verifier-completeness gap to fix in a future stage, not a blocker now.
+- **Output docs.** `docs/frontend/66ui4-phase1-product-visual-language/fe1a-claude-code-review.md`,
+  `docs/test/step66ui4-fe1a-review-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1a_review.py` + `tests/test_step66ui4_fe1a_review.py`.
+  Ruff/Black/Mypy clean.
+- **Gate.** Step 66UI.4-FE.1A-R status: PASS. Marker `STEP66UI4_FE1A_REVIEW_VERIFY: PASS`. Ready for
+  Product Owner UI validation. Not ready for merge without separate explicit merge authorization.
+  FE.1B/FE.1C/FE.1D remain unauthorized. Not runtime (beyond review docs). Not production. Not
+  deployment.
