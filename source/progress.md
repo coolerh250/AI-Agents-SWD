@@ -13993,3 +13993,27 @@ board, drag/drop, calm safety posture restructure, or Overview attention-first r
   FE.1A is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime.
   FE.1B/FE.1C/FE.1D remain unauthorized. No backend/API/database/workflow change. No production/
   external action.
+
+## Stage 66UI.4-FE.1B-R — Review Calm Safety Posture
+
+- **Note on review-doc location.** Per this stage's instruction, the review artifacts
+  (`fe1b-claude-code-review.md`, `step66ui4-fe1b-review-record.md`,
+  `verify_step66ui4_fe1b_review.py` + test) are committed to a dedicated review branch
+  (`review/66ui4-fe1b-calm-safety`, pushed to origin) rather than to `main`, mirroring the FE.1A-R
+  precedent. This entry records the outcome for continuity; the full content lives on that branch.
+- **Reviewed.** Branch `frontend/66ui4-fe1b-calm-safety` (PR #7, commit `6cf8efe`). Verdict:
+  **PASS**. Marker `STEP66UI4_FE1B_REVIEW_VERIFY: PASS`.
+- **Scope confirmed.** Exactly 5 runtime files changed, all under `apps/admin-console/src/**`
+  (`CalmSafetyPosture.tsx` new, `SafetyStatusBar.tsx`/`SafetyCenter.tsx`/`styles.css` modified,
+  `CalmSafetyPosture.test.tsx` new); no API client, backend, database, workflow, or infra path
+  touched; no `ExecutiveOverview.tsx`/`Nav.tsx`/`NavGroup.tsx` change (no FE.1C/FE.1D content); all
+  22 required review checks passed.
+- **Safety mapping independently traced.** Any positive production count, any `true` automation/
+  external flag, or a non-`"safe"` server `result` all force the conservative (non-safe) state; a
+  missing field falls to `"not reported"`/`"unavailable"`, never a fabricated `"safe"`. Raw evidence
+  (14 fields) remains accessible unconditionally, including in the compact global bar.
+- **Independent re-verification.** Codex's verifier/tests and the full frontend suite (15 files/110
+  tests, build, typecheck) re-run in an isolated, removed-after `git worktree` — all reproduced
+  exactly. Badge color contrast independently measured (success 9.86:1, warning 10.39:1, neutral
+  11.39:1 against page background) — all clear WCAG AAA.
+- **Gate.** Ready for Product Owner UI validation. Not merged. FE.1C/FE.1D remain unauthorized.
