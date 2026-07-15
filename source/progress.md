@@ -13880,6 +13880,38 @@ production action, no external action.
 - `docs/design/66ui-source-of-truth-record.md` updated to reflect PR #2's disposition as fully
   closed out — the only remaining open PR-disposition item is PR #1's explicitly-authorized
   continued-open (historical reference) status.
+
+## Stage 66UI.4-FE.1A — Visual Tokens / Typography / Card Polish
+
+**Status: completed. Marker: `STEP66UI4_FE1A_VISUAL_POLISH_VERIFY: PASS`.** Runtime posture:
+frontend-only Admin Console CSS visual foundation work. No backend, API, database, workflow,
+production behavior, external integration, Delivery real UI, Reminder/Expiry real UI, Pipeline
+board, drag/drop, calm safety posture restructure, or Overview attention-first restructure.
+
+- **Shared Context Preflight.** Latest `main` reviewed at `a64daa9`. Reviewed the repo-level shared
+  context, stage gate, security/governance, and frontend implementation skills; reviewed
+  source-of-truth/process docs; reviewed 66UI.3 Product Owner decision record; reviewed 66UI.4
+  Phase 1 design brief, visual language spec, engineering-field reduction map, product microcopy
+  guide, Claude Code architecture review, frontend implementation boundary, and Codex readiness
+  boundary. No conflicts found; this task is a narrower FE.1A slice of the merged Phase 1 design.
+- **Implementation.** Refined `apps/admin-console/src/styles.css` only for frontend runtime:
+  surface hierarchy tokens, spacing/type/focus/status tokens, increased muted-text contrast, card/
+  panel/table/nav/form/workroom/placeholder polish, and status badge foundation. Existing class
+  names, routes, API calls, status logic, RBAC behavior, safety fields, and component data flow were
+  not changed.
+- **Stage artifacts.** Added `docs/stages/66ui4-fe1a/stage-manifest.yaml`,
+  `docs/stages/66ui4-fe1a/context-receipt.md`, and
+  `docs/stages/66ui4-fe1a/stage-gate-report.md`.
+- **Shared docs.** Added
+  `docs/frontend/66ui4-phase1-product-visual-language/fe1a-visual-polish-implementation-report.md`,
+  `docs/handoffs/66ui4-fe1a/codex-to-claude-code-handoff.md`, and
+  `docs/test/step66ui4-fe1a-visual-polish-test-report.md`.
+- **Verification.** Added `scripts/verify_step66ui4_fe1a_visual_polish.py` and
+  `tests/test_step66ui4_fe1a_visual_polish.py`. Frontend tests/build/typecheck, verifier, pytest
+  wrapper, `git diff --check`, and secret scan results are recorded in the FE.1A test report.
+- **Gate.** Step 66UI.4-FE.1A is ready for Claude Code review and Product Owner visual validation.
+  Merge and deployment require separate explicit authorization. Codex must not start FE.1B/FE.1C/
+  FE.1D without a new scoped authorization.
 - No runtime/backend/API/database/workflow change. No production/external action. No Codex
   authorization change.
 
