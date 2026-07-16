@@ -14123,3 +14123,39 @@ navigation polish, Workroom redesign, or new agent activity model.
   FE.1B is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime, with
   one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
+
+## Stage 66UI.4-FE.1B.1-VP — PR #9 Test Runtime UI Validation Preview
+
+**Status: preview deployment complete by Claude Code, pending Product Owner UI validation. Marker
+`STEP66UI4_FE1B1_PREVIEW_DEPLOY_VERIFY: PASS`. Full content on
+`review/66ui4-fe1b1-preview-deploy` branch.**
+
+- **Authorization.** "授權 Claude Code 將 PR #9 frontend/66ui4-fe1b1-safety-field-mapping 部署到 test
+  runtime 供 FE.1B.1 UI validation；不 merge main；不授權 FE.1C/FE.1D implementation。"
+- **Deployment.** Draft PR #9 (`frontend/66ui4-fe1b1-safety-field-mapping`, commit `974822d`)
+  built from an isolated clone on the test host and swapped into the running orchestrator
+  container's Admin Console static bundle (no image rebuild, no restart). `main` not merged, still
+  at `508c8e1`. Prior review: Step 66UI.4-FE.1B.1-R, PASS.
+- **Bundle.** New hash `index-CCkn0PAe.js` (expected — mapping logic changed) /
+  `index-DcSljMgU.css` (unchanged — no CSS change), deterministic and matching the review-stage
+  build of the same commit.
+- **Independent live confirmation.** Executed the actual compiled `getCalmSafetyPosture()` logic
+  (via a disposable, uncommitted test harness, deleted after use) against the live
+  `/operations/safety` payload fetched from the test host — resolves to tone `"safe"`, expected to
+  show the Safety badge as Safe, resolving the Step 66UI.4-FE.1B-V accepted Unavailable gap.
+- **Safety.** `production_executed_true_count` / `workflow_production_executed_true_count`
+  remained `0` before and after; `/operations/safety` result `"safe"` throughout, 571-field shape
+  unchanged; health endpoint OK; Admin Console HTTP 200; all 28 containers unaffected; no workflow
+  dispatch/resume; no production/external action. Rollback backup retained, not used.
+- **Local Artifact Reconciliation.** All 11 PR #9 files confirmed present on the shared remote
+  branch; no local Windows paths, local username, `Documents/Codex` path, `.tools/` directory, or
+  unrelated files found in `main` or the PR #9 diff. No blocking gap.
+- **Output docs.**
+  `docs/test/step66ui4-fe1b1-ui-validation-preview-deployment-record.md`,
+  `docs/frontend/66ui4-phase1-product-visual-language/fe1b1-ui-validation-preview-record.md` (both
+  on `review/66ui4-fe1b1-preview-deploy`).
+- **Tests.** New `scripts/verify_step66ui4_fe1b1_preview_deploy.py` +
+  `tests/test_step66ui4_fe1b1_preview_deploy.py` (on the review branch).
+- **Gate.** Step 66UI.4-FE.1B.1-VP status: PASS. `main` not merged. PR #9 not merged. FE.1C/FE.1D
+  remain unauthorized. No backend/API/database/workflow change. No `/operations/safety` response
+  shape change. No production/external action. Next: Product Owner UI validation of this preview.
