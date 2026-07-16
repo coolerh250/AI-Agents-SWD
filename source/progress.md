@@ -13993,3 +13993,57 @@ board, drag/drop, calm safety posture restructure, or Overview attention-first r
   FE.1A is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime.
   FE.1B/FE.1C/FE.1D remain unauthorized. No backend/API/database/workflow change. No production/
   external action.
+
+## Stage 66UI.4-FE.1B-R — Review Calm Safety Posture
+
+- **Note on review-doc location.** Per this stage's instruction, the review artifacts
+  (`fe1b-claude-code-review.md`, `step66ui4-fe1b-review-record.md`,
+  `verify_step66ui4_fe1b_review.py` + test) were committed to a dedicated review branch
+  (`review/66ui4-fe1b-calm-safety`, commit `8b78e14`, pushed to origin) rather than to `main`,
+  mirroring the FE.1A-R precedent. This entry records the outcome for continuity; the full content
+  lives on that branch.
+- **Reviewed.** Branch `frontend/66ui4-fe1b-calm-safety` (PR #7, commit `6cf8efe`). Verdict:
+  **PASS**. Marker `STEP66UI4_FE1B_REVIEW_VERIFY: PASS`.
+- **Scope confirmed.** Exactly 5 runtime files changed, all under `apps/admin-console/src/**`; no
+  API client, backend, database, workflow, or infra path touched; no FE.1C/FE.1D content; all 22
+  required review checks passed.
+- **Gate.** Ready for Product Owner UI validation. Not merged. FE.1C/FE.1D remain unauthorized.
+
+## Stage 66UI.4-FE.1B-V — Product Owner UI Validation
+
+- **Authorization.** Product Owner explicitly authorized: "授權 Claude Code 將 PR #7
+  frontend/66ui4-fe1b-calm-safety 部署到 test runtime 供 FE.1B UI validation；不 merge main；不授權
+  FE.1C/FE.1D。"
+- **Deployment.** Temporary, static-file-only swap of the Admin Console bundle built from
+  `frontend/66ui4-fe1b-calm-safety` (commit `6cf8efe`) into the already-running orchestrator
+  container — no image rebuild, no restart, no repo change on the test host, no merge to `main`.
+  Bundle hash `index-D3ONvmz8.js`/`index-DcSljMgU.css` confirmed deterministic. Pre-deployment
+  bundle backed up on the test host for rollback if requested.
+- **Product Owner response.** `VISIBLE` — with one accepted, non-blocking gap raised and diagnosed
+  during the validation session (see below).
+- **Gap discovered and accepted.** The safety bar showed "Unavailable" instead of "Safe." Root cause
+  confirmed live: the actual `/operations/safety` payload is missing `dispatch_enabled`,
+  `resume_dispatch_enabled`, `approval_required`, and `requires_approval` — fields
+  `CalmSafetyPosture`'s mapping requires to be explicitly `false` before showing "Safe." This is a
+  pre-existing field-name assumption (already present in the prior raw `SafetyStatusBar.tsx`'s field
+  list), not a new defect, and not a safety violation — the conservative fallback correctly never
+  fabricates "Safe" on missing data; `production_executed_true_count` and the endpoint's own
+  `result` field were confirmed `0`/`"safe"` throughout. This gap was not caught during Step
+  66UI.4-FE.1B-R, which validated the mapping via code reading and Codex's synthetic unit-test
+  fixtures rather than the live payload. Product Owner decision: accept as a known, non-blocking
+  gap; no rollback; remediation not authorized in this stage.
+- **Safety.** `production_executed_true_count` remained `0` throughout; `/operations/safety`
+  `result` reported `"safe"` throughout; no workflow dispatch/resume; no production/external
+  action; all 28 containers unaffected.
+- **Deployment disposition.** Remains live as of this record (no rollback requested); a
+  pre-deployment backup is available on the test host for immediate rollback if the Product Owner
+  requests it.
+- **Output docs.** `docs/frontend/66ui4-phase1-product-visual-language/fe1b-product-owner-ui-validation-record.md`,
+  `docs/test/step66ui4-fe1b-product-owner-validation.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1b_product_owner_validation.py` +
+  `tests/test_step66ui4_fe1b_product_owner_validation.py`.
+- **Gate.** Step 66UI.4-FE.1B-V status: PASS_WITH_ACCEPTED_GAPS. Marker
+  `STEP66UI4_FE1B_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`. Merge readiness: ready with the accepted
+  gap noted; explicit merge authorization still required and not granted by this document.
+  FE.1C/FE.1D remain unauthorized. Not production. Not deployment beyond the temporary validation
+  swap already described.
