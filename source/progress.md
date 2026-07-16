@@ -14123,3 +14123,37 @@ navigation polish, Workroom redesign, or new agent activity model.
   FE.1B is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime, with
   one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
+
+## Stage 66UI.4-FE.1B.1-V — Product Owner Validation, Safety Field Mapping Calibration
+
+**Status: Product Owner validation VISIBLE, no blocking gap. Marker
+`STEP66UI4_FE1B1_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.**
+
+- **Prior stages (not yet merged, tracked on their own review branches).** Step 66UI.4-FE.1B.1-R —
+  Claude Code review of Draft PR #9 (`frontend/66ui4-fe1b1-safety-field-mapping`, commit
+  `974822d`), verdict PASS (`review/66ui4-fe1b1-safety-field-mapping` @ `f818ccc`). Step
+  66UI.4-FE.1B.1-VP — temporary test-runtime deployment of PR #9 for UI validation, `main` not
+  merged (`review/66ui4-fe1b1-preview-deploy` @ `79da841`).
+- **Product Owner response (verbatim).** "都可以看見，確認無誤"
+- **Verdict.** VISIBLE. No blocking gap.
+- **Gap resolved.** The Step 66UI.4-FE.1B-V accepted "Unavailable" Safety badge gap is now resolved
+  — the Safety badge correctly shows Safe under the real live schema, confirmed by the Product
+  Owner and independently re-verified beforehand by executing the compiled mapping logic against
+  the live `/operations/safety` payload.
+- **Clarification (not a defect).** The Product Owner initially could not find the per-task
+  approval wording. Root cause: `CalmSafetyPosture`'s human-readable facts list (containing that
+  sentence) only renders in non-`compact` mode; the persistent top bar renders it `compact`
+  (facts list hidden by design), while the Safety Center page renders the full panel (facts list
+  shown). Neither file is touched by PR #9 — this split predates FE.1B.1. After checking both
+  locations, the Product Owner confirmed both are correct.
+- **Safety.** `production_executed_true_count` remained `0` throughout; `/operations/safety`
+  `result` stayed `"safe"`; no workflow dispatch/resume; no production/external action; all 28
+  containers unaffected.
+- **Output docs.**
+  `docs/frontend/66ui4-phase1-product-visual-language/fe1b1-product-owner-ui-validation-record.md`,
+  `docs/test/step66ui4-fe1b1-product-owner-validation.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1b1_product_owner_validation.py` +
+  `tests/test_step66ui4_fe1b1_product_owner_validation.py`.
+- **Gate.** Step 66UI.4-FE.1B.1-V status: PASS. PR #9 not merged by this stage — explicit merge
+  authorization still required (a prospective Step 66UI.4-FE.1B.1-MD). FE.1C/FE.1D remain
+  unauthorized. No backend/API/database/workflow change. No production/external action.
