@@ -14124,6 +14124,38 @@ navigation polish, Workroom redesign, or new agent activity model.
   one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
 
+## Stage 66UI.4-FE.1B.1-P — Safety Field Mapping Calibration Plan
+
+- **Note on artifact location.** Per this stage's instruction, the planning artifacts (mapping plan,
+  frontend implementation boundary, planning record, stage manifest/context-receipt/stage-gate-report,
+  verifier + test) are committed to a dedicated review branch
+  (`review/66ui4-fe1b1-safety-field-mapping-plan`, pushed to origin) rather than to `main`, mirroring
+  the FE.1A-R/FE.1B-R/FE.1C-R precedent. This entry records the outcome for continuity; the full
+  content lives on that branch.
+- **Root cause confirmed (not assumed).** Live `/operations/safety` schema inspected on the test
+  runtime; the four "missing" fields (`dispatch_enabled`, `resume_dispatch_enabled`,
+  `approval_required`, `requires_approval`) were traced via backend source
+  (`task_api.py`, `workroom_api.py`, `workflow.py`, `workflow_events.py`, `resume_engine.py`,
+  `operations.py`) and found to be genuine fields of *other*, already-existing endpoints
+  (per-task/per-workroom-message/per-workflow), not fields ever valid to expect at
+  `/operations/safety` — a category/scope error inherited from the pre-FE.1A `SafetyStatusBar.tsx`'s
+  original field list, not a data-availability gap.
+- **Cautionary finding.** A similarly-named live field, `work_item_dispatch_enabled` (`true`), was
+  traced to `shared/sdk/work_items/safety.py` and found to be a feature-enabled flag, not a risk
+  flag — confirming it would have been an incorrect substitute if chosen by name-similarity alone.
+  Recorded as a hard rule for the future FE.1B.1 implementation.
+- **Recommended calibration (frontend-only, not implemented in this stage).** Remove
+  `dispatch_enabled`/`resume_dispatch_enabled` from `AUTOMATION_FIELDS` (rely on the already-present,
+  already-correct `task_api_workflow_dispatch_enabled`/`task_workroom_resume_dispatch_enabled`);
+  retire the global "Approval requirement" fact/fields (approval is inherently per-task, already
+  shown elsewhere); relabel or drop the four retired raw-evidence rows. No backend/API/database/
+  workflow change; no `/operations/safety` response shape change. Once applied, the badge would
+  correctly show "Safe" against the live payload confirmed in this stage.
+- **Gate.** Step 66UI.4-FE.1B.1-P status: PASS. Marker `STEP66UI4_FE1B1_PLANNING_VERIFY: PASS`.
+  Planning only — no runtime code changed. Codex FE.1B.1 implementation not authorized. FE.1C/FE.1D
+  remain unauthorized. Ready for Product Owner decision on the plan; a separate, explicit
+  authorization is required before any FE.1B.1 implementation begins.
+
 ## Stage 66UI.4-FE.1B.1-V — Product Owner Validation, Safety Field Mapping Calibration
 
 **Status: Product Owner validation VISIBLE, no blocking gap. Marker
