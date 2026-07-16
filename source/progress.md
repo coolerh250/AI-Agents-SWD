@@ -14123,3 +14123,52 @@ navigation polish, Workroom redesign, or new agent activity model.
   FE.1B is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime, with
   one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
+
+## Stage 66UI.4-FE.1B.1-R — Review Safety Field Mapping Calibration
+
+**Status: review complete by Claude Code. Verdict PASS. Marker
+`STEP66UI4_FE1B1_REVIEW_VERIFY: PASS`. Full content on the `review/66ui4-fe1b1-safety-field-mapping`
+branch (see below).**
+
+- **Reviewed.** Draft PR #9, branch `frontend/66ui4-fe1b1-safety-field-mapping`, commit
+  `974822d940c0e1ed9d061fbfe68fbed40ebd1fc0` (a single commit on top of `main` at `508c8e1`) — the
+  Codex FE.1B.1 implementation of Safety Field Mapping Calibration, planned in the read-only
+  `review/66ui4-fe1b1-safety-field-mapping-plan` branch (`ace3441`).
+- **19 required scope checks: all PASS.** Retired global-tone fields (`dispatch_enabled`,
+  `resume_dispatch_enabled`, `approval_required`, `requires_approval`) removed from tone
+  computation; the two genuine global automation fields
+  (`task_api_workflow_dispatch_enabled`, `task_workroom_resume_dispatch_enabled`) are the sole
+  automation gate; `work_item_dispatch_enabled` not used as a substitute; approval is now a
+  per-task pointer, not a global fact; retired fields labeled "Not applicable at this endpoint";
+  no backend/API/database/workflow/infra change; no `/operations/safety` response shape change; no
+  FE.1C/FE.1D implementation; no unrelated files or local Windows paths committed.
+- **Independent live-schema re-verification.** Directly re-queried the live `/operations/safety`
+  endpoint on the test host (not merely re-read Codex's own report or fixture) and hand-traced
+  `getCalmSafetyPosture()` against the actual current payload — confirmed it resolves to tone
+  `"safe"`, resolving the Step 66UI.4-FE.1B-V accepted Unavailable gap under real data. This
+  directly applies the lesson from FE.1B-R (which missed the original gap by checking only
+  synthetic fixtures).
+- **Independent re-run verification.** Re-ran (in a disposable detached worktree at commit
+  `974822d`, later removed): `verify_step66ui4_fe1b1_mapping_calibration.py` PASS;
+  `pytest tests/test_step66ui4_fe1b1_mapping_calibration.py` 1 passed; `npm test` 15 files/118
+  tests passed; `npm run typecheck` passed; `npm run build` passed (new JS hash `index-CCkn0PAe.js`
+  expected from the logic change, unchanged CSS hash `index-DcSljMgU.css`).
+- **Local Artifact Reconciliation.** All 8 files Codex's handoff/implementation report claim exist
+  at the stated repo-relative paths on the shared remote branch; no `.tools/`, no unrelated files,
+  no local Windows absolute paths, no local username found in the diff. No blocking gap.
+- **Source-of-truth review.** Recommends Option C: accept PR #9 for Product Owner UI validation now;
+  merge the FE.1B.1 planning branch (`ace3441`) and this review branch alongside PR #9 at a future
+  FE.1B.1 merge stage so no content is left permanently stranded unmerged.
+- **Incident (self-reported, non-blocking).** A worktree-cleanup step momentarily emptied `main`'s
+  gitignored `apps/admin-console/node_modules` (a Windows junction was removed while still linked);
+  detected immediately via `git status --short` (no tracked file affected) and repaired via
+  `npm ci`, restoring the exact pre-incident test baseline (110 tests passed). No tracked file,
+  commit, or branch was affected.
+- **Output docs.**
+  `docs/frontend/66ui4-phase1-product-visual-language/fe1b1-claude-code-review.md`,
+  `docs/test/step66ui4-fe1b1-review-record.md` (both on `review/66ui4-fe1b1-safety-field-mapping`).
+- **Tests.** New `scripts/verify_step66ui4_fe1b1_review.py` + `tests/test_step66ui4_fe1b1_review.py`
+  (on the review branch).
+- **Gate.** Step 66UI.4-FE.1B.1-R status: PASS. PR #9 not merged by this stage. FE.1C/FE.1D remain
+  unauthorized. No backend/API/database/workflow change. No deployment. No production/external
+  action. Next: Product Owner decision on UI validation deployment for PR #9.
