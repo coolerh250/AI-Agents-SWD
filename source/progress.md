@@ -13994,6 +13994,42 @@ board, drag/drop, calm safety posture restructure, or Overview attention-first r
   FE.1B/FE.1C/FE.1D remain unauthorized. No backend/API/database/workflow change. No production/
   external action.
 
+## Stage 66UI.4-FE.1B — Calm Safety Posture
+
+**Status: completed by Codex pending Claude Code review and Product Owner validation. Marker:
+`STEP66UI4_FE1B_CALM_SAFETY_VERIFY: PASS`.** Runtime posture: frontend-only Admin Console safety
+presentation. No backend, API, database, workflow, production behavior, external integration,
+Delivery real UI, Reminder/Expiry real UI, Pipeline board, drag/drop, Overview restructure,
+navigation polish, Workroom redesign, or new agent activity model.
+
+- **Shared Context Preflight.** Latest `main` reviewed at `77ab4e0`. Reviewed repo-level shared
+  context, stage gate, security/governance, and frontend implementation skills; reviewed
+  source-of-truth/process docs; reviewed 66UI source-of-truth record; reviewed Phase 1 design brief,
+  visual language spec, calm safety posture spec, engineering-field reduction map, product microcopy
+  guide, frontend implementation boundary, Codex readiness boundary, FE.1A merge record, and FE.1A
+  merged-main test-runtime deployment record. New information found: FE.1A is merged and deployed to
+  test runtime, and this prompt provides the new scoped FE.1B authorization. Conflicts found: none.
+- **Implementation.** Added `CalmSafetyPosture` to map Existing /operations/safety data only into a
+  calm product-language summary, facts, and `Evidence / details`. Updated `SafetyStatusBar` to no
+  longer lead with raw snake_case fields. Updated `SafetyCenter` to lead with the calm safety panel.
+  Raw safety evidence remains accessible, including `production_executed_true_count`,
+  `workflow_production_executed_true_count`, dispatch/resume flags, external integration flags,
+  production delegation, and approval fields.
+- **Scope control.** Codex authorization limited to FE.1B. FE.1C/FE.1D not started. No new safety
+  endpoint. No new safety computation. No Delivery real UI. No Reminder/Expiry real UI. No Pipeline
+  board. No drag/drop. No new agent activity model. No production action. No external action.
+- **Stage artifacts.** Added `docs/stages/66ui4-fe1b/stage-manifest.yaml`,
+  `docs/stages/66ui4-fe1b/context-receipt.md`, `docs/stages/66ui4-fe1b/stage-gate-report.md`,
+  `docs/frontend/66ui4-phase1-product-visual-language/fe1b-calm-safety-implementation-report.md`,
+  `docs/handoffs/66ui4-fe1b/codex-to-claude-code-handoff.md`, and
+  `docs/test/step66ui4-fe1b-calm-safety-test-report.md`.
+- **Verification.** Added `scripts/verify_step66ui4_fe1b_calm_safety.py` and
+  `tests/test_step66ui4_fe1b_calm_safety.py`. Frontend tests/build/typecheck, verifier, pytest
+  wrapper, `git diff --check`, and secret scan results are recorded in the FE.1B test report and
+  completion report.
+- **Gate.** Step 66UI.4-FE.1B is ready for Claude Code review and Product Owner visual validation.
+  Merge and deployment require separate explicit authorization.
+
 ## Stage 66UI.4-FE.1B-R — Review Calm Safety Posture
 
 - **Note on review-doc location.** Per this stage's instruction, the review artifacts
