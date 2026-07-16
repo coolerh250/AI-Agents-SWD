@@ -14305,3 +14305,53 @@ branch (see below).**
 - **Gate.** Step 66UI.4-FE.1B.1-V status: PASS. PR #9 not merged by this stage — explicit merge
   authorization still required (a prospective Step 66UI.4-FE.1B.1-MD). FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
+
+## Stage 66UI.4-FE.1B.1-MD — Merge PR #9 and Calibrate Test Runtime
+
+**Status: PASS. Marker `STEP66UI4_FE1B1_MERGE_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權執行 Step 66UI.4-FE.1B.1-MD — merge PR #9 到 main，並將 merged main 校準到
+  test runtime；同時整理 FE.1B.1 planning/review/preview/validation 必要紀錄進 main；不得修改
+  backend/API/DB/workflow，不得修改 /operations/safety response shape，不得授權 FE.1C/FE.1D
+  implementation。"
+- **Source-of-truth consolidation.** Four branches merged into `main` in chronological order via
+  `git merge --no-ff`, each conflicting only in `source/progress.md` (resolved by chronological
+  reordering, same pattern as FE.1A-MD/FE.1B-MD):
+  1. `review/66ui4-fe1b1-safety-field-mapping-plan` (`ace3441`, FE.1B.1-P planning) → `c6df80f`
+  2. `frontend/66ui4-fe1b1-safety-field-mapping` (`974822d`, PR #9 implementation) → `39ddc8c`
+  3. `review/66ui4-fe1b1-safety-field-mapping` (`f818ccc`, FE.1B.1-R review) → `dcc78aa`
+  4. `review/66ui4-fe1b1-preview-deploy` (`79da841`, FE.1B.1-VP preview) → `7aff12a`
+  All FE.1B.1 planning/implementation/review/preview artifacts now live on `main`; nothing remains
+  stranded on an unmerged branch. Branches not deleted (no explicit authorization for cleanup).
+  Pushed to `origin/main`: `e56bf4f..7aff12a`.
+- **Post-merge verification.** All five FE.1B.1 verifiers PASS on merged `main`
+  (`verify_step66ui4_fe1b1_planning.py`, `verify_step66ui4_fe1b1_mapping_calibration.py`,
+  `verify_step66ui4_fe1b1_review.py`, `verify_step66ui4_fe1b1_preview_deploy.py`,
+  `verify_step66ui4_fe1b1_product_owner_validation.py`); 66 pytest tests passed; 15 files/118
+  frontend tests, build, and typecheck all passed. `git diff --check` clean; secret scan
+  critical=0/high=0/informational=98 (baseline). No local Windows paths, local username,
+  `Documents/Codex` path, `.tools/`, or unrelated files found (Local Artifact Reconciliation: clean).
+- **Deployment/calibration.** Built the Admin Console bundle from an isolated clone checked out at
+  merge commit `7aff12a` on the test host (never touching the host's own tracked main clone's
+  working tree), using an already-present `node:20-slim` container. Backed up the pre-existing
+  served bundle, then `docker cp`'d the new build into the running orchestrator container (no image
+  rebuild, no restart). Resulting bundle hash `index-CCkn0PAe.js`/`index-DcSljMgU.css` — identical
+  to the prior preview deployment's hash, confirming correct provenance.
+- **Safety badge closed the loop.** Independently re-confirmed by executing the actual compiled
+  `getCalmSafetyPosture()` logic (via a disposable, uncommitted test harness, deleted immediately
+  after use) against a freshly re-fetched live `/operations/safety` payload on the merged-main
+  deployment: tone `"safe"`. The Step 66UI.4-FE.1B-V accepted Unavailable gap is now fully closed on
+  `main` and in the deployed test runtime.
+- **Safety.** `production_executed_true_count` and `workflow_production_executed_true_count`
+  remained `0` before and after; `/operations/safety` reported `"result":"safe"`; response shape
+  unchanged (571 fields); health endpoint OK; Admin Console HTTP 200; all 28 containers unaffected;
+  no workflow dispatch/resume; no production/external action. Rollback not used (backups retained).
+- **Output docs.** `docs/frontend/66ui4-phase1-product-visual-language/fe1b1-merge-record.md`,
+  `docs/test/step66ui4-fe1b1-merged-main-test-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1b1_merge_deploy.py` +
+  `tests/test_step66ui4_fe1b1_merge_deploy.py`.
+- **Gate.** Step 66UI.4-FE.1B.1-MD status: PASS. Marker `STEP66UI4_FE1B1_MERGE_DEPLOY_VERIFY: PASS`.
+  FE.1B.1 is now fully planned, implemented, reviewed, validated, merged, and deployed/calibrated on
+  the test runtime, closing the Step 66UI.4-FE.1B-V accepted Unavailable gap. FE.1C/FE.1D remain
+  unauthorized. No backend/API/database/workflow change. No `/operations/safety` response shape
+  change. No production/external action.
