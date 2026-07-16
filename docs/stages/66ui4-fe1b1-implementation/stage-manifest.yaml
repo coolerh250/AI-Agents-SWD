@@ -1,0 +1,89 @@
+stage: "66UI.4-FE.1B.1"
+owner: "Codex"
+task_type: "frontend"
+status: "implementation"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "508c8e1"
+  required_docs:
+    - .agents/skills/shared-context/SKILL.md
+    - .agents/skills/stage-gate/SKILL.md
+    - .agents/skills/security-governance/SKILL.md
+    - .agents/skills/frontend-implementation/SKILL.md
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/design/66ui4-phase1-product-visual-language/calm-safety-posture-spec.md
+    - docs/frontend/66ui4-phase1-product-visual-language/fe1b-merge-record.md
+    - docs/test/step66ui4-fe1b-merged-main-test-deployment-record.md
+    - docs/frontend/66ui4-phase1-product-visual-language/fe1b-product-owner-ui-validation-record.md
+    - docs/frontend/66ui4-phase1-product-visual-language/fe1b1-safety-field-mapping-plan.md
+    - docs/contracts/66ui4-fe1b1-safety-field-mapping/frontend-implementation-boundary.md
+    - docs/test/step66ui4-fe1b1-safety-field-mapping-planning-record.md
+  related_prs:
+    - "PR #7 merged for FE.1B"
+    - "review/66ui4-fe1b1-safety-field-mapping-plan read-only at ace3441"
+
+allowed_paths:
+  - apps/admin-console/**
+  - docs/stages/66ui4-fe1b1-implementation/**
+  - docs/frontend/66ui4-phase1-product-visual-language/**
+  - docs/handoffs/66ui4-fe1b1/**
+  - docs/test/**
+  - source/progress.md
+  - scripts/verify_step66ui4_fe1b1_mapping_calibration.py
+  - tests/test_step66ui4_fe1b1_mapping_calibration.py
+
+forbidden_paths:
+  - apps/orchestrator/**
+  - services/**
+  - infra/**
+  - migrations/**
+  - database/**
+  - helm/**
+  - k8s/**
+  - .github/workflows/**
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - implementation_report
+  - handoff
+  - test_report
+  - progress_update
+
+codex_authorized: true
+design_only: false
+frontend_only: true
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found

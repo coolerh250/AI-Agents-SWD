@@ -14123,3 +14123,35 @@ navigation polish, Workroom redesign, or new agent activity model.
   FE.1B is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime, with
   one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No production/external action.
+
+## Stage 66UI.4-FE.1B.1 - Safety Field Mapping Calibration
+
+**Status: implementation complete by Codex, pending Claude Code review and Product Owner
+validation. Marker: `STEP66UI4_FE1B1_MAPPING_CALIBRATION_VERIFY: PASS`.**
+
+- **Shared Context Preflight.** Latest `main` reviewed at `508c8e1`. Required skills, process docs,
+  FE.1B merge/deployment/validation records, frontend safety source, and read-only backend safety
+  schema source were reviewed. The accepted FE.1B.1 planning/boundary/test documents were read from
+  `origin/review/66ui4-fe1b1-safety-field-mapping-plan` at `ace3441`; they are not yet on `main`.
+  This source-location gap is recorded, and the current prompt provides the separate explicit
+  Product Owner authorization for FE.1B.1 implementation. No technical or authorization conflict
+  was found.
+- **Frontend mapping calibration only.** Removed `dispatch_enabled` and
+  `resume_dispatch_enabled` from global automation truth. Removed `approval_required` and
+  `requires_approval` from global tone computation. Global automation now uses the existing
+  `task_api_workflow_dispatch_enabled` and `task_workroom_resume_dispatch_enabled` fields only.
+- **Approval/evidence.** Approval wording now states that approvals are tracked per task. Raw safety
+  evidence remains accessible. Retired task/workroom/workflow-scoped fields remain visible only as
+  `Not applicable at this endpoint` scope notes.
+- **Conservative fallback.** Safe requires zero production counts, disabled actual global
+  automation/external/delegation fields, and endpoint `result: safe`. Missing actual global
+  evidence remains Unavailable; enabled risk or positive production count remains Attention.
+- **Verification.** Added realistic-schema frontend coverage plus
+  `scripts/verify_step66ui4_fe1b1_mapping_calibration.py` and
+  `tests/test_step66ui4_fe1b1_mapping_calibration.py`. Final command results are recorded in the
+  stage test report.
+- **Scope.** Codex authorization limited to FE.1B.1. Existing /operations/safety data only. No
+  /operations/safety response shape change. FE.1C/FE.1D not started. No backend/API/database/
+  workflow/infra change. No workflow dispatch/resume. No production action. No external action.
+- **Gate.** Ready for Claude Code review. Product Owner validation, merge, and deployment remain
+  separate explicitly authorized future gates.
