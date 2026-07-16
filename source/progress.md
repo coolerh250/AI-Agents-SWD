@@ -14412,3 +14412,43 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
 - **Gate.** Ready for Product Owner decision on brief acceptance and a future, separate, explicit
   Codex FE.1C implementation authorization (itself gated on PR #7 being merged first). Not merged.
   Codex FE.1C implementation not authorized.
+
+## Stage 66UI.4-FE.1C-SOT-M — Merge FE.1C Design and Review Artifacts to Main
+
+**Status: PASS. Marker `STEP66UI4_FE1C_SOT_MERGE_VERIFY: PASS`.**
+
+- **Authorization.** "授權執行 Step 66UI.4-FE.1C-SOT-M — 將 FE.1C Overview Attention-first design PR #8
+  與 Claude Code review artifacts 合併/整理進 main，建立 FE.1C source of truth；不得授權 Codex
+  implementation，不得修改 frontend runtime/backend/API/DB/workflow，不得授權 FE.1D。"
+- **Merged.** `design/66ui4-fe1c-overview-attention-first` (Draft PR #8, `0c7762e`) → merge commit
+  `4d7fc90`; `review/66ui4-fe1c-overview-attention-first` (`4eb1279`) → merge commit `f91c91b`. Both
+  via `git merge --no-ff` directly, confirmed safe in advance since each branch's own commit touches
+  only docs/scripts/tests/`source/progress.md` — no `apps/admin-console/src/**` path. Both branches
+  predate FE.1B (created off an old `main`), so raw `git diff main..branch` showed large apparent
+  deletions of FE.1B/FE.1B.1 files; confirmed this was a tree-comparison staleness artifact, not a
+  real edit — the three-way merge correctly preserved all of `main`'s current content, verified by
+  `CalmSafetyPosture.tsx` remaining present/unmodified and zero `apps/**` diff pre/post-merge.
+- **Conflict handling.** Both merges conflicted in `source/progress.md` only, resolved by preserving
+  all existing content and appending each branch's new stage section in chronological order (design
+  brief, then review) — no content dropped, no FE.1B.1 record overwritten.
+- **FE.1C source-of-truth now on main.** Design docs (10), contract/boundary docs (2), handoff (1),
+  stage artifacts (3), review record (1), verifiers + tests (4) — 21 files. Existing-data-only;
+  `/tasks` usage via existing status filters (Q1); FE.1B.1 calm safety posture reuse now unblocked
+  since FE.1B and FE.1B.1 are both merged (Q2 precondition satisfied); conservative agent-execution
+  status mapping completed→Completed / failed→Needs review / other-or-missing→Not reported (Q3);
+  66D/66C.4/notifications/pipeline remain placeholder-only; no fake counts; no fake controls.
+- **Local Artifact Reconciliation.** All 21 FE.1C files confirmed present at their documented
+  repo-relative paths on main; no local Windows paths, local username, `Documents/Codex` path,
+  `.tools/`, or unrelated files found. No blocking gap.
+- **Verification.** All FE.1C and FE.1B/FE.1B.1 verifiers re-run and PASS on merged main (11
+  verifiers total); `git diff --check` clean; secret scan critical=0/high=0/informational=98
+  (baseline). No deployment performed by this stage.
+- **Output docs.**
+  `docs/design/66ui4-fe1c-overview-attention-first/source-of-truth-merge-record.md`,
+  `docs/test/step66ui4-fe1c-source-of-truth-merge-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_sot_merge.py` +
+  `tests/test_step66ui4_fe1c_sot_merge.py`.
+- **Gate.** Step 66UI.4-FE.1C-SOT-M status: PASS. Codex FE.1C implementation still not authorized
+  (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
+  frontend runtime/backend/API/database/workflow change. No deployment. No production/external
+  action.
