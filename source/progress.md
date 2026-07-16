@@ -14386,3 +14386,29 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   `tests/test_design_66ui4_fe1c_overview_brief.py`.
 - **Gate.** DESIGN-66UI.4-FE.1C status: design-ready-for-review. Codex remains unauthorized. Next:
   Claude Code architecture review of the brief, then Product Owner decision. Not a merge/deploy.
+
+## Stage 66UI.4-FE.1C-R — Review Overview Attention-first Detailed Brief
+
+- **Note on review-doc location.** Per this stage's instruction, the review artifacts
+  (`claude-code-architecture-review.md`, `frontend-implementation-boundary.md`,
+  `codex-readiness-boundary.md`, `step66ui4-fe1c-design-review-record.md`,
+  `verify_step66ui4_fe1c_design_review.py` + test) are committed to a dedicated review branch
+  (`review/66ui4-fe1c-overview-attention-first`, pushed to origin) rather than to `main`, mirroring
+  the FE.1A-R/FE.1B-R precedent. This entry records the outcome for continuity; the full content
+  lives on that branch.
+- **Reviewed.** Draft PR #8, `design/66ui4-fe1c-overview-attention-first`, commit `0c7762e`.
+  Verdict: **PASS**. Marker `STEP66UI4_FE1C_DESIGN_REVIEW_VERIFY: PASS`.
+- **Scope confirmed.** 17 files, 0 runtime (`apps/**`) files touched — design/docs/handoff/stage
+  artifacts only. Existing-data-only boundary confirmed against actual frontend/backend source
+  (`ExecutiveOverview.tsx`, `api/operations.ts`, `task_api.py`, `operations.py`); no fake counts/
+  controls; 66D/66C.4/Notifications/Pipeline honest placeholders; FE.1B not duplicated.
+- **Open questions answered.** Q1 (`/tasks` usage): Option C — call with the existing `status`
+  filter per attention count, route auth failures through the existing readable-error mapping. Q2
+  (FE.1B reuse): Option A, gated by an explicit precondition that PR #7 must be merged to `main`
+  first (component doesn't exist on `main` yet). Q3 (agent-execution status mapping): conservative
+  table — `completed`→"Completed", `failed`→"Needs review", anything else/missing→"Not reported"
+  (verified against actual SQL-level status usage in the codebase; no "running"/"queued" value
+  found anywhere).
+- **Gate.** Ready for Product Owner decision on brief acceptance and a future, separate, explicit
+  Codex FE.1C implementation authorization (itself gated on PR #7 being merged first). Not merged.
+  Codex FE.1C implementation not authorized.
