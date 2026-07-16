@@ -3,6 +3,7 @@ type SafetyTone = "safe" | "attention" | "unavailable";
 type EvidenceField = {
   field: string;
   label: string;
+  endpointApplicable?: boolean;
 };
 
 const BOOLEAN_OFF = "Off";
@@ -11,23 +12,37 @@ const BOOLEAN_ON = "On";
 export const SAFETY_EVIDENCE_FIELDS: EvidenceField[] = [
   { field: "production_executed_true_count", label: "Production action count" },
   { field: "workflow_production_executed_true_count", label: "Workflow production count" },
-  { field: "dispatch_enabled", label: "Workflow dispatch" },
-  { field: "resume_dispatch_enabled", label: "Workflow resume" },
+  {
+    field: "dispatch_enabled",
+    label: "Workflow dispatch",
+    endpointApplicable: false,
+  },
+  {
+    field: "resume_dispatch_enabled",
+    label: "Workflow resume",
+    endpointApplicable: false,
+  },
   { field: "task_api_workflow_dispatch_enabled", label: "Task API dispatch" },
   { field: "task_workroom_resume_dispatch_enabled", label: "Workroom resume" },
   { field: "github_external_write_enabled", label: "GitHub write integration" },
   { field: "discord_external_send_enabled", label: "Discord send integration" },
   { field: "llm_external_call_enabled", label: "LLM external call" },
   { field: "production_delegation_allowed", label: "Production delegation" },
-  { field: "approval_required", label: "Approval required" },
-  { field: "requires_approval", label: "Requires approval" },
+  {
+    field: "approval_required",
+    label: "Approval required",
+    endpointApplicable: false,
+  },
+  {
+    field: "requires_approval",
+    label: "Requires approval",
+    endpointApplicable: false,
+  },
   { field: "result", label: "Endpoint result" },
   { field: "last_checked", label: "Last checked" },
 ];
 
 const AUTOMATION_FIELDS = [
-  "dispatch_enabled",
-  "resume_dispatch_enabled",
   "task_api_workflow_dispatch_enabled",
   "task_workroom_resume_dispatch_enabled",
 ] as const;
@@ -78,7 +93,12 @@ function anyPositiveNumber(data: Record<string, unknown>, fields: readonly strin
   });
 }
 
-export function formatSafetyValue(data: Record<string, unknown>, field: string): string {
+export function formatSafetyValue(
+  data: Record<string, unknown>,
+  field: string,
+  endpointApplicable = true,
+): string {
+  if (!endpointApplicable) return "Not applicable at this endpoint";
   if (!hasField(data, field)) return "not reported";
   const value = data[field];
   if (typeof value === "boolean") return value ? "true" : "false";
@@ -104,23 +124,11 @@ function productionFact(data: Record<string, unknown>): string {
   return "Production action evidence: not reported";
 }
 
-function approvalFact(data: Record<string, unknown>): string {
-  const required = boolState(data, "approval_required");
-  const requiresApproval = boolState(data, "requires_approval");
-  if (required === true || requiresApproval === true) {
-    return "Human approval is required before anything runs";
-  }
-  if (required === false && requiresApproval === false) return "No approval needed for this context";
-  if (required === false || requiresApproval === false) return "Approval requirement: partially reported";
-  return "Approval requirement: not reported";
-}
-
 export function getCalmSafetyPosture(data: Record<string, unknown>) {
   const automationOff = allBooleans(data, AUTOMATION_FIELDS, false);
   const externalOff = allBooleans(data, EXTERNAL_FIELDS, false);
   const noProduction = allNumbers(data, PRODUCTION_COUNT_FIELDS, 0);
-  const approvalRequired =
-    boolState(data, "approval_required") === true || boolState(data, "requires_approval") === true;
+  const productionDelegationOff = boolState(data, "production_delegation_allowed") === false;
   const hasEnabledRisk =
     anyBooleans(data, AUTOMATION_FIELDS, true) ||
     anyBooleans(data, EXTERNAL_FIELDS, true) ||
@@ -132,12 +140,16 @@ export function getCalmSafetyPosture(data: Record<string, unknown>) {
   let tone: SafetyTone = "unavailable";
   let title = "Safety status unavailable - check system evidence.";
 
-  if (hasEnabledRisk || approvalRequired || resultWarns) {
+  if (hasEnabledRisk || resultWarns) {
     tone = "attention";
-    title = approvalRequired
-      ? "Attention needed - items are awaiting approval."
-      : "Attention needed - review safety evidence.";
-  } else if (automationOff && externalOff && noProduction) {
+    title = "Attention needed - review safety evidence.";
+  } else if (
+    automationOff &&
+    externalOff &&
+    noProduction &&
+    productionDelegationOff &&
+    endpointResult === "safe"
+  ) {
     tone = "safe";
     title = "Safe - no automated or production actions will run.";
   }
@@ -163,7 +175,7 @@ export function getCalmSafetyPosture(data: Record<string, unknown>) {
         "Disabled",
         "Enabled",
       ),
-      approvalFact(data),
+      "Approvals are tracked per task. Review task details for approval requirements.",
     ],
   };
 }
@@ -195,13 +207,13 @@ export function CalmSafetyPosture({
       <details className="calm-safety-details">
         <summary>Evidence / details</summary>
         <dl className="calm-safety-evidence">
-          {SAFETY_EVIDENCE_FIELDS.map(({ field, label }) => (
+          {SAFETY_EVIDENCE_FIELDS.map(({ field, label, endpointApplicable = true }) => (
             <div key={field} className="calm-safety-evidence-row">
               <dt>
                 {label}
                 <span className="calm-safety-field"> {field}</span>
               </dt>
-              <dd>{formatSafetyValue(data, field)}</dd>
+              <dd>{formatSafetyValue(data, field, endpointApplicable)}</dd>
             </div>
           ))}
         </dl>
