@@ -14355,3 +14355,34 @@ branch (see below).**
   the test runtime, closing the Step 66UI.4-FE.1B-V accepted Unavailable gap. FE.1C/FE.1D remain
   unauthorized. No backend/API/database/workflow change. No `/operations/safety` response shape
   change. No production/external action.
+
+## Stage DESIGN-66UI.4-FE.1C — Overview Attention-first Detailed Design Brief
+
+**Status: design-ready-for-review. Marker: `DESIGN66UI4_FE1C_OVERVIEW_BRIEF_VERIFY: PASS`.** Owner:
+Claude Design. Runtime posture: design/documentation/handoff only — no runtime code, no frontend
+implementation, no backend/API/database/workflow change, no production/external action, no Codex
+authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without redesigning it.
+
+- **Shared context preflight.** Synced `main` (`77ab4e0`). Confirmed 66UI.3 + 66UI.4 Phase 1 design
+  docs are merged to main (source of truth), the Stage Gate & Context Guard skill pack is present,
+  FE.1A is merged+deployed, and FE.1B is in progress. Read the four `.agents/skills` files, the
+  `docs/process` governance docs, the merged Phase 1 design docs, and the current Overview source
+  (`ExecutiveOverview.tsx`, `api/operations.ts`, `TaskList.tsx`) for design understanding only.
+  No conflict found; the FE.1C prompt narrows/details the merged `overview-dashboard-spec.md`.
+- **Scope.** Turn the Overview (`/` route) from a flat 12-card metrics grid into an attention-first
+  AI Team Command Center home using **existing data only**: Needs-your-attention (tasks:
+  clarification_needed/blocked, client-side counts of the existing `/tasks` endpoint) → AI team
+  activity (existing agent-executions) → current work (recent tasks) → calm posture (reuse FE.1B,
+  not duplicated) → demoted existing 12 metrics cards → honest 66D/66C.4/Notifications/Pipeline
+  placeholders.
+- **Existing-data-only / no new backend.** No new endpoint, DB field, workflow computation, agent
+  stream, notification/delivery/reminder backend requested; anything needing future backend is
+  labelled "Future — requires later contract" and excluded from FE.1C scope. No fabricated numbers;
+  no fake controls; zero/empty states read as calm "all clear."
+- **Output docs.** `docs/design/66ui4-fe1c-overview-attention-first/` (10 docs),
+  `docs/handoffs/66ui4-fe1c/claude-design-to-claude-code-handoff.md`, and stage artifacts under
+  `docs/stages/66ui4-fe1c/` (manifest, context-receipt, stage-gate-report).
+- **Tests.** New `scripts/verify_design_66ui4_fe1c_overview_brief.py` +
+  `tests/test_design_66ui4_fe1c_overview_brief.py`.
+- **Gate.** DESIGN-66UI.4-FE.1C status: design-ready-for-review. Codex remains unauthorized. Next:
+  Claude Code architecture review of the brief, then Product Owner decision. Not a merge/deploy.
