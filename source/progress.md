@@ -14083,3 +14083,43 @@ navigation polish, Workroom redesign, or new agent activity model.
   gap noted; explicit merge authorization still required and not granted by this document.
   FE.1C/FE.1D remain unauthorized. Not production. Not deployment beyond the temporary validation
   swap already described.
+
+## Stage 66UI.4-FE.1B-MD — Merge PR #7 and Calibrate Test Runtime
+
+- **Authorization.** Product Owner explicitly authorized: "授權 merge PR #7 到 main；接受目前 Safety
+  badge 顯示 Unavailable 作為已知非阻斷 gap；暫時部署維持運行，不回滾；merge 後執行 merged main 到 test
+  runtime 的正式部署/校準；不授權 FE.1C/FE.1D implementation；下一步另行規劃 FE.1B.1 Safety Field
+  Mapping Calibration。"
+- **Merge.** `frontend/66ui4-fe1b-calm-safety` (PR #7, commit `6cf8efe`) merged to `main` via
+  `git merge --no-ff` — merge commit `5a2bc4e` (`7ad50d7..5a2bc4e`). One conflict in
+  `source/progress.md` only, resolved by ordering the branch's implementation-stage entry
+  chronologically before the review/validation-stage entries already on `main` (same pattern as
+  FE.1A-MD). Branch not deleted. Pushed to `origin/main`.
+- **Accepted non-blocking gap preserved.** Safety badge shows "Unavailable" instead of "Safe"
+  because the live `/operations/safety` response is missing `dispatch_enabled`,
+  `resume_dispatch_enabled`, `approval_required`, and `requires_approval`. Not fixed in this stage
+  (no `/operations/safety` shape change, no new endpoint, no field-mapping change). Recommended
+  next: Step 66UI.4-FE.1B.1 — Safety Field Mapping Calibration.
+- **Post-merge verification.** `verify_step66ui4_fe1b_calm_safety.py` PASS;
+  `verify_step66ui4_fe1b_product_owner_validation.py` PASS; `verify_step66ui4_fe1b_review.py` not
+  runnable on `main` (by design — lives only on the unmerged `review/66ui4-fe1b-calm-safety`
+  branch). 15 files/110 tests, build, and typecheck all passed on merged `main`. `git diff --check`
+  clean; secret scan critical=0/high=0/informational=98 (baseline).
+- **Deployment/calibration.** Built the Admin Console bundle from an isolated clone checked out at
+  merge commit `5a2bc4e` on the test host (never touching the host's own tracked main clone's
+  working tree), using an already-present `node:20-slim` container. Backed up the pre-existing
+  served bundle, then `docker cp`'d the new build into the running orchestrator container (no image
+  rebuild, no restart). Resulting bundle hash `index-D3ONvmz8.js`/`index-DcSljMgU.css` — identical
+  to the prior temporary deployment's hash, confirming correct provenance.
+- **Safety.** `production_executed_true_count` remained `0` before and after; `/operations/safety`
+  reported `"result":"safe"`; health endpoint OK; Admin Console HTTP 200; all 28 containers
+  unaffected; no workflow dispatch/resume; no production/external action. Rollback not used (both
+  the prior and this stage's pre-deployment backups remain available on the test host).
+- **Output docs.** `docs/frontend/66ui4-phase1-product-visual-language/fe1b-merge-record.md`,
+  `docs/test/step66ui4-fe1b-merged-main-test-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1b_merge_deploy.py` +
+  `tests/test_step66ui4_fe1b_merge_deploy.py`.
+- **Gate.** Step 66UI.4-FE.1B-MD status: PASS. Marker `STEP66UI4_FE1B_MERGE_DEPLOY_VERIFY: PASS`.
+  FE.1B is now fully merged, reviewed, validated, and deployed/calibrated on the test runtime, with
+  one accepted non-blocking gap carried forward to a future FE.1B.1 stage. FE.1C/FE.1D remain
+  unauthorized. No backend/API/database/workflow change. No production/external action.
