@@ -14612,3 +14612,54 @@ branch (see below).**
   `tests/test_step66ui4_fe1c_product_owner_validation.py`.
 - **Gate.** Merge readiness from Product Owner validation perspective: ready. Explicit, separate
   merge authorization for PR #10 still required. FE.1D remains unauthorized.
+
+## Stage 66UI.4-FE.1C-MD — Merge PR #10 and Calibrate Test Runtime
+
+**Status: PASS. Marker `STEP66UI4_FE1C_MERGE_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權執行 Step 66UI.4-FE.1C-MD — merge PR #10 到 main，並將 merged main 校準到
+  test runtime；同時整理 FE.1C review/live verification/preview/validation 必要紀錄進 main；接受
+  TaskList query-param gap 為非阻斷項目；不得修改 backend/API/DB/workflow，不得新增 endpoint，不得授權
+  FE.1D。"
+- **Merged.** Four branches in chronological order via `git merge --no-ff`: `frontend/66ui4-fe1c-
+  overview-attention-first` (PR #10, `816856a`) -> `dee66c9`; `review/66ui4-fe1c-implementation`
+  (`830703f`) -> `5816d82`; `review/66ui4-fe1c-live-verification` (`96c8be2`) -> `0dee815`;
+  `review/66ui4-fe1c-preview-deploy` (`470c4ca`) -> `1b06c21`. The Product Owner validation record
+  was already on `main` from the prior stage (`0e73b37`).
+- **Pre-merge gate.** All 18 required checks confirmed PASS: Codex/review/live/preview/PO-validation
+  markers all present; PO verdict VISIBLE; FE.1C-R gap #1 cleared; TaskList query-param gap accepted
+  non-blocking; PR #10 frontend-only; no backend/API/DB/workflow/new-endpoint change; no FE.1D; no
+  fake counts/controls; no local artifact exposure.
+- **Conflict handling.** All four merges conflicted in `source/progress.md` only, each resolved by
+  preserving all existing content and inserting the incoming section at the correct chronological
+  position (Implementation -> Review -> Live Verification -> Preview Deployment -> Product Owner
+  Validation); two merges additionally required removing a duplicate short copy of a section a
+  downstream branch had independently carried forward. No content dropped.
+- **Consolidation.** All 22 required FE.1C artifacts (implementation, review, live-verification,
+  preview-deployment, Product Owner validation -- docs + verifiers + tests) confirmed present at
+  their documented repo-relative paths on `main`.
+- **Test runtime calibration.** Rebuilt the Admin Console frontend from merged `main` commit
+  `1b06c21` in an isolated disposable clone, producing the same deterministic hashes
+  (`index-BPXQq_eV.js` / `index-tDSVCSFZ.css`) as every prior independent build of this diff --
+  confirming merge integrity. Swapped this merged-main build into the test runtime (backup of the
+  prior bundle retained), replacing the pre-merge PR-branch-sourced bundle for correct deployment
+  provenance. No container rebuild/restart. All post-deployment checks (Overview attention-first,
+  Needs-your-attention real data, Current work 5/updated_at desc, AI team activity mapping, System
+  posture Safe, demoted metrics, honest placeholders, TaskList query-param gap retained,
+  `/operations/safety` and `/operations/agent-executions` unchanged, `production_executed_true_count`
+  = 0, no workflow/production/external action) passed.
+- **Verification.** All 5 FE.1C verifiers + 73 pytest cases re-run and PASS on merged main; frontend
+  tests 16 files/125 passed; typecheck passed; build passed with deterministic hashes; `git diff
+  --check` clean; secret scan critical=0/high=0/informational=100 (+2 vs. the 98 baseline, both
+  GUID-shape matches against real live task IDs already documented as non-secrets in Step
+  66UI.4-FE.1C-V, carried into `main` by this merge).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.** `docs/frontend/66ui4-fe1c-overview-attention-first/merge-record.md`,
+  `docs/test/step66ui4-fe1c-merged-main-test-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_merge_deploy.py` +
+  `tests/test_step66ui4_fe1c_merge_deploy.py`.
+- **Gate.** PR #10 merged to `main`. Test runtime calibrated to merged main. No backend/API/database/
+  workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized.
+  TaskList query-param gap accepted as non-blocking, not fixed (recommended follow-up, not scheduled
+  by this stage).
