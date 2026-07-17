@@ -14452,3 +14452,34 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
   frontend runtime/backend/API/database/workflow change. No deployment. No production/external
   action.
+
+## Stage 66UI.4-FE.1C-V — Product Owner UI Validation, Overview Attention-first
+
+**Status: PASS. Marker `STEP66UI4_FE1C_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.**
+
+- **Context.** Validated against the Step 66UI.4-FE.1C-VP temporary test-runtime deployment of PR
+  #10, `frontend/66ui4-fe1c-overview-attention-first`, commit `816856a` (review, live-verification,
+  and preview-deploy artifacts for this PR live on their own unmerged branches, per the standing
+  review-branch convention; this entry records the Product Owner's outcome for continuity).
+- **Clarification (checklist item #3).** Product Owner asked how to verify Decisions
+  waiting/Blocked tasks are real data, not fake numbers. Investigated live: queried
+  `/tasks?status=clarification_needed` and `/tasks?status=blocked` (read-only, test-auth role
+  header) and found one genuine pre-existing task record for each (real UUIDs/creators/timestamps).
+  Product Owner was also shown a repeatable self-verification method via the Task List page's own
+  in-page Status filter.
+- **Product Owner responses.** "確認無誤" (confirming the item #3 clarification), followed by an
+  explicit scope confirmation selecting "確認整份 10 項 checklist 全數通過" — the entire 10-item
+  checklist, not only item #3.
+- **Verdict.** VISIBLE. All 10 checklist items confirmed. No blocking gap raised.
+- **Non-blocking gap carried forward.** TaskList query-param gap (attention-tile links to
+  `/tasks?status=...` don't pre-filter, since `TaskList.tsx` doesn't read the URL query string) --
+  disclosed before/during validation, not raised as blocking.
+- **Safety.** `production_executed_true_count` = 0 throughout. No workflow dispatch/resume. No
+  production/external action. `main` unchanged by this document; PR #10 not merged by this document.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/product-owner-ui-validation-record.md`,
+  `docs/test/step66ui4-fe1c-product-owner-validation.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_product_owner_validation.py` +
+  `tests/test_step66ui4_fe1c_product_owner_validation.py`.
+- **Gate.** Merge readiness from Product Owner validation perspective: ready. Explicit, separate
+  merge authorization for PR #10 still required. FE.1D remains unauthorized.
