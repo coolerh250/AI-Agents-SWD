@@ -14521,6 +14521,38 @@ branch (see below).**
   external action. Next: bring the test runtime's application stack back up (separate explicit
   authorization) and re-verify live agent-execution status values before Product Owner validation.
 
+## Stage 66UI.4-FE.1C-LV — Restore Test Runtime and Live Agent Execution Verification
+
+**Status: PASS. Marker `STEP66UI4_FE1C_LIVE_VERIFICATION_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 執行 Step 66UI.4-FE.1C-LV — 恢復 test runtime application
+  stack，並重新驗證 live /operations/agent-executions status values；不得修改 frontend/backend/API/DB/
+  workflow，不得 merge PR #10，不得部署 PR #10，不得授權 FE.1D。"
+- **Baseline.** All 27 application containers were stopped (independently confirmed, consistent
+  with Step 66UI.4-FE.1C-R's own finding); only the always-on monitoring container was running.
+- **Restoration.** Started the existing stopped containers of the already-defined test runtime
+  compose project using existing service definitions -- no rebuild, no config/env change, no
+  migration, no DB/Redis mutation, no workflow trigger. All 27 containers reported healthy within
+  under a minute.
+- **Live verification.** `/operations/agent-executions` reachable (HTTP 200), returned 20 real
+  records, all with status `"completed"`, correctly mapping to "Completed" per PR #10. No null/
+  missing/unexpected status values observed. The `"failed"`/fallback mapping paths remain confirmed
+  via the existing, already-reviewed frontend test suite (not contradicted by live data). Decision:
+  **PASS** -- gap #1 from Step 66UI.4-FE.1C-R is cleared.
+- **Safety.** `production_executed_true_count` = 0 after restoration. No workflow dispatch/resume.
+  No production/external action. Test runtime continues serving the FE.1B.1 merged-main bundle
+  (asset hash unchanged) -- PR #10 was not deployed by this or any prior stage.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/live-agent-execution-status-verification.md`,
+  `docs/test/step66ui4-fe1c-live-agent-execution-verification-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_live_verification.py` +
+  `tests/test_step66ui4_fe1c_live_verification.py`.
+- **Gate.** PR #10 not merged. PR #10 not deployed. FE.1D remains unauthorized. Product Owner
+  validation may now proceed since the sole blocking gap from Step 66UI.4-FE.1C-R is closed; PR #10
+  merge still requires a separate, explicit Product Owner authorization.
+
 ## Stage 66UI.4-FE.1C-V — Product Owner UI Validation, Overview Attention-first
 
 **Status: PASS. Marker `STEP66UI4_FE1C_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.**
