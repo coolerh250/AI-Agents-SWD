@@ -14452,3 +14452,48 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
   frontend runtime/backend/API/database/workflow change. No deployment. No production/external
   action.
+
+## Stage 66UI.4-FE.1C-R — Review Overview Attention-first Implementation
+
+**Status: review complete by Claude Code. Verdict PASS_WITH_GAPS. Marker
+`STEP66UI4_FE1C_REVIEW_VERIFY: PASS_WITH_GAPS`. Full content on the `review/66ui4-fe1c-implementation`
+branch (see below).**
+
+- **Reviewed.** Draft PR #10, branch `frontend/66ui4-fe1c-overview-attention-first`, commit
+  `816856a9ffe2b7a14aa0a1a070d9538f2231cf67` (a single commit on top of `main` at `81600cc`) — the
+  Codex FE.1C implementation of the attention-first Overview.
+- **16 required checks: all PASS.** Correct section hierarchy (attention → activity → current work
+  → posture → demoted metrics → placeholders); status-filtered `/tasks` calls (no unfiltered
+  fetch-and-count); 5-task current work sorted `updated_at` descending; conservative
+  agent-execution mapping (completed→Completed, failed→Needs review, other/missing→Not reported,
+  confirmed by a test that exercises an unmapped "queued" value); FE.1B.1 `CalmSafetyPosture` reused
+  via a new backward-compatible `showDetails` prop (no raw evidence duplicated on Overview, links to
+  Safety Center); all 12 existing metrics preserved, visually demoted; 66D/66C.4/Notifications/
+  Pipeline remain honest placeholder-only with zero buttons/links/fake numbers; no backend/API/
+  database/workflow change; no new endpoint; no FE.1D; no client-side-only RBAC.
+- **Independent re-run verification.** Re-ran (in a disposable detached worktree at commit
+  `816856a`, later removed): `verify_step66ui4_fe1c_implementation.py` PASS; `pytest` 1 passed;
+  `npm test` 16 files/125 tests passed; `npm run typecheck` passed; `npm run build` passed (new
+  deterministic JS/CSS hashes, expected — both changed).
+- **Live agent-execution verification.** Independently confirmed the test runtime's application
+  stack is currently down (all service containers exited ~1 hour before this review; only the
+  always-on monitoring container remained up) — corroborating, not merely trusting, Codex's own
+  reported blocker. Did not attempt to restart the stack (would exceed this review's no-deployment
+  boundary). This is the primary reason for PASS_WITH_GAPS rather than an unconditional PASS.
+- **Non-blocking finding.** The "Decisions waiting"/"Blocked tasks" attention-tile links
+  (`/tasks?status=...`) do not yet cause `TaskList.tsx` (untouched by this PR) to pre-filter, since
+  that file does not read the URL query string — a UX-completion gap, not a fake control or scope
+  violation. Recommended as a follow-up, not blocking this verdict.
+- **Local Artifact Reconciliation.** Exactly the 15 files Codex's own report claims are present on
+  the shared remote branch; no local Windows paths, local username, `Documents/Codex` path,
+  `.tools/`, or unrelated files found. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/claude-code-implementation-review.md`,
+  `docs/test/step66ui4-fe1c-implementation-review-record.md` (both on
+  `review/66ui4-fe1c-implementation`).
+- **Tests.** New `scripts/verify_step66ui4_fe1c_review.py` + `tests/test_step66ui4_fe1c_review.py`
+  (on the review branch).
+- **Gate.** Step 66UI.4-FE.1C-R status: PASS_WITH_GAPS. PR #10 not merged by this stage. FE.1D
+  remains unauthorized. No backend/API/database/workflow change. No deployment. No production/
+  external action. Next: bring the test runtime's application stack back up (separate explicit
+  authorization) and re-verify live agent-execution status values before Product Owner validation.
