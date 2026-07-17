@@ -14553,6 +14553,35 @@ branch (see below).**
   validation may now proceed since the sole blocking gap from Step 66UI.4-FE.1C-R is closed; PR #10
   merge still requires a separate, explicit Product Owner authorization.
 
+## Stage 66UI.4-FE.1C-VP — PR #10 Test Runtime UI Validation Preview
+
+**Status: PASS. Marker `STEP66UI4_FE1C_PREVIEW_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 將 PR #10 frontend/66ui4-fe1c-overview-attention-first 部署到
+  test runtime 供 FE.1C Product Owner UI validation；不 merge main；不授權 FE.1D；不得修改
+  backend/API/DB/workflow，不得新增 endpoint，不得處理 TaskList query-param gap。"
+- **Deployed.** PR #10, `frontend/66ui4-fe1c-overview-attention-first`, commit `816856a` -- built in
+  an isolated disposable clone (deterministic hashes `index-BPXQq_eV.js` / `index-tDSVCSFZ.css`,
+  matching Step 66UI.4-FE.1C-R's own re-verification), swapped into the test runtime's static asset
+  directory (backup of the prior FE.1B.1 bundle retained inside the container). No container
+  rebuild/restart -- static files served directly from disk. `main` not touched, no merge performed.
+- **Post-deployment verification.** Admin Console reachable (HTTP 200); deployed bundle confirmed
+  via direct grep for attention-first strings ("Needs your attention", "Current work", "Needs
+  review", "Not reported"); `TaskList.tsx`/`App.tsx` confirmed byte-identical to `main` (query-param
+  gap retained, no FE.1D navigation); `/operations/safety` and `/operations/agent-executions`
+  unchanged (still 20 records, all "completed"); `production_executed_true_count` remains 0; no
+  workflow dispatch/resume; no production/external action.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. Disposable build clone created outside the tracked repo
+  and removed after use. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/ui-validation-preview-record.md`,
+  `docs/test/step66ui4-fe1c-ui-validation-preview-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_preview_deploy.py` +
+  `tests/test_step66ui4_fe1c_preview_deploy.py`.
+- **Gate.** PR #10 not merged. FE.1D remains unauthorized. TaskList query-param gap intentionally
+  not addressed. Test runtime now ready for Product Owner FE.1C UI validation.
+
 ## Stage 66UI.4-FE.1C-V — Product Owner UI Validation, Overview Attention-first
 
 **Status: PASS. Marker `STEP66UI4_FE1C_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.**
