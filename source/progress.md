@@ -14452,3 +14452,54 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
   frontend runtime/backend/API/database/workflow change. No deployment. No production/external
   action.
+
+## Stage 66UI.4-FE.1C-R — Review Overview Attention-first Implementation
+
+- **Note on review-doc location.** Review artifacts (`claude-code-implementation-review.md`,
+  `step66ui4-fe1c-implementation-review-record.md`, `verify_step66ui4_fe1c_review.py` + test) are
+  committed to `review/66ui4-fe1c-implementation` (renamed from the requested
+  `review/66ui4-fe1c-overview-attention-first`, which already existed from the prior FE.1C design-
+  review stage), not to `main`. This entry records the outcome for continuity.
+- **Reviewed.** Draft PR #10, `frontend/66ui4-fe1c-overview-attention-first`, commit `816856a`.
+  Verdict: **PASS_WITH_GAPS**. Marker `STEP66UI4_FE1C_REVIEW_VERIFY: PASS_WITH_GAPS`.
+- **Scope confirmed.** Frontend-only Overview restructure (`ExecutiveOverview.tsx`), backward-
+  compatible `CalmSafetyPosture.tsx` `showDetails` prop, additive CSS, new/updated tests. No
+  backend/API/DB/workflow change. No new endpoint.
+- **Two gaps recorded.** (1) Live `/operations/agent-executions` verification blocked because the
+  test runtime application stack was independently confirmed stopped. (2) Attention-tile deep links
+  to `/tasks?status=...` don't yet pre-filter because `TaskList.tsx` (untouched by this PR) doesn't
+  read the URL query string -- non-blocking UX-completion follow-up.
+- **Gate.** PR #10 not merged. No deployment. FE.1D not authorized. Product Owner validation to hold
+  until gap #1 is closed.
+
+## Stage 66UI.4-FE.1C-LV — Restore Test Runtime and Live Agent Execution Verification
+
+**Status: PASS. Marker `STEP66UI4_FE1C_LIVE_VERIFICATION_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 執行 Step 66UI.4-FE.1C-LV — 恢復 test runtime application
+  stack，並重新驗證 live /operations/agent-executions status values；不得修改 frontend/backend/API/DB/
+  workflow，不得 merge PR #10，不得部署 PR #10，不得授權 FE.1D。"
+- **Baseline.** All 27 application containers were stopped (independently confirmed, consistent
+  with Step 66UI.4-FE.1C-R's own finding); only the always-on monitoring container was running.
+- **Restoration.** Started the existing stopped containers of the already-defined test runtime
+  compose project using existing service definitions -- no rebuild, no config/env change, no
+  migration, no DB/Redis mutation, no workflow trigger. All 27 containers reported healthy within
+  under a minute.
+- **Live verification.** `/operations/agent-executions` reachable (HTTP 200), returned 20 real
+  records, all with status `"completed"`, correctly mapping to "Completed" per PR #10. No null/
+  missing/unexpected status values observed. The `"failed"`/fallback mapping paths remain confirmed
+  via the existing, already-reviewed frontend test suite (not contradicted by live data). Decision:
+  **PASS** -- gap #1 from Step 66UI.4-FE.1C-R is cleared.
+- **Safety.** `production_executed_true_count` = 0 after restoration. No workflow dispatch/resume.
+  No production/external action. Test runtime continues serving the FE.1B.1 merged-main bundle
+  (asset hash unchanged) -- PR #10 was not deployed by this or any prior stage.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/live-agent-execution-status-verification.md`,
+  `docs/test/step66ui4-fe1c-live-agent-execution-verification-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_live_verification.py` +
+  `tests/test_step66ui4_fe1c_live_verification.py`.
+- **Gate.** PR #10 not merged. PR #10 not deployed. FE.1D remains unauthorized. Product Owner
+  validation may now proceed since the sole blocking gap from Step 66UI.4-FE.1C-R is closed; PR #10
+  merge still requires a separate, explicit Product Owner authorization.
