@@ -183,9 +183,11 @@ export function getCalmSafetyPosture(data: Record<string, unknown>) {
 export function CalmSafetyPosture({
   data,
   compact = false,
+  showDetails = true,
 }: {
   data: Record<string, unknown>;
   compact?: boolean;
+  showDetails?: boolean;
 }) {
   const posture = getCalmSafetyPosture(data);
 
@@ -204,20 +206,22 @@ export function CalmSafetyPosture({
           ))}
         </ul>
       )}
-      <details className="calm-safety-details">
-        <summary>Evidence / details</summary>
-        <dl className="calm-safety-evidence">
-          {SAFETY_EVIDENCE_FIELDS.map(({ field, label, endpointApplicable = true }) => (
-            <div key={field} className="calm-safety-evidence-row">
-              <dt>
-                {label}
-                <span className="calm-safety-field"> {field}</span>
-              </dt>
-              <dd>{formatSafetyValue(data, field, endpointApplicable)}</dd>
-            </div>
-          ))}
-        </dl>
-      </details>
+      {showDetails && (
+        <details className="calm-safety-details">
+          <summary>Evidence / details</summary>
+          <dl className="calm-safety-evidence">
+            {SAFETY_EVIDENCE_FIELDS.map(({ field, label, endpointApplicable = true }) => (
+              <div key={field} className="calm-safety-evidence-row">
+                <dt>
+                  {label}
+                  <span className="calm-safety-field"> {field}</span>
+                </dt>
+                <dd>{formatSafetyValue(data, field, endpointApplicable)}</dd>
+              </div>
+            ))}
+          </dl>
+        </details>
+      )}
     </div>
   );
 }

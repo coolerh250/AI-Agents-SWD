@@ -14452,3 +14452,26 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
   frontend runtime/backend/API/database/workflow change. No deployment. No production/external
   action.
+
+## Stage 66UI.4-FE.1C - Overview Attention-first Implementation
+
+**Status: implementation-ready-for-review. Marker
+`STEP66UI4_FE1C_IMPLEMENTATION_VERIFY: PASS`.** Owner: Codex. Branch:
+`frontend/66ui4-fe1c-overview-attention-first`.
+
+- **Shared context.** Started from latest main `81600cc`; reviewed the required skill/process docs,
+  merged FE.1C source of truth, FE.1B.1 baseline, affected frontend source, and existing endpoint
+  contracts. No conflict found.
+- **Implementation.** Reworked Overview into Needs your attention, AI team activity, Current work,
+  System posture, demoted existing metrics, and future placeholders. Existing-data-only: attention
+  uses status-filtered `/tasks`; Current work renders five tasks sorted `updated_at` descending;
+  activity uses existing agent-executions; safety reuses FE.1B.1 without raw Overview evidence.
+- **Live status limitation.** Observed live status values: none. The configured test runtime did not
+  expose a running application service. Full live status validation is not claimed and remains a
+  blocking Claude Code review dependency. Mapping is completed -> Completed, failed -> Needs
+  review, and unknown/missing/other -> Not reported. No running/queued state was invented.
+- **Scope.** No backend, API/schema, database, workflow, route/navigation IA, or new endpoint. No
+  fake counts or fake controls. No production/external action. FE.1D remains unauthorized. Product
+  Owner validation remains pending.
+- **Artifacts.** Stage manifest/context/gate report, frontend implementation report, Codex handoff,
+  test report, verifier, and pytest wrapper are committed to repo-relative shared paths.
