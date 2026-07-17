@@ -15,7 +15,7 @@ function mockFetch(body: unknown, ok = true, status = 200) {
 }
 
 describe("App smoke", () => {
-  it("renders Executive Overview with mock data", async () => {
+  it("renders attention-first Overview with mock data", async () => {
     mockFetch({
       active_projects_count: 1,
       delivery_packages_count: 1,
@@ -38,8 +38,8 @@ describe("App smoke", () => {
         <ExecutiveOverview />
       </MemoryRouter>,
     );
-    await waitFor(() => expect(screen.getByText("Executive Overview")).toBeDefined());
-    expect(screen.getByText("Operator actions are disabled in Admin Console v0.")).toBeDefined();
+    await waitFor(() => expect(screen.getByText("Overview")).toBeDefined());
+    expect(screen.getByText("Needs your attention")).toBeDefined();
   });
 
   it("renders empty Projects state", async () => {

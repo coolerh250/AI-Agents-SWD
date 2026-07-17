@@ -116,4 +116,11 @@ describe("CalmSafetyPosture", () => {
       within(details as HTMLElement).getAllByText(/task_workroom_resume_dispatch_enabled/).length,
     ).toBeGreaterThan(0);
   });
+
+  it("can defer evidence details to the Safety Center without changing the posture", () => {
+    render(<CalmSafetyPosture data={SAFE_SAFETY} compact showDetails={false} />);
+
+    expect(screen.getByText("Safe - no automated or production actions will run.")).toBeDefined();
+    expect(screen.queryByText("Evidence / details")).toBeNull();
+  });
 });
