@@ -14452,3 +14452,83 @@ authorization. Runs in parallel with Codex's FE.1B (Calm Safety Posture) without
   (requires a separate, explicit Product Owner authorization). FE.1D remains unauthorized. No
   frontend runtime/backend/API/database/workflow change. No deployment. No production/external
   action.
+
+## Stage 66UI.4-FE.1C-R — Review Overview Attention-first Implementation
+
+- **Note on review-doc location.** Review artifacts (`claude-code-implementation-review.md`,
+  `step66ui4-fe1c-implementation-review-record.md`, `verify_step66ui4_fe1c_review.py` + test) are
+  committed to `review/66ui4-fe1c-implementation` (renamed from the requested
+  `review/66ui4-fe1c-overview-attention-first`, which already existed from the prior FE.1C design-
+  review stage), not to `main`. This entry records the outcome for continuity.
+- **Reviewed.** Draft PR #10, `frontend/66ui4-fe1c-overview-attention-first`, commit `816856a`.
+  Verdict: **PASS_WITH_GAPS**. Marker `STEP66UI4_FE1C_REVIEW_VERIFY: PASS_WITH_GAPS`.
+- **Scope confirmed.** Frontend-only Overview restructure (`ExecutiveOverview.tsx`), backward-
+  compatible `CalmSafetyPosture.tsx` `showDetails` prop, additive CSS, new/updated tests. No
+  backend/API/DB/workflow change. No new endpoint.
+- **Two gaps recorded.** (1) Live `/operations/agent-executions` verification blocked because the
+  test runtime application stack was independently confirmed stopped. (2) Attention-tile deep links
+  to `/tasks?status=...` don't yet pre-filter because `TaskList.tsx` (untouched by this PR) doesn't
+  read the URL query string -- non-blocking UX-completion follow-up.
+- **Gate.** PR #10 not merged. No deployment. FE.1D not authorized. Product Owner validation to hold
+  until gap #1 is closed.
+
+## Stage 66UI.4-FE.1C-LV — Restore Test Runtime and Live Agent Execution Verification
+
+**Status: PASS. Marker `STEP66UI4_FE1C_LIVE_VERIFICATION_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 執行 Step 66UI.4-FE.1C-LV — 恢復 test runtime application
+  stack，並重新驗證 live /operations/agent-executions status values；不得修改 frontend/backend/API/DB/
+  workflow，不得 merge PR #10，不得部署 PR #10，不得授權 FE.1D。"
+- **Baseline.** All 27 application containers were stopped (independently confirmed, consistent
+  with Step 66UI.4-FE.1C-R's own finding); only the always-on monitoring container was running.
+- **Restoration.** Started the existing stopped containers of the already-defined test runtime
+  compose project using existing service definitions -- no rebuild, no config/env change, no
+  migration, no DB/Redis mutation, no workflow trigger. All 27 containers reported healthy within
+  under a minute.
+- **Live verification.** `/operations/agent-executions` reachable (HTTP 200), returned 20 real
+  records, all with status `"completed"`, correctly mapping to "Completed" per PR #10. No null/
+  missing/unexpected status values observed. The `"failed"`/fallback mapping paths remain confirmed
+  via the existing, already-reviewed frontend test suite (not contradicted by live data). Decision:
+  **PASS** -- gap #1 from Step 66UI.4-FE.1C-R is cleared.
+- **Safety.** `production_executed_true_count` = 0 after restoration. No workflow dispatch/resume.
+  No production/external action. Test runtime continues serving the FE.1B.1 merged-main bundle
+  (asset hash unchanged) -- PR #10 was not deployed by this or any prior stage.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/live-agent-execution-status-verification.md`,
+  `docs/test/step66ui4-fe1c-live-agent-execution-verification-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_live_verification.py` +
+  `tests/test_step66ui4_fe1c_live_verification.py`.
+- **Gate.** PR #10 not merged. PR #10 not deployed. FE.1D remains unauthorized. Product Owner
+  validation may now proceed since the sole blocking gap from Step 66UI.4-FE.1C-R is closed; PR #10
+  merge still requires a separate, explicit Product Owner authorization.
+
+## Stage 66UI.4-FE.1C-VP — PR #10 Test Runtime UI Validation Preview
+
+**Status: PASS. Marker `STEP66UI4_FE1C_PREVIEW_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 將 PR #10 frontend/66ui4-fe1c-overview-attention-first 部署到
+  test runtime 供 FE.1C Product Owner UI validation；不 merge main；不授權 FE.1D；不得修改
+  backend/API/DB/workflow，不得新增 endpoint，不得處理 TaskList query-param gap。"
+- **Deployed.** PR #10, `frontend/66ui4-fe1c-overview-attention-first`, commit `816856a` -- built in
+  an isolated disposable clone (deterministic hashes `index-BPXQq_eV.js` / `index-tDSVCSFZ.css`,
+  matching Step 66UI.4-FE.1C-R's own re-verification), swapped into the test runtime's static asset
+  directory (backup of the prior FE.1B.1 bundle retained inside the container). No container
+  rebuild/restart -- static files served directly from disk. `main` not touched, no merge performed.
+- **Post-deployment verification.** Admin Console reachable (HTTP 200); deployed bundle confirmed
+  via direct grep for attention-first strings ("Needs your attention", "Current work", "Needs
+  review", "Not reported"); `TaskList.tsx`/`App.tsx` confirmed byte-identical to `main` (query-param
+  gap retained, no FE.1D navigation); `/operations/safety` and `/operations/agent-executions`
+  unchanged (still 20 records, all "completed"); `production_executed_true_count` remains 0; no
+  workflow dispatch/resume; no production/external action.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. Disposable build clone created outside the tracked repo
+  and removed after use. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/ui-validation-preview-record.md`,
+  `docs/test/step66ui4-fe1c-ui-validation-preview-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c_preview_deploy.py` +
+  `tests/test_step66ui4_fe1c_preview_deploy.py`.
+- **Gate.** PR #10 not merged. FE.1D remains unauthorized. TaskList query-param gap intentionally
+  not addressed. Test runtime now ready for Product Owner FE.1C UI validation.
