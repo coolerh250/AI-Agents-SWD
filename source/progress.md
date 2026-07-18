@@ -14663,3 +14663,38 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized.
   TaskList query-param gap accepted as non-blocking, not fixed (recommended follow-up, not scheduled
   by this stage).
+
+## Stage 66UI.4-FE.1C.1-R — Review TaskList Query Param Filter Support
+
+- **Note on review-doc location.** Review artifacts
+  (`tasklist-query-param-filter-review.md`, `step66ui4-fe1c1-tasklist-query-param-review-record.md`,
+  `verify_step66ui4_fe1c1_review.py` + test) are committed to a dedicated review branch
+  (`review/66ui4-fe1c1-tasklist-query-param`, pushed to origin) rather than to `main`. This entry
+  records the outcome for continuity; the full content lives on that branch.
+- **Reviewed.** Draft PR #11, `frontend/66ui4-fe1c1-tasklist-query-param`, commit `cba5dd0`.
+  Verdict: **PASS**. Marker `STEP66UI4_FE1C1_REVIEW_VERIFY: PASS`.
+- **Scope confirmed.** Single-file production change (`TaskList.tsx`, +6/-2 lines) plus one new
+  focused test file (`TaskListQueryParam.test.tsx`, 6 tests). `ExecutiveOverview.tsx`, `App.tsx`,
+  `main.tsx` all absent from the diff. No backend/API/DB/workflow change. No new endpoint/route/
+  task-status-model/RBAC change.
+- **Functional review.** Valid status query (`blocked`, `clarification_needed`, and by extension any
+  `TASK_STATUSES` member) correctly initializes the existing dropdown/filter and reuses the existing
+  `taskApi.list()` path; invalid/empty status (`unknown`, `""`, `production_executed`) is ignored,
+  never reaches the backend, and does not mutate the URL; one-way boundary is structurally
+  guaranteed (`setSearchParams` never imported/called) and behaviorally confirmed by a dedicated
+  test; dropdown sync is inherited for free from the pre-existing `<select>` binding.
+- **Independent re-verification.** Re-ran (in a disposable detached worktree at commit `cba5dd0`,
+  later removed, junction-cleanup lesson applied): `verify_step66ui4_fe1c1_implementation.py` PASS;
+  `pytest` 1 passed; `npm test` 17 files/131 tests passed; `npm run typecheck` passed; `npm run
+  build` passed (new JS hash, unchanged CSS hash, both expected).
+- **Local Artifact Reconciliation.** Individually grepped each of the 11 changed files -- zero
+  matches; whole-checkout grep matches are all prior-stage documentation inherited from `main`. No
+  blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/tasklist-query-param-filter-review.md`,
+  `docs/test/step66ui4-fe1c1-tasklist-query-param-review-record.md` (both on
+  `review/66ui4-fe1c1-tasklist-query-param`).
+- **Tests.** New `scripts/verify_step66ui4_fe1c1_review.py` +
+  `tests/test_step66ui4_fe1c1_review.py` (on the review branch).
+- **Gate.** Step 66UI.4-FE.1C.1-R status: PASS. PR #11 not merged by this stage. No deployment. FE.1D
+  remains unauthorized. Product Owner validation may proceed.
