@@ -2,7 +2,7 @@
 // dispatches a workflow. Filter changes remount <AsyncView> (via key) to
 // re-fetch, since AsyncView only loads once per mount.
 import { useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { AsyncView } from "../components/AsyncView";
 import { StatusBadge } from "../components/StatusBadge";
 import { TestRoleBanner } from "../tasks/TestRoleBanner";
@@ -16,7 +16,11 @@ import {
 import type { Task, TaskListFilters } from "../tasks/taskTypes";
 
 export function TaskList() {
-  const [filters, setFilters] = useState<TaskListFilters>({});
+  const [searchParams] = useSearchParams();
+  const [filters, setFilters] = useState<TaskListFilters>(() => {
+    const status = searchParams.get("status");
+    return status && TASK_STATUSES.some((candidate) => candidate === status) ? { status } : {};
+  });
   const filterKey = JSON.stringify(filters);
 
   function setFilter(key: keyof TaskListFilters, value: string): void {
