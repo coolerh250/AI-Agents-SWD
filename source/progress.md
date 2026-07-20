@@ -15002,3 +15002,52 @@ branch (see below).**
   `tests/test_step66ui4_fe1d_s1_product_owner_validation.py`.
 - **Gate.** PR #13 not merged, not deployed further. FE.1D Slice 2 remains unauthorized. Next
   authorized step: Product Owner decision on merge authorization for PR #13.
+
+## Stage 66UI.4-FE.1D-S1-MD — Merge PR #13 and Deploy Merged Main
+
+**Status: PASS. Marker `STEP66UI4_FE1D_S1_MERGE_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code merge PR #13 frontend/66ui4-fe1d-s1-navigation-polish 到
+  main，完成 Step 66UI.4-FE.1D-S1 Navigation Polish；merge 後部署 merged main 到 test runtime；不得
+  修改 backend/API/DB/workflow，不得新增 endpoint/route，不得修復 SPA deep-link fallback，不得實作
+  雙向 URL sync，不得授權或實作 FE.1D Slice 2。"
+- **Merged.** Four branches in chronological order via `git merge --no-ff`: `frontend/66ui4-fe1d-s1-
+  navigation-polish` (PR #13, `72d8bff`) -> `52abcd7`; `review/66ui4-fe1d-s1-navigation-polish`
+  (`3cfa868`) -> `9bf236b`; `review/66ui4-fe1d-s1-preview-deploy` (`9bac4b5`) -> `f171ac6`;
+  `review/66ui4-fe1d-s1-product-owner-validation` (`06f2d66`) -> `513f190`. `main` pushed to origin.
+- **Scoping note.** The FE.1D design, technical readiness review, and Codex implementation boundary
+  branches remain separately unmerged -- the Product Owner's authorization for this stage was
+  scoped specifically to PR #13's Slice 1 chain, and merging them was outside this stage's own
+  allowed documentation paths. They remain available for a future consolidation decision.
+- **Pre-merge gate.** All 16 required checks confirmed PASS: all 4 markers present; PR #13
+  authorized-content-only; no backend/API/DB/workflow/new-endpoint/new-route change; no SPA
+  deep-link fallback fix; no two-way URL sync; no FE.1D Slice 2; Product Owner decisions preserved;
+  no local artifact exposure.
+- **Consolidation.** All 20 required FE.1D-S1 artifacts (implementation, review, preview-deployment,
+  Product Owner validation -- docs + verifiers + tests + the 4 runtime source files) confirmed
+  present at their documented repo-relative paths on `main`.
+- **Test runtime deployment.** Rebuilt the Admin Console frontend from merged `main` commit
+  `513f190` in an isolated disposable clone, producing the same deterministic hashes
+  (`index-D_e3KYR_.css` / `index-mPDY7eq_.js`) as every prior independent build of this diff --
+  confirming merge integrity. Swapped this merged-main build into the test runtime (backup of the
+  prior bundle retained), replacing the pre-merge PR-branch-sourced bundle for correct deployment
+  provenance. No container rebuild/restart. All 20 post-deployment checks (nav groups/subtitles,
+  badge presence, Platform Ops density, Delivery Package placement, route preservation, no fake
+  controls, no Slice 2, Product Owner decisions preserved, SPA deep-link fallback gap unfixed,
+  two-way URL sync absent, `/operations/safety` and `/operations/agent-executions` unchanged,
+  `production_executed_true_count` = 0, no workflow/production/external action) passed.
+- **Verification.** All 4 FE.1D-S1 verifiers + 53 pytest cases re-run and PASS on merged main;
+  frontend tests 17 files/137 passed; typecheck passed; build passed with deterministic hashes;
+  `git diff --check` clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-merge-record.md`,
+  `docs/test/step66ui4-fe1d-s1-merged-main-test-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1d_s1_merge_deploy.py` +
+  `tests/test_step66ui4_fe1d_s1_merge_deploy.py`.
+- **Gate.** PR #13 merged to `main`. Test runtime calibrated to merged main. No backend/API/database/
+  workflow change. No new endpoint. No new route. No production/external action. FE.1D Slice 2
+  remains unauthorized. Admin Console SPA deep-link fallback gap remains an existing platform
+  limitation, not fixed by this stage (tracked separately). Step 66UI.4-FE.1D-S1 Navigation Polish
+  is complete.
