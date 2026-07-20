@@ -14895,3 +14895,47 @@ branch (see below).**
   report, verifier, pytest wrapper, and updated navigation tests are in repo-relative shared paths.
 - **Gate.** Ready for Claude Code review. Product Owner validation remains pending. Merge and
   deployment require separate explicit Product Owner authorization.
+
+## Stage 66UI.4-FE.1D-S1-R — Review Navigation Polish Implementation
+
+**Status: PASS. Marker `STEP66UI4_FE1D_S1_REVIEW_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Codex 執行 Step 66UI.4-FE.1D-S1 — Navigation Polish；依 Step
+  66UI.4-FE.1D-BOUNDARY 執行 Slice 1，僅限 frontend-only，主要限 Nav.tsx：navigation label polish、
+  group subtitles、Soon/read-only/evidence badges、Platform Ops compact density；不得修改 backend/
+  API/DB/workflow，不得新增 endpoint/route，不得修改 "+ Create task"，不得修改
+  delivery_package_ready_for_admin_console，不得修復 SPA deep-link fallback，不得實作雙向 URL
+  sync，不得授權或實作 Slice 2。"
+- **Reviewed.** `frontend/66ui4-fe1d-s1-navigation-polish`, commit `72d8bff`, Draft PR #13, based
+  directly on `main` @ `707cb8c`. Codex implementation marker
+  `STEP66UI4_FE1D_S1_IMPLEMENTATION_VERIFY: PASS` independently re-verified in a disposable
+  worktree (verifier PASS, 1 pytest passed, 17 files/137 frontend tests passed, build passed with
+  matching hashes, typecheck passed, secret scan informational=100 unchanged), not trusting Codex's
+  own report.
+- **Scope confirmed.** Diff touches exactly 4 source files (`Nav.tsx`, `NavGroup.tsx`, `styles.css`,
+  `NavigationGrouping.test.tsx`) plus 9 doc/test/progress artifacts -- zero forbidden paths (no
+  `apps/orchestrator/**`, `App.tsx`, or `features/**`).
+- **Functional review.** All 39 nav routes preserved byte-identical (confirmed by direct diff read
+  and the PR's own new route-snapshot regression test); group subtitles present on all 7 groups,
+  product-readable, display-only; only Soon/Read-only/Evidence badges used (TypeScript union
+  enforces this), all non-clickable and correctly scoped; Platform Ops retains all 19 items,
+  Delivery Package remains under Platform Ops (not moved to Deliveries), no structural sub-headers
+  added; `"+ Create task"` and `delivery_package_ready_for_admin_console` both confirmed unchanged
+  by direct source read; zero Slice 2 files touched.
+- **Non-blocking observations (not gaps).** Overview's group subtitle was not in the original
+  design table (reasonable extension of an explicitly "optional... e.g." pattern); the `/delivery`
+  item's label reflects `platform-ops-density-spec.md`'s version rather than
+  `navigation-polish-spec.md`'s "keep label" instruction for the same row -- a pre-existing
+  inconsistency between two FE.1D-DESIGN documents, not introduced by this PR, resolved reasonably.
+- **Local Artifact Reconciliation.** Independently re-verified (not trusting Codex's own claim). All
+  matches found are prior-stage documentation describing checks performed, not real leaked paths.
+  No `.tools/` or unrelated proposal file anywhere in the branch tree. No blocking gap.
+- **Verification.** Review verifier + pytest cases PASS; `git diff --check` clean; secret scan
+  critical=0/high=0/informational=100 (unchanged baseline).
+- **Output docs.**
+  `docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-review.md`,
+  `docs/test/step66ui4-fe1d-s1-navigation-polish-review-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1d_s1_review.py` +
+  `tests/test_step66ui4_fe1d_s1_review.py`.
+- **Gate.** PR #13 not merged, not deployed. FE.1D Slice 2 remains unauthorized. Product Owner UI
+  validation may proceed once a separate, explicit deployment authorization is given.
