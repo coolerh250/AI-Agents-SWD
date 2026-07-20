@@ -14703,6 +14703,28 @@ branch (see below).**
   implementation not authorized. FE.1D remains unauthorized. No backend/API/database/workflow
   change. No new endpoint. No deployment. No production/external action.
 
+## Stage 66UI.4-FE.1C.1 - TaskList Query Param Filter Support
+
+**Status: implementation-ready-for-review. Marker
+`STEP66UI4_FE1C1_IMPLEMENTATION_VERIFY: PASS`.** Owner: Codex. Branch:
+`frontend/66ui4-fe1c1-tasklist-query-param`.
+
+- **Shared context.** Started from latest main `f933adf`; reviewed required skills/process docs,
+  FE.1C completion records, and frontend source. FE.1C.1 planning artifacts were absent from main
+  and read-only from `origin/review/66ui4-fe1c1-tasklist-query-param-plan` at `7cffc0b`; they were
+  not copied or merged. No conflict found.
+- **Implementation.** TaskList now reads `status` once during initial state construction, accepts
+  only existing `TASK_STATUSES`, initializes the existing Status dropdown/filter, and reuses
+  `taskApi.list(filters)`. Invalid or empty status is ignored as `(any)` and never sent downstream.
+- **One-way boundary.** Manual dropdown changes retain the existing local filtering behavior and
+  do not write, clear, or synchronize URL query parameters. Bidirectional URL sync was intentionally
+  not implemented.
+- **Scope.** No Overview, route, navigation, task status model, RBAC, backend, API, database,
+  workflow, or new endpoint change. No fake count/control, production action, external action, or
+  FE.1D. Product Owner validation remains pending.
+- **Artifacts.** Stage manifest/context/gate report, implementation report, Codex handoff, test
+  report, focused frontend test, verifier, and pytest wrapper are in repo-relative shared paths.
+
 ## Known Gap — Admin Console SPA Deep-Link / Hard-Refresh Fallback
 
 - **Discovered.** During Step 66UI.4-FE.1C.1-VP Product Owner UI validation, testing checklist
