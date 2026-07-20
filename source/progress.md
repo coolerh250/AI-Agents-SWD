@@ -14664,6 +14664,45 @@ branch (see below).**
   TaskList query-param gap accepted as non-blocking, not fixed (recommended follow-up, not scheduled
   by this stage).
 
+## Stage 66UI.4-FE.1C.1-P — TaskList Query Param Filter Support Planning
+
+- **Note on doc location.** Per this stage's instruction, planning artifacts are committed to a
+  dedicated review branch (`review/66ui4-fe1c1-tasklist-query-param-plan`, pushed to origin) rather
+  than to `main`, mirroring the established review-branch precedent. This entry records the outcome
+  for continuity; the full content lives on that branch.
+- **Authorization.** "授權規劃 Step 66UI.4-FE.1C.1 — TaskList Query Param Filter Support；僅限
+  frontend-only，讓 /tasks?status=... 可套用既有 TaskList status filter；不得修改 backend/API/DB/
+  workflow，不得新增 endpoint，不得授權 FE.1D。"
+- **Analysis.** `TaskList.tsx` holds filter state entirely in local component state with no URL
+  awareness; `ExecutiveOverview.tsx`'s two attention tiles link to `/tasks?status=clarification_
+  needed` / `/tasks?status=blocked`, both already valid `TASK_STATUSES` values. `taskApi.list()`
+  already supports a `status` filter; `react-router-dom` (already a dependency) supports
+  `useSearchParams()` with no new package. Requester role-scoping confirmed enforced entirely
+  server-side (`task_api.py`), unaffected by any frontend query-param change.
+- **Recommended future behavior.** Valid `status` query param preselects the existing dropdown and
+  filters via the existing API call; invalid/unrecognized values are ignored (fall back to "(any)",
+  no thrown error); no fake counts/controls; no new route/endpoint/status model/RBAC behavior.
+  Two-way URL sync (dropdown edits updating the URL) recorded as an optional, not required,
+  enhancement pending a future explicit go-ahead (open question Q1).
+- **Implementation boundary.** Future Codex implementation may only: parse `URLSearchParams` on
+  load, initialize the existing status filter, keep the dropdown visually in sync, optionally add
+  two-way sync if separately approved, and add tests + its own docs/verifier. May not touch backend/
+  API/database/workflow, add an endpoint/route/status model/RBAC behavior, implement FE.1D, redesign
+  Overview, or implement Delivery/Reminder/Notifications/Pipeline.
+- **Local Artifact Reconciliation.** No runtime files touched (`apps/**` etc. all confirmed
+  untouched); no local Windows paths, local username, `.tools/`, or unrelated files found.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/tasklist-query-param-filter-plan.md`,
+  `docs/contracts/66ui4-fe1c1-tasklist-query-param/frontend-implementation-boundary.md`,
+  `docs/test/step66ui4-fe1c1-tasklist-query-param-planning-record.md`,
+  `docs/stages/66ui4-fe1c1-tasklist-query-param/{stage-manifest.yaml,context-receipt.md,
+  stage-gate-report.md}`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c1_planning.py` +
+  `tests/test_step66ui4_fe1c1_planning.py`.
+- **Gate.** Step 66UI.4-FE.1C.1-P status: planning-ready-for-product-owner-decision. Codex
+  implementation not authorized. FE.1D remains unauthorized. No backend/API/database/workflow
+  change. No new endpoint. No deployment. No production/external action.
+
 ## Known Gap — Admin Console SPA Deep-Link / Hard-Refresh Fallback
 
 - **Discovered.** During Step 66UI.4-FE.1C.1-VP Product Owner UI validation, testing checklist
