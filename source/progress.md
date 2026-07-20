@@ -14858,3 +14858,52 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized. No
   bidirectional URL sync. Admin Console SPA deep-link fallback gap accepted as existing platform
   limitation, not fixed by this stage (tracked separately).
+
+## Stage 66UI.4-FE.1D-BOUNDARY — Codex Implementation Boundary Consolidation
+
+**Status: PASS. Marker `STEP66UI4_FE1D_BOUNDARY_VERIFY: PASS`.**
+
+- **Authorization.** "接受 Step 66UI.4-FE.1D-TECH-REVIEW 判定為 PASS_WITH_GAPS；PO 決策如下：1. 維持
+  目前 "+ Create task" 文案，不改為 "New task"。2. 不在 FE.1D 將
+  delivery_package_ready_for_admin_console 改為 "Ready to publish"，此項 deferred 到 66D Delivery
+  階段。授權 Claude Code 依上述決策整理 FE.1D Codex Implementation Boundary；仍不得授權 Codex 實作，
+  不得修改 frontend/backend/API/DB/workflow，不得新增 endpoint，不得部署。"
+- **Consolidated.** Design (`design/66ui4-fe1d-navigation-microcopy`, `43269c5`, Draft PR #12,
+  marker `DESIGN66UI4_FE1D_NAVIGATION_MICROCOPY_VERIFY: PASS`) + technical readiness review
+  (`review/66ui4-fe1d-technical-readiness`, `25309ea`, marker
+  `STEP66UI4_FE1D_TECHNICAL_READINESS_VERIFY: PASS`, result PASS_WITH_GAPS) + the Product Owner's
+  two decisions above into a single final boundary. Both source branches confirmed still based on
+  `main` @ `707cb8c` with no drift.
+- **PO decisions applied.** `"+ Create task"` stays unchanged (excluded from every slice).
+  `delivery_package_ready_for_admin_console` -> "Ready to publish" excluded from FE.1D entirely,
+  deferred to Step 66D. Both resolve the two open items the technical readiness review had flagged.
+  Codex remains unauthorized; no runtime/deployment authorized.
+- **Path-accuracy correction found.** This stage's own prompt listed illustrative frontend source
+  paths that do not match the actual repository structure (e.g. a non-existent `features/tasks/`,
+  `features/overview/`, `features/safety/` layout). Verified via `Glob`; all boundary documents use
+  the real, verified paths (`components/Nav.tsx`, `pages/TaskList.tsx`,
+  `pages/ExecutiveOverview.tsx`, `components/CalmSafetyPosture.tsx`, `pages/TaskDetail.tsx`, etc.),
+  not the prompt's illustrative ones. Not a conflict with source-of-truth docs or the Product
+  Owner's decisions -- corrected silently in the output, recorded for traceability.
+- **Final boundary.** 9 allowed frontend-only change categories; 17 forbidden-change items; Slice 1
+  (Navigation polish, `Nav.tsx`-only); Slice 2 (Microcopy and field labels, 6 files + 1 new shared
+  status-label module); 6 deferred-item categories (Platform Ops sub-headers, `TaskWorkroom.tsx`
+  `body_hash`, broad evidence-table raw-field rename, SPA deep-link fallback, two-way URL sync,
+  delivery-package rename); required-tests list; 8-item Product Owner validation checklist;
+  merge/deploy authorization requirements restating the unchanged gate sequence; 6 stop conditions.
+- **Verification.** New verifier + pytest cases all PASS; `git diff --check` clean; `git status`
+  clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are this stage's own verifier regex checking
+  FOR forbidden strings, or prior-stage documentation describing checks performed -- not real leaked
+  paths. No blocking gap.
+- **Output docs.**
+  `docs/contracts/66ui4-fe1d-navigation-microcopy/codex-implementation-boundary.md`,
+  `docs/contracts/66ui4-fe1d-navigation-microcopy/po-decision-record.md`,
+  `docs/contracts/66ui4-fe1d-navigation-microcopy/implementation-slicing-plan.md`,
+  `docs/test/step66ui4-fe1d-boundary-consolidation-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1d_boundary.py` +
+  `tests/test_step66ui4_fe1d_boundary.py`.
+- **Gate.** No runtime source touched. No merge. No deployment. No backend/API/database/workflow
+  change. No new endpoint. No production/external action. Codex remains unauthorized. FE.1D
+  implementation remains unauthorized. Next authorized step: Product Owner decision on whether to
+  authorize Codex to begin FE.1D implementation from this boundary.
