@@ -14858,3 +14858,40 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized. No
   bidirectional URL sync. Admin Console SPA deep-link fallback gap accepted as existing platform
   limitation, not fixed by this stage (tracked separately).
+
+## Stage 66UI.4-FE.1D-S1 -- Navigation Polish
+
+**Status: implementation-ready-for-review. Marker
+`STEP66UI4_FE1D_S1_IMPLEMENTATION_VERIFY: PASS`.** Owner: Codex. Branch:
+`frontend/66ui4-fe1d-s1-navigation-polish`.
+
+- **Authorization.** Product Owner authorized Codex to implement Step 66UI.4-FE.1D-S1, Slice 1
+  Navigation Polish only: frontend-only navigation label polish, group subtitles, Soon/read-only/
+  evidence badges, and Platform Ops compact density. No backend/API/database/workflow change, no
+  new endpoint, no new route, no production/external action, no SPA deep-link fallback fix, no
+  two-way URL sync, and no FE.1D Slice 2.
+- **Shared context.** Started from latest main `707cb8c`; reviewed required shared-context,
+  stage-gate, security-governance, and frontend-implementation skills; reviewed source-of-truth,
+  context guard, stop conditions, UI source-of-truth, and Admin Console SPA deep-link known-gap
+  docs. FE.1D design, technical readiness, boundary, Product Owner decision, slicing, and boundary
+  consolidation docs were read from their referenced branches because they were not present on
+  main. No conflict found.
+- **Implementation.** Nav polish adds visible group subtitles, `Soon` badges for planned
+  placeholder nav items, `Read-only` and `Evidence` badges for approved diagnostic/evidence
+  surfaces, shortened Platform Ops labels, and Platform Ops compact presentation. Delivery Package
+  remains under Platform Ops with evidence-oriented subtitle text. Platform Ops remains collapsed
+  by default.
+- **Scope.** Existing route destinations are preserved byte-for-byte in the nav route snapshot.
+  App route table unchanged. No backend, API, database, workflow, endpoint, RBAC, safety logic,
+  production behavior, external integration, real Delivery / Reminder / Notifications / Pipeline
+  functionality, SPA deep-link fallback fix, or two-way URL sync.
+- **Product Owner decisions preserved.** `+ Create task` remains unchanged.
+  `delivery_package_ready_for_admin_console` is not renamed to `Ready to publish` and remains
+  deferred to Step 66D.
+- **FE.1D Slice 2.** Not implemented. Shared status-label map, TaskList microcopy, Overview
+  microcopy, TaskDetail field labels, placeholder copy, and safety wording polish remain deferred
+  until separately authorized.
+- **Artifacts.** Stage manifest/context/gate report, implementation report, Codex handoff, test
+  report, verifier, pytest wrapper, and updated navigation tests are in repo-relative shared paths.
+- **Gate.** Ready for Claude Code review. Product Owner validation remains pending. Merge and
+  deployment require separate explicit Product Owner authorization.

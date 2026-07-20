@@ -22,9 +22,16 @@ export function NavGroup({ group }: { group: NavGroupConfig }) {
 
   const open = group.collapsible ? expanded : true;
   const contentId = `nav-group-${group.id}-items`;
+  const groupClassName = group.compact ? "nav-group nav-group-compact" : "nav-group";
+  const title = (
+    <>
+      <span>{group.label}</span>
+      {group.subtitle ? <span className="nav-group-subtitle">{group.subtitle}</span> : null}
+    </>
+  );
 
   return (
-    <section className="nav-group" data-testid={`nav-group-${group.id}`}>
+    <section className={groupClassName} data-testid={`nav-group-${group.id}`}>
       {group.collapsible ? (
         <button
           type="button"
@@ -33,11 +40,13 @@ export function NavGroup({ group }: { group: NavGroupConfig }) {
           aria-controls={contentId}
           onClick={() => setExpanded((current) => !current)}
         >
-          <span>{group.label}</span>
+          <span className="nav-group-heading">{title}</span>
           <span aria-hidden="true">{open ? "-" : "+"}</span>
         </button>
       ) : (
-        <div className="nav-group-title">{group.label}</div>
+        <div className="nav-group-title">
+          <span className="nav-group-heading">{title}</span>
+        </div>
       )}
       {open && (
         <div id={contentId} className="nav-group-items">
@@ -48,7 +57,11 @@ export function NavGroup({ group }: { group: NavGroupConfig }) {
               end={item.end ?? item.to === "/"}
               className={({ isActive }) => (isActive ? "active" : "")}
             >
-              {item.label}
+              <span className="nav-item-main">
+                <span className="nav-item-label">{item.label}</span>
+                {item.badge ? <span className="nav-item-badge">{item.badge}</span> : null}
+              </span>
+              {item.subtitle ? <span className="nav-item-subtitle">{item.subtitle}</span> : null}
             </NavLink>
           ))}
         </div>

@@ -59,10 +59,19 @@ header h1 { font-size: 20px; line-height: 1.2; font-weight: 600; margin: 0; text
 .nav-group-title, .nav-group-toggle { color: var(--muted); font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; }
 .nav-group-toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: var(--space-1) 2px; background: transparent; border: 0; cursor: pointer; font-family: inherit; }
 .nav-group-toggle:hover { color: var(--fg); }
+.nav-group-heading { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+.nav-group-subtitle { color: var(--muted); font-size: 11px; font-weight: 500; line-height: 1.25; text-transform: none; letter-spacing: 0; }
 .nav-group-items { display: flex; flex-direction: column; gap: var(--space-1); }
-.side-nav a { text-decoration: none; background: var(--surface-quiet); color: var(--fg); border: 1px solid var(--line-subtle); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; line-height: 1.3; }
+.side-nav a { display: flex; flex-direction: column; gap: 3px; text-decoration: none; background: var(--surface-quiet); color: var(--fg); border: 1px solid var(--line-subtle); border-radius: var(--radius-sm); padding: 8px 10px; font-size: 13px; line-height: 1.3; }
 .side-nav a:hover { border-color: var(--line); background: var(--surface-base); }
 .side-nav a.active { border-color: var(--accent-strong); background: rgba(56, 139, 253, 0.14); box-shadow: inset 3px 0 0 var(--accent-strong); }
+.nav-item-main { display: flex; align-items: center; justify-content: space-between; gap: var(--space-2); min-width: 0; }
+.nav-item-label { min-width: 0; overflow-wrap: anywhere; }
+.nav-item-subtitle { color: var(--muted); font-size: 11px; line-height: 1.3; }
+.nav-item-badge { flex: 0 0 auto; border: 1px solid var(--line); border-radius: 999px; padding: 1px 6px; color: var(--muted-strong); background: rgba(139, 148, 158, 0.12); font-size: 10px; font-weight: 700; line-height: 1.4; text-transform: none; letter-spacing: 0; }
+.nav-group-compact .nav-group-items { gap: 3px; }
+.nav-group-compact a { padding: 6px 8px; font-size: 12px; }
+.nav-group-compact .nav-item-subtitle { font-size: 10px; }
 main { padding: var(--space-5); min-width: 0; }
 h2 { font-size: 15px; line-height: 1.35; font-weight: 600; margin: 0 0 var(--space-3); text-wrap: balance; }
 h3 { font-size: 13px; line-height: 1.4; font-weight: 600; color: var(--muted-strong); margin: var(--space-5) 0 var(--space-2); text-wrap: balance; }
