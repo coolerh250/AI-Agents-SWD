@@ -14858,3 +14858,41 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized. No
   bidirectional URL sync. Admin Console SPA deep-link fallback gap accepted as existing platform
   limitation, not fixed by this stage (tracked separately).
+
+## Stage 66UI.4-FE.1D-DESIGN — Navigation Polish + Microcopy / Field Label Cleanup (design)
+
+**Status: design-ready-for-review. Marker: `DESIGN66UI4_FE1D_NAVIGATION_MICROCOPY_VERIFY: PASS`.**
+Owner: Claude Design. Runtime posture: design/documentation only — no runtime code, no frontend
+implementation, no backend/API/database/workflow change, no new endpoint, no deployment, no merge,
+no production/external action, no Codex authorization.
+
+- **Shared context preflight.** Synced `main` (`707cb8c`). Confirmed FE.1A/FE.1B/FE.1B.1/FE.1C/
+  FE.1C.1 all merged + deployed; my earlier FE.1C brief was implemented faithfully. Read the four
+  `.agents/skills` files, the `docs/process` governance docs, the Phase 1 design docs, the FE.1C/
+  FE.1C.1 completion records, the SPA deep-link known-gap, and the current frontend source
+  (`Nav.tsx`, `App.tsx`, `ExecutiveOverview.tsx`, `TaskList.tsx`, `CalmSafetyPosture.tsx`,
+  `SafetyStatusBar.tsx`, `PlaceholderPanel.tsx`, `styles.css`) for design understanding only. No
+  runtime file edited.
+- **Conflict handled.** The prompt's example safety-field rename (`dispatch_enabled → "Automation
+  dispatch"`) would diverge from the already-shipped FE.1B.1 label ("Workflow dispatch"). The design
+  keeps the shipped labels and documents why — narrowing/aligning the prompt, not contradicting the
+  source of truth. No stop condition triggered.
+- **Scope.** Frontend-only label / microcopy / helper-text / badge / grouping polish: nav polish
+  (placeholder "Soon" badges, group subtitles, Platform Ops density — shorter labels + read-only/
+  evidence markers + optional non-structural sub-headers), product microcopy cleanup, a shared/
+  completed task-status label map, engineering-field exposure reduction categorized A–D, a
+  before→after field-label rename map (display-only; enum/API values unchanged), and placeholder/
+  empty-state wording consistency. Safety wording is treated as already shipped (FE.1B/FE.1B.1) —
+  cosmetic micro-polish only, no safety-logic change.
+- **Explicitly out of FE.1D scope.** The Admin Console SPA deep-link / hard-refresh fallback gap (a
+  backend `StaticFiles(html=True)` limitation), real Delivery/Reminder/Notifications/Pipeline,
+  two-way URL sync, any new route/endpoint/field, and any backend change. Category-C/D fields are
+  excluded; uncertain items marked "[confirm with Claude Code]".
+- **Output docs.** `docs/design/66ui4-fe1d-navigation-microcopy/` (8 docs: design-brief, navigation-
+  polish-spec, microcopy-guide, field-label-cleanup-map, engineering-field-exposure-reduction,
+  platform-ops-density-spec, product-owner-review-checklist, codex-implementation-notes) + stage
+  artifacts under `docs/stages/66ui4-fe1d-navigation-microcopy-design/`.
+- **Tests.** New `scripts/verify_design66ui4_fe1d_navigation_microcopy.py` +
+  `tests/test_design66ui4_fe1d_navigation_microcopy.py`.
+- **Gate.** Status: design-ready-for-review. Codex remains unauthorized. Next: Claude Code technical-
+  readiness review of the FE.1D design, then Product Owner decision. Not a merge/deploy.

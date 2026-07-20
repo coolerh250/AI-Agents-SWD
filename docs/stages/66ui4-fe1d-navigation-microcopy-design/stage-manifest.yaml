@@ -1,0 +1,77 @@
+stage: "66UI.4-FE.1D-DESIGN"
+owner: "Claude Design"
+task_type: "design"
+status: "design-ready-for-review"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "707cb8c"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/design/66ui4-phase1-product-visual-language/design-brief.md
+    - docs/design/66ui4-phase1-product-visual-language/visual-language-spec.md
+    - docs/design/66ui4-phase1-product-visual-language/product-microcopy-guide.md
+    - docs/design/66ui4-phase1-product-visual-language/engineering-field-reduction-map.md
+    - docs/frontend/admin-console-spa-deep-link-fallback-known-gap.md
+  related_prs:
+    - "PR #4 merged to main (66UI.3 direction)"
+    - "PR #5 merged to main (66UI.4 Phase 1 source of truth)"
+    - "PR #2 closed/superseded"
+    - "FE.1A / FE.1B / FE.1B.1 / FE.1C / FE.1C.1 merged + deployed"
+
+allowed_paths:
+  - "docs/design/66ui4-fe1d-navigation-microcopy/**"
+  - "docs/stages/66ui4-fe1d-navigation-microcopy-design/**"
+  - "source/progress.md"
+  - "scripts/verify_design66ui4_fe1d_navigation_microcopy.py"
+  - "tests/test_design66ui4_fe1d_navigation_microcopy.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+codex_authorized: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
