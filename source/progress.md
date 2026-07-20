@@ -14858,3 +14858,31 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized. No
   bidirectional URL sync. Admin Console SPA deep-link fallback gap accepted as existing platform
   limitation, not fixed by this stage (tracked separately).
+
+## Stage 66UI.4-FE.1D-S1-POV — Product Owner UI Validation Record
+
+**Status: PASS. Marker `STEP66UI4_FE1D_S1_PRODUCT_OWNER_VALIDATION_VERIFY: PASS`.**
+
+- **Product Owner verdict (verbatim).** "Step 66UI.4-FE.1D-S1 Product Owner UI Validation — PASS."
+- **Chain referenced.** Implementation PR #13 (`frontend/66ui4-fe1d-s1-navigation-polish`, `72d8bff`)
+  -> review (`review/66ui4-fe1d-s1-navigation-polish`, `3cfa868`) -> preview deploy
+  (`review/66ui4-fe1d-s1-preview-deploy`, `9bac4b5`) -> this Product Owner validation record.
+- **Checklist.** All 12 items from the FE.1D-S1-VP validation checklist accepted as PASS: overall
+  product feel, 7 group subtitles, Soon/Read-only/Evidence badge correctness, Platform Ops
+  compactness, Delivery Package placement, Deliveries group scope, page accessibility, no fake
+  controls, no Slice 2 content, no backend/API/DB/workflow change.
+- **Status recorded.** `main` not merged by this document. Merge authorization still required
+  (separate, explicit Product Owner authorization needed before Claude Code may merge PR #13).
+  FE.1D Slice 2 remains unauthorized. SPA deep-link fallback remains excluded, separately tracked.
+  Two-way URL sync not implemented. `"+ Create task"` and
+  `delivery_package_ready_for_admin_console` both reconfirmed unchanged/deferred.
+  `production_executed_true_count` remains 0.
+- **Verification.** New verifier + pytest cases PASS; `git diff --check` clean; secret scan
+  critical=0/high=0/informational=100 (unchanged baseline).
+- **Output docs.**
+  `docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-product-owner-validation.md`,
+  `docs/test/step66ui4-fe1d-s1-product-owner-validation-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1d_s1_product_owner_validation.py` +
+  `tests/test_step66ui4_fe1d_s1_product_owner_validation.py`.
+- **Gate.** PR #13 not merged, not deployed further. FE.1D Slice 2 remains unauthorized. Next
+  authorized step: Product Owner decision on merge authorization for PR #13.
