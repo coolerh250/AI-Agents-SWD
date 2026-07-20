@@ -14808,3 +14808,53 @@ branch (see below).**
   require its own explicit Product Owner authorization and Claude Code architecture review --
   out of scope for any frontend-only stage.
 - **Output doc.** `docs/frontend/admin-console-spa-deep-link-fallback-known-gap.md`.
+
+## Stage 66UI.4-FE.1C.1-MD — Merge PR #11 and Calibrate Test Runtime
+
+**Status: PASS. Marker `STEP66UI4_FE1C1_MERGE_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "接受 Step 66UI.4-FE.1C.1 UI validation 結果為 PASS /
+  VISIBLE_WITH_ACCEPTED_PLATFORM_GAP；授權執行 Step 66UI.4-FE.1C.1-MD — merge PR #11 到 main，並將
+  merged main 校準到 test runtime；接受 Admin Console SPA deep-link fallback gap 為既有平台限制另案
+  追蹤；不得修改 backend/API/DB/workflow，不得新增 endpoint，不得授權 FE.1D，不得實作雙向 URL sync。"
+- **Merged.** Four branches in chronological order via `git merge --no-ff`: `review/66ui4-fe1c1-
+  tasklist-query-param-plan` (`7cffc0b`) -> `076eb69`; `frontend/66ui4-fe1c1-tasklist-query-param`
+  (PR #11, `cba5dd0`) -> `119580e`; `review/66ui4-fe1c1-tasklist-query-param` (`549490f`) ->
+  `bdc3a46`; `review/66ui4-fe1c1-preview-deploy` (`a228fa9`) -> `9210f85`. The Admin Console SPA
+  deep-link fallback known-gap record was already on `main` from a prior stage (`ec5d1c8`).
+- **Pre-merge gate.** All 16 required checks confirmed PASS: Codex/review/preview markers all
+  present; PO verdict PASS/VISIBLE_WITH_ACCEPTED_PLATFORM_GAP; PR #11 frontend-only; no backend/
+  API/DB/workflow/new-endpoint change; no FE.1D; no bidirectional URL sync; no SPA deep-link
+  fallback fix; no fake counts/controls; valid/invalid status query behavior confirmed; no local
+  artifact exposure.
+- **Conflict handling.** All four merges conflicted in `source/progress.md` only, each resolved by
+  preserving all existing content and inserting the incoming section at the correct chronological
+  position (Planning -> Implementation -> Review -> Preview Deployment -> Known Gap); three merges
+  additionally required removing a duplicate short copy of a section a downstream branch had
+  independently carried forward. No content dropped; the existing Known Gap section preserved as-is.
+- **Consolidation.** All 22 required FE.1C.1 artifacts (planning, implementation, review, preview-
+  deployment, known-gap record -- docs + verifiers + tests) confirmed present at their documented
+  repo-relative paths on `main`.
+- **Test runtime calibration.** Rebuilt the Admin Console frontend from merged `main` commit
+  `9210f85` in an isolated disposable clone, producing the same deterministic hashes
+  (`index-A5KtnMef.js` / `index-tDSVCSFZ.css`) as every prior independent build of this diff --
+  confirming merge integrity. Swapped this merged-main build into the test runtime (backup of the
+  prior bundle retained), replacing the pre-merge PR-branch-sourced bundle for correct deployment
+  provenance. No container rebuild/restart. All post-deployment checks (Overview tile deep-link
+  behavior, TaskList real filtered data, manual dropdown not updating URL, invalid status query
+  safety, bidirectional URL sync not implemented, SPA deep-link fallback gap not fixed,
+  `/operations/safety` and `/operations/agent-executions` unchanged, `production_executed_true_count`
+  = 0, no workflow/production/external action) passed.
+- **Verification.** All 4 FE.1C.1 verifiers + 51 pytest cases re-run and PASS on merged main;
+  frontend tests 17 files/131 passed; typecheck passed; build passed with deterministic hashes;
+  `git diff --check` clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.** `docs/frontend/66ui4-fe1c-overview-attention-first/tasklist-query-param-merge-record.md`,
+  `docs/test/step66ui4-fe1c1-merged-main-test-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c1_merge_deploy.py` +
+  `tests/test_step66ui4_fe1c1_merge_deploy.py`.
+- **Gate.** PR #11 merged to `main`. Test runtime calibrated to merged main. No backend/API/database/
+  workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized. No
+  bidirectional URL sync. Admin Console SPA deep-link fallback gap accepted as existing platform
+  limitation, not fixed by this stage (tracked separately).
