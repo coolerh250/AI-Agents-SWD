@@ -14663,3 +14663,31 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized.
   TaskList query-param gap accepted as non-blocking, not fixed (recommended follow-up, not scheduled
   by this stage).
+
+## Stage 66UI.4-FE.1C.1-VP — PR #11 Test Runtime UI Validation Preview
+
+**Status: PASS. Marker `STEP66UI4_FE1C1_PREVIEW_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 將 PR #11 frontend/66ui4-fe1c1-tasklist-query-param 部署到
+  test runtime，供 Step 66UI.4-FE.1C.1 Product Owner UI validation；不 merge main；不得修改
+  backend/API/DB/workflow，不得新增 endpoint，不得授權 FE.1D，不得實作雙向 URL sync。"
+- **Deployed.** PR #11, `frontend/66ui4-fe1c1-tasklist-query-param`, commit `cba5dd0` -- built in an
+  isolated disposable clone (deterministic hashes `index-A5KtnMef.js` / `index-tDSVCSFZ.css`,
+  matching Step 66UI.4-FE.1C.1-R's own re-verification), swapped into the test runtime's static
+  asset directory (backup of the prior FE.1C-MD bundle retained inside the container). No container
+  rebuild/restart -- static files served directly from disk. `main` not touched, no merge performed.
+- **Post-deployment verification.** Admin Console reachable (HTTP 200); deployed bundle confirmed
+  via direct grep for the feature's status literals (`blocked`, `clarification_needed`); byte-
+  identical to the build already re-verified against a 131-test suite in Step 66UI.4-FE.1C.1-R;
+  `/operations/safety` and `/operations/agent-executions` unchanged; `production_executed_true_count`
+  remains 0; no workflow dispatch/resume; no production/external action; no bidirectional URL sync
+  implemented.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/frontend/66ui4-fe1c-overview-attention-first/tasklist-query-param-ui-validation-preview-record.md`,
+  `docs/test/step66ui4-fe1c1-ui-validation-preview-deployment-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1c1_preview_deploy.py` +
+  `tests/test_step66ui4_fe1c1_preview_deploy.py`.
+- **Gate.** PR #11 not merged. FE.1D remains unauthorized. Bidirectional URL sync intentionally not
+  implemented. Test runtime now ready for Product Owner FE.1C.1 UI validation.
