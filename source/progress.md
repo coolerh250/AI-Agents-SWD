@@ -14939,3 +14939,38 @@ branch (see below).**
   `tests/test_step66ui4_fe1d_s1_review.py`.
 - **Gate.** PR #13 not merged, not deployed. FE.1D Slice 2 remains unauthorized. Product Owner UI
   validation may proceed once a separate, explicit deployment authorization is given.
+
+## Stage 66UI.4-FE.1D-S1-VP — PR #13 Test Runtime UI Validation Preview
+
+**Status: PASS. Marker `STEP66UI4_FE1D_S1_PREVIEW_DEPLOY_VERIFY: PASS`.**
+
+- **Authorization.** "授權 Claude Code 將 PR #13 frontend/66ui4-fe1d-s1-navigation-polish 部署到
+  test runtime，供 Step 66UI.4-FE.1D-S1 Product Owner UI validation；不 merge main；不得修改
+  backend/API/DB/workflow，不得新增 endpoint/route，不得修復 SPA deep-link fallback，不得實作雙向
+  URL sync，不得授權或實作 FE.1D Slice 2。"
+- **Deployed.** `frontend/66ui4-fe1d-s1-navigation-polish` commit `72d8bff` (Draft PR #13) to the
+  internal test runtime only. `main` NOT merged. Built in an isolated, disposable clone via
+  `node:20-slim`, producing deterministic hashes `index-D_e3KYR_.css` / `index-mPDY7eq_.js` --
+  identical to the independent build already validated in Step 66UI.4-FE.1D-S1-R. Backed up the
+  prior bundle (`index-A5KtnMef.js` / `index-tDSVCSFZ.css`, from Step 66UI.4-FE.1C.1-MD) inside the
+  orchestrator container before swapping; no container rebuild/restart (uptime unaffected).
+- **Post-deployment verification.** All 25 required checks passed: Admin Console HTTP 200; PR #13
+  bundle active; all 7 nav groups and subtitles render; Soon/Read-only/Evidence badges correctly
+  scoped; Platform Ops keeps all 19 items and Delivery Package remains under Platform Ops (not
+  moved to Deliveries); all 39 routes preserved (spot-checked 8 directly against the deployed
+  bundle, full set already confirmed at the source level in Step 66UI.4-FE.1D-S1-R); no fake
+  controls; zero Slice 2 content; `"+ Create task"` and `delivery_package_ready_for_admin_console`
+  both confirmed unchanged in the deployed bundle; SPA deep-link fallback and two-way URL sync both
+  confirmed absent; `/operations/safety` and `/operations/agent-executions` unchanged;
+  `production_executed_true_count` remains 0; no workflow dispatch/resume; no production/external
+  action; no backend/API/database/workflow file touched.
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/test/step66ui4-fe1d-s1-ui-validation-preview-deployment-record.md`,
+  `docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-ui-validation-preview-record.md`
+  (includes the 12-item Product Owner validation checklist and rollback instructions).
+- **Tests.** New `scripts/verify_step66ui4_fe1d_s1_preview_deploy.py` +
+  `tests/test_step66ui4_fe1d_s1_preview_deploy.py`.
+- **Gate.** PR #13 not merged. `main` unaffected. Test runtime now ready for Product Owner FE.1D-S1
+  UI validation. FE.1D Slice 2 remains unauthorized. No production/external action.
