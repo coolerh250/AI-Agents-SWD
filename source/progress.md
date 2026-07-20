@@ -14663,3 +14663,24 @@ branch (see below).**
   workflow change. No new endpoint. No production/external action. FE.1D remains unauthorized.
   TaskList query-param gap accepted as non-blocking, not fixed (recommended follow-up, not scheduled
   by this stage).
+
+## Known Gap — Admin Console SPA Deep-Link / Hard-Refresh Fallback
+
+- **Discovered.** During Step 66UI.4-FE.1C.1-VP Product Owner UI validation, testing checklist
+  items 4–6 (pasting `/tasks?status=...` directly into the browser address bar) returned a raw
+  backend 404 instead of loading the SPA. Investigated live rather than assumed.
+- **Root cause.** `apps/orchestrator/src/main.py:260` mounts the Admin Console via
+  `StaticFiles(directory=_admin_dir, html=True)` (Stage 50, predates all FE.1B/FE.1C stages) --
+  this serves `index.html` only at the exact `/admin` root, with no wildcard SPA-fallback route for
+  sub-paths. Confirmed general (not FE.1C.1-specific) by also reproducing the same 404 on the
+  pre-existing `/admin/safety` and `/admin/overview` routes.
+- **What still works.** Client-side navigation (clicking a `<Link>` inside the already-loaded SPA,
+  e.g. Overview's attention tiles or TaskList's query-param initialization) is entirely unaffected
+  -- only a typed/pasted URL or a hard refresh on a non-root route hits this gap.
+- **Impact.** Does not invalidate Step 66UI.4-FE.1C's or Step 66UI.4-FE.1C.1's PASS/VISIBLE
+  verdicts -- both were verified via their actual intended usage path (in-app click navigation),
+  and this gap predates both stages.
+- **Status.** Not blocking. Not scheduled. Remediation (a backend catch-all fallback route) would
+  require its own explicit Product Owner authorization and Claude Code architecture review --
+  out of scope for any frontend-only stage.
+- **Output doc.** `docs/frontend/admin-console-spa-deep-link-fallback-known-gap.md`.
