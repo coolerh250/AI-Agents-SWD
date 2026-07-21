@@ -15387,3 +15387,57 @@ no production/external action, no Codex authorization.
   alignment branch. No Master Plan merge. No deployment. No Step 66C.4-P started. No FE.1D-S2
   authorized. No production/external action. Next authorized step: Product Owner review per the
   corrected `product-owner-review-checklist.md`.
+
+## Stage 66ALIGN.2-M — Merge Project Completion Master Plan into Main
+
+**Status: PASS. Marker `STEP66ALIGN2_PROJECT_COMPLETION_MASTER_PLAN_MERGE_VERIFY: PASS`.**
+
+- **Authorization.** "接受 Step 66ALIGN.2-R1 判定為 PASS；授權 Claude Code 將
+  alignment/66-project-completion-master-plan @ 5da21f5 合併至 main，正式建立 AI Agent Team Work
+  Project Completion Master Plan。"
+- **Pre-merge integrity verification.** Branch tip confirmed at authorized commit `5da21f5` with
+  zero drift; diff vs. pre-merge main (`211f96f`) showed 24 doc/test/script/stage files (all under
+  `docs/alignment/66-project-completion/master/**`, `docs/test/**`, `docs/stages/**`, `scripts/`,
+  `tests/`) plus a modified `source/progress.md`; forbidden-path check (`apps services infra
+  migrations database helm k8s .github/workflows`) returned empty -- no frontend runtime
+  implementation, no backend/API/DB/workflow change, no endpoint/route change, no Step 66C.4
+  implementation, no FE.1D-S2 authorization, no production/external action.
+- **Semantic verification (pre-merge).** Confirmed on the source branch: canonical milestone order
+  M0->M1->M2->M3->M4->M5->M6->M7 unchanged; M0 CLOSED/M1 IN_PROGRESS/M2-M7 NOT_STARTED; Step
+  66C.4-P next-but-not-started; Step 66C.4 primary owner Claude Code with Codex limited to
+  explicitly authorized frontend slices (Step 66ALIGN.2-R1 corrections intact); M3 Team RBAC
+  implementation / M6-M7 identity-access hardening split intact; FE.1D-S2 UNAUTHORIZED/NON-CRITICAL
+  and not framed as an unresolved PO decision.
+- **Merged.** `alignment/66-project-completion-master-plan` (`5da21f5`) -> `main` via
+  `git merge --no-ff`, merge commit `e2bff55`. Zero
+  conflicts -- `main` had not diverged since the branch was created off `211f96f`. Full branch
+  history preserved (not squashed): both the Step 66ALIGN.2-CONSOLIDATE commit (`00e82e3`) and the
+  Step 66ALIGN.2-R1 commit (`5da21f5`) remain individually visible in `git log`.
+- **Master Plan now canonical source of truth.** `docs/alignment/66-project-completion/master/`
+  (13 files, including the new `master-plan-merge-record.md`) is now on `main`. The
+  `project-completion-master-plan.md` document is the canonical project-completion roadmap of
+  record going forward.
+- **Original alignment branch protection.** All three original Step 66ALIGN.1 alignment branches
+  (`alignment/66-project-completion-claude-code` @ `6d8b56f`,
+  `design/66-project-completion-experience-alignment` @ `8c22c4d` / Draft PR #14,
+  `alignment/66-project-completion-codex` @ `d109a71` / Draft PR #15) remain unmerged and unclosed,
+  tips unchanged. PR #12 not touched by this stage.
+- **Runtime / deployment protection.** `git diff 211f96f e2bff55 -- apps services infra migrations
+  database helm k8s .github/workflows` empty -- zero runtime drift. No deployment performed.
+  Runtime frontend code commit remains `513f190`, bundle unchanged.
+  `production_executed_true_count` unaffected (no deployment occurred).
+- **Verification.** All 3 verifiers (consolidation, remediation, merge) + 19+17+19 pytest cases
+  PASS; `git diff --check` clean; `git status --short` clean; secret scan
+  critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/alignment/66-project-completion/master/master-plan-merge-record.md`,
+  `docs/alignment/66-project-completion/master/master-plan-source-of-truth-record.md`,
+  `docs/test/step66align2-project-completion-master-plan-merge-record.md`.
+- **Tests.** New `scripts/verify_step66align2_project_completion_master_plan_merge.py` +
+  `tests/test_step66align2_project_completion_master_plan_merge.py`.
+- **Gate.** Master Plan merged to `main` and pushed. No runtime/backend/API/DB/workflow change. No
+  new endpoint/route. No deployment. No Step 66C.4-P started. No FE.1D-S2 authorized. No original
+  alignment branch merged or closed. No PR #14/#15 closed. No production/external action. The
+  `AI Agent Team Work Project Completion Master Plan` is now the canonical source of truth.
