@@ -1,0 +1,74 @@
+stage: "66M0-SOT-RECONCILE-P-v2"
+owner: "Claude Code"
+task_type: "governance"
+status: "planning-only-ready-for-product-owner-decision"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "690b700"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-merge-record.md
+    - docs/test/step66ui4-fe1d-s1-merged-main-test-deployment-record.md
+  related_prs:
+    - "PR #12 (Draft, design/66ui4-fe1d-navigation-microcopy) -- not merged"
+    - "PR #14 (Draft, Claude Design alignment) -- advisory, not merged"
+    - "PR #15 (Draft, Codex alignment) -- advisory, not merged"
+    - "PR #13 merged (FE.1D-S1 Navigation Polish, closed)"
+
+allowed_paths:
+  - "docs/reconciliation/66m0-fe1d-sot/**"
+  - "docs/test/step66m0-fe1d-sot-reconciliation-planning-v2-record.md"
+  - "docs/stages/66m0-fe1d-sot-reconciliation-plan-v2/**"
+  - "source/progress.md"
+  - "scripts/verify_step66m0_fe1d_sot_reconciliation_plan_v2.py"
+  - "tests/test_step66m0_fe1d_sot_reconciliation_plan_v2.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - ".github/workflows/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+codex_authorized: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found

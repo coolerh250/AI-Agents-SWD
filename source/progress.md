@@ -15051,3 +15051,56 @@ branch (see below).**
   remains unauthorized. Admin Console SPA deep-link fallback gap remains an existing platform
   limitation, not fixed by this stage (tracked separately). Step 66UI.4-FE.1D-S1 Navigation Polish
   is complete.
+
+## Stage 66M0-SOT-RECONCILE-P v2 — Source-of-Truth Reconciliation Planning with Alignment Inputs
+
+**Status: PASS. Marker `STEP66M0_FE1D_SOT_RECONCILIATION_PLAN_V2_VERIFY: PASS`.**
+
+- **Scope.** Analysis, comparison, freshness validation, and documentation only. No merge, no
+  cherry-pick, no deployment, no runtime modification. No FE.1D Slice 2 authorization.
+- **Distinguished repository-record commit (`690b700`) from runtime-code commit (`513f190`)** --
+  confirmed via `git diff 513f190 690b700 -- apps/` (empty) that the difference is docs/records
+  only, not runtime drift.
+- **Freshness-validated all three Step 66ALIGN.1 reports** (Claude Code `6d8b56f`, Claude Design
+  `8c22c4d` Draft PR #14, Codex `d109a71` Draft PR #15): all three CURRENT, no stale assumption
+  affects any conclusion. Codex's alignment branch's committed content independently re-verified
+  for local-path/`.tools/`/unrelated-proposal exposure -- clean, no remediation required.
+- **Cross-partner consensus matrix (13 topics):** 10 CONSENSUS, 2 MINOR_DIFFERENCE (M1 scope
+  framing; FE.1D-S2 implementation-strategy nuance), 1 REQUIRES_PO_DECISION (Team RBAC milestone
+  ownership -- M3 role-matrix UI vs. M6 real-auth mechanics, both referencing Step 66S), 0 CONFLICT,
+  0 STALE_ASSUMPTION. All 7 canonical conclusions from the stage prompt independently confirmed by
+  at least two of the three reports, contradicted by none.
+- **FE.1D branch-by-branch assessment:** all three unmerged branches (`design/66ui4-fe1d-
+  navigation-microcopy` `43269c5`, `review/66ui4-fe1d-technical-readiness` `25309ea`,
+  `review/66ui4-fe1d-boundary` `9e9a622`) classified `MERGE_FULL` -- no conflict with `main` or
+  shipped FE.1D-S1 UI beyond two minor, non-blocking wording differences already recorded in the
+  FE.1D-S1-R review. Zero file-collision risk found across all three (only `source/progress.md`
+  would conflict, resolvable via the established chronological-insertion pattern).
+- **Cross-branch decision verification (11 items):** all CONSISTENT across the three FE.1D
+  branches, `main`, and shipped code -- `"Workflow dispatch"` label, `"+ Create task"`,
+  `delivery_package_ready_for_admin_console` deferral, Delivery Package under Platform Ops, FE.1D-S1
+  complete, FE.1D-S2 unauthorized, `TaskWorkroom` `body_hash` deferred, broad evidence-field
+  relabel deferred, SPA deep-link fallback excluded, two-way URL sync excluded, no fake Delivery/
+  Action/Notification/Agent-control UI.
+- **Recommended (not executed) merge plan:** merge order design -> technical-readiness -> boundary;
+  required annotations specified (Slice 1 status: COMPLETE/SHIPPED on each); zero runtime impact;
+  zero rollback risk beyond standard `git revert`.
+- **Alignment branches assessed as advisory only** (all three: `ADVISORY_READY_FOR_ALIGN2`) --
+  none merged, none classified with a merge disposition, per this stage's own explicit constraint.
+- **Verification.** New verifier + pytest cases PASS; `git diff --check` clean; secret scan
+  critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are this stage's own verifier regex checking
+  FOR forbidden strings, or prior-stage documentation describing checks performed -- not real leaked
+  paths. No blocking gap.
+- **Output docs.** 9 files under `docs/reconciliation/66m0-fe1d-sot/**` (current-main-runtime-state,
+  alignment-freshness-assessment, cross-partner-consensus-matrix, fe1d-branch-disposition-matrix,
+  conflict-analysis, recommended-merge-plan, post-merge-verification-plan,
+  product-owner-decision-checklist, align2-advisory-handoff),
+  `docs/test/step66m0-fe1d-sot-reconciliation-planning-v2-record.md`,
+  `docs/stages/66m0-fe1d-sot-reconciliation-plan-v2/**`.
+- **Tests.** New `scripts/verify_step66m0_fe1d_sot_reconciliation_plan_v2.py` +
+  `tests/test_step66m0_fe1d_sot_reconciliation_plan_v2.py`.
+- **Gate.** No merge, no cherry-pick, no deployment, no runtime modification. FE.1D Slice 2 remains
+  unauthorized/non-critical. Alignment branches remain unmerged, advisory, ready for Step
+  66ALIGN.2. Next authorized step: Product Owner decision on
+  `docs/reconciliation/66m0-fe1d-sot/product-owner-decision-checklist.md`.
