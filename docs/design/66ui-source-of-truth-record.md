@@ -101,11 +101,54 @@ PR #4 nor PR #5 is merged...") is now resolved for those two PRs, and PR #2's di
 fully closed out (confirmed closed by the Product Owner). The only remaining open item is PR #1's
 continued-open status, which is explicitly authorized and not a gap.
 
+## FE.1D source-of-truth gap — closed (Step 66M0-SOT-RECONCILE-M)
+
+The FE.1D design, technical readiness review, and Codex implementation boundary branches, which
+had remained unmerged advisory/contract input while FE.1D-S1 shipped independently, were merged to
+`main` per explicit Product Owner authorization in Step 66M0-SOT-RECONCILE-M:
+
+```text
+1. design/66ui4-fe1d-navigation-microcopy @ 43269c5 (Draft PR #12) -> main, merge commit 45da561
+2. review/66ui4-fe1d-technical-readiness @ 25309ea               -> main, merge commit 03318b7
+3. review/66ui4-fe1d-boundary @ 9e9a622                            -> main, merge commit 0414343
+```
+
+- **FE.1D design** — merged. Historical design brief for FE.1D Slice 1 (shipped) and Slice 2
+  (unauthorized candidate). Its "New task" vs. "Create task" and delivery-package-rename open
+  questions are resolved by the Product Owner decisions below.
+- **FE.1D technical readiness** — merged. Historical review evidence documenting the corrections
+  found in the design (corrected `TASK_STATUSES` list; narrowed raw-ID/hash page scope) and the
+  PASS_WITH_GAPS verdict that led to the Product Owner's decisions.
+- **FE.1D boundary** — merged. Now the formal, binding `docs/contracts/66ui4-fe1d-navigation-
+  microcopy/codex-implementation-boundary.md` contract on `main` for any future FE.1D Slice 2
+  authorization decision.
+- **FE.1D-S1** — shipped. Already merged and deployed (Step 66UI.4-FE.1D-S1-MD, merge commit
+  `513f190`); unaffected by this merge (zero `apps/**` diff introduced by the three branches above).
+- **FE.1D-S2** — unauthorized / non-critical. Design and boundary content for Slice 2 is now
+  readable on `main`, but remains an unauthorized candidate specification, not an implementation
+  authorization. Explicitly not on the M0-M7 critical path (Step 66ALIGN.1-CC).
+- **Product Owner decisions preserved.** `"+ Create task"` remains unchanged.
+  `delivery_package_ready_for_admin_console` is not renamed to "Ready to publish" in FE.1D; the
+  rename remains deferred to Step 66D. Workflow dispatch keeps the shipped FE.1B.1 wording
+  ("Workflow dispatch", not "Automation dispatch"). Delivery Package remains under Platform Ops.
+  `TaskWorkroom.tsx` `body_hash` and the broader evidence/raw-field relabel remain deferred. SPA
+  deep-link fallback and two-way URL sync remain excluded, tracked as separate platform gaps.
+- **Team RBAC milestone ownership** resolved separately in
+  `docs/decisions/66-team-rbac-milestone-ownership.md` (M3 owns product-level team/role control;
+  M6/M7 own production identity/authentication/session security).
+- **Alignment branches** (`alignment/66-project-completion-claude-code`,
+  `design/66-project-completion-experience-alignment`, `alignment/66-project-completion-codex`)
+  remain unmerged — not part of this closure, reserved for a future Step 66ALIGN.2 stage.
+
+See `docs/reconciliation/66m0-fe1d-sot/source-of-truth-closure-record.md` and
+`docs/reconciliation/66m0-fe1d-sot/merge-execution-record.md` for the full closure detail.
+
 ## Statement
 
 Merge/disposition record only. No runtime code changed. No backend changed. No frontend
 implementation changed. No API/database/workflow change. No production/external action. No
-deployment performed. No Codex implementation authorized by this document.
+deployment performed. No Codex implementation authorized by this document. No FE.1D Slice 2
+authorized or implemented by this document.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP

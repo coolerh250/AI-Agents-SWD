@@ -1,0 +1,98 @@
+stage: "66M0-SOT-RECONCILE-M"
+owner: "Claude Code"
+task_type: "source-of-truth-reconciliation"
+status: "merge-authorized"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "690b700"
+  runtime_code_commit_reviewed: "513f190"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/frontend/66ui4-fe1d-navigation-microcopy/slice1-navigation-polish-merge-record.md
+    - docs/test/step66ui4-fe1d-s1-merged-main-test-deployment-record.md
+  related_branches:
+    - "design/66ui4-fe1d-navigation-microcopy @ 43269c5 (Draft PR #12) -- MERGED this stage (45da561)"
+    - "review/66ui4-fe1d-technical-readiness @ 25309ea -- MERGED this stage (03318b7)"
+    - "review/66ui4-fe1d-boundary @ 9e9a622 -- MERGED this stage (0414343)"
+    - "review/66m0-fe1d-sot-reconciliation-plan-v2 @ 1a75b2e -- read as planning evidence, NOT merged"
+    - "alignment/66-project-completion-claude-code @ 6d8b56f -- NOT merged, protected"
+    - "design/66-project-completion-experience-alignment @ 8c22c4d -- NOT merged, protected"
+    - "alignment/66-project-completion-codex @ d109a71 -- NOT merged, protected"
+
+allowed_paths:
+  - "docs/reconciliation/66m0-fe1d-sot/source-of-truth-closure-record.md"
+  - "docs/reconciliation/66m0-fe1d-sot/merge-execution-record.md"
+  - "docs/decisions/66-team-rbac-milestone-ownership.md"
+  - "docs/design/66ui-source-of-truth-record.md"
+  - "docs/test/step66m0-fe1d-sot-reconciliation-merge-record.md"
+  - "docs/stages/66m0-fe1d-sot-reconciliation-merge/**"
+  - "source/progress.md"
+  - "scripts/verify_step66m0_fe1d_sot_reconciliation_merge.py"
+  - "tests/test_step66m0_fe1d_sot_reconciliation_merge.py"
+  - "docs/design/66ui4-fe1d-navigation-microcopy/**"
+  - "docs/contracts/66ui4-fe1d-navigation-microcopy/**"
+  - "docs/stages/66ui4-fe1d-navigation-microcopy-design/**"
+  - "docs/stages/66ui4-fe1d-boundary/**"
+  - "docs/test/step66ui4-fe1d-technical-readiness-review-record.md"
+  - "docs/test/step66ui4-fe1d-boundary-consolidation-record.md"
+  - "scripts/verify_design66ui4_fe1d_navigation_microcopy.py"
+  - "scripts/verify_step66ui4_fe1d_technical_readiness.py"
+  - "scripts/verify_step66ui4_fe1d_boundary.py"
+  - "tests/test_design66ui4_fe1d_navigation_microcopy.py"
+  - "tests/test_step66ui4_fe1d_technical_readiness.py"
+  - "tests/test_step66ui4_fe1d_boundary.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+  - "docs/alignment/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+deployment_allowed: false
+fe1d_slice2_authorized: false
+alignment_branches_merge_allowed: false
+product_owner_authorization_received: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
+  - alignment_branch_merge_attempted
+  - fe1d_slice2_authorization_attempted

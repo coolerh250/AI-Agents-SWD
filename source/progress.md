@@ -15198,3 +15198,71 @@ no production/external action, no Codex authorization.
   remains unauthorized. Admin Console SPA deep-link fallback gap remains an existing platform
   limitation, not fixed by this stage (tracked separately). Step 66UI.4-FE.1D-S1 Navigation Polish
   is complete.
+
+## Stage 66M0-SOT-RECONCILE-M — Merge and Close FE.1D Source-of-Truth Gap
+
+**Status: PASS. Marker `STEP66M0_FE1D_SOT_RECONCILIATION_MERGE_VERIFY: PASS`.**
+
+- **Authorization.** Product Owner authorized, in order: (1) full merge of
+  `design/66ui4-fe1d-navigation-microcopy` @ `43269c5`, `review/66ui4-fe1d-technical-readiness` @
+  `25309ea`, `review/66ui4-fe1d-boundary` @ `9e9a622`; (2) formal recording of FE.1D-S1 =
+  COMPLETE/SHIPPED, FE.1D-S2 = UNAUTHORIZED/NON-CRITICAL, `delivery_package_ready_for_admin_console`
+  rename deferred to Step 66D, `"+ Create task"` unchanged, SPA deep-link fallback and two-way URL
+  sync excluded; (3) Team RBAC milestone ownership (M3 = product-level team/role/permission
+  control; M6/M7 = production identity/authentication/session security); (4) the three alignment
+  branches (`alignment/66-project-completion-claude-code` @ `6d8b56f`,
+  `design/66-project-completion-experience-alignment` @ `8c22c4d`,
+  `alignment/66-project-completion-codex` @ `d109a71`) must remain unmerged; (5) Step 66C.4-P not
+  started.
+- **Pre-merge integrity verification.** All three branches confirmed based on `main` @ `690b700`
+  with zero drift; `git diff --name-status` showed doc/test/script-only changes for each (13, 4,
+  and 9 new files respectively, plus `source/progress.md`); forbidden-path check (`apps services
+  infra migrations database helm k8s .github/workflows`) returned empty for all three; local-
+  artifact check on each branch's actually-diffed files found only this project's own review-prose
+  describing the checks performed, not real leaked local paths/usernames/`.tools/`.
+- **Merged in order.** `design/66ui4-fe1d-navigation-microcopy` -> `main` (`45da561`);
+  `review/66ui4-fe1d-technical-readiness` -> `main` (`03318b7`);
+  `review/66ui4-fe1d-boundary` -> `main` (`0414343`). Each via `git merge --no-ff` directly against
+  the then-current `main` tip; each conflicted only in `source/progress.md`, resolved by preserving
+  all existing entries and inserting each new stage section (`DESIGN` -> `TECH-REVIEW` ->
+  `BOUNDARY`) immediately before the `FE.1D-S1` section they historically precede, confirmed via
+  `grep -n "^## Stage 66UI.4-FE.1D" source/progress.md` showing each stage exactly once in correct
+  order.
+- **Source-of-truth closure.** FE.1D-S1 recorded COMPLETE/SHIPPED (unaffected -- already merged/
+  deployed in Step 66UI.4-FE.1D-S1-MD, `513f190`); FE.1D-S2 recorded UNAUTHORIZED/NON-CRITICAL;
+  boundary contract now the formal binding contract on `main` for any future Slice 2 authorization;
+  technical readiness recorded as historical review evidence; design recorded as historical design
+  input with its open questions resolved by the boundary's Product Owner decisions.
+- **Team RBAC decision.** Recorded in
+  `docs/decisions/66-team-rbac-milestone-ownership.md` (APPROVED_BY_PRODUCT_OWNER): M3 owns
+  product-level team/project roles, role permissions, task assignment, team/project visibility,
+  operator controls, approval/retry/replay/recovery permissions; M6/M7 own production identity
+  provider integration, authentication, session security, role provisioning, production access
+  review, rollout onboarding. Resolves the sole `REQUIRES_PO_DECISION` cross-partner item from Step
+  66M0-SOT-RECONCILE-P v2's consensus matrix.
+- **Alignment branch protection.** Confirmed all three alignment branches remain unmerged, tips
+  unchanged (`6d8b56f`, `8c22c4d`, `d109a71`); `main` contains no file under
+  `docs/alignment/66-project-completion/{claude-code,claude-design,codex}/`; no merge commit for any
+  of the three appears in `git log --merges` on `main`.
+- **Runtime / deployment protection.** `git diff 690b700 0414343 -- apps services infra migrations
+  database helm k8s .github/workflows` empty -- zero runtime drift. No deployment performed. Test
+  runtime remains on the bundle from Step 66UI.4-FE.1D-S1-MD (`513f190`), unaffected.
+  `production_executed_true_count` unaffected (no deployment occurred).
+- **Verification.** New verifier + 23 pytest cases PASS; existing FE.1D design/technical-readiness/
+  boundary/S1-chain verifiers re-run and PASS on the new merged main; `git diff --check` clean;
+  `git status --short` clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No `.tools/` or unrelated proposal file found. No
+  blocking gap.
+- **Output docs.**
+  `docs/reconciliation/66m0-fe1d-sot/source-of-truth-closure-record.md`,
+  `docs/reconciliation/66m0-fe1d-sot/merge-execution-record.md`,
+  `docs/decisions/66-team-rbac-milestone-ownership.md`,
+  `docs/test/step66m0-fe1d-sot-reconciliation-merge-record.md`.
+- **Tests.** New `scripts/verify_step66m0_fe1d_sot_reconciliation_merge.py` +
+  `tests/test_step66m0_fe1d_sot_reconciliation_merge.py`.
+- **Gate.** All three FE.1D branches merged to `main` and pushed. FE.1D-S1 formally CLOSED/SHIPPED.
+  FE.1D-S2 remains UNAUTHORIZED/NON-CRITICAL. Team RBAC milestone ownership recorded. All three
+  alignment branches remain unmerged. No runtime/backend/API/DB/workflow change. No new endpoint.
+  No new route. No deployment. No production/external action. No Step 66C.4-P started. FE.1D
+  source-of-truth gap is now closed.

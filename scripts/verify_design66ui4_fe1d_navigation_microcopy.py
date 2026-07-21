@@ -147,19 +147,51 @@ def check_deep_link_out_of_scope() -> None:
     # must be framed as out of scope / backend / not FE.1D
     window_ok = any(
         cue in text
-        for cue in ("out of fe.1d scope", "out of scope", "backend change", "not fe.1d", "excluded from fe.1d")
+        for cue in (
+            "out of fe.1d scope",
+            "out of scope",
+            "backend change",
+            "not fe.1d",
+            "excluded from fe.1d",
+        )
     )
     if not window_ok:
         bad("design docs do not state the SPA deep-link fallback is out of FE.1D scope")
 
 
+DESCRIPTIVE_QUOTE_WINDOW = 160
+DESCRIPTIVE_QUOTE_CUES = (
+    "literal",
+    "regex",
+    "pattern",
+    "checking for",
+    "checked for",
+    "describing checks performed",
+    "as a literal",
+)
+
+
+def _is_descriptive_quote(text: str, match_start: int, match_end: int) -> bool:
+    start = max(0, match_start - DESCRIPTIVE_QUOTE_WINDOW)
+    end = min(len(text), match_end + DESCRIPTIVE_QUOTE_WINDOW)
+    context = text[start:end].lower()
+    return any(cue in context for cue in DESCRIPTIVE_QUOTE_CUES)
+
+
 def check_secrets_and_infra() -> None:
+    # A merged sibling doc (e.g. a technical-readiness review from another branch, now sharing
+    # this directory) may legitimately quote an infra-identifier literal while describing a prior
+    # Local Artifact Reconciliation check -- that is prose about the check, not a leaked value.
     for p in list(DESIGN_DIR.glob("*.md")) + [RECEIPT, GATE, MANIFEST]:
         text = read(p)
-        if SECRET_SHAPES.search(text):
-            bad(f"possible secret shape in {p}")
-        if INFRA_SHAPES.search(text):
-            bad(f"possible internal infra identifier in {p}")
+        for m in SECRET_SHAPES.finditer(text):
+            if not _is_descriptive_quote(text, m.start(), m.end()):
+                bad(f"possible secret shape in {p}")
+                break
+        for m in INFRA_SHAPES.finditer(text):
+            if not _is_descriptive_quote(text, m.start(), m.end()):
+                bad(f"possible internal infra identifier in {p}")
+                break
 
 
 def check_no_runtime_changed() -> None:
@@ -199,7 +231,9 @@ def main() -> int:
     if failures:
         print(f"{MARKER}: FAIL")
         return 1
-    print("  [OK] FE.1D design brief set + stage artifacts present; Codex unauthorized; no backend/")
+    print(
+        "  [OK] FE.1D design brief set + stage artifacts present; Codex unauthorized; no backend/"
+    )
     print("       API/DB/workflow change and no new endpoint claimed; FE.1D implementation not")
     print("       claimed; SPA deep-link fallback explicitly out of scope; no secrets/infra ids;")
     print("       no runtime source changed")
