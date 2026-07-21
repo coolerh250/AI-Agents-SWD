@@ -15441,3 +15441,79 @@ no production/external action, no Codex authorization.
   new endpoint/route. No deployment. No Step 66C.4-P started. No FE.1D-S2 authorized. No original
   alignment branch merged or closed. No PR #14/#15 closed. No production/external action. The
   `AI Agent Team Work Project Completion Master Plan` is now the canonical source of truth.
+
+## Stage 66C.4-P — Reminder / Expiry / Controlled Resume Planning
+
+**Status: PASS. Marker
+`STEP66C4_REMINDER_EXPIRY_CONTROLLED_RESUME_PLANNING_VERIFY: PASS`.**
+
+- **Authorization.** Product Owner confirmed the Master Plan is canonical, authorized Step
+  66C.4-P (planning/contract/risk/stage-slicing/verification-plan only), confirmed Claude Code as
+  primary Step 66C.4 implementation owner with Codex/Claude Design limited to future,
+  separately-authorized slices.
+- **Shared context.** Latest main `83af345`; runtime code commit `513f190` (no drift). Read the
+  full Master Plan, all required process docs, and every prior Step 66C completion record.
+- **Read-only investigation.** Direct inspection of `operator_clarification_requests` (confirmed
+  `due_at`/`reminder_at`/`answered_at`/`status` already exist; confirmed `reminder_sent_at`,
+  `expired_at`, and all resume-lifecycle fields do NOT exist); confirmed `clarification_expired`
+  already exists in the 17-value task-status enum (both backend and frontend) but zero code path
+  ever sets it; confirmed the existing `claim_clarification_answer` CAS guard
+  (`shared/sdk/tasks/workroom_store.py`) as the direct reusable pattern; confirmed
+  `dispatch_enabled`/`resume_dispatch_enabled` are hardcoded `false` literals with zero resume code
+  path anywhere; confirmed `retry-scheduler` is a Redis Streams consumer, not a time-based
+  scheduler, and that NO cron/polling pattern exists anywhere in this repository; confirmed
+  `/clarification-reminders` remains a `PlaceholderPage`. Read-only runtime evidence (masked test
+  host, via SSH): `production_executed_true_count=0`; 5 relevant containers healthy; 1
+  open/5 answered/0 expired/0 canceled clarification rows -- zero writes performed.
+- **Lifecycle/time contract.** 24h reminder (reuses existing `reminder_at`) and 72h expiry (reuses
+  existing `due_at`, transitions task to already-existing `clarification_expired` -- no new
+  task-status value needed, confirmed both by direct inspection and Master Plan cross-reference).
+- **Scheduler architecture.** 4 options compared (Redis Streams delayed message, dedicated DB
+  poller, outbox+streams, in-process periodic task); recommended a dedicated
+  clarification-timeout worker with DB polling (deployment shape identical to `retry-scheduler`),
+  on reliability/testability/failure-isolation grounds.
+- **Controlled resume contract.** Six distinct states defined (answer recorded / resume eligible /
+  resume requested / resume authorized / resume dispatched / workflow resumed), never conflated.
+  Two options compared (Option A explicit operator-controlled vs. Option B policy-controlled
+  automatic); recommended Option A, preserving this project's unbroken precedent of gating every
+  consequential action behind an explicit human decision -- flagged as the single most
+  consequential Product Owner decision in this stage's output. Dispatch/actual-resume remains
+  entirely out of scope for any stage this planning covers.
+- **Data model contract.** 6 new nullable columns proposed (`reminder_sent_at`, `expired_at`,
+  `resume_eligible_at`, `resume_requested_at`/`by`, `resume_authorized_at`,
+  `resume_dispatched_at`), 2 partial indexes, 1 CHECK constraint; zero redundant fields proposed;
+  rollback strategy confirmed safe. No migration created by this stage.
+- **API/event contract.** 3 new endpoints proposed (lifecycle GET, resume-eligibility GET,
+  resume-request POST -- the last only if Option A is confirmed); 8 candidate internal events
+  defined with minimized payloads and deterministic idempotency keys; external notification
+  explicitly excluded (M4 territory).
+- **RBAC/safety contract.** 2 new capability functions proposed (`can_request_resume`,
+  `can_view_resume_eligibility`), reusing the existing 6-role `TASK_ROLES` vocabulary; 7 binding
+  safety invariants restated (including `production_executed_true_count` remains 0 and
+  production-effect tasks cannot resume without approval); explicit confirmation that full Team
+  RBAC remains M3's scope, not redesigned here.
+- **Race/failure analysis.** All 16 required scenarios analyzed with expected state, locking
+  strategy, audit expectation, retry behavior, and operator recovery path.
+- **Stage slicing.** 10-stage sequence produced
+  (66C.4-BE1/BE2/BE3/BE-R/DESIGN-conditional/FE/E2E/VP/POV/MD), each with owner, scope,
+  prerequisite, allowed/forbidden paths, artifacts, tests, stage gate, PO-authorization
+  requirement, deployment impact, and rollback condition -- zero deviation from the Step
+  66ALIGN.2-R1 ownership boundary.
+- **PO decision checklist.** 6 genuine product-behavior decisions isolated from purely-technical
+  choices (scheduler technology and DB index design were explicitly NOT listed as PO decisions).
+- **Verification.** New verifier + pytest cases PASS; `git diff --check` clean; `git status`
+  clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.** `docs/contracts/66c4-reminder-expiry-controlled-resume/` (13 files),
+  `docs/handoffs/66c4-reminder-expiry-controlled-resume/planning-handoff.md`,
+  `docs/test/step66c4-reminder-expiry-controlled-resume-planning-record.md`.
+- **Tests.** New `scripts/verify_step66c4_reminder_expiry_controlled_resume_planning.py` +
+  `tests/test_step66c4_reminder_expiry_controlled_resume_planning.py`.
+- **Branch.** `planning/66c4-reminder-expiry-controlled-resume` -- candidate planning branch,
+  unmerged, pending Product Owner review.
+- **Gate.** No backend/frontend runtime change. No API implementation change. No database schema
+  change. No migration created. No workflow change. No scheduler activated. No dispatch/resume
+  executed. No external notification. No production/external action. No deployment. Codex and
+  Claude Design remain unauthorized. Next authorized step: Product Owner review of the 6-item
+  decision checklist, then a separate authorization to begin Step 66C.4-BE1 if/when ready.
