@@ -99,8 +99,15 @@ Code's alignment-statement.md, adopted as canonical)
 5. All four Backup/DR gaps (encryption_no_key, storage_not_off_host, schedule_dry_run_only,
    migration_down_gaps) are closed with real, verified remediation.
 6. The Admin Console SPA deep-link/hard-refresh fallback gap is fixed.
-7. Team RBAC is a real, server-enforced product feature, matching the 6-role matrix already locked
-   in the 66A.3 blueprint.
+7. Team RBAC's production identity/session layer is hardened and verified — real identity provider
+   integration, authentication, session security, production role provisioning, and production
+   access review replace the test-only header simulation (the M6/M7-owned pieces per
+   `docs/decisions/66-team-rbac-milestone-ownership.md`). Team RBAC's product capability itself
+   (team/project roles, role permissions, task assignment permissions, team/project visibility,
+   operator controls, approval/retry/replay/recovery permissions, matching the 6-role matrix
+   already locked in the 66A.3 blueprint) is implemented and validated in M3, not deferred to M6 —
+   this condition is about production-hardening and verifying that already-built capability under
+   real production identity/session conditions, not about building it for the first time.
 8. Every external-send capability (Discord, Slack, Telegram, GitHub, LLM providers) has been
    explicitly, individually authorized for production use by the Product Owner.
 9. production_executed_true_count is expected and intended to become nonzero at M7, with a

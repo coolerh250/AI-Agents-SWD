@@ -15331,3 +15331,59 @@ no production/external action, no Codex authorization.
   alignment branch. No deployment. No Step 66C.4-P started. No FE.1D-S2 authorized. No
   production/external action. Next authorized step: Product Owner review per
   `product-owner-review-checklist.md`.
+
+## Stage 66ALIGN.2-R1 — Project Completion Master Plan Ownership Remediation
+
+**Status: PASS. Marker
+`STEP66ALIGN2_PROJECT_COMPLETION_MASTER_PLAN_REMEDIATION_VERIFY: PASS`.**
+
+- **Context.** Product Architect review of Step 66ALIGN.2-CONSOLIDATE's Master Plan
+  (`alignment/66-project-completion-master-plan` @ `00e82e3`) found ownership/decision-status
+  wording that must be corrected before Product Owner merge approval. Continued on the same
+  branch, no separate competing branch created.
+- **Correction A — Step 66C.4 ownership.** Found and corrected 5 locations (4 named by this
+  stage's prompt plus 1 related instance found by the same grep sweep) that implied Codex owned or
+  co-owned Step 66C.4's implementation. Corrected to: Claude Code is the primary implementation
+  owner (reminder scheduler, reminder/expiry state transitions, controlled resume, backend/API/DB/
+  workflow, audit/safety enforcement, notification event production, integration review, preview
+  deployment/runtime validation); Codex owns only explicitly authorized frontend Slice(s); Claude
+  Design participates only if new UX states require clarification. New canonical stage sequence
+  adopted: 66C.4-P -> 66C.4-BE -> 66C.4-BE-R -> 66C.4-FE -> 66C.4-VP -> 66C.4-POV -> 66C.4-MD.
+  Corrected in `project-completion-master-plan.md`, `role-ownership-matrix.md` (authority-matrix
+  row + new dedicated ownership section), `next-executable-stage-sequence.md` (Stage 2 fully
+  restructured), `canonical-milestone-manifest.md` (M1 owner roles), `critical-path-and-dependency-
+  map.md`, and `product-and-technical-gates.md` (Core loop gate).
+- **Correction B — Team RBAC milestone ownership.** Found the single drifted location
+  (`project-definition-of-done.md`'s nine-condition list item 7, a verbatim pre-decision quote from
+  Claude Code's own Step 66ALIGN.1-CC report) implying Team RBAC only becomes real at M6. Every
+  other document already stated the split correctly. Corrected to explicitly state: M3 implements
+  and validates the RBAC product capability (team/project roles, role permissions, task assignment
+  permissions, team/project visibility, operator controls, approval/retry/replay/recovery
+  permissions, server-side enforcement); M6/M7 production-harden and verify the identity/access
+  layer (identity provider integration, authentication, session security, production role
+  provisioning, production access review) around that already-built M3 capability -- not deferring
+  M3's implementation to M6.
+- **Correction C — FE.1D-S2 disposition.** Removed "FE.1D-S2 standalone timing" from both
+  "Remaining Product Owner decisions" lists (`cross-partner-resolution-record.md`,
+  `product-owner-review-checklist.md`). FE.1D-S2 remains UNAUTHORIZED/NON-CRITICAL with its
+  already-settled canonical functional absorption (M1/M2/M4/M6) -- not reframed as an open
+  decision requiring Product Owner resolution before merge.
+- **No other canonical content weakened.** Canonical milestone order (M0->M1->M2->M3->M4->M5->M6->
+  M7) unchanged; milestone statuses unchanged; `current-state-capability-matrix.md` and
+  `deferred-work-register.md` reviewed, required no changes.
+- **Verification.** Original Master Plan verifier + 19 pytest cases re-run and PASS (no
+  regression); new remediation verifier + 17 pytest cases PASS; `git diff --check` clean; `git
+  status` clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.**
+  `docs/alignment/66-project-completion/master/ownership-remediation-record.md`,
+  `docs/test/step66align2-project-completion-master-plan-remediation-record.md`.
+- **Tests.** New `scripts/verify_step66align2_project_completion_master_plan_remediation.py` +
+  `tests/test_step66align2_project_completion_master_plan_remediation.py`.
+- **Branch.** Continued on `alignment/66-project-completion-master-plan` -- still unmerged
+  pending Product Owner review.
+- **Gate.** No runtime/backend/API/DB/workflow change. No new endpoint/route. No merge of any
+  alignment branch. No Master Plan merge. No deployment. No Step 66C.4-P started. No FE.1D-S2
+  authorized. No production/external action. Next authorized step: Product Owner review per the
+  corrected `product-owner-review-checklist.md`.

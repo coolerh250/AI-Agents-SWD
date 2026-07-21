@@ -27,9 +27,12 @@ This is the most important standing finding carried into this Master Plan.
 ## Technical dependency map
 
 ```text
-66C.4-P (planning) -> 66C.4 (implementation)
-  -> the last M1 gap; backend-light (scheduler + existing clarification_expired transition);
-     frontend-light (real /clarification-reminders page). No dependency on 66D.
+66C.4-P (Claude Code planning) -> 66C.4-BE (Claude Code backend/workflow implementation) ->
+  66C.4-BE-R (Claude Code review) -> 66C.4-FE (Codex frontend slice, only if explicitly
+  authorized) -> 66C.4-VP/POV/MD (preview/PO validation/merge-deploy)
+  -> the last M1 gap; Claude Code is the primary implementation owner (scheduler + existing
+     clarification_expired transition are Claude-Code-owned backend/workflow work); Codex's role
+     is limited to the explicitly authorized frontend slice. No dependency on 66D.
 
 66C.4 -> 66D-ARCH (Delivery model/API contract)
   -> M2 cannot begin its UI design as pixel-final before the data model/API contract is decided.

@@ -117,9 +117,17 @@ Evidence required: PO validation record; verifier/test results; deployment recor
 Rollback/stop condition: any implied auto-dispatch/resume found in review halts the stage; any
   scheduler mechanism that turns out to require a new task-status value halts for a Claude Code
   architecture-direction correction before implementation continues.
-Owner roles: Claude Code (scheduler mechanism + contract); Claude Design (decision-request UX,
-  already defined); Codex (implementation, only after Claude Code's boundary + explicit PO
-  authorization); Product Owner (validation).
+Owner roles: Claude Code is the primary implementation owner of Step 66C.4 — the reminder
+  scheduler, reminder/expiry state transitions, controlled resume, any backend/API/DB/workflow
+  change, audit/safety enforcement, notification event production, integration review, and preview
+  deployment/runtime validation. Codex owns only the explicitly authorized frontend slice(s) —
+  user-visible reminder/expiry/waiting states and frontend interaction changes built against
+  Claude Code's frozen contract, plus frontend tests. Claude Design participates only if new UX
+  states or decision surfaces require design clarification (the core decision-request UX is
+  already defined). Product Owner validates and authorizes each stage
+  (66C.4-P/66C.4-BE/66C.4-FE/merge/deploy) separately. See
+  `docs/alignment/66-project-completion/master/ownership-remediation-record.md` for the full
+  correction record.
 Status: IN_PROGRESS — Step 66C.4 not started, is the immediate next critical-path item.
 ```
 

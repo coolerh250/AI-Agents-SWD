@@ -131,7 +131,9 @@ next-executable-stage-sequence.md)
 
 ```text
 1. Step 66C.4-P — Reminder / Expiry / Controlled Resume Planning (Claude Code)
-2. Step 66C.4 — Reminder / Expiry implementation lifecycle (Codex/Claude Code, full gate chain)
+2. Step 66C.4 — Reminder / Expiry implementation lifecycle (Claude Code primary owner —
+   backend/scheduler/workflow; Codex limited to an explicitly authorized frontend slice; see
+   role-ownership-matrix.md's "Step 66C.4 ownership" section, corrected in Step 66ALIGN.2-R1)
 3. Step 66D-ARCH — Delivery and Acceptance Data Model / API Contract Freeze (Claude Code)
 4. Step 66D-DESIGN — Delivery Inbox / Detail / Acceptance UX (Claude Design)
 5. Step 66D implementation slices (Codex/Claude Code, one bounded slice at a time)

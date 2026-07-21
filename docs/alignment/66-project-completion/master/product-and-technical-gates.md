@@ -13,8 +13,11 @@ validation checklists, and Codex's per-milestone test-strategy/risk entries.
 
 ```text
 Architecture Direction Gate: Claude Code confirms the reminder/expiry scheduler mechanism (poller
-  vs. Redis-Streams delayed message) before Codex implementation begins; confirms no new task-
-  status value is needed (clarification_expired already exists).
+  vs. Redis-Streams delayed message) before its own backend implementation begins; confirms no new
+  task-status value is needed (clarification_expired already exists). Claude Code is the primary
+  implementation owner of the scheduler/backend/workflow; Codex implements only the explicitly
+  authorized frontend slice, only after Claude Code's backend contract is frozen (see
+  role-ownership-matrix.md's "Step 66C.4 ownership" section, corrected in Step 66ALIGN.2-R1).
 Security/Governance Gate: any real agent-work trigger from the scheduler requires its own explicit
   workflow-dispatch-adjacent authorization; no external notification send without the same
   explicit-authorization pattern already used for Discord.

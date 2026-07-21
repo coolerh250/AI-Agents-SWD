@@ -54,13 +54,35 @@ confused with either of them.
 | Milestone activity | Design authority | Technical implementation owner | Review owner | PO validation owner | Merge authorization owner | Deployment authorization owner | Production approval owner |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | M0 reconciliation | — | Claude Code | Claude Code (self-certifies via context receipt) | N/A (housekeeping) | Product Owner | N/A | N/A |
-| M1 (66C.4) | Claude Design (decision-request UX) | Claude Code (scheduler contract) + Codex (implementation) | Claude Code | Product Owner | Product Owner | Product Owner | N/A |
+| M1 (66C.4) | Claude Design (decision-request UX, participates only if new UX states require clarification) | Claude Code (primary — scheduler, reminder/expiry transitions, controlled resume, backend/API/DB/workflow, audit/safety, notification production, integration review, preview deploy/runtime validation) + Codex (explicitly authorized frontend slice only) | Claude Code | Product Owner | Product Owner | Product Owner | N/A |
 | M2 (66D) | Claude Design (Delivery UX, gated on contract) | Claude Code (66D-ARCH contract) + Codex (implementation) | Claude Code | Product Owner | Product Owner | Product Owner | N/A |
 | M3 (66E, Team RBAC) | Claude Design (team visibility model) | Claude Code (RBAC/assignment contract) + Codex (implementation) | Claude Code | Product Owner | Product Owner | Product Owner | N/A |
 | M4 (66F/66G) | Claude Design (Action/Notification Center UX) | Claude Code (unified action-item contract, channel gateways) + Codex (implementation) | Claude Code | Product Owner | Product Owner | Product Owner | Product Owner (per-channel external-send) |
 | M5 (66H pilot) | Claude Design (guided checklist UX) | Claude Code (pilot safety architecture) + Codex (implementation) | Claude Code | Product Owner (multi-session) | Product Owner | Product Owner | N/A (non-production) |
 | M6 (production hardening) | Claude Design (readiness/trust UX) | Claude Code (real substrate, security hardening) + Codex (implementation) | Claude Code | Product Owner (named "production" authorization) | Product Owner | Product Owner | Product Owner (first-ever) |
 | M7 (rollout/adoption) | Claude Design (onboarding/trust UX) | Claude Code (rollout architecture) + Codex (implementation) | Claude Code | Product Owner (final go-live) | Product Owner | Product Owner | Product Owner (sole, per cross-cutting rule) |
+
+## Step 66C.4 ownership (canonical, corrected in Step 66ALIGN.2-R1)
+
+```text
+Claude Code owns: the reminder scheduler, reminder and expiry state transitions, controlled
+  resume, any backend/API/DB/workflow change, audit and safety enforcement, notification event
+  production, integration review, and preview deployment/runtime validation. Claude Code is the
+  primary implementation owner of Step 66C.4 as a whole.
+
+Codex owns only: explicitly authorized frontend slice(s), user-visible reminder/expiry/waiting
+  states, frontend interaction changes built against Claude Code's frozen contract, and frontend
+  tests. Codex does not own or implement Step 66C.4's backend/scheduler/workflow behavior.
+
+Claude Design participates only if new UX states or decision surfaces require design
+  clarification beyond what core-loop-experience-definition.md already defines.
+
+Canonical stage sequence (exact future stage names may be refined during 66C.4-P, but this
+  ownership boundary is binding): 66C.4-P (Claude Code planning) -> 66C.4-BE (Claude Code backend/
+  workflow implementation) -> 66C.4-BE-R (Claude Code technical review/gate) -> 66C.4-FE (Codex
+  frontend slice, only if explicitly authorized) -> 66C.4-VP (test-runtime preview) -> 66C.4-POV
+  (Product Owner validation) -> 66C.4-MD (merge/deploy merged main).
+```
 
 ## Team RBAC milestone ownership (canonical, per docs/decisions/66-team-rbac-milestone-ownership.md)
 

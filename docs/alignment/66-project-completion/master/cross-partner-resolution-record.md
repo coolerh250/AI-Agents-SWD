@@ -117,13 +117,18 @@ product-owner-review-checklist.md)
 ```text
 1. Whether to authorize Step 66C.4-P as the next stage (this Master Plan's own recommendation, not
    an authorization).
-2. Whether to authorize FE.1D-S2 standalone despite it not being on the critical path (e.g. for a
-   stakeholder demo) — a valid product call this Master Plan does not override.
-3. Disposition of the three alignment branches themselves (see §"Alignment branch disposition
+2. Disposition of the three alignment branches themselves (see §"Alignment branch disposition
    recommendation" in the Master Plan's own top-level document).
-4. Manual closure of Draft PR #12 (FE.1D design), PR #14 (Claude Design alignment), and PR #15
+3. Manual closure of Draft PR #12 (FE.1D design), PR #14 (Claude Design alignment), and PR #15
    (Codex alignment) via GitHub UI — this environment has no `gh`/token to do so programmatically.
 ```
+
+FE.1D-S2 standalone timing is **not** listed as an unresolved decision (corrected in Step
+66ALIGN.2-R1): FE.1D-S2's status and disposition are already settled —
+UNAUTHORIZED / NON-CRITICAL, with the canonical functional absorption (M1/M2/M4/M6) as the default
+path. A future, separate Product Owner request to run it standalone remains always possible (any
+milestone's scope can be revisited by the Product Owner at any time), but it is not a decision this
+Master Plan leaves open or requires resolving before merge.
 
 ## Stale assumptions found
 

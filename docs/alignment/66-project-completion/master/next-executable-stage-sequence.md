@@ -19,19 +19,32 @@ PO decision required: none to plan; Product Owner authorization required before 
 Runtime impact: none (planning/documentation only).
 ```
 
-## Stage 2 — Step 66C.4: Reminder / Expiry Implementation + Review + Deploy + Validation
+## Stage 2 — Step 66C.4: Reminder / Expiry Implementation Lifecycle
+
+Corrected per Step 66ALIGN.2-R1 (see `ownership-remediation-record.md`): Step 66C.4 is a
+Claude-Code-primary-owned backend/workflow stage, not a Codex-owned implementation stage. Its own
+future sub-stage names may be refined during 66C.4-P, but the ownership boundary below is binding.
 
 ```text
-Owner: Codex (implementation), Claude Code (review/deploy).
+Owner: Claude Code (primary implementation owner — scheduler, reminder/expiry state transitions,
+  controlled resume, backend/API/DB/workflow, audit/safety enforcement, notification event
+  production, integration review, preview deployment/runtime validation); Codex (only the
+  explicitly authorized frontend slice); Claude Design (only if new UX states require
+  clarification).
 Prerequisite: Stage 1 complete; explicit Product Owner authorization to implement.
-Expected artifact: full Codex-implements / Claude-Code-reviews / preview-deploy / Product-Owner-
-  validates / merge chain, exactly matching the FE.1C.1/FE.1D-S1 pattern already proven in this
-  project.
-Stage gate: Implementation Efficiency Gate, Security/Governance Gate, Product Owner Validation
-  Gate, Merge Gate, Deployment Gate, Post-deployment Review Gate — all as previously exercised.
-PO decision required: implementation authorization (start), merge authorization, deployment
-  authorization — three separate, scoped authorizations, per this project's established pattern.
-Runtime impact: test-runtime frontend + a scheduler mechanism (backend-light); completes M1.
+Expected artifact (canonical sub-stage sequence):
+  66C.4-BE (Claude Code backend/workflow implementation) -> 66C.4-BE-R (Claude Code technical
+  review/gate) -> 66C.4-FE (Codex frontend slice, only if explicitly authorized) -> 66C.4-VP
+  (test-runtime preview) -> 66C.4-POV (Product Owner validation) -> 66C.4-MD (merge/deploy merged
+  main).
+Stage gate: Architecture Direction Gate, Implementation Efficiency Gate, Security/Governance Gate,
+  Product Owner Validation Gate, Merge Gate, Deployment Gate, Post-deployment Review Gate — all as
+  previously exercised for backend-owned stages in this project.
+PO decision required: backend implementation authorization (start), frontend-slice implementation
+  authorization (if/when Codex work is needed), merge authorization, deployment authorization —
+  separate, scoped authorizations, per this project's established pattern.
+Runtime impact: test-runtime backend (scheduler mechanism) + test-runtime frontend (only the
+  authorized slice); completes M1.
 ```
 
 ## Stage 3 — Step 66D-ARCH: Delivery and Acceptance Data Model / API Contract Freeze
