@@ -1,0 +1,87 @@
+stage: "66ALIGN.2-CONSOLIDATE"
+owner: "Claude Code"
+task_type: "project-plan-consolidation"
+status: "ready-for-product-owner-review"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "211f96f"
+  runtime_code_commit_reviewed: "513f190"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/process/role-responsibility-matrix.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/decisions/66-team-rbac-milestone-ownership.md
+    - docs/reconciliation/66m0-fe1d-sot/source-of-truth-closure-record.md
+    - docs/reconciliation/66m0-fe1d-sot/merge-execution-record.md
+    - docs/test/step66m0-fe1d-sot-reconciliation-merge-record.md
+  related_branches:
+    - "alignment/66-project-completion-claude-code @ 6d8b56f -- advisory input, NOT merged"
+    - "design/66-project-completion-experience-alignment @ 8c22c4d (Draft PR #14) -- advisory input, NOT merged"
+    - "alignment/66-project-completion-codex @ d109a71 (Draft PR #15) -- advisory input, NOT merged"
+
+allowed_paths:
+  - "docs/alignment/66-project-completion/master/**"
+  - "docs/test/step66align2-project-completion-master-plan-record.md"
+  - "docs/stages/66align2-project-completion-master-plan/**"
+  - "source/progress.md"
+  - "scripts/verify_step66align2_project_completion_master_plan.py"
+  - "tests/test_step66align2_project_completion_master_plan.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+  - "docs/alignment/66-project-completion/claude-code/**"
+  - "docs/alignment/66-project-completion/claude-design/**"
+  - "docs/alignment/66-project-completion/codex/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+deployment_allowed: false
+alignment_branch_merge_allowed: false
+fe1d_slice2_authorized: false
+step66c4p_started: false
+product_owner_validation_required: true
+merge_authorization_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
+  - alignment_branch_merge_attempted
+  - fe1d_slice2_authorization_attempted
+  - step66c4p_start_attempted
