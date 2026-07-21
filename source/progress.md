@@ -14898,6 +14898,63 @@ no production/external action, no Codex authorization.
   readiness review of the FE.1D design, then Product Owner decision. Not a merge/deploy. Merged to
   `main` in Step 66M0-SOT-RECONCILE-M (see that stage's entry below for merge commit and disposition).
 
+## Stage 66UI.4-FE.1D-TECH-REVIEW — Technical Readiness Review for Navigation Polish + Microcopy
+
+**Status: PASS_WITH_GAPS. Marker `STEP66UI4_FE1D_TECHNICAL_READINESS_VERIFY: PASS`.**
+
+- **Context.** Product Owner agreed FE.1D proceeds in three stages: Claude Design produces the
+  design (complete, PASS), Claude Code performs this technical readiness review, then the Product
+  Owner considers Codex implementation authorization. Review-only stage -- no runtime code, no
+  merge, no deployment, no Codex authorization.
+- **Reviewed.** Design branch `design/66ui4-fe1d-navigation-microcopy`, commit `43269c5`, Draft
+  PR #12, based directly on `main` @ `707cb8c`. Design marker
+  `DESIGN66UI4_FE1D_NAVIGATION_MICROCOPY_VERIFY: PASS` independently re-verified in a disposable
+  worktree (verifier PASS, 7 pytest cases passed), not trusting Claude Design's own report.
+- **Design-only scope confirmed.** Diff touches only `docs/design/66ui4-fe1d-navigation-microcopy/**`,
+  `docs/stages/66ui4-fe1d-navigation-microcopy-design/**`, its own verifier/test, and
+  `source/progress.md` -- zero `apps/**`/backend/infra/workflow paths touched.
+- **Frontend-only feasibility classification.** All 14 required review areas classified (A-E) against
+  the actual current source (`Nav.tsx`, `App.tsx`, `PlaceholderPanel.tsx`, `ExecutiveOverview.tsx`,
+  `TaskList.tsx`, `taskTypes.ts`, `CalmSafetyPosture.tsx`, `TaskDetail.tsx`, `TaskWorkroom.tsx`,
+  `AuditEvidence.tsx`, `DemoEvidence.tsx`, `EvidenceTable.tsx`) read directly, not assumed from the
+  design docs' own description.
+- **Corrections found.** (1) `microcopy-guide.md`'s "missing entries to add" list for the shared
+  status-label map references four enum values that do not exist in the authoritative
+  `TASK_STATUSES` (`aborted`, `completed`, `devops`, `requirement_analysis`) and omits five real ones
+  (`submitted`, `failed`, `accepted`, `rejected`, `archived`) -- corrected 8-entry list recorded
+  (`draft`, `submitted`, `blocked`, `failed`, `accepted`, `rejected`, `archived`, `canceled`).
+  (2) Raw-ID/hash page scope is narrower than implied: `TaskDetail.tsx` confirmed in scope; a raw
+  `body_hash` in `TaskWorkroom.tsx` and ~8 Platform Ops/Audit/Demo-Evidence pages' raw column headers
+  are real but not enumerated by any FE.1D design doc -- recommended deferred to a later,
+  separately-designed slice.
+- **Open Product Owner decisions.** Two genuinely require PO input before their slices proceed:
+  "New task" vs "Create task" (current source shows neither is yet established as product tone), and
+  the `delivery_package_ready_for_admin_console` -> "Ready to publish" rename meaning. Three other
+  items resolved by the stage's own default rules (Platform Ops subtitles: allow; Notifications
+  "Planned" wording: allow; `dispatch_enabled` label conflict: confirmed already correctly resolved
+  as "Workflow dispatch" in the design docs).
+- **Recommended slicing.** Option C (more granular): Slice 1 Nav.tsx only; Slice 2 shared status-label
+  module + TaskList/Overview microcopy; Slice 3 TaskDetail relabel + disclosure; Slice 4
+  placeholder/empty-state consistency + safety wording cosmetic polish. Platform Ops visual
+  sub-headers and the wider raw-ID/hash page surface deferred out of this authorization round.
+- **Forbidden items confirmed excluded.** No new routes/endpoints, no backend/API/DB/workflow change,
+  no SPA deep-link fallback fix, no two-way URL sync, no real Delivery/Reminder/Notifications/
+  Pipeline functionality, no safety logic change, no RBAC change, no new task status model, no
+  production/external action.
+- **Local Artifact Reconciliation.** All matches found are the design verifier's own regex checking
+  FOR forbidden strings, or prior-stage documentation describing checks performed -- not real leaked
+  paths. No blocking gap.
+- **Output docs.**
+  `docs/design/66ui4-fe1d-navigation-microcopy/claude-code-technical-readiness-review.md`,
+  `docs/test/step66ui4-fe1d-technical-readiness-review-record.md`.
+- **Tests.** New `scripts/verify_step66ui4_fe1d_technical_readiness.py` +
+  `tests/test_step66ui4_fe1d_technical_readiness.py`.
+- **Gate.** PR #12 not merged. Codex remains unauthorized. FE.1D implementation remains unauthorized.
+  No backend/API/database/workflow change. No new endpoint. No production/external action. SPA
+  deep-link fallback remains excluded and separately tracked. Next authorized step: Product Owner
+  review of this readiness verdict and the two flagged open decisions, then a decision on Codex
+  authorization. Merged to `main` in Step 66M0-SOT-RECONCILE-M (see that stage's entry below).
+
 ## Stage 66UI.4-FE.1D-S1 -- Navigation Polish
 
 **Status: implementation-ready-for-review. Marker
