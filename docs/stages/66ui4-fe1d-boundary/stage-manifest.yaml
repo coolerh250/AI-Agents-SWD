@@ -1,0 +1,84 @@
+stage: "66UI.4-FE.1D-BOUNDARY"
+owner: "Claude Code"
+task_type: "implementation-boundary"
+status: "ready-for-product-owner-codex-authorization-decision"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "707cb8c"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/design/66ui-source-of-truth-record.md
+    - docs/frontend/admin-console-spa-deep-link-fallback-known-gap.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/design-brief.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/navigation-polish-spec.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/microcopy-guide.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/field-label-cleanup-map.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/engineering-field-exposure-reduction.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/platform-ops-density-spec.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/product-owner-review-checklist.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/codex-implementation-notes.md
+    - docs/design/66ui4-fe1d-navigation-microcopy/claude-code-technical-readiness-review.md
+    - docs/test/step66ui4-fe1d-technical-readiness-review-record.md
+  related_prs:
+    - "PR #12 (Draft, design/66ui4-fe1d-navigation-microcopy, commit 43269c5) -- not merged"
+    - "review/66ui4-fe1d-technical-readiness (commit 25309ea) -- not merged"
+    - "FE.1A / FE.1B / FE.1B.1 / FE.1C / FE.1C.1 merged + deployed"
+
+allowed_paths:
+  - "docs/contracts/66ui4-fe1d-navigation-microcopy/**"
+  - "docs/test/step66ui4-fe1d-boundary-consolidation-record.md"
+  - "docs/stages/66ui4-fe1d-boundary/**"
+  - "source/progress.md"
+  - "scripts/verify_step66ui4_fe1d_boundary.py"
+  - "tests/test_step66ui4_fe1d_boundary.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+  - .agents/skills/design-collaboration/SKILL.md
+  - .agents/skills/frontend-implementation/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+frontend_only: false
+backend_allowed: false
+api_change_allowed: false
+database_change_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+codex_authorized: false
+merge_authorization_required: true
+deployment_authorization_required: true
+product_owner_validation_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
