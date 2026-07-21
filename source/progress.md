@@ -15266,3 +15266,68 @@ no production/external action, no Codex authorization.
   alignment branches remain unmerged. No runtime/backend/API/DB/workflow change. No new endpoint.
   No new route. No deployment. No production/external action. No Step 66C.4-P started. FE.1D
   source-of-truth gap is now closed.
+
+## Stage 66ALIGN.2-CONSOLIDATE — Project Completion Master Plan Consolidation
+
+**Status: PASS (candidate, ready-for-product-owner-review). Marker
+`STEP66ALIGN2_PROJECT_COMPLETION_MASTER_PLAN_VERIFY: PASS`.**
+
+- **Authorization/scope.** Consolidate the three unmerged Step 66ALIGN.1 advisory reports (Claude
+  Code `alignment/66-project-completion-claude-code` @ `6d8b56f`; Claude Design
+  `design/66-project-completion-experience-alignment` @ `8c22c4d`, Draft PR #14; Codex
+  `alignment/66-project-completion-codex` @ `d109a71`, Draft PR #15) plus main's already-approved
+  M0 closure and Team RBAC decision into a single Product-Owner-reviewable
+  `AI Agent Team Work -- Project Completion Master Plan`. Analysis/integration/documentation only
+  -- no runtime/backend/API/DB/workflow change, no new endpoint/route, no merge of any alignment
+  branch, no deployment, no Step 66C.4-P start, no FE.1D-S2 authorization, no production/external
+  action.
+- **Shared context.** Latest main `211f96f`; runtime code commit `513f190` (distinguished, no
+  drift). Read all three alignment branches' full 24 documents via `git show` (not present on
+  main). Read M0 closure records, Team RBAC decision, all required skills/process docs. No
+  conflict found; all three reports verified fresh, zero drift since Step
+  66M0-SOT-RECONCILE-P v2's freshness assessment.
+- **Cross-partner consolidation.** 12 unanimous consensus principles adopted verbatim (pause
+  cosmetic work; FE.1D-S2 non-critical; 66C.4 next; 66D contract before UI; no fake Delivery
+  Inbox/Action Center/notifications/orchestration controls; M3 agent activity read-only until its
+  control contract exists; M6 substrate cannot be claimed complete via past dry-run evidence;
+  Product Owner is acceptance authority; main is sole source of truth). 2 minor differences
+  resolved (FE.1D-S2 canonical absorption map across M1/M2/M4/M6; M1 scope narrowed to exclude
+  full team orchestration/RBAC, owned by M3). Team RBAC milestone ownership confirmed already
+  settled (not reopened). 0 contradictions, 0 stale assumptions found.
+- **Canonical milestones.** M0-M7 manifest produced with all 15 required fields per milestone
+  (purpose, entry/exit criteria, in/out-of-scope, architecture/API/UX/frontend dependencies,
+  security/governance requirements, test requirements, PO validation checkpoint, evidence required,
+  rollback/stop condition, owner roles). Status: M0 CLOSED; M1 IN_PROGRESS (Step 66C.4 next);
+  M2-M7 NOT_STARTED. Critical path unchanged: M0->M1->M2->M3->M4->M5->M6->M7.
+- **Definition of Done.** 14 measurable proof-points plus Claude Code's 9-point concrete
+  production-ready definition adopted verbatim as the Master Plan's own M6-exit standard.
+- **Next executable sequence.** Step 66C.4-P -> Step 66C.4 -> Step 66D-ARCH -> Step 66D-DESIGN ->
+  Step 66D implementation slices, each with owner/prerequisite/artifact/gate/PO-decision/runtime-
+  impact specified. None of these five stages started by this stage.
+- **Deferred work register.** 17 items recorded with owner milestone, status, reason deferred,
+  activation trigger, and risk if ignored (FE.1D-S2 residual, body_hash relabel, broad evidence
+  relabel, SPA deep-link fallback, two-way URL sync, audit HMAC rotation, audit direct-POST gap,
+  DLQ Admin Console surface, 4 Backup/DR gaps, production secret backend, public-repo exposure
+  review, K8s/Helm substrate, ArgoCD production sync, SLO/capacity/on-call readiness).
+- **Alignment branch protection.** All three alignment branches confirmed unmerged, tips
+  unchanged, at both the start and end of this stage. Recommended disposition for all three:
+  `CLOSE_AS_SUPERSEDED_AFTER_MASTER_PLAN_MERGE` (content fully re-synthesized, not merged/
+  cherry-picked), timing conditional on this Master Plan itself being reviewed/merged first.
+- **Verification.** New verifier + 19 pytest cases PASS; `git diff --check` clean; `git status`
+  clean; secret scan critical=0/high=0/informational=100 (unchanged baseline).
+- **Local Artifact Reconciliation.** All matches found are prior-stage documentation describing
+  checks performed, not real leaked paths. No blocking gap.
+- **Output docs.** `docs/alignment/66-project-completion/master/` (11 files: project-completion-
+  master-plan.md, canonical-milestone-manifest.md, current-state-capability-matrix.md,
+  critical-path-and-dependency-map.md, role-ownership-matrix.md, product-and-technical-gates.md,
+  project-definition-of-done.md, deferred-work-register.md, next-executable-stage-sequence.md,
+  cross-partner-resolution-record.md, product-owner-review-checklist.md),
+  `docs/test/step66align2-project-completion-master-plan-record.md`.
+- **Tests.** New `scripts/verify_step66align2_project_completion_master_plan.py` +
+  `tests/test_step66align2_project_completion_master_plan.py`.
+- **Branch.** `alignment/66-project-completion-master-plan` -- candidate Master Plan branch,
+  itself unmerged pending Product Owner review.
+- **Gate.** No runtime/backend/API/DB/workflow change. No new endpoint/route. No merge of any
+  alignment branch. No deployment. No Step 66C.4-P started. No FE.1D-S2 authorized. No
+  production/external action. Next authorized step: Product Owner review per
+  `product-owner-review-checklist.md`.
