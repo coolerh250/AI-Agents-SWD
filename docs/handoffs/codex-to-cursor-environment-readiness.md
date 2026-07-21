@@ -26,6 +26,27 @@ Current gaps are environmental:
 - Vite/Vitest can fail under restricted filesystem sandbox permissions even when the same commands
   pass in a normal developer shell.
 
+## Adopted Workflow
+
+The project adopts the Cursor WSL + Codex GitHub collaboration model documented in
+`docs/process/cursor-wsl-codex-collaboration-workflow.md`.
+
+Operational decision:
+
+```text
+Cursor uses local Ubuntu-24.04 WSL for daily development and Linux-local verification.
+Codex does not directly attach to Cursor's WSL distro.
+Codex collaborates through GitHub branches, shared repo docs, reviews, and non-WSL checks.
+Remote shared test runtime is used for PR-level integration verification.
+```
+
+Rationale:
+
+- Cursor can use the local WSL environment.
+- Codex currently runs in a sandbox user/context that cannot see the same WSL distro.
+- Keeping Codex out of the shared WSL avoids collisions in Git state, dependencies, ports, Docker
+  containers, and generated files.
+
 ## Source of Truth
 
 Cursor should begin from the GitHub source of truth, not from local Codex scratch state.
