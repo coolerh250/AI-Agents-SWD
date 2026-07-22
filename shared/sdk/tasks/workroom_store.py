@@ -130,16 +130,23 @@ class WorkroomStore:
             await conn.close()
 
     async def claim_clarification_answer(self, clarification_id: str) -> dict[str, Any] | None:
-        """Step 66C.3 (G5) -- atomically transition open -> answered.
+        """Step 66C.3 (G5) + Step 66C.4-BE1 -- atomically transition open -> answered,
+        with the authoritative expiry deadline enforced by the same CAS.
 
-        The WHERE clause (`AND status='open'`) is what makes this race-safe:
-        concurrent answer attempts on the same clarification will only ever
-        have exactly one UPDATE match a row (Postgres row-level locking serializes
-        the two UPDATEs). The loser gets `None` back and must not create an
-        answer message or emit a `clarification_answered` audit event -- see
-        `answer_clarification` in workroom_api.py, which calls this BEFORE
-        creating the answer message specifically so a lost race never has a
-        message/audit side effect.
+        The WHERE clause is what makes this race-safe: concurrent answer attempts on the
+        same clarification will only ever have exactly one UPDATE match a row (Postgres
+        row-level locking serializes the two UPDATEs). The loser gets `None` back and must
+        not create an answer message or emit a `clarification_answered` audit event -- see
+        `answer_clarification` in workroom_api.py, which calls this BEFORE creating the
+        answer message so a lost race never has a message/audit side effect.
+
+        Step 66C.4-BE1 adds the authoritative-deadline predicate `due_at > now()`
+        (PostgreSQL database time, evaluated in the same statement -- never a Python clock):
+        due_at is an EXCLUSIVE upper bound, so an answer submitted at or after due_at matches
+        zero rows and returns None, EVEN WHEN status is still 'open' (i.e. before the future
+        timeout worker has materialized 'expired'). Scheduler lag therefore cannot extend the
+        answer window (canonical lifecycle-and-time-contract.md 7.3A). This claim writes NO
+        outbox row and triggers NO scheduler/event/notification on either success or failure.
         """
         conn = await self._connect()
         try:
@@ -147,7 +154,7 @@ class WorkroomStore:
                 """
                 UPDATE operator_clarification_requests
                 SET status='answered', answered_at=now(), updated_at=now()
-                WHERE id=$1 AND status='open'
+                WHERE id=$1 AND status='open' AND answered_at IS NULL AND due_at > now()
                 RETURNING *
                 """,
                 uuid.UUID(clarification_id),
@@ -192,7 +199,19 @@ class WorkroomStore:
         for key in ("id", "task_id", "question_message_id", "answer_message_id"):
             if d.get(key) is not None:
                 d[key] = str(d[key])
-        for key in ("due_at", "reminder_at", "answered_at", "created_at", "updated_at"):
+        for key in (
+            "due_at",
+            "reminder_at",
+            "answered_at",
+            "created_at",
+            "updated_at",
+            # Step 66C.4-BE1 additive lifecycle timestamps (nullable; NULL until reached).
+            "reminder_sent_at",
+            "expired_at",
+            "resume_eligible_at",
+            "resume_requested_at",
+            "resume_authorized_at",
+        ):
             if d.get(key) is not None:
                 d[key] = d[key].isoformat()
         return d

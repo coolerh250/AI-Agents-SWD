@@ -1,0 +1,75 @@
+stage: "66C.4-BE1"
+owner: "Claude Code"
+task_type: "backend-foundation-implementation"
+status: "implementation-complete-pending-independent-review"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "e03c22d"
+  runtime_code_commit_reviewed: "513f190"
+  feature_branch: "feature/66c4-be1-lifecycle-outbox-foundation"
+  canonical_contract: "docs/contracts/66c4-reminder-expiry-controlled-resume/"
+  product_decisions: "docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md"
+  be1_runtime_compatibility_gate: "contract-source-of-truth-record.md"
+
+allowed_paths:
+  - "migrations/031_clarification_lifecycle_outbox_foundation.sql"
+  - "migrations/031_clarification_lifecycle_outbox_foundation_down.sql"
+  - "shared/sdk/tasks/**"
+  - "apps/orchestrator/src/workroom_api.py"
+  - "tests/test_step66c4_be1_data_model_deadline_outbox.py"
+  - "scripts/verify_step66c4_be1_data_model_deadline_outbox.py"
+  - "docs/contracts/66c4-reminder-expiry-controlled-resume/**"
+  - "docs/handoffs/66c4-reminder-expiry-controlled-resume/**"
+  - "docs/test/**"
+  - "docs/stages/**"
+  - "source/progress.md"
+forbidden_paths:
+  - "apps/retry-scheduler/**"
+  - "apps/communication-gateway/**"
+  - "shared/sdk/audit/**"
+  - "shared/sdk/event_bus/**"
+  - "infra/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+
+backend_implementation_allowed: true
+frontend_implementation_allowed: false
+api_change_allowed: "existing-answer-deadline-predicate-only"
+database_change_allowed: true
+migration_allowed: true
+workflow_change_allowed: false
+scheduler_implementation_allowed: false
+scheduler_activation_allowed: false
+outbox_relay_implementation_allowed: false
+outbox_relay_activation_allowed: false
+existing_producer_cutover_allowed: false
+resume_implementation_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+deployment_allowed: false
+external_notification_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+codex_authorized: false
+claude_design_authorized: false
+independent_review_required: true
+merge_allowed: false
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+  isolated_ephemeral_test_db_only: true
+
+stop_conditions:
+  - existing_producer_writes_to_outbox
+  - scheduler_or_relay_implemented_or_activated
+  - resume_endpoint_or_workflow_resume_added
+  - existing_audit_event_transport_changed
+  - shared_runtime_migration_or_deployment
+  - api_behavior_changed_beyond_deadline_409
+  - destructive_migration_or_rollback_failure
+  - codex_or_claude_design_authorized
+  - forbidden_path_changed

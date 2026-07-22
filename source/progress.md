@@ -15623,3 +15623,42 @@ no production/external action, no Codex authorization.
   Design remain unauthorized. Step 66C.4-BE1 remains NOT STARTED / NOT AUTHORIZED. Next authorized
   step: a separate, explicit Product Owner authorization to begin Step 66C.4-BE1 (bound by the BE1
   Runtime Compatibility Gate) if/when ready.
+
+## Stage 66C.4-BE1 — Data Model, Deadline CAS and Disabled Transactional Outbox Foundation
+
+**Status: PASS (implementation-complete-pending-independent-review). Marker
+`STEP66C4_BE1_DATA_MODEL_DEADLINE_OUTBOX_VERIFY: PASS`.**
+
+- **Authorization.** Product Owner authorized Step 66C.4-BE1 (data model, deadline CAS, disabled
+  outbox foundation only). Branch `feature/66c4-be1-lifecycle-outbox-foundation` off `e03c22d`.
+- **Migration `031`** (+ `_down`): six additive NULLABLE lifecycle columns on
+  `operator_clarification_requests` (`reminder_sent_at`, `expired_at`, `resume_eligible_at`,
+  `resume_requested_at`, `resume_requested_by`, `resume_authorized_at`); new
+  `clarification_lifecycle_outbox` table (exactly the canonical contract columns); partial indexes
+  + UNIQUE(idempotency_key) + status/attempts/nonempty/lifecycle-ordering CHECKs. Additive,
+  idempotent, tested up/down/reapply. No `resume_dispatched_at`/`resume_authorized_by`/`lock_version`.
+- **Deadline CAS.** `claim_clarification_answer` gains `AND answered_at IS NULL AND due_at > now()`
+  (PostgreSQL DB time; `due_at` exclusive upper bound). A past-deadline answer fails the claim even
+  while status is still `open` (scheduler lag cannot extend the window). The API re-reads
+  authoritative state and returns 409 `invalid_state_for_answer:expired` (reusing existing shapes;
+  no new endpoint, no success-schema change). `clarification_expired` is NOT materialized in BE1.
+- **Disabled outbox foundation.** New `shared/sdk/tasks/lifecycle_outbox.py`: transaction-aware
+  insert (caller-owned txn; never commits), payload-safety guard (rejects raw/sensitive keys +
+  oversize), event-type allowlist, read-only helpers. No relay, no scheduler, no live producer;
+  existing audit/event transport unchanged; no unconsumed accumulation (statically verified).
+- **Tests.** 15 BE1 tests pass (10 DB-less/API + 5 real-Postgres integration incl. concurrency
+  exactly-one-wins and outbox transaction atomicity/idempotency), executed against an isolated
+  ephemeral Postgres 16 container (no shared runtime migrated). Step 66C regression: 101 passed;
+  broad affected-area run: 637 passed, 15 skipped, 0 failed. Ruff/black/mypy clean; secret scan
+  unchanged.
+- **Contract-refinement note (forward).** The outbox implements exactly the canonical contract
+  columns; BE2's relay will likely need durable-retry fields (`available_at`/`dead_at`/`last_error`)
+  not in the contract. Per "do not self-expand beyond contract", these are flagged for 66C.4-BE1-R /
+  a contract refinement before BE2 — not added by BE1. Non-blocking (no relay exists).
+- **Gate.** No frontend change. Backend change within scope (schema + CAS predicate + disabled
+  outbox). API change limited to the authorized deadline 409. No workflow change. No scheduler
+  implemented/activated. No outbox relay implemented/activated. No existing producer switched. No
+  resume/dispatch/resume behavior. No external notification. No shared-runtime deployment.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
+  NOT STARTED. Not merged, not deployed. Next authorized step: **Step 66C.4-BE1-R** (independent
+  Technical, Security and Migration Review).
