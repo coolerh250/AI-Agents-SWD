@@ -16,39 +16,109 @@ operator_clarification_requests.status         -- 'open'|'answered'|'expired'|'c
 operator_tasks.status                          -- clarification_expired already a valid enum value
 ```
 
-## Proposed new fields
+## Proposed new lifecycle columns — reconciled inventory
 
-| Field | Table | Type | Nullable | Purpose |
-| --- | --- | --- | --- | --- |
-| `reminder_sent_at` | `operator_clarification_requests` | TIMESTAMPTZ | yes (NULL until sent) | makes the reminder-claim idempotent (see below); also the audit/observability source for "was a reminder ever sent for this clarification" |
-| `expired_at` | `operator_clarification_requests` | TIMESTAMPTZ | yes (NULL until expired) | the moment the expiry transition actually fired (distinct from `due_at`, which is the deadline, not the actual-firing time — needed for accurate audit/observability, and to distinguish "on-time" vs. "late" scheduler execution) |
-| `resume_eligible_at` | `operator_clarification_requests` | TIMESTAMPTZ | yes (NULL until eligible) | set the moment an answer is recorded (i.e., at the same instant as `answered_at` — could theoretically be derived from `answered_at` alone, proposed as a distinct column only if Option A resume model is chosen; see controlled-resume-contract.md) |
-| `resume_requested_at` / `resume_requested_by` | `operator_clarification_requests` | TIMESTAMPTZ / TEXT | yes | only needed under the Explicit Operator-Controlled Resume model (Option A) — records who asked for resume and when |
-| `resume_authorized_at` | `operator_clarification_requests` | TIMESTAMPTZ | yes | records when a resume request passed its policy/safety check — needed under both Option A and Option B |
-| `resume_dispatched_at` | `operator_clarification_requests` | TIMESTAMPTZ | yes | records when the (future, not-yet-built) resume dispatch actually occurred — the final state in the lifecycle chain |
+> **Corrected in Step 66C.4-P-R1.** The original draft's prose said "six proposed fields" while the
+> table listed seven distinct columns (the `resume_requested_at` / `resume_requested_by` row plus a
+> `resume_dispatched_at` row). This section restates the inventory so the column count is internally
+> consistent. The reconciled decision is **exactly six new lifecycle columns** on
+> `operator_clarification_requests`, plus **one new durable outbox table** (see the next section).
+> `resume_dispatched_at` is **removed** from the proposed lifecycle columns. Dispatch and
+> workflow-resumed confirmation ARE planned for 66C.4-BE3 (built gated/disabled-by-default; see
+> controlled-resume-contract.md and implementation-stage-slicing-plan.md), but per the
+> minimal-columns principle they are represented by **durable outbox/audit evidence** (the resume
+> event and confirmation event), not by new columns on `operator_clarification_requests`. The
+> task's own status is the source of truth for "resumed." No `resume_dispatched_at` /
+> `resume_dispatch_event_id` / `resumed_at` column is created by this stage's migration.
 
-## Fields explicitly NOT proposed
+The reconciled per-field decisions (required/optional/remove · column-or-audit-only · type ·
+nullability · actor/reference semantics · index/constraint · lifecycle owner · rollback):
+
+| # | Field | Decision | Storage | Type | Nullable | Actor / reference semantics | Index / constraint | Lifecycle owner (writer) | Rollback |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 1 | `reminder_sent_at` | required | DB column | TIMESTAMPTZ | yes (NULL until sent) | no actor ref — set by the timeout worker's reminder-claim | covered by partial index (status, reminder_at) WHERE status='open' AND reminder_sent_at IS NULL | clarification-timeout worker (Claude Code) | DROP COLUMN, no data-loss |
+| 2 | `expired_at` | required | DB column | TIMESTAMPTZ | yes (NULL until expired) | no actor ref — the moment the expiry transition actually fired (distinct from `due_at`, the deadline) | covered by partial index (status, due_at) WHERE status='open' | clarification-timeout worker (Claude Code) | DROP COLUMN, no data-loss |
+| 3 | `resume_eligible_at` | required (Option A) | DB column | TIMESTAMPTZ | yes (NULL until eligible) | no actor ref — set in the same transaction as the answer-claim IF the task is non-terminal; **not derivable from `answered_at` alone** because it also encodes the task-non-terminal decision | CHECK: resume_authorized_at IS NULL OR resume_eligible_at IS NOT NULL | answer-claim path (Claude Code) | DROP COLUMN, no data-loss |
+| 4 | `resume_requested_at` | required (Option A) | DB column | TIMESTAMPTZ | yes (NULL until requested) | no actor ref itself — paired with #5 | CAS guard `WHERE resume_requested_at IS NULL` | resume-request endpoint (Claude Code) | DROP COLUMN, no data-loss |
+| 5 | `resume_requested_by` | required (Option A) | DB column | TEXT | yes | **actor**: the authenticated principal (role-bearing user id) who took the explicit resume-request action; has no other source (unlike `answered_by`, there is no message row to recover it from) | none | resume-request endpoint (Claude Code) | DROP COLUMN, no data-loss |
+| 6 | `resume_authorized_at` | required (Option A) | DB column | TIMESTAMPTZ | yes (NULL until authorized) | no human actor ref — authorization is performed by the automated policy/safety check, not a person; the check's evidence lives in the durable outbox/audit event, not a column | CAS guard `WHERE resume_authorized_at IS NULL AND resume_eligible_at IS NOT NULL` | resume-authorization path (Claude Code) | DROP COLUMN, no data-loss |
+
+## Fields explicitly NOT proposed (and why)
 
 ```text
-reminder_due_at  -- redundant with the existing reminder_at; do not create a second source of truth.
-expires_at       -- redundant with the existing due_at; do not create a second source of truth.
-reminder_count   -- not needed if exactly one reminder is sent per clarification (the canonical
-  default recommendation in lifecycle-and-time-contract.md); reminder_sent_at (a single nullable
-  timestamp) is sufficient and simpler than a counter. If a future stage authorizes multiple
-  reminders, reminder_count would be added then, not now.
-answered_by      -- not proposed as a new column; the answerer's identity remains recoverable via
-  answer_message_id -> task_messages.sender_id, exactly as it is today. Adding a redundant column
-  would create a second source of truth for the same fact.
-version / lock_version -- not needed; this schema's established idempotency idiom is the
-  WHERE-clause CAS guard (already used for the answer-claim), not an optimistic-lock version
+resume_dispatched_at / resumed_at -- NOT new columns. Dispatch and workflow-resumed confirmation
+  are built (gated/disabled-by-default) in 66C.4-BE3, but represented by durable outbox/audit
+  evidence (the resume event + the confirmation event) plus the task's own status transition -- not
+  by columns on operator_clarification_requests. This follows the minimal-columns principle: prefer
+  durable outbox/audit evidence over a column for a fact the task status + outbox already carry.
+resume_authorized_by -- NOT a new column. Authorization is the automated policy/safety check's
+  decision, not a human's; there is no distinct human "authorizer" under Option A (the human is the
+  requester, captured by resume_requested_by). The authorization decision's evidence (what the
+  check evaluated, its outcome/reason) is recorded in the durable outbox/audit event, not a column.
+policy_decision_id -- NOT a new column. No policy-decision registry/table exists anywhere in this
+  repository; the authorization outcome + reason are carried in the durable outbox/audit event. If
+  a future stage introduces a real policy engine with its own decision records, a reference could
+  be added then, not now.
+resume_dispatch_event_id -- NOT a new column. The durable outbox resume-event row (with its own id
+  and deterministic idempotency_key {clarification_id}:resume_dispatched) IS the dispatch-event
+  reference; a duplicate column on the clarification row would be a second source of truth.
+lock_version -- NOT a new column. This schema's established idempotency idiom is the WHERE-clause
+  CAS guard (already proven for the answer-claim, Step 66C.3 G5), not an optimistic-lock version
   column. Introducing a different idiom for 66C.4 alone would be inconsistent with the codebase.
+reminder_due_at -- redundant with the existing reminder_at; do not create a second source of truth.
+expires_at (as a new column) -- redundant with the existing due_at, which is already the
+  authoritative deadline (see lifecycle-and-time-contract.md §7.3A); do not create a second source.
+reminder_count -- not needed if exactly one reminder is sent per clarification (the canonical
+  default in lifecycle-and-time-contract.md). If a future stage authorizes multiple reminders,
+  reminder_count would be added then, not now.
+answered_by -- not a new column; the answerer's identity remains recoverable via
+  answer_message_id -> task_messages.sender_id, exactly as it is today.
+```
+
+## Durable outbox / pending-event table (new, added in Step 66C.4-P-R1)
+
+The state/audit/event atomicity model (api-and-event-contract.md §11.3, added in this remediation)
+requires that every lifecycle transition and its corresponding notification/audit event become
+durable **in the same database transaction**. The existing `publish_audit_event`
+(`shared/sdk/audit/publisher.py`) is explicitly **best-effort and drops the message on any failure**
+("Failures are swallowed" — verified directly), so it provides **no** durability on its own. This
+stage therefore proposes one new durable outbox table as the atomicity foundation, created by
+66C.4-BE1:
+
+```text
+Proposed table: clarification_lifecycle_outbox
+  id               UUID PRIMARY KEY
+  clarification_id UUID NOT NULL   -- FK to operator_clarification_requests(id)
+  task_id          UUID NOT NULL
+  event_type       TEXT NOT NULL   -- e.g. 'clarification_reminder_sent', 'clarification_expired',
+                                     'clarification_resume_eligible', ...
+  idempotency_key  TEXT NOT NULL   -- deterministic per (clarification_id, event_type); UNIQUE
+  payload          JSONB NOT NULL  -- minimal, safe (no raw question/answer body; hash/length refs
+                                     only, matching safe_workroom_refs)
+  status           TEXT NOT NULL DEFAULT 'pending'  -- 'pending' | 'published' | 'dead'
+  attempts         INT  NOT NULL DEFAULT 0
+  created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  published_at     TIMESTAMPTZ            -- NULL until the relay confirms publication
+  UNIQUE (idempotency_key)
+```
+
+```text
+Writer: the same transaction that performs each lifecycle CAS UPDATE also INSERTs the matching
+  outbox row (state + intent-to-publish commit atomically -- either both or neither).
+Relay: a publisher step (the clarification-timeout worker for reminder/expiry events; the API
+  request handler's follow-on for resume events) reads 'pending' rows, publishes the audit/event,
+  marks 'published', and after bounded retries marks 'dead' (routed to the existing
+  stream.deadletter / retry-scheduler DLQ). See api-and-event-contract.md §11.3 and
+  race-condition-and-failure-analysis.md scenarios 10, 17.
+Rollback: DROP TABLE clarification_lifecycle_outbox -- no other table references it, zero data-loss
+  to any existing table.
 ```
 
 ## Field ownership / nullability / defaults
 
 ```text
-All six proposed fields: NULLABLE, no default (NULL means "has not happened yet" -- the absence
-  of a value IS the state, exactly matching the existing answered_at column's own convention).
+All six new lifecycle columns: NULLABLE, no default (NULL means "has not happened yet" -- the
+  absence of a value IS the state, matching the existing answered_at column's own convention).
 Field ownership: all six are written exclusively by the backend (Claude-Code-owned scheduler/API
   code) -- never client-writable, never exposed as a request-body field on any endpoint.
 ```
@@ -64,20 +134,24 @@ Proposed: a partial index on (status, due_at) WHERE status = 'open' -- supports 
 No new CHECK constraint needed on status (expired is already a valid enum value).
 Proposed CHECK: resume_authorized_at IS NULL OR resume_eligible_at IS NOT NULL (a resume cannot be
   authorized before it became eligible) -- a lifecycle-ordering guard, cheap and unambiguous.
+Outbox: UNIQUE (idempotency_key) enforces at-most-once durable enqueue per (clarification, event).
 ```
 
 ## State transition summary
 
 ```text
-open --(reminder scheduler claims reminder_at<=now() AND reminder_sent_at IS NULL)--> open
-  (reminder_sent_at set, status unchanged)
-open --(expiry scheduler claims due_at<=now() AND status='open')--> expired (expired_at set)
-open --(existing answer-claim, status='open')--> answered (answered_at set,
-  resume_eligible_at set if Option A/B requires it)
-answered --(resume request, if Option A)--> answered (resume_requested_at/by set)
-answered --(policy/safety check passes)--> answered (resume_authorized_at set)
-answered --(future resume dispatch, out of scope for this stage's implementation)--> answered
-  (resume_dispatched_at set)
+open --(reminder scheduler claims reminder_at<=now() AND reminder_sent_at IS NULL; same txn
+  INSERTs outbox row)--> open (reminder_sent_at set, status unchanged)
+open --(expiry scheduler claims due_at<=now() AND status='open'; same txn INSERTs outbox row)
+  --> expired (expired_at set)
+open --(existing answer-claim, status='open' AND expires_at>now(); same txn sets resume_eligible_at
+  if the task is non-terminal, INSERTs outbox row)--> answered (answered_at set)
+answered --(resume request, Option A only; CAS on resume_requested_at IS NULL)--> answered
+  (resume_requested_at + resume_requested_by set)
+answered --(policy/safety check passes; CAS on resume_authorized_at IS NULL)--> answered
+  (resume_authorized_at set)
+[resume dispatched / workflow resumed -- built gated/disabled-by-default in 66C.4-BE3; represented
+  by durable outbox/audit evidence + the task's own status, not by a column on this table]
 ```
 
 No row ever transitions out of `expired`, `canceled`, or (for this stage's scope) `answered` back
@@ -86,15 +160,15 @@ to `open` -- consistent with the existing `canceled` state's own terminal behavi
 ## Migration necessity and rollback strategy
 
 ```text
-Migration necessary: YES, for the six proposed new columns plus the two proposed partial indexes
-  and one CHECK constraint. NOT created by this stage (planning only) -- proposed for Step
-  66C.4-BE1 (see implementation-stage-slicing-plan.md).
+Migration necessary: YES, for the six new lifecycle columns, the two partial indexes, the one CHECK
+  constraint, AND the new clarification_lifecycle_outbox table. NOT created by this stage (planning
+  only) -- proposed for Step 66C.4-BE1 (see implementation-stage-slicing-plan.md).
 Rollback strategy: all six new columns are nullable with no default and no foreign-key dependency
-  from any other table -- a rollback migration is a straightforward `ALTER TABLE ... DROP COLUMN`
-  for each, with zero data-loss risk to any EXISTING column, and zero impact on any row that never
-  reached the new states (i.e., every row created before this migration remains fully valid with
-  all six new columns simply NULL). The two proposed partial indexes and the one CHECK constraint
-  are dropped in the same rollback with no data implication.
+  from any other table -- rollback is a straightforward `ALTER TABLE ... DROP COLUMN` for each,
+  with zero data-loss risk to any EXISTING column, and zero impact on any row that never reached
+  the new states (every pre-migration row remains valid with all six new columns simply NULL). The
+  two partial indexes, the one CHECK constraint, and the outbox table are dropped in the same
+  rollback with no data implication for any existing table.
 ```
 
 ## Statement

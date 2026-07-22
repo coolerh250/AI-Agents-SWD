@@ -8,36 +8,39 @@
 ## Decision 1 — Is a late answer allowed after 72h expiry?
 
 ```text
-Recommended option: NOT allowed once the scheduler has actually transitioned the row to 'expired'
-  (the existing CAS-guarded answer-claim already enforces this with zero new code).
+Recommended option (refined in Step 66C.4-P-R1): NOT allowed once authoritative DB time has reached
+  due_at, REGARDLESS of whether the scheduler has yet materialized status='expired'. The corrected
+  answer-claim carries an `AND due_at > now()` deadline predicate (lifecycle-and-time-contract.md
+  §7.3A), so scheduler lag never opens a late-answer window.
 Alternative: allow a grace-period reopen (e.g. a new "reopen expired clarification" action).
-User impact: recommended option means a user who answers a few seconds after the 72h deadline
-  (but before the scheduler's next poll cycle claims it) may still succeed narrowly, but once
-  actually expired, they must be told clearly and, if a decision is still needed, a NEW
-  clarification must be raised.
-Safety impact: recommended option requires zero new code and reuses an already-proven guard;
-  a reopen mechanism would be new, untested code with its own race conditions to solve.
-Implementation impact: recommended option = zero additional work; a reopen mechanism would add a
-  meaningful chunk of new scope to 66C.4-BE3.
-Default if PO does not override: recommended option (no late answer / no reopen).
+User impact: a user who submits at or after the 72h deadline receives a clear "this decision window
+  has closed / expired" result (never a silent success); if a decision is still needed, a NEW
+  clarification is raised.
+Safety impact: recommended option makes the deadline authoritative and deterministic; a reopen
+  mechanism would be new, untested code with its own race conditions to solve.
+Implementation impact: recommended option = a small predicate addition in 66C.4-BE1; a reopen
+  mechanism would add a meaningful chunk of new scope.
+Default if PO does not override: recommended option (deadline-authoritative; no late answer / no
+  reopen).
 ```
 
 ## Decision 2 — How should "blocked" vs. "expired" be presented to the user?
 
 ```text
-Recommended option: this stage does NOT introduce a separate "blocked" state for clarification
-  timeout at all — it reuses only "expired" (clarification-level) and clarification_expired
-  (task-level), both already-modeled. The existing, unrelated `blocked` task-status value is left
-  untouched (reserved for its current operational-failure meaning).
-Alternative: introduce a visually distinct "blocked" presentation layered on top of the same
-  expired state, if the Product Owner wants a softer/different tone than "expired" conveys.
-User impact: recommended option means the user-facing language is "this clarification window has
-  closed / expired," not "blocked" — a wording choice, not a functional difference.
-Safety impact: none either way — this is purely a presentation choice.
-Implementation impact: recommended option = zero additional work (frontend-ux-boundary.md's
-  "blocked / clarification expired" UX state already accounts for a single combined presentation).
-Default if PO does not override: recommended option (single "expired" presentation, no separate
-  "blocked" tone).
+Recommended option (refined in Step 66C.4-P-R1): the USER-FACING label is
+  "Blocked — clarification expired" (a single combined presentation), while the BACKEND
+  clarification/task status continues to use the existing `expired` / `clarification_expired`
+  semantics unchanged. No new backend "blocked" state is introduced; the existing, unrelated
+  `blocked` task-status value is left untouched (reserved for its operational-failure meaning).
+Alternative: present strictly as "expired" with no "blocked" framing, or as two visually distinct
+  states, if the Product Owner prefers.
+User impact: the user sees "Blocked — clarification expired" — a wording choice, not a functional
+  difference; backend behavior is identical either way.
+Safety impact: none — purely a presentation choice.
+Implementation impact: recommended option = zero backend work (frontend label only;
+  frontend-ux-boundary.md already accounts for a single combined presentation).
+Default if PO does not override: recommended option ("Blocked — clarification expired" label over
+  the existing expired backend semantics).
 ```
 
 ## Decision 3 — Answer-to-resume: explicit operator resume (Option A) or policy-controlled
@@ -64,23 +67,22 @@ Default if PO does not override: Option A (this stage's own recommendation).
 request/authorization step itself?
 
 ```text
-Recommended option: NO additional confirmation step beyond the resume-request action itself (under
-  Option A) — the request itself already IS the explicit human action; a second "are you sure"
-  confirmation would be redundant given resume never proceeds past "authorized" in any stage this
-  planning covers (actual dispatch, where a second confirmation might matter more, is out of
-  scope entirely).
+Recommended option (refined in Step 66C.4-P-R1): the Operator's explicit resume-request action IS
+  the human confirmation — no second general "are you sure" step is added at the request/
+  authorization stage. IMPORTANTLY, a production-effect task still requires the EXISTING extra
+  approval it always requires (production-effect protection is unchanged and non-negotiable); this
+  decision does NOT add a second general confirmation and does NOT remove any existing
+  production-effect approval.
 Alternative: require a second, explicit confirmation step (e.g. a modal "confirm resume") before
   the request is finalized.
-User impact: recommended option is a single-click action; the alternative adds one more click/step.
-Safety impact: minimal difference either way, since this stage's implementation scope never
-  reaches actual dispatch — the highest-stakes moment (an actual workflow resuming) is not built
-  by any stage this planning covers, so the marginal safety value of a second confirmation now is
-  low. A future stage that actually builds dispatch should revisit this question at that time,
-  when the real consequence exists.
-Implementation impact: recommended option = simpler; alternative = one more UI state to design/
-  build in 66C.4-FE.
-Default if PO does not override: recommended option (no additional confirmation at the
-  request/authorization stage; revisit when dispatch is eventually built).
+User impact: recommended option is a single deliberate action; the alternative adds one more step.
+Safety impact: the explicit request already provides a human decision point; production-effect
+  tasks retain their existing extra approval. Dispatch is built gated/disabled-by-default in
+  66C.4-BE3, so enabling real production-effecting resume is itself a separate authorization — the
+  marginal value of a second general confirmation now is low.
+Implementation impact: recommended option = simpler; alternative = one more UI state in 66C.4-FE.
+Default if PO does not override: recommended option (the explicit request is the confirmation;
+  production-effect approval unchanged; no added second general confirmation).
 ```
 
 ## Decision 5 — Is the reminder sent exactly once, or should multiple reminders be supported?

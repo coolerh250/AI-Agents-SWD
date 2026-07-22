@@ -24,12 +24,14 @@ refinements within that existing framework, not a new design language:
   core-loop-experience-definition.md).
 - ready to resume -- NEW, only relevant under Option A: a distinct "waiting for you" state where
   the OPERATOR (not the original requester) is now the one with a pending action.
-- resume in progress -- NEW, only relevant under Option A, and only as far as "authorized" (not
-  "dispatched," which is out of scope for any stage this planning covers).
+- resume in progress -- NEW, only relevant under Option A; UI presents up to "authorized". Dispatch
+  is built gated/disabled-by-default in 66C.4-BE3, so the UI does not depict a live production
+  resume until dispatch is separately enabled.
 - resume failed -- NEW, only relevant under Option A; "not eligible" is the realistic outcome to
-  design for, not a dispatch failure (dispatch itself doesn't exist yet).
-- resumed -- NOT applicable to any stage this planning covers (dispatch/actual resume is out of
-  scope entirely).
+  design for; a dispatch/DLQ failure is operator-recoverable (race scenario 17), not a normal UI
+  state until dispatch is enabled.
+- resumed -- distinct terminal state established only by the orchestrator's confirmation
+  (66C.4-BE3); not depicted as reached until real dispatch is enabled and confirmed.
 ```
 
 Claude Design is explicitly NOT asked to start on any of the above by this stage. This list exists

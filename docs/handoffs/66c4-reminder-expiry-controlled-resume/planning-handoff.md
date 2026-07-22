@@ -20,17 +20,42 @@ plan.md, frontend-ux-boundary.md, implementation-stage-slicing-plan.md, test-and
 plan.md, product-owner-decision-checklist.md.
 ```
 
+## Step 66C.4-P-R1 remediation (contract corrections, same branch)
+
+Following the Product Architect `PASS_WITH_GAPS` review, seven corrections (A–G) were applied on the
+SAME branch (`contract-remediation-record.md` documents each in full):
+
+```text
+A Field inventory      -> six lifecycle columns reconciled; resume_dispatched_at removed; durable
+                          outbox table added; four additional candidate columns declined.
+B Authoritative expiry -> due_at is the authoritative exclusive deadline; answer-claim gains
+                          `AND due_at > now()`; scheduler lag cannot extend the answer window.
+C Reminder semantics    -> at-least-once + idempotent; exactly-once NOT claimed.
+D Atomicity model       -> transactional outbox selected (Option 3/existing-mechanism rejected with
+                          evidence); publish failure is no longer a "non-blocking gap".
+E Clock semantics        -> absolute "no clock skew" wording removed; canonical wording adopted.
+F Recovery semantics     -> automatic vs operator recovery explicitly split.
+G Resume state model     -> request/authorized/dispatched/resumed are four separate transitions;
+                          operator request never equals workflow resumed; dispatch built gated in
+                          66C.4-BE3 (disabled-by-default).
+```
+
+Nothing about the authorization posture changed: Codex and Claude Design remain unauthorized, and
+Step 66C.4-BE1 remains not started.
+
 ## What remains undecided
 
 Six genuine Product Owner decisions, all in `product-owner-decision-checklist.md`:
 
 ```text
-1. Late answer after 72h expiry — recommended: not allowed.
-2. Blocked vs. expired presentation — recommended: single "expired" presentation, no separate
-   "blocked" tone.
+1. Late answer after 72h expiry — recommended: not allowed once DB time >= due_at (deadline-
+   authoritative, regardless of scheduler lag).
+2. Blocked vs. expired presentation — recommended: "Blocked — clarification expired" user-facing
+   label over the existing `expired` backend semantics.
 3. Explicit operator resume (Option A) vs. policy-controlled automatic resume (Option B) —
    recommended: Option A. THE most consequential decision in this planning stage.
-4. Additional confirmation before resume beyond the request/authorization step — recommended: no.
+4. Additional confirmation before resume — recommended: the explicit request IS the confirmation;
+   production-effect approval unchanged; no added second general confirmation.
 5. Single reminder vs. multiple reminders — recommended: single, at +24h.
 6. Reopen expired clarification vs. always create new — recommended: always create new.
 ```

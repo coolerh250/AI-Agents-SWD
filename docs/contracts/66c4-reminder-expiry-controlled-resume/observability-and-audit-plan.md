@@ -16,9 +16,10 @@ claim_conflict_total           -- count of CAS attempts that matched zero rows (
 reminder_count                 -- cumulative count of clarification_reminder_sent events.
 expiry_count                   -- cumulative count of clarification_expired events.
 resume_eligible_count          -- cumulative count of clarification_resume_eligible events.
-resume_success_count           -- cumulative count of clarification_resume_authorized events
-  (renamed from the prompt's "success" framing since "dispatched" is out of scope -- "authorized"
-  is the furthest state this stage's implementation scope reaches).
+resume_authorized_count        -- cumulative count of clarification_resume_authorized events
+  ("authorized" is the furthest state reached in normal operation, since dispatch is built
+  gated/disabled-by-default in 66C.4-BE3; a resume_dispatched_count applies only once dispatch is
+  explicitly enabled).
 resume_failure_count           -- count of resume-request attempts that failed the eligibility/
   policy check (with a "reason" label matching the reason codes in
   api-and-event-contract.md's resume-eligibility response).
@@ -27,6 +28,27 @@ duplicate_suppression_count    -- count of CAS attempts blocked by an already-se
   not an error.
 dlq_count                      -- reused directly from the EXISTING retry-scheduler DLQ metrics
   (stream.deadletter depth) -- no new DLQ concept introduced by this stage.
+outbox_pending_depth           -- current count of 'pending' clarification_lifecycle_outbox rows
+  (added in Step 66C.4-P-R1). A sustained-growing depth signals a stalled/failing relay -- an
+  operator-attention signal, not a normal condition.
+outbox_publish_retry_total     -- count of relay re-publish attempts for outbox rows (transient
+  failures being automatically recovered).
+outbox_dead_total              -- count of outbox rows marked 'dead' after bounded retries (poison
+  events routed to the existing DLQ) -- each is an EXPLICIT operator-reconciliation item, per
+  race-condition-and-failure-analysis.md scenario 17 and the recovery-semantics split.
+```
+
+## Outbox / durable-event reconciliation (added in Step 66C.4-P-R1)
+
+```text
+The transactional-outbox model (api-and-event-contract.md §11.3, data-model-contract.md) makes
+  audit/event publication durable, so a committed lifecycle transition is never left without a
+  durable, replayable event record. Audit/event-publish failure is therefore NOT a "non-blocking
+  residual gap": it is either automatically recovered by the relay (transient) or surfaced as an
+  explicit operator-reconciliation item via outbox_dead_total + the existing DLQ (terminal). The
+  reconciliation path is operator-driven replay of 'dead' outbox rows through the existing DLQ
+  replay tooling -- no new tooling is invented by this stage, but the residual failure is
+  explicitly OWNED (operator recovery), not dismissed.
 ```
 
 ## Logs

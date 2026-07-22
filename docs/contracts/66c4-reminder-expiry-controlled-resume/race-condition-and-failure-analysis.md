@@ -170,39 +170,42 @@ User-visible result: a second click on "request resume" is harmless and shows th
 ## 10. Resume succeeds but audit/event publish fails
 
 ```text
-Expected state: the two-phase pattern (claim first via DB transaction commit, THEN attempt the
-  audit/event side effect) means the CLAIM itself is already durable and correct even if the
-  side-effect publish fails afterward -- exactly the same pattern the existing answer-claim
-  already uses (claim commits, then message/audit creation follows).
-Locking/idempotency strategy: n/a for this scenario -- it's a failure-after-success case, not a
-  race.
-Audit expectation: the state transition (e.g. resume_authorized_at set) is correct in the
-  database even if the corresponding audit event failed to publish; a reconciliation job or
-  manual review (out of this stage's scope to build, noted as a residual gap in
-  observability-and-audit-plan.md) would be needed to detect and backfill a missing audit event.
-Retry behavior: the event publish itself can be retried using the existing
-  retry-scheduler/DLQ infrastructure (per scheduler-architecture-decision.md's dead-letter
-  behavior) -- reusing existing infra rather than inventing new retry logic.
-Operator recovery path: platform_admin/agent_operator can inspect the raw row state directly (via
-  existing DB-level tooling, not a new UI) if an audit gap is suspected; no new tooling proposed
-  by this stage.
-User-visible result: none directly -- this is an internal consistency concern, not a user-facing
-  failure.
+Expected state: CORRECTED in Step 66C.4-P-R1 to use the transactional-outbox model
+  (api-and-event-contract.md §11.3). The lifecycle CAS UPDATE and the outbox INSERT commit in the
+  SAME transaction, so a committed transition ALWAYS has a durable 'pending' outbox row. The
+  audit/event publish is a downstream relay step; if it fails, the outbox row simply remains
+  'pending' and is re-published on the next relay pass. There is NO missing-audit gap and this is
+  NO LONGER described as a "non-blocking residual gap" -- the durable outbox row is the guarantee.
+Locking/idempotency strategy: outbox UNIQUE(idempotency_key) + each event's deterministic
+  idempotency key = at-least-once delivery with idempotent, deduplicated consumption (never
+  exactly-once).
+Audit expectation: the audit event is eventually published from the durable outbox row, or -- after
+  bounded retries -- the row is marked 'dead' and routed to the existing DLQ for explicit operator
+  reconciliation (scenario 17). It is never silently lost.
+Retry behavior: automatic relay retries (bounded), then DLQ -- reusing the existing
+  retry-scheduler/stream.deadletter infrastructure, not new retry logic.
+Operator recovery path: only needed for the terminal DLQ case (scenario 17); the transient case
+  self-heals via the relay with no operator action.
+User-visible result: none directly -- internal consistency is preserved by the outbox; no
+  user-facing failure.
 ```
 
 ## 11. Audit succeeds but resume dispatch fails
 
 ```text
-Expected state: out of this stage's implementation scope entirely (dispatch is not built by any
-  stage this planning covers) -- noted here only so the eventual dispatch-building stage inherits
-  awareness of this failure mode. The audit trail already correctly shows "authorized" even if a
-  later dispatch attempt fails; the not-yet-designed dispatch step must itself decide its own
-  retry/DLQ posture at that future stage.
-Locking/idempotency strategy: n/a for this stage (dispatch does not exist yet).
-Audit expectation: n/a for this stage.
-Retry behavior: n/a for this stage.
-Operator recovery path: n/a for this stage.
-User-visible result: n/a for this stage.
+Expected state: CORRECTED in Step 66C.4-P-R1. Dispatch is built gated/disabled-by-default in
+  66C.4-BE3 as a durable outbox resume event. A dispatch-publish failure leaves the resume-event
+  outbox row 'pending' (or, after bounded retries, 'dead' -> DLQ), exactly as scenario 10/17. The
+  audit trail correctly shows "authorized"; "dispatched" is only recorded once the durable resume
+  event is published. Because dispatch_enabled is false by default, in normal operation no dispatch
+  is attempted at all, so this failure mode does not arise until dispatch is separately enabled.
+Locking/idempotency strategy: outbox UNIQUE(idempotency_key {clarification_id}:resume_dispatched)
+  makes re-publication idempotent.
+Audit expectation: the resume event is eventually published from the outbox or dead-lettered; never
+  silently lost.
+Retry behavior: automatic bounded relay retries, then DLQ (scenario 17).
+Operator recovery path: replay the 'dead' resume-event outbox row via the existing DLQ tooling.
+User-visible result: at most a delayed resume; no data loss. (Moot while dispatch stays disabled.)
 ```
 
 ## 12. Redis unavailable
@@ -263,16 +266,23 @@ User-visible result: none, beyond the same delayed-notification effect as scenar
 ## 15. Clock skew
 
 ```text
-Expected state: NOT a meaningful risk under the recommended architecture, because both the
-  deadline computation (at clarification creation) and the due-check (at poll time) read `now()`
-  from the SAME Postgres server -- there is no cross-machine clock comparison in this design at
-  all (the scheduler process's own wall clock is never compared against a stored timestamp; only
-  Postgres's own `now()` is used in the WHERE clause, e.g. `WHERE due_at <= now()`).
-Locking/idempotency strategy: n/a -- eliminated by design, not mitigated.
+Expected state: REPHRASED in Step 66C.4-P-R1 to avoid absolute "eliminated / does not exist"
+  wording. PostgreSQL database time is the authoritative lifecycle clock: both the deadline
+  computation (at creation) and the due-check (at poll/claim time) read `now()` from the SAME
+  Postgres server, so cross-service/cross-machine wall-clock divergence is REDUCED and does not
+  affect the trigger path (the scheduler's own wall clock is never compared against a stored
+  timestamp; only Postgres `now()` appears in the WHERE clause, e.g. `WHERE due_at > now()`).
+  This does NOT eliminate every clock concern: a materially misconfigured or drifting DATABASE
+  clock, transaction-time semantics, and display-timezone rendering remain real considerations
+  (lifecycle-and-time-contract.md §7.1, corrected).
+Locking/idempotency strategy: n/a -- this is a time-source concern, not a race.
 Audit expectation: n/a.
 Retry behavior: n/a.
-Operator recovery path: n/a.
-User-visible result: none -- this failure mode does not exist under this design.
+Operator recovery path: n/a for the normal case; a suspected DB-clock anomaly is surfaced by the
+  worker-liveness gauge / poll-cycle-duration metrics (observability-and-audit-plan.md), not
+  assumed away.
+User-visible result: none under normal operation; a DB-clock misconfiguration would be detected via
+  monitoring rather than silently trusted.
 ```
 
 ## 16. Existing task/workflow state changed between eligibility and resume
@@ -296,6 +306,57 @@ Operator recovery path: none within the resume path itself -- if the task's new 
 User-visible result: a clear "not eligible: task state changed" result if resume is attempted
   after the task's state changed underneath the answered clarification.
 ```
+
+## 17. Outbox backlog / poison event / terminal DLQ (added in Step 66C.4-P-R1)
+
+```text
+Expected state: with the transactional-outbox model (api-and-event-contract.md §11.3), a committed
+  lifecycle transition always has a durable 'pending' outbox row. If the relay cannot publish it
+  (publisher down, Redis down, audit service down), the row stays 'pending' and the backlog is
+  drained oldest-first once the dependency recovers. A row that fails BOUNDED retries (a poison
+  event) is marked 'dead' and routed to the existing stream.deadletter / retry-scheduler DLQ.
+Locking/idempotency strategy: outbox UNIQUE(idempotency_key) + deterministic per-event keys keep
+  re-publication idempotent; consumers deduplicate. At-least-once, never exactly-once.
+Audit expectation: every transition is eventually published OR explicitly dead-lettered -- never
+  silently lost.
+Retry behavior: automatic, bounded relay retries for transient failures; terminal DLQ after the
+  bound.
+Operator recovery path: a 'dead' outbox row (or an audit-reconciliation exception) is an EXPLICIT
+  operator item -- an authorized operator replays it via the existing DLQ replay tooling after
+  investigation. This is deliberately NOT auto-retried forever.
+User-visible result: at most a delayed internal notification for the affected clarification; no
+  data loss, no incorrect state.
+```
+
+## Recovery semantics (binding — added in Step 66C.4-P-R1)
+
+This section corrects the original draft's blanket "no manual intervention needed / self-heals"
+phrasing. The full M1 contract may reuse the existing DLQ/replay capability, but it must NOT assume
+every failure is automatically recoverable. Recovery is explicitly split:
+
+```text
+Automatic recovery (no operator action):
+  - transient DB error on a poll cycle -> retried on the next cycle (scenario 13).
+  - transient Redis unavailability -> publication deferred, state already durable (scenario 12).
+  - worker process restart -> next poll cycle re-derives from persisted state (scenario 14).
+  - outbox backlog after a dependency outage -> relay drains 'pending' rows oldest-first
+    (scenario 17).
+  - duplicate reminder/expiry/resume claims or duplicate publications -> suppressed by CAS guards
+    and idempotency keys (scenarios 1-5, 9).
+
+Operator recovery (explicit human action required):
+  - terminal DLQ ('dead' outbox row after bounded retries) -> operator investigates and replays
+    (scenario 17).
+  - poison event (repeatedly failing publish) -> operator investigation before replay.
+  - repeated policy/authorization failure on a resume -> operator investigation; not silently
+    retried.
+  - inconsistent legacy record (e.g. a pre-migration row in an unexpected combination of states) ->
+    operator review; no automatic mutation.
+  - audit-reconciliation exception -> operator-reviewed reconciliation, not an automatic backfill.
+```
+
+No failure in this contract is assumed to "always self-heal"; each is classified above as either
+automatically recovered or explicitly operator-recovered.
 
 ## Statement
 

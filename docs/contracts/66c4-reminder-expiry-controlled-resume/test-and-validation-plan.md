@@ -15,9 +15,18 @@ State transition: open->answered, open->expired, answered->(eligible)->(requeste
   authorized, each tested as an isolated unit.
 Idempotency: a second claim attempt against an already-claimed row returns None/no-op for every
   CAS guard in this contract (reminder, expiry, resume-request, resume-authorization).
-Late answer: an answer attempt against status='expired' returns the EXISTING
-  409 invalid_state_for_answer response with zero new code path (regression test confirming this,
-  not a new behavior).
+Late answer / authoritative deadline (added in Step 66C.4-P-R1): an answer submitted when DB time
+  >= due_at is rejected by the `AND due_at > now()` predicate EVEN WHEN status is still 'open' (the
+  scheduler has not yet run) — verifying scheduler lag does not extend the answer window
+  (lifecycle-and-time-contract.md §7.3A). Answer exactly at due_at is rejected (exclusive bound).
+State/outbox atomicity (added in Step 66C.4-P-R1): each lifecycle CAS UPDATE and its outbox INSERT
+  commit in the SAME transaction — a forced failure after the UPDATE but before commit leaves
+  NEITHER the state column set NOR an outbox row (both-or-neither).
+Resume state separation (added in Step 66C.4-P-R1): request, authorized, dispatched, and
+  workflow-resumed are four separate transitions; a unit test asserts none is collapsed (e.g.
+  authorizing does not set a dispatched/resumed marker; an operator request does not imply resumed).
+Reminder delivery semantics (added in Step 66C.4-P-R1): duplicate outbox publication is deduped by
+  idempotency_key (at-least-once + idempotent), and no test asserts exactly-once delivery.
 Duplicate reminder: a second reminder-claim attempt against a row with reminder_sent_at already
   set matches zero rows.
 Duplicate expiry: a second expiry-claim attempt against a row with status already 'expired'
@@ -51,6 +60,12 @@ DB failure: a simulated transient DB outage during a poll cycle results in a cle
   next cycle with no partial state (exercises scenario 13).
 Resume failure and retry: a resume-request against a task whose state changed since eligibility
   correctly returns "not eligible: task_state_changed" (exercises scenario 16).
+Outbox relay + DLQ (added in Step 66C.4-P-R1): a 'pending' outbox row whose publish repeatedly
+  fails is marked 'dead' after bounded retries and routed to the existing DLQ (exercises scenario
+  17); a transient publish failure is automatically re-published (auto-recovery), distinguishing
+  automatic recovery from operator recovery per the recovery-semantics split.
+Gated dispatch (added in Step 66C.4-P-R1): with dispatch_enabled false (default), an authorized
+  resume produces NO real production workflow effect and production_executed_true_count stays 0.
 ```
 
 ## API tests
@@ -86,8 +101,11 @@ Resume eligibility -> an answered clarification on a still-active task correctly
 Controlled resume -> (if Option A) a resume-request from an authorized role against an eligible
   clarification correctly reaches resume_authorized_at, with the resume-eligibility endpoint
   reflecting the updated state.
-Workflow continuation -> explicitly OUT OF SCOPE for any test in this plan, since dispatch does
-  not exist in any stage this planning covers.
+Workflow continuation -> not exercised as a real production resume in E2E, because dispatch is
+  built gated/disabled-by-default in 66C.4-BE3 (dispatch_enabled false); the E2E test instead
+  confirms an authorized resume produces a durable resume-event outbox row WITHOUT any real
+  production workflow effect (production_executed_true_count stays 0). Enabling real dispatch is a
+  separate authorization outside this plan.
 Audit evidence -> the full new-event sequence (reminder_sent, expired OR resume_eligible/
   requested/authorized) is visible via the existing, unmodified audit-evidence endpoint.
 Notification event -> the internal event (not external) is correctly published for each new

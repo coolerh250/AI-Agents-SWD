@@ -15517,3 +15517,56 @@ no production/external action, no Codex authorization.
   executed. No external notification. No production/external action. No deployment. Codex and
   Claude Design remain unauthorized. Next authorized step: Product Owner review of the 6-item
   decision checklist, then a separate authorization to begin Step 66C.4-BE1 if/when ready.
+
+## Stage 66C.4-P-R1 — Reminder / Expiry / Controlled Resume Contract Remediation
+
+**Status: PASS. Marker `STEP66C4_PLANNING_CONTRACT_REMEDIATION_VERIFY: PASS`.**
+
+- **Authorization / trigger.** Product Architect review of Step 66C.4-P returned
+  `PASS_WITH_GAPS`; this stage applied the seven required corrections (A–G) to the contract set on
+  the SAME branch `planning/66c4-reminder-expiry-controlled-resume` (no competing branch),
+  bringing it to a state ready for Product Owner decision and subsequent 66C.4-BE1 authorization.
+- **Shared context.** Latest main `83af345`; runtime code commit `513f190` (no drift). Reviewed
+  all 13 existing contracts and re-inspected (read-only) the audit/event publish path:
+  `shared/sdk/audit/publisher.py` confirmed best-effort (failures swallowed, returns None on
+  drop), `redis_streams.py` publish_event → XADD (at-least-once), no outbox pattern exists,
+  `dispatch_enabled`/`resume_dispatch_enabled` still hardcoded false.
+- **Correction A — field inventory.** Reconciled to exactly six new lifecycle columns
+  (`reminder_sent_at`, `expired_at`, `resume_eligible_at`, `resume_requested_at`,
+  `resume_requested_by`, `resume_authorized_at`); removed `resume_dispatched_at` as a column;
+  declined `resume_authorized_by` / `policy_decision_id` / `resume_dispatch_event_id` /
+  `lock_version`; added the durable `clarification_lifecycle_outbox` table.
+- **Correction B — authoritative expiry.** `due_at` is the authoritative exclusive deadline;
+  answer-claim gains `AND due_at > now()`; a single CAS predicate decides the answer/expiry race;
+  scheduler lag never extends the answer window.
+- **Correction C — reminder semantics.** `reminder_at` authoritative; at-least-once delivery +
+  idempotent consumption; exactly-once explicitly NOT claimed.
+- **Correction D — atomicity model.** Selected the transactional outbox (Option 1); rejected the
+  existing-mechanism option (Option 3) with direct evidence; specified all 8 failure modes;
+  audit/event-publish failure is no longer a "non-blocking gap."
+- **Correction E — clock semantics.** Removed absolute "no clock skew" wording; adopted the
+  canonical non-absolute wording; added DB-clock-anomaly monitoring.
+- **Correction F — recovery semantics.** Split automatic recovery from operator recovery;
+  no failure is assumed to always self-heal.
+- **Correction G — resume state model.** request / authorized / dispatched / resumed are four
+  separate transitions each with actor/trigger/precondition/evidence/audit/idempotency/failure/
+  recovery; operator request never equals workflow resumed; dispatch + orchestrator confirmation
+  built gated/disabled-by-default in 66C.4-BE3 (`dispatch_enabled` stays false), represented by
+  durable outbox/audit evidence rather than new columns.
+- **Downstream updates.** Implementation slicing (BE1 outbox + deadline predicates; BE2 idempotent
+  relay + retry/DLQ + metrics; BE3 gated resume event + confirmation + recovery), PO decision
+  checklist (Decisions 1/2/4 refined; all six remain advisory, not approved), test plan, and
+  observability all updated for consistency.
+- **Artifacts.** `contract-remediation-record.md`; remediation test record; 3 stage docs under
+  `docs/stages/66c4-reminder-expiry-controlled-resume-planning-remediation/`; verifier
+  `scripts/verify_step66c4_planning_contract_remediation.py` + tests; handoff + this progress
+  entry updated.
+- **Verification.** Both verifiers PASS (planning verifier re-run green; remediation verifier
+  PASS); pytest green for both suites; `git diff --check` clean; secret scan unchanged
+  (critical=0/high=0/informational=100).
+- **Gate.** No backend/frontend runtime change. No API implementation change. No database schema
+  change. No migration created. No workflow change. No scheduler activated. No dispatch/resume
+  executed. No external notification. No production/external action. No deployment. Codex and
+  Claude Design remain unauthorized. Step 66C.4-BE1 not started. Next authorized step: Product
+  Owner review of the corrected contract set + 6-item decision checklist, then a separate
+  authorization to begin Step 66C.4-BE1 if/when ready.

@@ -18,17 +18,97 @@
 4. resume authorized     -- the request (Option A) or the automatic eligibility check (Option B)
                             has passed its policy/safety check. This is the gate immediately before
                             any dispatch.
-5. resume dispatched     -- the backend has actually sent the resume signal to the workflow engine.
-                            NOT built by this stage's implementation scope at all (see
-                            implementation-stage-slicing-plan.md) -- this stage designs the contract
-                            up to and including "authorized," and explicitly stops before "dispatched."
-6. workflow resumed      -- the workflow engine has actually continued execution. Downstream of
-                            dispatch; out of this stage's scope entirely.
+5. resume dispatched     -- the backend publishes a durable resume event. Designed by this planning
+                            stage; the dispatch MECHANISM is built in 66C.4-BE3 but is
+                            GATED/DISABLED-BY-DEFAULT (dispatch_enabled is hardcoded false today and
+                            stays false until a separate authorization). This planning stage (66C.4-P)
+                            builds nothing.
+6. workflow resumed      -- the orchestrator CONFIRMS the workflow's own loop actually continued.
+                            Designed here; the confirmation handler is built in 66C.4-BE3. Distinct
+                            from "dispatched": dispatch does not imply resumed until confirmed.
 ```
 
 Each of these six is a **separate, independently-observable, independently-audited event**. No
 code anywhere in this contract may collapse two of them into a single step (e.g., "answering
 automatically resumes" is explicitly forbidden by this contract).
+
+## Binding resume state model (per-transition contract — added in Step 66C.4-P-R1)
+
+The state machine, with each transition's actor / trigger / precondition / persisted evidence /
+audit event / idempotency key / failure state / retry-recovery. **Under Option A**, the four roles
+are strictly distinct: the Operator REQUESTS, the automated policy/safety evaluation AUTHORIZES, a
+Dispatcher DISPATCHES, and the Workflow/orchestrator CONFIRMS the resumed state. An operator's
+request is **never** equivalent to the workflow having resumed.
+
+```text
+ANSWERED -> RESUME_ELIGIBLE
+  Actor:        answer-claim path (system, in the answer transaction).
+  Trigger:      a successful answer-claim on a non-terminal task.
+  Precondition: status just became 'answered' AND task not terminal at answer time.
+  Evidence:     resume_eligible_at set (column) + outbox row.
+  Audit event:  clarification_resume_eligible.
+  Idem key:     {clarification_id}:resume_eligible.
+  Failure:      if task already terminal, eligibility is NOT granted (resume_eligible_at stays NULL).
+  Retry/recov:  none needed; re-derived from persisted state.
+
+RESUME_ELIGIBLE -> RESUME_REQUESTED  (Option A only)
+  Actor:        an authorized Operator/PM-Lead/Platform-Admin (human), captured in
+                resume_requested_by.
+  Trigger:      explicit POST .../resume-request action.
+  Precondition: §2 conditions hold; resume_requested_at IS NULL (CAS).
+  Evidence:     resume_requested_at + resume_requested_by set + outbox row.
+  Audit event:  clarification_resume_requested.
+  Idem key:     {clarification_id}:resume_requested.
+  Failure:      409 clarification_not_eligible (conditions unmet) or idempotent re-confirm (§10).
+  Retry/recov:  operator may re-request; CAS makes it idempotent.
+
+RESUME_REQUESTED -> RESUME_AUTHORIZED
+  Actor:        the automated policy/safety evaluation (NOT a human; there is no human "authorizer"
+                -- this is why no resume_authorized_by column exists, per data-model-contract.md).
+  Trigger:      synchronous policy/safety check invoked by the request handler.
+  Precondition: §2 conditions RE-EVALUATED at authorization time (incl. task-non-terminal recheck,
+                §7/§16) AND resume_authorized_at IS NULL (CAS) AND resume_eligible_at IS NOT NULL.
+  Evidence:     resume_authorized_at set (column) + outbox row carrying the decision/reason (the
+                policy-decision evidence lives in the durable outbox/audit event, not a column --
+                no policy_decision_id column, per data-model-contract.md).
+  Audit event:  clarification_resume_authorized.
+  Idem key:     {clarification_id}:resume_authorized.
+  Failure:      recorded as NOT authorized with reason (e.g. task_state_changed,
+                production_effect_blocked); a repeated policy failure is an operator item
+                (race-condition-and-failure-analysis.md recovery-semantics split).
+  Retry/recov:  transient failures re-attempt; terminal failures are operator-recovered.
+
+RESUME_AUTHORIZED -> RESUME_DISPATCHED   [designed here; built in 66C.4-BE3, GATED/DISABLED-BY-DEFAULT]
+  Actor:        a Dispatcher that publishes a DURABLE resume event (an outbox row -> resume event).
+  Trigger:      an authorized resume whose dispatch is enabled.
+  Precondition: resume_authorized_at IS NOT NULL AND task NOT production-effect AND
+                dispatch is enabled (dispatch_enabled -- currently hardcoded false everywhere, per
+                current-state-assessment.md; remains false until a SEPARATE authorization flips it).
+  Evidence:     a durable outbox resume event (idempotency_key {clarification_id}:resume_dispatched)
+                -- NOT a new lifecycle column. Per data-model-contract.md, dispatch is represented
+                by durable outbox/audit evidence, keeping the clarification-table columns minimal;
+                no resume_dispatched_at / resume_dispatch_event_id column is added.
+  Audit event:  clarification_resume_dispatched.
+  Idem key:     {clarification_id}:resume_dispatched.
+  Failure:      DLQ + operator recovery (race-condition-and-failure-analysis.md scenarios 11, 17).
+  Note:         because dispatch_enabled is false by default, 66C.4-BE3 builds the dispatch
+                MECHANISM but does not turn on real production-effecting resume; enabling it is a
+                separate, explicit authorization.
+
+RESUME_DISPATCHED -> WORKFLOW_RESUMED    [designed here; orchestrator confirmation built in 66C.4-BE3]
+  Actor:        the workflow/orchestrator, which CONFIRMS the actual resumed state (it does not
+                merely trust that dispatch happened).
+  Trigger:      the orchestrator's confirmation handler observing the task's loop actually continued.
+  Precondition: a durable resume event has been published (the dispatch transition completed).
+  Evidence:     the task's own status transition + a durable outbox/audit confirmation event
+                (no dedicated resumed_at column on the clarification -- the TASK's own status is the
+                source of truth for "resumed"; see data-model-contract.md).
+  Audit event:  clarification_workflow_resumed (or the task-level resume audit event).
+  Note:         "Authorized", "dispatched", and "resumed" are THREE separate states. Reaching
+                "authorized" -- or even "dispatched" -- does NOT mean the workflow has resumed; only
+                the orchestrator's confirmation establishes WORKFLOW_RESUMED. An operator's request
+                is never equivalent to any of these later states.
+```
 
 ## 1. How an answer becomes resume-eligible
 
@@ -56,7 +136,11 @@ Immediately upon a successful answer-claim (the existing CAS transition to statu
 4. The task is NOT flagged production-effect (per the existing `production_effect` safety field
    already surfaced on TaskDetail -- a production-effect task remains blocked regardless of
    resume eligibility; see rbac-and-safety-contract.md's safety invariants).
-5. No prior resume_dispatched_at already exists for this clarification (prevents double-dispatch).
+5. resume_authorized_at IS NULL for this clarification (authorize-at-most-once). NOTE (corrected in
+   Step 66C.4-P-R1): there is no resume_dispatched_at COLUMN. Dispatch is built gated/disabled-by-
+   default in 66C.4-BE3 and represented by a durable outbox resume event; its double-DISPATCH guard
+   is the outbox UNIQUE(idempotency_key {clarification_id}:resume_dispatched), not a column on this
+   table. The pre-dispatch guard here is authorize-once via resume_authorized_at.
 ```
 
 ## 3. Who may request resume (Option A) / who the automatic check applies to (Option B)
@@ -143,11 +227,15 @@ A second resume-request against a clarification whose resume_requested_at is alr
   never creates two competing resume attempts.
 ```
 
-## 11. Resume idempotency key
+## 11. Resume idempotency keys
 
 ```text
-{clarification_id}:resume -- deterministic, since at most one resume lifecycle exists per
-  clarification (matches the "no prior resume_dispatched_at" condition in §2.5).
+Per-transition deterministic keys (each fires at most once per clarification):
+  resume-request    : {clarification_id}:resume_requested
+  resume-authorized : {clarification_id}:resume_authorized
+Deterministic and derivable from the clarification id alone, matching the authorize-at-most-once
+  condition in §2.5 (corrected in Step 66C.4-P-R1 -- no longer keyed on the removed
+  resume_dispatched_at column).
 ```
 
 ## 12. Optimistic locking / compare-and-set
@@ -162,21 +250,26 @@ Same idiom as every other transition in this contract: a WHERE-clause guard on t
 ## 13. Resume audit sequence
 
 ```text
-clarification_answered (existing) -> resume_eligible (new) -> [resume_requested (new, Option A
-  only)] -> resume_authorized (new) -> [resume_dispatched (new) -- NOT implemented by this stage's
-  eventual implementation scope; recorded here only so the audit trail's own shape is complete and
-  forward-compatible].
+clarification_answered (existing) -> clarification_resume_eligible (new) ->
+  [clarification_resume_requested (new, Option A only)] -> clarification_resume_authorized (new).
+Each new audit event is written via a durable outbox row committed in the SAME transaction as its
+  state transition (api-and-event-contract.md §11.3), so the audit trail cannot be silently lost.
+The dispatched/resumed audit events (clarification_resume_dispatched, clarification_workflow_resumed)
+  are written by 66C.4-BE3's gated dispatch + confirmation handlers via durable outbox rows; because
+  dispatch_enabled is false by default they are not emitted in normal operation until dispatch is
+  separately enabled. This planning stage (66C.4-P) writes none of them.
 ```
 
 ## 14. Failure / retry / DLQ behavior
 
 ```text
-A failure between "authorized" and "dispatched" (e.g. the not-yet-built dispatch call itself
-  fails) reuses the existing retry-scheduler/DLQ infrastructure exactly as any other service-to-
-  service failure in this project does -- no new failure-handling mechanism is proposed. Since
-  "dispatched" is out of this stage's implementation scope entirely, this is stated here as a
-  forward-looking design note for whichever future stage actually builds dispatch, not something
-  this stage resolves.
+A failure between "authorized" and "dispatched" (the durable resume-event publish fails) is handled
+  by the transactional-outbox model (api-and-event-contract.md §11.3): the resume-event outbox row
+  is durable, re-published by the relay, and after bounded retries dead-lettered for explicit
+  operator recovery (race-condition-and-failure-analysis.md scenarios 11, 17). Dispatch is built
+  (gated/disabled-by-default) in 66C.4-BE3; because dispatch_enabled is false by default, no real
+  production workflow is affected until a separate authorization enables it. No new failure-handling
+  mechanism beyond the existing retry-scheduler/DLQ + outbox is introduced.
 ```
 
 ## 15. Production-effect task protection

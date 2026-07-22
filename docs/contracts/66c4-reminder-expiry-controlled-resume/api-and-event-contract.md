@@ -19,8 +19,11 @@ Actor: any of the 6 TASK_ROLES already permitted to view the workroom (reuses ca
 RBAC: same as GET /tasks/{id}/workroom (Requester scoped to own task).
 Request: none beyond path params.
 Response: { clarification_id, status, created_at, reminder_at, reminder_sent_at, due_at,
-  expired_at, answered_at, resume_eligible_at, resume_requested_at, resume_authorized_at,
-  resume_dispatched_at, dispatch_enabled: false, resume_dispatch_enabled: false }.
+  expired_at, answered_at, resume_eligible_at, resume_requested_at, resume_requested_by,
+  resume_authorized_at, dispatch_enabled: false, resume_dispatch_enabled: false }.
+  (No resume_dispatched_at is exposed -- dispatch/resumed are represented by durable outbox/audit
+  evidence, not a clarification column; dispatch is built gated/disabled-by-default in 66C.4-BE3;
+  see data-model-contract.md and controlled-resume-contract.md, Step 66C.4-P-R1.)
 Error codes: 404 task_not_found / clarification_not_found; 403 if Requester requests a task they
   do not own.
 Idempotency: n/a (read-only GET).
@@ -120,11 +123,15 @@ clarification.resume_eligible    -- published the instant resume_eligible_at is 
                                      controlled-resume-contract.md §1).
 clarification.resume_requested   -- published on a successful resume-request (Option A only).
 clarification.resume_authorized  -- published when the policy/safety check passes.
-clarification.resume_dispatched  -- NOT published by this stage's eventual implementation scope
-                                     (dispatch itself is out of scope); listed here only so the
-                                     event-naming contract is forward-compatible for whichever
-                                     future stage builds it.
-clarification.resume_failed      -- same as above -- forward-compatible naming only, not built now.
+clarification.resume_dispatched  -- published (as a durable outbox event) when a gated dispatch
+                                     occurs; the dispatch MECHANISM is built in 66C.4-BE3 but is
+                                     disabled-by-default (dispatch_enabled false), so in normal
+                                     operation this is not emitted until dispatch is separately
+                                     enabled. Idempotency key {clarification_id}:resume_dispatched.
+clarification.workflow_resumed   -- published when the orchestrator CONFIRMS the resumed state
+                                     (66C.4-BE3 confirmation handler); distinct from dispatched.
+clarification.resume_failed      -- published on a dispatch/confirmation failure routed through the
+                                     outbox/DLQ (66C.4-BE3); operator-recoverable per scenario 17.
 ```
 
 Actual event naming must be confirmed against this repository's real event-bus registry
@@ -165,6 +172,79 @@ Each key is deterministic and derivable from the clarification id alone, since e
 contract fires at most once per clarification (matches the "exactly one reminder" and "at most one
 resume lifecycle" defaults established in lifecycle-and-time-contract.md and
 controlled-resume-contract.md).
+
+## 11.3 State / audit / event atomicity model (binding — added in Step 66C.4-P-R1)
+
+This section replaces the original draft's treatment of audit/event-publish failure as a
+"non-blocking gap that needs no handling." Direct inspection confirms the existing
+`publish_audit_event` (`shared/sdk/audit/publisher.py`) is **best-effort and silently drops the
+message on any failure** ("The publisher is best-effort ... Failures are swallowed"). Relying on it
+alone would mean a committed state transition could have **no durable audit/event record**. That is
+not acceptable for lifecycle transitions, so this stage selects a binding, durable consistency model.
+
+### Options compared
+
+```text
+Option 1 -- State transaction + transactional outbox:
+  The lifecycle CAS UPDATE and an INSERT into a durable outbox table commit in the SAME database
+  transaction. A separate relay publishes outbox rows to audit/Redis, marks them published, and
+  DLQs after bounded retries. Durability and replayability come from the DB row, not the transport.
+
+Option 2 -- State transaction + durable pending-event table:
+  Functionally the same durability property as Option 1 (a durable row written in the state
+  transaction); differs only in framing/table shape. Equivalent reliability.
+
+Option 3 -- Existing repository mechanism (publish_audit_event / direct XADD), only if it can be
+  shown to provide equivalent durability and replayability:
+  REJECTED. Evidence disproves equivalence: publish_audit_event explicitly swallows failures and
+  returns None on drop; there is no durable record of an unpublished event, so it cannot be
+  replayed. It provides neither durability nor replayability for a committed state transition.
+```
+
+### Selected model (binding): Option 1 — transactional outbox
+
+```text
+- Every lifecycle transition (reminder-sent, expired, resume-eligible, resume-requested,
+  resume-authorized) writes its state column(s) AND inserts one clarification_lifecycle_outbox row
+  (data-model-contract.md) in a SINGLE database transaction -- both commit or neither does.
+- A relay/publisher step (the clarification-timeout worker for reminder/expiry; the API handler's
+  follow-on for resume events) reads 'pending' outbox rows, produces the audit projection and the
+  Redis event, marks the row 'published', and after bounded retries marks it 'dead' and routes it
+  to the EXISTING stream.deadletter / retry-scheduler DLQ.
+- The outbox UNIQUE(idempotency_key) plus each event's deterministic idempotency key give
+  at-least-once delivery with idempotent, deduplicated consumption (never exactly-once).
+- Audit/event publication failure is therefore NO LONGER a "non-blocking gap": the durable outbox
+  row guarantees the event is eventually published or explicitly dead-lettered for operator
+  reconciliation -- it is never silently lost.
+```
+
+### Failure modes this model must handle (all binding)
+
+```text
+1. DB commit succeeds but publisher unavailable: the outbox row is durably 'pending'; the relay
+   publishes it when the publisher recovers. No loss.
+2. Publisher succeeds but acknowledgement/mark-published fails: the row stays 'pending', is
+   re-published on the next relay pass; the consumer deduplicates via idempotency_key. At-least-once
+   + idempotent = no duplicate observable effect.
+3. Duplicate publisher execution: two relays publishing the same 'pending' row produce two
+   deliveries with the same idempotency_key; consumers dedupe. Safe.
+4. Audit service unavailable: same as (1) -- the outbox row waits; nothing is dropped.
+5. Redis unavailable: same as (1) -- publication is deferred until Redis recovers; the state
+   transition is already durable.
+6. Outbox backlog recovery: after any outage the relay drains 'pending' rows oldest-first; the
+   backlog is bounded by outage duration, not unbounded.
+7. Poison event / terminal DLQ: a row that fails bounded retries is marked 'dead' and routed to the
+   existing DLQ; it is NOT retried forever and NOT silently dropped -- it becomes an explicit
+   operator-reconciliation item (recovery-and-audit, race-condition-and-failure-analysis.md
+   scenario 17).
+8. Operator replay path: a 'dead' outbox row (or a reconciliation exception) is replayable by an
+   authorized operator via the existing DLQ replay tooling, exactly as any other dead-lettered
+   message in this project.
+```
+
+Because Option 1 is selected, no "equivalent-reliability evidence for the existing mechanism" is
+required; the evidence above instead documents why the existing best-effort publisher is NOT
+sufficient on its own and why the outbox is added.
 
 ## External notification
 
