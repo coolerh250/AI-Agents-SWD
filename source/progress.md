@@ -15662,3 +15662,54 @@ no production/external action, no Codex authorization.
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
   NOT STARTED. Not merged, not deployed. Next authorized step: **Step 66C.4-BE1-R** (independent
   Technical, Security and Migration Review).
+
+## Step 66C.4-BE1-R — Independent Technical, Security and Migration Review (review complete)
+
+Independent review of Step 66C.4-BE1 (`feature/66c4-be1-lifecycle-outbox-foundation` @ `d2467f5`,
+draft PR #17) performed by a **fresh review session in a separate git worktree**, with no access to
+the implementation session's private reasoning or uncommitted artifacts. Judged only from the
+canonical contract on `main` (`e03c22d`), the recorded Product Owner decisions, the exact reviewed
+commit, and the reviewer's own reproductions on an **isolated ephemeral test PostgreSQL 16** created
+for this review and destroyed afterwards. No shared, staging or production database was touched.
+
+- **Review process marker.** `STEP66C4_BE1_INDEPENDENT_REVIEW_VERIFY: PASS` — the review artifacts
+  and process are complete. Recorded **separately** from the technical result below.
+- **Technical verdict.** `BE1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`. Two blocking findings; both
+  are barred from `PASS_WITH_GAPS` by the stage rules.
+- **Blocking finding B-1 (deadline semantics).** PostgreSQL `now()` is `transaction_timestamp()`,
+  frozen at BEGIN. Reproduced on real Postgres: a transaction opened ~3 s *before* `due_at`,
+  executing the committed CAS ~2 s *after* `due_at`, **claimed the row successfully** and wrote an
+  `answered_at` backdated by 5 s. Today's autocommit call path is safe (control run correctly
+  rejected), but `api-and-event-contract.md` §11.3 (binding) requires the CAS and the outbox INSERT
+  to share one transaction, so BE2 is contractually obliged to introduce exactly that wrapping. The
+  contract itself is a root cause: `lifecycle-and-time-contract.md` §7.1/§7.3A.6 incorrectly assert
+  that `now()` is evaluated per statement.
+- **Blocking finding B-2 (outbox sufficiency).** The outbox matches the canonical columns exactly but
+  lacks `available_at`/`next_attempt_at`, `dead_at` and `last_error`. Binding §11.3 failure mode 1
+  ("relay publishes when the publisher recovers — no loss") and failure mode 7 (bounded retries then
+  `dead`) are mutually unsatisfiable without a persisted backoff schedule. BE2 could proceed only by
+  adding schema the canonical contract does not define — so this returns to BE1-R1, not BE2.
+- **What passed.** Migration up/down/reapply is additive, idempotent, deterministic and
+  **non-rewriting** (relfilenode unchanged); pre-existing rows survive untouched; exactly the six
+  canonical nullable lifecycle columns exist with none of the forbidden ones; `due_at` is
+  structurally `NOT NULL` since migration 030 so the NULL-compatibility concern is unreachable; the
+  concurrent answer CAS resolves to exactly one winner under a real lock-hold test; the 409
+  re-classification is not TOCTOU-exploitable today; the disabled-foundation posture is real (0
+  runtime producers, 0 outbox writes, 0 relay/scheduler/startup hooks) and `shared/sdk/audit/**` /
+  `shared/sdk/event_bus/**` are identical to `main`.
+- **Security.** 0 critical, 0 high, 1 medium (the payload guard inspects only top-level keys, so
+  `{'meta': {'answer': …}}` or `answer_body` is accepted — harmless today with no producer), 3 low,
+  3 informational. SQL fully parameterized; no logging added; outbox FKs are `NO ACTION`, protecting
+  lifecycle evidence.
+- **Reproduced tooling.** BE1 verifier PASS; 15/15 BE1 tests with a real isolated DSN; 229 passed /
+  0 failed across the affected suites; BE1's own files clean under ruff and black (repo-wide
+  ruff/black/mypy failures are pre-existing baseline noise in untouched files).
+- **Gate.** No implementation, migration, app, service, infra, helm, k8s, frontend or workflow file
+  was modified by this review. PR #17 **not merged** and not recommended for merge. Nothing deployed.
+  No scheduler or relay activated. No dispatch/resume. No external notification.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
+  **NOT AUTHORIZED** (it inherits both findings). Next authorized step: **Step 66C.4-BE1-R1** —
+  scoped remediation (amend the clock semantics in the contract + the one CAS predicate; amend the
+  outbox contract + migration for the durability columns; make the payload guard recursive; add the
+  cross-deadline, true-equality, `NOT NULL` and fixture-guard tests) — subject to Product Owner
+  approval.
