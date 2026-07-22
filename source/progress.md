@@ -15570,3 +15570,56 @@ no production/external action, no Codex authorization.
   Claude Design remain unauthorized. Step 66C.4-BE1 not started. Next authorized step: Product
   Owner review of the corrected contract set + 6-item decision checklist, then a separate
   authorization to begin Step 66C.4-BE1 if/when ready.
+
+## Stage 66C.4-P-M — Merge Reminder / Expiry / Controlled Resume Contract into Main
+
+**Status: PASS. Marker `STEP66C4_CONTRACT_SOURCE_OF_TRUTH_MERGE_VERIFY: PASS`.**
+
+- **Authorization.** Product Owner accepted Step 66C.4-P-R1 as PASS, approved the six product
+  decisions, and authorized merging `planning/66c4-reminder-expiry-controlled-resume @ f50dd05`
+  into `main`, making the Step 66C.4 contract set canonical.
+- **Shared context.** Pre-merge main `83af345`; runtime frontend code `513f190` (no drift).
+  Reviewed Master Plan, Team RBAC decision, and all planning + remediation artifacts on the
+  branch. Planning marker `...PLANNING_VERIFY: PASS` and remediation marker
+  `...PLANNING_CONTRACT_REMEDIATION_VERIFY: PASS` both confirmed.
+- **Pre-merge scope.** `git diff --name-status` confirmed all changes under
+  `docs/contracts/66c4-reminder-expiry-controlled-resume/**`, `docs/handoffs/**`, `docs/test/**`,
+  `docs/stages/**`, `scripts/verify_step66c4_*.py`, `tests/test_step66c4_*.py`, `source/progress.md`;
+  forbidden-path diff (`apps services infra migrations database helm k8s .github/workflows`) empty.
+- **Contract semantics verified.** Six lifecycle columns + `clarification_lifecycle_outbox` (no
+  six-vs-seven conflict); `due_at` authoritative exclusive deadline with scheduler-lag-does-not-
+  extend; at-least-once reminder (no exactly-once claim); binding transactional-outbox atomicity;
+  six-transition resume model (operator request ≠ workflow resumed); automatic-vs-operator recovery
+  split.
+- **Merge.** `git merge --no-ff` → merge commit `e109189`, zero conflicts (main had not diverged);
+  `source/progress.md` merged with no conflict.
+- **Six Product Owner decisions (APPROVED_BY_PRODUCT_OWNER,
+  `docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md`).** (1) No late
+  answer when DB time ≥ `due_at`, Answer API returns 409, `due_at` exclusive upper bound. (2) UI
+  "Blocked — clarification expired" over existing `clarification_expired` backend status, no new
+  global status. (3) Explicit Operator-Controlled Resume (answer never auto-resumes). (4) Operator
+  resume request is the normal-task human confirmation; production-effect approval remains separate
+  and non-bypassable. (5) One reminder per clarification at `created_at + 24h`. (6) Expired
+  clarification immutable; continuation requires a new clarification with audit linkage.
+- **Binding BE1 Runtime Compatibility Gate.** Recorded in `contract-source-of-truth-record.md`:
+  absent an active outbox relay, existing producers stay on their current path, existing
+  answer/audit/event behavior is unchanged, the outbox may be introduced only as disabled
+  foundation, no lifecycle event may accumulate in an unconsumed outbox, and producer cutover
+  requires relay + retries + DLQ + metrics + rollback + runtime validation together. Must be cited
+  by the future 66C.4-BE1 prompt.
+- **Artifacts.** PO decision record; `contract-merge-record.md`; `contract-source-of-truth-record.md`;
+  contract-merge test record; 3 stage docs under
+  `docs/stages/66c4-reminder-expiry-controlled-resume-contract-merge/`; verifier
+  `scripts/verify_step66c4_contract_source_of_truth_merge.py` + tests; Master Plan
+  `next-executable-stage-sequence.md` supplemented (66C.4 contract canonical; 66C.4-BE1 next
+  candidate); this progress entry.
+- **Verification.** Planning verifier/tests PASS; remediation verifier/tests PASS; merge verifier
+  PASS + tests passed; `git diff --check` clean; secret scan unchanged
+  (critical=0/high=0/informational=100).
+- **Gate.** No backend/frontend runtime change. No API implementation change. No DB schema change.
+  No migration created. No workflow change. No scheduler activated. No outbox relay activated. No
+  existing producer switched. No dispatch/resume executed. No external notification. No
+  production/external action. No deployment. `production_executed_true_count` = 0. Codex and Claude
+  Design remain unauthorized. Step 66C.4-BE1 remains NOT STARTED / NOT AUTHORIZED. Next authorized
+  step: a separate, explicit Product Owner authorization to begin Step 66C.4-BE1 (bound by the BE1
+  Runtime Compatibility Gate) if/when ready.

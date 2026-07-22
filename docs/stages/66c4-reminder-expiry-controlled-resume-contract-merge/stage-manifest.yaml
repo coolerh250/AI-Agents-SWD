@@ -1,0 +1,69 @@
+stage: "66C.4-P-M"
+owner: "Claude Code"
+task_type: "contract-source-of-truth-merge"
+status: "merge-authorized"
+
+source_of_truth:
+  main_required: true
+  pre_merge_main: "83af345"
+  merge_commit: "e109189"
+  runtime_code_commit_reviewed: "513f190"
+  source_branch: "planning/66c4-reminder-expiry-controlled-resume"
+  source_commit: "f50dd05"
+  planning_marker: "STEP66C4_REMINDER_EXPIRY_CONTROLLED_RESUME_PLANNING_VERIFY: PASS"
+  remediation_marker: "STEP66C4_PLANNING_CONTRACT_REMEDIATION_VERIFY: PASS"
+
+allowed_paths:
+  - "docs/contracts/66c4-reminder-expiry-controlled-resume/**"
+  - "docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md"
+  - "docs/test/step66c4-reminder-expiry-controlled-resume-contract-merge-record.md"
+  - "docs/stages/66c4-reminder-expiry-controlled-resume-contract-merge/**"
+  - "docs/alignment/66-project-completion/master/next-executable-stage-sequence.md"
+  - "source/progress.md"
+  - "scripts/verify_step66c4_contract_source_of_truth_merge.py"
+  - "tests/test_step66c4_contract_source_of_truth_merge.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+
+backend_implementation_allowed: false
+frontend_implementation_allowed: false
+api_implementation_allowed: false
+database_change_allowed: false
+migration_allowed: false
+workflow_change_allowed: false
+scheduler_activation_allowed: false
+outbox_relay_activation_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+deployment_allowed: false
+external_notification_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+step66c4_be1_started: false
+codex_authorized: false
+claude_design_authorized: false
+product_owner_authorization_received: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - runtime_or_api_or_db_or_workflow_change
+  - migration_created
+  - scheduler_or_relay_activated
+  - existing_producer_switched_to_outbox
+  - workflow_dispatched_or_resumed
+  - step_66c4_be1_started
+  - codex_or_claude_design_authorized
+  - deployment_or_external_notification
+  - product_owner_decision_altered
+  - verifier_or_test_failure

@@ -47,6 +47,23 @@ Runtime impact: test-runtime backend (scheduler mechanism) + test-runtime fronte
   authorized slice); completes M1.
 ```
 
+## Step 66C.4 status update (added at Step 66C.4-P-M)
+
+```text
+Step 66C.4 contract is now canonical: the Reminder / Expiry / Controlled Resume planning/contract
+  set and the six approved Product Owner decisions were merged to main at Step 66C.4-P-M (merge
+  commit e109189), per docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md
+  and docs/contracts/66c4-reminder-expiry-controlled-resume/contract-source-of-truth-record.md.
+Step 66C.4-BE1 is the next candidate stage (data model / migration / disabled outbox foundation),
+  pending a separate, explicit Product Owner authorization -- it remains NOT STARTED and NOT
+  AUTHORIZED, and is bound by the "BE1 Runtime Compatibility Gate" in the contract source-of-truth
+  record.
+```
+
+This status update only records the two facts above. It does NOT change the M0-M7 milestone order
+or any milestone scope, and Stage 2's ownership boundary (Claude Code primary, Codex frontend-slice-
+only) is unchanged.
+
 ## Stage 3 — Step 66D-ARCH: Delivery and Acceptance Data Model / API Contract Freeze
 
 ```text
