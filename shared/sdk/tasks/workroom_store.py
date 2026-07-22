@@ -140,21 +140,35 @@ class WorkroomStore:
         `answer_clarification` in workroom_api.py, which calls this BEFORE creating the
         answer message so a lost race never has a message/audit side effect.
 
-        Step 66C.4-BE1 adds the authoritative-deadline predicate `due_at > now()`
-        (PostgreSQL database time, evaluated in the same statement -- never a Python clock):
-        due_at is an EXCLUSIVE upper bound, so an answer submitted at or after due_at matches
-        zero rows and returns None, EVEN WHEN status is still 'open' (i.e. before the future
-        timeout worker has materialized 'expired'). Scheduler lag therefore cannot extend the
-        answer window (canonical lifecycle-and-time-contract.md 7.3A). This claim writes NO
-        outbox row and triggers NO scheduler/event/notification on either success or failure.
+        Step 66C.4-BE1 adds the authoritative-deadline predicate, corrected in Step
+        66C.4-BE1-R1 to `due_at > statement_timestamp()`: due_at is an EXCLUSIVE upper bound,
+        so an answer submitted at or after due_at matches zero rows and returns None, EVEN
+        WHEN status is still 'open' (i.e. before the future timeout worker has materialized
+        'expired'). Scheduler lag therefore cannot extend the answer window (canonical
+        lifecycle-and-time-contract.md 7.3A). This claim writes NO outbox row and triggers NO
+        scheduler/event/notification on either success or failure.
+
+        Clock function (BINDING -- do not change back): `statement_timestamp()`, never `now()`
+        or `transaction_timestamp()`. The latter two return the TRANSACTION START time and stay
+        frozen for the whole transaction, so a transaction that began before due_at could claim
+        after due_at and would backdate answered_at to the transaction start. Today this call
+        runs in its own single-statement autocommit transaction, where the difference is not
+        observable -- but the binding atomicity model (api-and-event-contract.md 11.3) requires
+        BE2 to wrap this CAS together with an outbox INSERT in ONE transaction, which is exactly
+        the shape that would activate the defect. statement_timestamp() is constant within one
+        statement, so the deadline comparison and the answered_at write share one reading; that
+        is why it is preferred over clock_timestamp() here.
         """
         conn = await self._connect()
         try:
             row = await conn.fetchrow(
                 """
                 UPDATE operator_clarification_requests
-                SET status='answered', answered_at=now(), updated_at=now()
-                WHERE id=$1 AND status='open' AND answered_at IS NULL AND due_at > now()
+                SET status='answered',
+                    answered_at=statement_timestamp(),
+                    updated_at=statement_timestamp()
+                WHERE id=$1 AND status='open' AND answered_at IS NULL
+                  AND due_at > statement_timestamp()
                 RETURNING *
                 """,
                 uuid.UUID(clarification_id),

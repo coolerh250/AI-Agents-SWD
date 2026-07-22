@@ -150,9 +150,15 @@ def main() -> int:
         if re.search(rf"ADD COLUMN IF NOT EXISTS {f}\s+\w+\s+NOT NULL", up):
             bad(f"check6: lifecycle column is NOT NULL (breaks existing rows): {f}")
 
-    # 7. Deadline predicate uses PostgreSQL DB time.
-    if "due_at > now()" not in store:
-        bad("check7: answer CAS does not use the DB-time deadline predicate 'due_at > now()'")
+    # 7. Deadline predicate uses PostgreSQL DB time. Corrected in Step 66C.4-BE1-R1: the
+    # authoritative function is statement_timestamp(), NOT now()/transaction_timestamp(), which
+    # freeze at transaction BEGIN and would let a transaction opened before due_at claim after it.
+    if "due_at > statement_timestamp()" not in store:
+        bad(
+            "check7: answer CAS does not use the deadline predicate 'due_at > statement_timestamp()'"
+        )
+    if "due_at > now()" in store or "due_at > transaction_timestamp()" in store:
+        bad("check7: answer CAS still uses a transaction-time deadline predicate")
     if re.search(r"datetime\.now\([^)]*\)[^\n]*due_at", store):
         bad("check7: answer deadline appears to use a Python clock")
 
@@ -255,7 +261,8 @@ def main() -> int:
 
     print("  [OK] Exactly six additive nullable lifecycle columns; outbox table created; no")
     print("       unauthorized column; migration additive with tested rollback; answer CAS uses")
-    print("       PostgreSQL DB-time deadline (due_at > now()); past-deadline -> 409")
+    print("       PostgreSQL statement-time deadline (due_at > statement_timestamp());")
+    print("       past-deadline -> 409")
     print(
         "       invalid_state_for_answer:expired; no task-status change; no scheduler/relay code;"
     )

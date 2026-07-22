@@ -16,12 +16,41 @@ State transition: open->answered, open->expired, answered->(eligible)->(requeste
 Idempotency: a second claim attempt against an already-claimed row returns None/no-op for every
   CAS guard in this contract (reminder, expiry, resume-request, resume-authorization).
 Late answer / authoritative deadline (added in Step 66C.4-P-R1): an answer submitted when DB time
-  >= due_at is rejected by the `AND due_at > now()` predicate EVEN WHEN status is still 'open' (the
-  scheduler has not yet run) — verifying scheduler lag does not extend the answer window
-  (lifecycle-and-time-contract.md §7.3A). Answer exactly at due_at is rejected (exclusive bound).
+  >= due_at is rejected by the `AND due_at > statement_timestamp()` predicate EVEN WHEN status is
+  still 'open' (the scheduler has not yet run) — verifying scheduler lag does not extend the answer
+  window (lifecycle-and-time-contract.md §7.3A). Answer exactly at due_at is rejected (exclusive
+  bound).
+Transaction-crossing deadline (MANDATORY, added in Step 66C.4-BE1-R1): a claim executed inside an
+  explicit transaction that BEGAN before due_at and executes the CAS AFTER due_at must be REJECTED
+  and must leave answered_at NULL. This test is blocking and must not be skipped; it is the
+  regression that proves `now()`/`transaction_timestamp()` semantics have not returned.
+Statement-time timestamp consistency (added in Step 66C.4-BE1-R1): on a successful claim,
+  answered_at must be at/after the claim statement start and must NOT equal an earlier
+  transaction-start time.
+Strict boundary (added in Step 66C.4-BE1-R1): with due_at set exactly to a captured statement
+  timestamp, the strict `>` predicate must reject the claim — proving exclusivity rather than
+  merely re-testing a past deadline.
 State/outbox atomicity (added in Step 66C.4-P-R1): each lifecycle CAS UPDATE and its outbox INSERT
   commit in the SAME transaction — a forced failure after the UPDATE but before commit leaves
   NEITHER the state column set NOR an outbox row (both-or-neither).
+Outbox durability (added in Step 66C.4-BE1-R1): available_at is persisted on insert; a pending row
+  whose available_at is in the future is NOT claim-eligible; a transient-failure update can persist
+  a future available_at; a dead row records dead_at; a published row records published_at; the
+  status/timestamp CHECK rejects a row that is both published and dead; last_error is rejected above
+  its bound at the repository boundary and by the DB CHECK; a duplicate idempotency_key is rejected;
+  the dead -> pending replay state mapping is representable. All exercised as isolated repository
+  tests — no relay, no poller, no claim loop is built to test them.
+Payload safety (added in Step 66C.4-BE1-R1): the positive allowlist rejects unknown event types,
+  unknown keys, nested dicts, lists, raw answer/question content under any key name, secret-like
+  keys at any depth, non-scalar leaf values, and oversized payloads.
+PostgreSQL fixture safety (added in Step 66C.4-BE1-R1): destructive test fixtures are FAIL-CLOSED —
+  they require an explicit opt-in environment variable, an isolated test database name, and a
+  connection that does not match a known shared runtime, and they REFUSE to run rather than dropping
+  tables when any check fails.
+PostgreSQL evidence policy (added in Step 66C.4-BE1-R1): mandatory PostgreSQL tests must not be
+  silently skipped. A static verifier PASS is recorded separately from mandatory PostgreSQL evidence
+  PASS; a run without a DSN reports "PostgreSQL evidence unavailable" and cannot be presented as a
+  complete technical pass.
 Resume state separation (added in Step 66C.4-P-R1): request, authorized, dispatched, and
   workflow-resumed are four separate transitions; a unit test asserts none is collapsed (e.g.
   authorizing does not set a dispatched/resumed marker; an operator request does not imply resumed).

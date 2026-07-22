@@ -36,6 +36,13 @@ outbox_publish_retry_total     -- count of relay re-publish attempts for outbox 
 outbox_dead_total              -- count of outbox rows marked 'dead' after bounded retries (poison
   events routed to the existing DLQ) -- each is an EXPLICIT operator-reconciliation item, per
   race-condition-and-failure-analysis.md scenario 17 and the recovery-semantics split.
+outbox_dead_age_seconds        -- age of the oldest 'dead' row, derived from dead_at (added in Step
+  66C.4-BE1-R1). Before dead_at existed, the time of death was unrecoverable and DLQ age / alert
+  thresholds / reconciliation SLAs could not be computed at all.
+outbox_deferred_depth          -- count of 'pending' rows whose available_at is still in the future
+  (added in Step 66C.4-BE1-R1): rows waiting on the persisted backoff schedule. Distinguishing these
+  from immediately-claimable rows is what keeps outbox_pending_depth interpretable during an
+  upstream outage -- a large deferred depth is an outage signature, not a stalled relay.
 ```
 
 ## Outbox / durable-event reconciliation (added in Step 66C.4-P-R1)
@@ -49,6 +56,11 @@ The transactional-outbox model (api-and-event-contract.md §11.3, data-model-con
   reconciliation path is operator-driven replay of 'dead' outbox rows through the existing DLQ
   replay tooling -- no new tooling is invented by this stage, but the residual failure is
   explicitly OWNED (operator recovery), not dismissed.
+Diagnosability (added in Step 66C.4-BE1-R1): each 'dead' row carries dead_at and a bounded,
+  secret-free last_error, so an operator-reconciliation item states WHEN it died and WHY. Without
+  those columns the operator would receive an item with no diagnosis. last_error must never carry a
+  secret, token, credential, raw payload or raw clarification content; it is bounded at the
+  repository boundary and by a DB CHECK constraint.
 ```
 
 ## Logs

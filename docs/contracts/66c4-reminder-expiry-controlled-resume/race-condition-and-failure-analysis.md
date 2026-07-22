@@ -268,12 +268,18 @@ User-visible result: none, beyond the same delayed-notification effect as scenar
 ```text
 Expected state: REPHRASED in Step 66C.4-P-R1 to avoid absolute "eliminated / does not exist"
   wording. PostgreSQL database time is the authoritative lifecycle clock: both the deadline
-  computation (at creation) and the due-check (at poll/claim time) read `now()` from the SAME
-  Postgres server, so cross-service/cross-machine wall-clock divergence is REDUCED and does not
+  computation (at creation) and the due-check (at poll/claim time) read PostgreSQL time from the
+  SAME Postgres server, so cross-service/cross-machine wall-clock divergence is REDUCED and does not
   affect the trigger path (the scheduler's own wall clock is never compared against a stored
-  timestamp; only Postgres `now()` appears in the WHERE clause, e.g. `WHERE due_at > now()`).
+  timestamp; only a PostgreSQL time function appears in the WHERE clause, e.g.
+  `WHERE due_at > statement_timestamp()`).
+  Time-function correctness (corrected in Step 66C.4-BE1-R1): the answer-claim deadline MUST use
+  `statement_timestamp()`, not `now()`/`transaction_timestamp()`. The latter pair return the
+  TRANSACTION START time and stay frozen for the whole transaction, so a transaction that began
+  before due_at could claim after due_at and would additionally backdate `answered_at` to the
+  transaction start. See scenario 18 below.
   This does NOT eliminate every clock concern: a materially misconfigured or drifting DATABASE
-  clock, transaction-time semantics, and display-timezone rendering remain real considerations
+  clock and display-timezone rendering remain real considerations
   (lifecycle-and-time-contract.md §7.1, corrected).
 Locking/idempotency strategy: n/a -- this is a time-source concern, not a race.
 Audit expectation: n/a.
@@ -326,6 +332,59 @@ Operator recovery path: a 'dead' outbox row (or an audit-reconciliation exceptio
   investigation. This is deliberately NOT auto-retried forever.
 User-visible result: at most a delayed internal notification for the affected clarification; no
   data loss, no incorrect state.
+```
+
+## 18. Transaction opened before the deadline claims after it (added in Step 66C.4-BE1-R1)
+
+```text
+Expected state: an answer-claim executed inside an explicit transaction that BEGAN before due_at but
+  whose CAS statement executes AFTER due_at MUST be rejected, and answered_at MUST remain NULL.
+Root cause if unguarded: PostgreSQL now() IS transaction_timestamp() -- it is fixed at BEGIN and
+  frozen for the whole transaction. A predicate `due_at > now()` therefore evaluates against the
+  transaction START time. Independently reproduced in Step 66C.4-BE1-R: a transaction opened ~2.95 s
+  before due_at executed the CAS ~2.06 s AFTER due_at, claimed the row, and wrote an answered_at
+  backdated by ~5.0 s.
+Why it matters even though the single-statement autocommit path is safe: the binding atomicity model
+  (api-and-event-contract.md §11.3) requires BE2 to wrap this CAS and the outbox INSERT in ONE
+  transaction. That wrapping is exactly the shape that activates the defect, and the answer window
+  would silently widen by the whole transaction duration.
+Locking/idempotency strategy: unchanged -- single CAS predicate, row-level locking.
+Binding resolution: the deadline predicate and the answered_at write both use
+  `statement_timestamp()` (lifecycle-and-time-contract.md §7.1 / §7.3A.6). statement_timestamp() is
+  taken when the CAS STATEMENT starts and is constant within that statement, so wrapping the CAS in
+  a transaction cannot extend the answer window and cannot backdate answered_at.
+Audit expectation: answered_at is claim-statement time, so it is admissible evidence of WHEN the
+  answer was accepted, not of when some enclosing transaction happened to begin.
+Retry behavior: none -- rejection is terminal for that attempt (409).
+Operator recovery path: none required; the user raises a new clarification if a decision is still
+  needed.
+User-visible result: 409 invalid_state_for_answer with the expired reason. No silent late success.
+```
+
+## 19. Relay exhausts bounded retries during a publisher outage (added in Step 66C.4-BE1-R1)
+
+```text
+Expected state: a transient publisher/Redis outage must NOT dead-letter healthy outbox rows. Binding
+  §11.3 failure mode 1 requires "no loss"; failure mode 7 requires bounded retries to end in 'dead'.
+Root cause if unguarded: with no PERSISTED next-attempt time, a relay polling every few seconds
+  re-attempts every pending row on every pass and burns its whole attempts budget within seconds of
+  an outage, marking healthy non-poison rows 'dead'. Failure modes 1 and 7 are then mutually
+  unsatisfiable. In-memory backoff does not close this: it dies with the worker and is not shared
+  between the multiple relay workers the contract permits.
+Binding resolution: `available_at` persists the next eligible attempt time. A relay may only claim
+  rows with `status='pending' AND available_at <= statement_timestamp()`, and a transient failure
+  pushes available_at forward by the backoff policy. Bounded retries are therefore bounded in TIME
+  as well as in COUNT, so an outage delays delivery instead of destroying it.
+Locking/idempotency strategy: FOR UPDATE SKIP LOCKED within the relay transaction; the row returns
+  to pending on worker crash because the claim was never committed. UNIQUE(idempotency_key) keeps
+  re-publication idempotent.
+Audit expectation: a dead row carries dead_at (when it died) and last_error (a bounded, secret-free
+  reason), so an operator reconciliation item is diagnosable rather than opaque.
+Retry behavior: automatic, bounded, backed off; then terminal 'dead'.
+Operator recovery path: an authorized operator replays a dead row (dead -> pending, available_at
+  reset, dead_at/last_error cleared, attempts NOT reset so the full attempt history is preserved).
+  No replay endpoint or runtime replay exists in BE1/BE1-R1 -- contract semantics only.
+User-visible result: at most a delayed internal notification; no lost lifecycle event.
 ```
 
 ## Recovery semantics (binding — added in Step 66C.4-P-R1)

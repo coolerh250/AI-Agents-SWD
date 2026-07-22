@@ -64,6 +64,14 @@ as Option 2 but embedded in the existing orchestrator service rather than a sepa
 
 ```text
 Rationale:
+Terminology note (added in Step 66C.4-BE1-R1): "Option 3 (outbox)" above concerns the TRIGGER
+mechanism -- using an outbox to schedule "check me at time T" -- and remains REJECTED. It is a
+different concern from the clarification_lifecycle_outbox, which is the selected ATOMICITY model for
+publishing audit/events after a transition has already committed (api-and-event-contract.md §11.3).
+Rejecting the outbox as a trigger does not weaken the outbox as a transactional publication record;
+the selected poller trigger writes lifecycle-outbox rows within its own claim transaction, and its
+relay honors the persisted available_at backoff schedule (data-model-contract.md, Step 66C.4-BE1-R1).
+
 1. It is the only option requiring NO new infrastructure pattern (no outbox, no untested
    long-delay Streams usage) — it reuses only what already exists proven-correct: the CAS
    guard (Step 66C.3 G5) and the existing service-per-container deployment shape

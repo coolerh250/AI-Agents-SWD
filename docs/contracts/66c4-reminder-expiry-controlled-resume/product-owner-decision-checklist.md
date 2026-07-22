@@ -10,7 +10,8 @@
 ```text
 Recommended option (refined in Step 66C.4-P-R1): NOT allowed once authoritative DB time has reached
   due_at, REGARDLESS of whether the scheduler has yet materialized status='expired'. The corrected
-  answer-claim carries an `AND due_at > now()` deadline predicate (lifecycle-and-time-contract.md
+  answer-claim carries an `AND due_at > statement_timestamp()` deadline predicate
+  (lifecycle-and-time-contract.md
   §7.3A), so scheduler lag never opens a late-answer window.
 Alternative: allow a grace-period reopen (e.g. a new "reopen expired clarification" action).
 User impact: a user who submits at or after the 72h deadline receives a clear "this decision window

@@ -32,6 +32,9 @@ MIGRATIONS = REPO / "migrations"
 UP_SQL = MIGRATIONS / "031_clarification_lifecycle_outbox_foundation.sql"
 DOWN_SQL = MIGRATIONS / "031_clarification_lifecycle_outbox_foundation_down.sql"
 
+# Canonical event naming (api-and-event-contract.md 11.2).
+REMINDER_EVENT = "clarification.reminder_recorded"
+
 LIFECYCLE_FIELDS = (
     "reminder_sent_at",
     "expired_at",
@@ -85,8 +88,11 @@ def test_down_migration_removes_only_be1_objects() -> None:
 
 def test_answer_cas_sql_enforces_authoritative_deadline() -> None:
     src = (REPO / "shared" / "sdk" / "tasks" / "workroom_store.py").read_text(encoding="utf-8")
-    # The CAS uses PostgreSQL now(), the deadline predicate, and the answered_at guard.
-    assert "due_at > now()" in src
+    # Step 66C.4-BE1-R1: the deadline uses statement_timestamp(), never now()/
+    # transaction_timestamp() (which freeze at BEGIN and would let a transaction opened
+    # before due_at claim after it).
+    assert "due_at > statement_timestamp()" in src
+    assert "due_at > now()" not in src
     assert "answered_at IS NULL" in src
     assert "status='open'" in src
 
@@ -95,28 +101,32 @@ def test_outbox_payload_guard_rejects_prohibited_keys() -> None:
     lifecycle_outbox = _import_outbox()
     for key in ("question", "answer", "body", "token", "secret", "password"):
         with pytest.raises(ValueError):
-            lifecycle_outbox.assert_safe_outbox_payload({key: "x"})
+            lifecycle_outbox.assert_safe_outbox_payload({key: "x"}, event_type=REMINDER_EVENT)
 
 
 def test_outbox_payload_guard_rejects_oversize() -> None:
     lifecycle_outbox = _import_outbox()
     with pytest.raises(ValueError):
-        lifecycle_outbox.assert_safe_outbox_payload({"reason": "x" * 5000})
+        lifecycle_outbox.assert_safe_outbox_payload(
+            {"reason": "x" * 5000}, event_type=REMINDER_EVENT
+        )
 
 
 def test_outbox_payload_guard_accepts_safe_minimal() -> None:
     lifecycle_outbox = _import_outbox()
-    ok = lifecycle_outbox.assert_safe_outbox_payload({"reason": "reminder_sent"})
+    ok = lifecycle_outbox.assert_safe_outbox_payload(
+        {"reason": "reminder_sent"}, event_type=REMINDER_EVENT
+    )
     assert ok == {"reason": "reminder_sent"}
-    assert lifecycle_outbox.assert_safe_outbox_payload(None) == {}
+    assert lifecycle_outbox.assert_safe_outbox_payload(None, event_type=REMINDER_EVENT) == {}
 
 
 def test_outbox_event_type_allowlist() -> None:
     lifecycle_outbox = _import_outbox()
-    assert "clarification_reminder_sent" in lifecycle_outbox.ALLOWED_EVENT_TYPES
-    assert "clarification_expired" in lifecycle_outbox.ALLOWED_EVENT_TYPES
+    assert REMINDER_EVENT in lifecycle_outbox.ALLOWED_EVENT_TYPES
+    assert "clarification.expired" in lifecycle_outbox.ALLOWED_EVENT_TYPES
     # dispatch/resume-dispatched events are NOT part of BE1's foundation scope.
-    assert "clarification_resume_dispatched" not in lifecycle_outbox.ALLOWED_EVENT_TYPES
+    assert "clarification.resume_dispatched" not in lifecycle_outbox.ALLOWED_EVENT_TYPES
 
 
 def test_outbox_module_has_no_live_producer_import() -> None:
@@ -280,10 +290,16 @@ try:
 except Exception:  # pragma: no cover
     _HAS_ASYNCPG = False
 
+from step66c4_pg_safety import destructive_pg_refusal_reason  # noqa: E402
+
 _DSN = os.environ.get("BE1_TEST_DATABASE_URL")
+_REFUSAL = destructive_pg_refusal_reason()
 
 
 def _pg_reachable() -> bool:
+    # Fail-closed: these fixtures DROP tables, so an un-vetted DSN must never reach them.
+    if _REFUSAL is not None:
+        return False
     if not (_HAS_ASYNCPG and _DSN):
         return False
     try:
@@ -300,7 +316,10 @@ def _pg_reachable() -> bool:
 
 requires_pg = pytest.mark.skipif(
     not _pg_reachable(),
-    reason="isolated test Postgres not reachable (set BE1_TEST_DATABASE_URL to an ephemeral DB)",
+    reason=(
+        _REFUSAL
+        or "isolated test Postgres not reachable (set BE1_TEST_DATABASE_URL to an ephemeral DB)"
+    ),
 )
 
 
@@ -380,6 +399,8 @@ def test_pg_migration_creates_schema_and_rolls_back() -> None:
             assert "idx_ocr_reminder_due" in idx
             assert "idx_ocr_expiry_due" in idx
             assert "idx_clo_pending_created" in idx
+            assert "idx_clo_pending_available" in idx
+            assert "idx_clo_dead_at" in idx
             # Reapply is idempotent.
             await conn.execute(UP_SQL.read_text(encoding="utf-8"))
             # Rollback removes only BE1 objects.
@@ -521,7 +542,7 @@ def test_pg_outbox_transaction_atomicity_and_idempotency() -> None:
                 conn,
                 clarification_id=cid,
                 task_id=task_id,
-                event_type="clarification_reminder_sent",
+                event_type=REMINDER_EVENT,
                 idempotency_key=f"{cid}:reminder",
                 payload={"reason": "reminder_sent"},
             )
@@ -535,7 +556,7 @@ def test_pg_outbox_transaction_atomicity_and_idempotency() -> None:
                 conn,
                 clarification_id=cid,
                 task_id=task_id,
-                event_type="clarification_reminder_sent",
+                event_type=REMINDER_EVENT,
                 idempotency_key=f"{cid}:reminder",
                 payload={"reason": "reminder_sent"},
             )
@@ -546,7 +567,7 @@ def test_pg_outbox_transaction_atomicity_and_idempotency() -> None:
                     conn,
                     clarification_id=cid,
                     task_id=task_id,
-                    event_type="clarification_reminder_sent",
+                    event_type=REMINDER_EVENT,
                     idempotency_key=f"{cid}:reminder",
                     payload={"reason": "dup"},
                 )

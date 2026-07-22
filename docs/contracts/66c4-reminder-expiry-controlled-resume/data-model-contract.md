@@ -98,18 +98,106 @@ Proposed table: clarification_lifecycle_outbox
   status           TEXT NOT NULL DEFAULT 'pending'  -- 'pending' | 'published' | 'dead'
   attempts         INT  NOT NULL DEFAULT 0
   created_at       TIMESTAMPTZ NOT NULL DEFAULT now()
+  available_at     TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
+                                         -- BE1-R1: earliest time a relay may claim this row
   published_at     TIMESTAMPTZ            -- NULL until the relay confirms publication
+  dead_at          TIMESTAMPTZ            -- BE1-R1: set only in the terminal 'dead' state
+  last_error       TEXT                   -- BE1-R1: bounded, secret-free last failure reason
   UNIQUE (idempotency_key)
+  CHECK (last_error IS NULL OR length(last_error) <= 500)
+  CHECK (status/timestamp coherence -- see "Status semantics" below)
+```
+
+### Durability columns (BINDING — added in Step 66C.4-BE1-R1)
+
+The Step 66C.4-BE1-R independent review found the original column set insufficient: binding
+`api-and-event-contract.md` §11.3 failure mode 1 ("publisher unavailable → no loss") and failure
+mode 7 ("bounded retries → dead") cannot both hold without a PERSISTED backoff schedule, because a
+bounded-attempt relay exhausts its cap within seconds of an outage and dead-letters healthy rows.
+The following three columns are therefore part of the canonical contract, not optional refinements.
+
+```text
+available_at
+  TIMESTAMPTZ NOT NULL.
+  The earliest time a relay may claim this row.
+  Set on INSERT to PostgreSQL statement time.
+  Updated forward by the backoff policy on each transient failure.
+  NOT NULL so no row can become permanently unclaimable through a NULL comparison.
+
+dead_at
+  TIMESTAMPTZ NULL.
+  Set ONLY when the row enters the terminal 'dead' state; it is the time of death, which
+  created_at cannot express. DLQ age, alert thresholds and reconciliation SLAs derive from it.
+  Cleared when an operator replays the row back to 'pending'.
+
+last_error
+  Bounded TEXT, NULL when there has been no failure.
+  Carries a short, safe failure reason only: an exception class, a status code, a transport
+  error label. It MUST NOT contain a secret, token, credential, raw payload, or raw
+  clarification/question/answer content.
+  The 500-character bound is enforced at the repository boundary AND by a DB CHECK constraint
+  (defense in depth).
+
+Deliberately NOT added: no claim-owner and no lease-expiry column. They are unnecessary while the
+  relay claims rows with FOR UPDATE SKIP LOCKED inside its own transaction, because a worker crash
+  rolls the uncommitted claim back and the row returns to 'pending'. BINDING CONSTRAINT on BE2: a
+  relay MUST NOT hold a claim across a process/transaction boundary. If a future stage needs a
+  lease that outlives a transaction, it must add those columns by amending this contract first.
+No synonym columns are introduced: published_at, attempts and status already exist and are reused.
+```
+
+### Status semantics (BINDING)
+
+```text
+pending    published_at IS NULL     AND dead_at IS NULL     AND available_at IS NOT NULL
+published  published_at IS NOT NULL AND dead_at IS NULL
+dead       dead_at      IS NOT NULL AND published_at IS NULL
+
+A CHECK constraint enforces exactly these three combinations, so a row can never claim to be both
+published and dead, and a terminal row can never lack its terminal timestamp.
+```
+
+### Retry semantics (BINDING)
+
+```text
+1. Claim eligibility: a relay may claim ONLY rows where
+     status = 'pending' AND available_at <= statement_timestamp()
+   (statement time, for the same reason as the answer-claim deadline -- see
+   lifecycle-and-time-contract.md §7.1 time-function selection).
+2. Transient failure: attempts := attempts + 1; available_at := the next retry time from the
+   backoff policy; last_error := a bounded, secret-free reason. status stays 'pending'.
+3. Bounded retries exhausted: status := 'dead'; dead_at := statement_timestamp(); last_error
+   retains the final bounded, secret-free reason, so the operator item is diagnosable.
+4. Success: status := 'published'; published_at := statement_timestamp(); last_error is CLEARED
+   (set to NULL) — a published row carries no residual failure text.
+```
+
+### Operator replay semantics (BINDING, contract only)
+
+```text
+Transition: dead -> pending.
+  id                preserved (the event keeps its identity)
+  idempotency_key   preserved (deterministic; replay stays idempotent for consumers)
+  status            := 'pending'
+  available_at      := statement_timestamp() (immediately eligible)
+  dead_at           := NULL
+  last_error        := NULL (the failure reason moves into the audit evidence for the replay
+                      action; it is not retained on the live row)
+  attempts          NOT reset -- the full delivery-attempt history is preserved as evidence.
+                      A separate replay_count column may be added by a FUTURE stage if a
+                      per-replay budget is needed; BE1-R1 does not add unauthorized columns.
+No replay endpoint, no runtime replay path, and no relay exist in BE1/BE1-R1. This section defines
+  semantics that BE2 and the operator tooling must implement; it authorizes no implementation here.
 ```
 
 ```text
 Writer: the same transaction that performs each lifecycle CAS UPDATE also INSERTs the matching
   outbox row (state + intent-to-publish commit atomically -- either both or neither).
 Relay: a publisher step (the clarification-timeout worker for reminder/expiry events; the API
-  request handler's follow-on for resume events) reads 'pending' rows, publishes the audit/event,
-  marks 'published', and after bounded retries marks 'dead' (routed to the existing
-  stream.deadletter / retry-scheduler DLQ). See api-and-event-contract.md §11.3 and
-  race-condition-and-failure-analysis.md scenarios 10, 17.
+  request handler's follow-on for resume events) reads eligible 'pending' rows, publishes the
+  audit/event, marks 'published', and after bounded, BACKED-OFF retries marks 'dead' (routed to the
+  existing stream.deadletter / retry-scheduler DLQ). See api-and-event-contract.md §11.3 and
+  race-condition-and-failure-analysis.md scenarios 10, 17, 19.
 Rollback: DROP TABLE clarification_lifecycle_outbox -- no other table references it, zero data-loss
   to any existing table.
 ```

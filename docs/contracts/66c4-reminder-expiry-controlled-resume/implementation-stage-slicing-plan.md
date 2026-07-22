@@ -20,8 +20,12 @@ Scope (corrected in Step 66C.4-P-R1 to include the authoritative-deadline predic
   durable-outbox atomicity foundation):
   - the migration proposed in data-model-contract.md: 6 new lifecycle columns, 2 partial indexes,
     1 CHECK constraint on operator_clarification_requests, AND the new clarification_lifecycle_outbox
-    table (durable outbox / pending-event foundation).
-  - the authoritative-deadline CAS predicates: the answer-claim gains `AND due_at > now()` and the
+    table (durable outbox / pending-event foundation) INCLUDING the durability columns
+    available_at / dead_at / last_error added in Step 66C.4-BE1-R1. BE2 must NOT add outbox schema
+    of its own: the relay's persisted backoff, terminal-death timestamp and bounded failure reason
+    are all defined by the canonical contract and created by migration 031.
+  - the authoritative-deadline CAS predicates: the answer-claim gains
+    `AND due_at > statement_timestamp()` and the
     lifecycle-claim guards are defined so the DEADLINE (not the scheduler) closes the answer window
     (lifecycle-and-time-contract.md §7.3A).
   - lifecycle CAS operations (reminder-claim, expiry-claim, resume-claims) as store helpers, each
