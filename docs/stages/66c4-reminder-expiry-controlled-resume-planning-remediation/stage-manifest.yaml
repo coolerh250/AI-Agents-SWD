@@ -1,0 +1,84 @@
+stage: "66C.4-P-R1"
+owner: "Claude Code"
+task_type: "architecture-and-contract-planning-remediation"
+status: "ready-for-product-owner-review"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "83af345"
+  runtime_code_commit_reviewed: "513f190"
+  planning_branch: "planning/66c4-reminder-expiry-controlled-resume"
+  planning_commit_reviewed: "4d9cc2a"
+  architect_review_verdict: "PASS_WITH_GAPS"
+  required_docs:
+    - source/progress.md
+    - docs/process/source-of-truth-policy.md
+    - docs/process/context-guard-protocol.md
+    - docs/process/stop-conditions.md
+    - docs/alignment/66-project-completion/master/project-completion-master-plan.md
+    - docs/alignment/66-project-completion/master/role-ownership-matrix.md
+    - docs/decisions/66-team-rbac-milestone-ownership.md
+    - docs/contracts/66c4-reminder-expiry-controlled-resume/
+
+allowed_paths:
+  - "docs/contracts/66c4-reminder-expiry-controlled-resume/**"
+  - "docs/handoffs/66c4-reminder-expiry-controlled-resume/**"
+  - "docs/test/step66c4-reminder-expiry-controlled-resume-planning-remediation-record.md"
+  - "docs/stages/66c4-reminder-expiry-controlled-resume-planning-remediation/**"
+  - "source/progress.md"
+  - "scripts/verify_step66c4_planning_contract_remediation.py"
+  - "tests/test_step66c4_planning_contract_remediation.py"
+forbidden_paths:
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "migrations/**"
+  - "database/**"
+  - "helm/**"
+  - "k8s/**"
+  - ".github/workflows/**"
+
+requires_reading:
+  - .agents/skills/shared-context/SKILL.md
+  - .agents/skills/stage-gate/SKILL.md
+  - .agents/skills/security-governance/SKILL.md
+
+requires_evidence:
+  - shared_context_receipt
+  - stage_gate_report
+  - progress_update
+
+backend_implementation_allowed: false
+frontend_implementation_allowed: false
+api_implementation_allowed: false
+database_change_allowed: false
+migration_allowed: false
+workflow_change_allowed: false
+scheduler_activation_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+deployment_allowed: false
+external_notification_allowed: false
+production_action_allowed: false
+external_action_allowed: false
+codex_authorized: false
+claude_design_authorized: false
+step_66c4_be1_started: false
+product_owner_review_required: true
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+
+stop_conditions:
+  - prompt_conflicts_with_shared_docs
+  - missing_product_owner_authorization
+  - forbidden_path_changed
+  - production_action_requested_without_authorization
+  - workflow_dispatch_requested_without_authorization
+  - secret_or_internal_identifier_found
+  - migration_creation_attempted
+  - scheduler_activation_attempted
+  - codex_or_claude_design_authorization_attempted
+  - step_66c4_be1_start_attempted
