@@ -310,8 +310,25 @@ async def answer_clarification(
     # crucially, with no answer message and no clarification_answered audit
     # event created, unlike the pre-check above which only prevents the common
     # sequential case.
+    #
+    # Step 66C.4-BE1 -- the claim CAS also enforces the authoritative deadline
+    # (`due_at > now()` in PostgreSQL DB time). If the claim is lost, re-read the
+    # authoritative row state to return the correct 409 reason (reusing the
+    # existing response shapes -- no new shape is introduced): a lost race to a
+    # concurrent answer -> clarification_already_answered; a row still 'open' means
+    # the loss was specifically to the deadline predicate (DB time >= due_at), which
+    # the future timeout worker has not yet materialized to 'expired' ->
+    # invalid_state_for_answer:expired. This claim writes NO outbox row and triggers
+    # NO scheduler/event/notification.
     claimed = await _workroom_store().claim_clarification_answer(clarification_id)
     if claimed is None:
+        current = await _workroom_store().get_clarification(clarification_id)
+        if current is not None and current["status"] == "open":
+            raise HTTPException(status_code=409, detail="invalid_state_for_answer:expired")
+        if current is not None and current["status"] not in ("answered", "open"):
+            raise HTTPException(
+                status_code=409, detail=f"invalid_state_for_answer:{current['status']}"
+            )
         raise HTTPException(status_code=409, detail="clarification_already_answered")
 
     answer_message = await _workroom_store().create_message(

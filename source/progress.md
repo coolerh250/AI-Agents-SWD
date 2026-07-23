@@ -15623,3 +15623,117 @@ no production/external action, no Codex authorization.
   Design remain unauthorized. Step 66C.4-BE1 remains NOT STARTED / NOT AUTHORIZED. Next authorized
   step: a separate, explicit Product Owner authorization to begin Step 66C.4-BE1 (bound by the BE1
   Runtime Compatibility Gate) if/when ready.
+
+## Stage 66C.4-BE1 — Data Model, Deadline CAS and Disabled Transactional Outbox Foundation
+
+**Status: PASS (implementation-complete-pending-independent-review). Marker
+`STEP66C4_BE1_DATA_MODEL_DEADLINE_OUTBOX_VERIFY: PASS`.**
+
+- **Authorization.** Product Owner authorized Step 66C.4-BE1 (data model, deadline CAS, disabled
+  outbox foundation only). Branch `feature/66c4-be1-lifecycle-outbox-foundation` off `e03c22d`.
+- **Migration `031`** (+ `_down`): six additive NULLABLE lifecycle columns on
+  `operator_clarification_requests` (`reminder_sent_at`, `expired_at`, `resume_eligible_at`,
+  `resume_requested_at`, `resume_requested_by`, `resume_authorized_at`); new
+  `clarification_lifecycle_outbox` table (exactly the canonical contract columns); partial indexes
+  + UNIQUE(idempotency_key) + status/attempts/nonempty/lifecycle-ordering CHECKs. Additive,
+  idempotent, tested up/down/reapply. No `resume_dispatched_at`/`resume_authorized_by`/`lock_version`.
+- **Deadline CAS.** `claim_clarification_answer` gains `AND answered_at IS NULL AND due_at > now()`
+  (PostgreSQL DB time; `due_at` exclusive upper bound). A past-deadline answer fails the claim even
+  while status is still `open` (scheduler lag cannot extend the window). The API re-reads
+  authoritative state and returns 409 `invalid_state_for_answer:expired` (reusing existing shapes;
+  no new endpoint, no success-schema change). `clarification_expired` is NOT materialized in BE1.
+- **Disabled outbox foundation.** New `shared/sdk/tasks/lifecycle_outbox.py`: transaction-aware
+  insert (caller-owned txn; never commits), payload-safety guard (rejects raw/sensitive keys +
+  oversize), event-type allowlist, read-only helpers. No relay, no scheduler, no live producer;
+  existing audit/event transport unchanged; no unconsumed accumulation (statically verified).
+- **Tests.** 15 BE1 tests pass (10 DB-less/API + 5 real-Postgres integration incl. concurrency
+  exactly-one-wins and outbox transaction atomicity/idempotency), executed against an isolated
+  ephemeral Postgres 16 container (no shared runtime migrated). Step 66C regression: 101 passed;
+  broad affected-area run: 637 passed, 15 skipped, 0 failed. Ruff/black/mypy clean; secret scan
+  unchanged.
+- **Contract-refinement note (forward).** The outbox implements exactly the canonical contract
+  columns; BE2's relay will likely need durable-retry fields (`available_at`/`dead_at`/`last_error`)
+  not in the contract. Per "do not self-expand beyond contract", these are flagged for 66C.4-BE1-R /
+  a contract refinement before BE2 — not added by BE1. Non-blocking (no relay exists).
+- **Gate.** No frontend change. Backend change within scope (schema + CAS predicate + disabled
+  outbox). API change limited to the authorized deadline 409. No workflow change. No scheduler
+  implemented/activated. No outbox relay implemented/activated. No existing producer switched. No
+  resume/dispatch/resume behavior. No external notification. No shared-runtime deployment.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
+  NOT STARTED. Not merged, not deployed. Next authorized step: **Step 66C.4-BE1-R** (independent
+  Technical, Security and Migration Review).
+
+## Step 66C.4-BE1-R — Independent Technical, Security and Migration Review
+
+**Review process marker: `STEP66C4_BE1_INDEPENDENT_REVIEW_VERIFY: PASS`.
+Technical result (recorded separately, never conflated): `BE1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`.**
+
+- **Independence.** Performed by a FRESH Claude Code review subagent in an independent session and
+  git worktree, with no access to the implementation session's private reasoning, scratch notes,
+  uncommitted files or any pre-written verdict. Review branch
+  `review/66c4-be1-technical-security-migration` @ `f5417f4`; reviewed commit `d2467f5`.
+- **B-1 (BLOCKING) deadline semantics.** PostgreSQL `now()` IS `transaction_timestamp()`, frozen at
+  BEGIN. Reproduced on an isolated ephemeral Postgres 16: a transaction opened ~2.95s BEFORE
+  `due_at` executed the committed CAS ~2.06s AFTER `due_at`, claimed the row, and wrote an
+  `answered_at` backdated by ~5.0s. Safe today only by accident of the autocommit call shape, while
+  binding §11.3 requires BE2 to wrap the CAS with the outbox INSERT in one transaction. Root cause
+  included the canonical contract's incorrect "now() is evaluated per statement" claim.
+- **B-2 (BLOCKING) outbox sufficiency.** No `available_at`/`next_attempt_at`, `dead_at` or
+  `last_error`. Binding §11.3 failure mode 1 ("no loss") and mode 7 (bounded retries → dead) are
+  mutually unsatisfiable without a persisted backoff schedule.
+- **M-1 (MEDIUM) payload guard.** Top-level-only, exact-match deny list; `{"meta": {"answer": …}}`,
+  `{"items": [{"token": …}]}`, `answer_body` and `question_text` were all ACCEPTED.
+- **PASS areas.** CAS/API concurrency (exactly one winner; no TOCTOU exploit found); migration
+  (additive, idempotent, deterministic, no table rewrite — relfilenode unchanged); disabled
+  foundation (0 live callers, transport unchanged); security (0 critical / 0 high).
+- **Gate.** No implementation file modified by the review. PR #17 NOT merged. Nothing deployed. No
+  scheduler/relay activated. `production_executed_true_count` = 0. Next authorized step:
+  **Step 66C.4-BE1-R1** (scoped remediation).
+
+## Step 66C.4-BE1-R1 — Deadline CAS, Outbox Durability and Payload Safety Remediation
+
+**Remediation self-verification: `STEP66C4_BE1_R1_REMEDIATION_VERIFY: PASS`.
+Mandatory PostgreSQL evidence: `STEP66C4_BE1_R1_PG_EVIDENCE: PASS`.
+Neither is a technical verdict — `BE1_TECHNICAL_VERDICT` stays `REMEDIATION_REQUIRED` until the
+independent Step 66C.4-BE1-R1-R closure reviewer changes it.**
+
+- **Authorization.** Product Owner authorized eight remediation items. Same branch
+  `feature/66c4-be1-lifecycle-outbox-foundation`; PR #17 stays Draft.
+- **B-1 FIXED.** Canonical `lifecycle-and-time-contract.md` corrected: `now()` /
+  `transaction_timestamp()` are the transaction START time and must not decide a claim-time
+  deadline; `statement_timestamp()` is selected (constant within one statement, unlike
+  `clock_timestamp()`). `claim_clarification_answer` now uses
+  `AND due_at > statement_timestamp()` with `answered_at=statement_timestamp()`. **Negative control
+  on ephemeral PG16: the same cross-deadline scenario SUCCEEDS against the old `now()` predicate and
+  is REJECTED against the new one**, proving the regression test is not vacuous.
+- **B-2 FIXED.** Migration `031` amended in place (never merged, never deployed) to add
+  `available_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()`, `dead_at`, bounded
+  `last_error` (500 chars, DB CHECK), a status/timestamp coherence CHECK, and
+  `idx_clo_pending_available` / `idx_clo_dead_at`. Retry, dead and operator-replay semantics are now
+  BINDING in `data-model-contract.md` (claim eligibility `available_at <= statement_timestamp()`;
+  attempts NOT reset on replay). No claim-owner/lease column added — instead BE2 is bound to
+  `FOR UPDATE SKIP LOCKED` within its own transaction.
+- **M-1 FIXED.** The deny list is replaced by a positive per-event-type key allowlist with
+  scalar-only values, aligned to the canonical dotted event naming
+  (`clarification.reminder_recorded`). All reviewer bypass probes now rejected.
+- **Test/fixture gaps FIXED.** New mandatory transaction-crossing, strict-boundary, statement-time
+  `answered_at`, `due_at NOT NULL`, barrier-synchronised concurrency and lock-blocking tests; a
+  FAIL-CLOSED destructive-fixture guard (opt-in env var + isolated DB-name convention + shared-name
+  denial); and a PostgreSQL evidence marker reported separately from the static marker so a green
+  verifier can never imply real-DB evidence.
+- **Deferred (recorded, not fixed).** L-1 payload/event-type CHECKs not DB-enforced, L-2
+  `idempotency_key` format unvalidated, L-3 deleted clarification reported as already answered —
+  each with reason and recommended future stage in `be1-deferred-low-findings.md`.
+- **Tests.** Mandatory PostgreSQL run: **59 passed, 0 skipped, 0 failed** on an isolated ephemeral
+  Postgres 16 (destroyed afterwards; shared DB never touched). Affected regression: 265 passed,
+  0 failed. Affected-file ruff/black/mypy clean; repo-wide ruff(8)/black(30) failures are
+  pre-existing in untouched files at counts identical to the reviewer's own baseline.
+- **Review trail.** The reviewer's findings, handoff, stage records and test record are carried onto
+  this branch byte-identical. The reviewer's defect-pinning verifier/test file is intentionally NOT
+  carried (it asserts the defects are PRESENT and fails once fixed); it remains intact at `f5417f4`.
+- **Gate.** No frontend change. No scheduler/relay implemented or activated. No live producer
+  cutover. No runtime outbox write. No resume/dispatch/workflow resume. No audit/event transport
+  change. No external notification. No shared-runtime migration. No deployment.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
+  NOT STARTED. PR #17 Draft and unmerged. Next authorized step: **Step 66C.4-BE1-R1-R**
+  (independent remediation closure review by a fresh review subagent).

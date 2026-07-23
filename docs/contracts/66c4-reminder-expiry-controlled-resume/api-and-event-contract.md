@@ -208,9 +208,15 @@ Option 3 -- Existing repository mechanism (publish_audit_event / direct XADD), o
   resume-authorized) writes its state column(s) AND inserts one clarification_lifecycle_outbox row
   (data-model-contract.md) in a SINGLE database transaction -- both commit or neither does.
 - A relay/publisher step (the clarification-timeout worker for reminder/expiry; the API handler's
-  follow-on for resume events) reads 'pending' outbox rows, produces the audit projection and the
-  Redis event, marks the row 'published', and after bounded retries marks it 'dead' and routes it
-  to the EXISTING stream.deadletter / retry-scheduler DLQ.
+  follow-on for resume events) reads ELIGIBLE 'pending' outbox rows
+  (`status='pending' AND available_at <= statement_timestamp()`), produces the audit projection and
+  the Redis event, marks the row 'published', and after bounded, BACKED-OFF retries marks it 'dead'
+  (with dead_at and a bounded, secret-free last_error) and routes it to the EXISTING
+  stream.deadletter / retry-scheduler DLQ. The retry schedule is PERSISTED in available_at, not held
+  in worker memory -- see the durability columns in data-model-contract.md (Step 66C.4-BE1-R1).
+- BINDING relay constraint: a relay MUST claim rows with FOR UPDATE SKIP LOCKED inside its own
+  transaction and MUST NOT hold a claim across a process/transaction boundary. This is what makes a
+  claim-owner/lease column unnecessary; a worker crash rolls the uncommitted claim back.
 - The outbox UNIQUE(idempotency_key) plus each event's deterministic idempotency key give
   at-least-once delivery with idempotent, deduplicated consumption (never exactly-once).
 - Audit/event publication failure is therefore NO LONGER a "non-blocking gap": the durable outbox
@@ -222,7 +228,11 @@ Option 3 -- Existing repository mechanism (publish_audit_event / direct XADD), o
 
 ```text
 1. DB commit succeeds but publisher unavailable: the outbox row is durably 'pending'; the relay
-   publishes it when the publisher recovers. No loss.
+   publishes it when the publisher recovers. No loss. This requires the PERSISTED backoff schedule
+   in available_at: without it, a relay polling every few seconds exhausts its bounded attempts
+   within seconds of the outage and dead-letters healthy rows, which is exactly the loss this mode
+   forbids and would make modes 1 and 7 mutually unsatisfiable (Step 66C.4-BE1-R blocking finding
+   B-2; race-condition-and-failure-analysis.md scenario 19).
 2. Publisher succeeds but acknowledgement/mark-published fails: the row stays 'pending', is
    re-published on the next relay pass; the consumer deduplicates via idempotency_key. At-least-once
    + idempotent = no duplicate observable effect.
@@ -231,15 +241,17 @@ Option 3 -- Existing repository mechanism (publish_audit_event / direct XADD), o
 4. Audit service unavailable: same as (1) -- the outbox row waits; nothing is dropped.
 5. Redis unavailable: same as (1) -- publication is deferred until Redis recovers; the state
    transition is already durable.
-6. Outbox backlog recovery: after any outage the relay drains 'pending' rows oldest-first; the
-   backlog is bounded by outage duration, not unbounded.
-7. Poison event / terminal DLQ: a row that fails bounded retries is marked 'dead' and routed to the
-   existing DLQ; it is NOT retried forever and NOT silently dropped -- it becomes an explicit
+6. Outbox backlog recovery: after any outage the relay drains ELIGIBLE 'pending' rows oldest-first
+   (available_at, then created_at); the backlog is bounded by outage duration, not unbounded.
+7. Poison event / terminal DLQ: a row that fails bounded, backed-off retries is marked 'dead' with
+   dead_at set and a bounded, secret-free last_error retained, and is routed to the existing DLQ; it
+   is NOT retried forever and NOT silently dropped -- it becomes an explicit, DIAGNOSABLE
    operator-reconciliation item (recovery-and-audit, race-condition-and-failure-analysis.md
-   scenario 17).
+   scenarios 17 and 19).
 8. Operator replay path: a 'dead' outbox row (or a reconciliation exception) is replayable by an
    authorized operator via the existing DLQ replay tooling, exactly as any other dead-lettered
-   message in this project.
+   message in this project. The replay transition (dead -> pending, preserving id/idempotency_key
+   and NOT resetting attempts) is defined in data-model-contract.md "Operator replay semantics".
 ```
 
 Because Option 1 is selected, no "equivalent-reliability evidence for the existing mechanism" is

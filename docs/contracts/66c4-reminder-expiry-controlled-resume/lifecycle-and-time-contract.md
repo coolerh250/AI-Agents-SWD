@@ -7,11 +7,28 @@
 ## 7.1 Time source
 
 ```text
-Authoritative clock: Postgres server clock via `now()` at write time (already the pattern for
-  `due_at`/`reminder_at` computation and for `answered_at`/`updated_at` in the existing CAS claim).
-  The scheduler process must NOT compute deadlines from its own local clock -- it only compares
-  its own `now()` reading against already-stored TIMESTAMPTZ values, and any write it performs
-  uses the same `now()` SQL function, keeping a single source of truth for "current time."
+Authoritative clock: the Postgres server clock, read by a PostgreSQL time function at write time
+  (already the pattern for `due_at`/`reminder_at` computation and for `answered_at`/`updated_at`).
+  The scheduler process must NOT compute deadlines from its own local clock -- it only compares a
+  PostgreSQL time reading against already-stored TIMESTAMPTZ values, and any write it performs uses
+  a PostgreSQL time function, keeping a single source of truth for "current time."
+Time-function selection (BINDING, corrected in Step 66C.4-BE1-R1):
+  PostgreSQL `now()` and `transaction_timestamp()` are the SAME function: both return the time the
+  CURRENT TRANSACTION started, and both stay frozen for every later statement in that transaction.
+  They MUST NOT be used for a deadline decision that is required to reflect the execution time of
+  the answer-claim statement: a transaction that BEGAN before the deadline would evaluate the
+  predicate against its own start time and could claim after the deadline had already passed.
+  The authoritative statement-time function for the answer claim is `statement_timestamp()`:
+    - it reflects the time the current SQL statement started executing;
+    - it does NOT freeze because the surrounding transaction began before the deadline;
+    - it is CONSTANT within one SQL statement, so a single CAS statement compares the deadline and
+      stamps `answered_at` from one identical reading;
+    - it is preferable to `clock_timestamp()` here because `clock_timestamp()` advances on every
+      call and would let the deadline predicate and the `answered_at` write inside the SAME CAS
+      statement observe two different times.
+  Non-claim scheduler scans (`reminder_at <= ...`, `due_at <= ...`) select rows for MATERIALIZATION
+  only and do not decide answer eligibility; they may read PostgreSQL time by any of these
+  functions. Only the answer-claim deadline decision is binding on `statement_timestamp()`.
 Storage: UTC, TIMESTAMPTZ throughout (already the existing convention for every relevant column --
   no change needed).
 Display timezone: the Admin Console's responsibility (existing convention: raw TIMESTAMPTZ values
@@ -31,9 +48,12 @@ Clock-semantics statement (canonical wording, corrected in Step 66C.4-P-R1 -- ab
   Concretely:
   - TIMESTAMPTZ storage: every relevant column is TIMESTAMPTZ (existing convention, unchanged).
   - UTC normalization: values are stored/compared in UTC; no naive local-time is introduced.
-  - Transaction timestamp choice: now() is evaluated per statement inside each claim transaction,
-    so the deadline/reminder comparison and any write it performs share one Postgres clock reading;
-    there is no cross-machine wall-clock comparison in the trigger path.
+  - Transaction timestamp choice (corrected in Step 66C.4-BE1-R1): the answer-claim deadline
+    comparison and its `answered_at` write both use `statement_timestamp()`, so they share one
+    Postgres clock reading taken when the claim STATEMENT began, and that reading is not frozen at
+    the start of a surrounding transaction. `now()`/`transaction_timestamp()` do NOT provide
+    claim-execution time and are not used for this decision. There is no cross-machine wall-clock
+    comparison in the trigger path.
   - Delayed scheduler tolerance: up to several minutes of delay between a timestamp becoming due and
     the reminder/expiry transition materializing is acceptable for this hour-granularity human-facing
     use case; this delays only materialization/notification, never the enforceability of the
@@ -146,14 +166,15 @@ Delivery semantics (binding wording):
    authoritative DB time has reached `due_at`, **regardless of whether the scheduler has yet
    materialized `status='expired'`**. See §7.3A below for the binding authoritative-deadline
    contract -- the corrected design does NOT rely on the scheduler winning a race to close the
-   answer window; the deadline predicate `due_at > now()` in the answer-claim itself is what closes
+   answer window; the deadline predicate `due_at > statement_timestamp()` in the answer-claim itself closes
    it, so scheduler lag can never extend the window (correcting the original draft, which allowed a
    "narrow window" answer to succeed until the scheduler ran).
 7. Late-answer UI/API response: an answer rejected by the deadline predicate (or because the row
    already transitioned to `expired`) returns the existing `409 invalid_state_for_answer:{status}`
    error path; when the row is still `open` but past `due_at`, the answer-claim's added deadline
    predicate causes the same 409 (`workroom_api.py`'s handler surfaces the expiry reason). This is a
-   contract addition to the existing answer-claim query (the added `AND due_at > now()` predicate),
+   contract addition to the existing answer-claim query (the added
+   `AND due_at > statement_timestamp()` predicate),
    to be implemented in 66C.4-BE1/BE3 -- no code changed by this planning stage.
 8. Blocked vs. expired distinction: this stage's own required behaviors use "expired" as the
    clarification-level terminal state and `clarification_expired` as the task-level status: there
@@ -190,9 +211,10 @@ materializing `status='expired'`.
    authoritative expiry deadline. It is an EXCLUSIVE upper bound: the answer window is [created_at,
    due_at). (The name "expires_at" is used interchangeably in prose; there is no separate
    expires_at column -- due_at is that value, per data-model-contract.md.)
-2. Authoritative clock: PostgreSQL database time (now()) evaluated inside the same statement is the
-   authoritative lifecycle clock. No process's local wall clock decides whether the deadline has
-   passed.
+2. Authoritative clock: PostgreSQL database time read by `statement_timestamp()` inside the claim
+   statement is the authoritative lifecycle clock for this decision. No process's local wall clock
+   decides whether the deadline has passed, and no transaction-start time does either -- see the
+   time-function selection rule in §7.1 (corrected in Step 66C.4-BE1-R1).
 3. When authoritative DB time >= due_at:
    a. The answer endpoint must NOT accept a normal answer, even if status is still 'open'.
    b. This holds even when the scheduler has not yet run to set status='expired' -- the deadline,
@@ -208,26 +230,34 @@ Binding answer-claim CAS predicate (contract only; SQL shown for precision, no i
 performed by this stage):
 
     UPDATE operator_clarification_requests
-       SET status = 'answered', answered_at = now(), ...
+       SET status = 'answered', answered_at = statement_timestamp(), ...
      WHERE id = :clarification_id
        AND status = 'open'
        AND answered_at IS NULL
-       AND due_at > now()          -- authoritative deadline, exclusive upper bound
+       AND due_at > statement_timestamp()   -- authoritative deadline, exclusive upper bound
     RETURNING *;
 
   A zero-row result means the answer lost to either a prior answer, a prior/materialized expiry, or
   the deadline itself -- all of which correctly reject the late answer.
 
-4. Answer submitted exactly at due_at (now() == due_at): REJECTED, because due_at is an EXCLUSIVE
-   upper bound (`due_at > now()` is false at equality). Recommended, for determinism.
+4. Answer submitted exactly at due_at (statement_timestamp() == due_at): REJECTED, because due_at is
+   an EXCLUSIVE upper bound (`due_at > statement_timestamp()` is false at equality). Recommended,
+   for determinism.
 5. Delayed poller: because the answer-claim enforces the deadline itself, a poller that runs
    minutes late changes only WHEN status flips to 'expired' and WHEN the audit/notification event
    is produced -- never whether a late answer could have slipped through.
-6. Transaction timestamp semantics: now() is evaluated per statement at execution time inside the
-   claim transaction; both the answer-claim and the expiry-claim read the same Postgres clock, so
-   there is no cross-service comparison (see clock-semantics section §7.1, corrected).
+6. Transaction timestamp semantics (BINDING, corrected in Step 66C.4-BE1-R1): `statement_timestamp()`
+   is evaluated when the claim STATEMENT begins executing, so the deadline comparison holds even when
+   the claim runs inside an explicit transaction that BEGAN before due_at. `now()` /
+   `transaction_timestamp()` return transaction-start time and MUST NOT be used here: a transaction
+   opened before due_at would otherwise be able to claim after due_at, and `answered_at` would be
+   backdated to the transaction start. Both the answer-claim and the expiry-claim read the same
+   Postgres clock, so there is no cross-service comparison (see §7.1 time-function selection).
+   This rule is what makes the CAS remain correct once BE2 wraps it, per the binding §11.3 atomicity
+   model, in one transaction together with the outbox INSERT.
 7. Late-answer API status/error code: 409 invalid_state_for_answer (with an "expired"/"past due"
-   reason), the existing error path -- extended only by the added `due_at > now()` predicate.
+   reason), the existing error path -- extended only by the added `due_at > statement_timestamp()`
+   predicate.
 8. User-facing result: a user answering at or after the deadline sees "this clarification has
    expired / the decision window has closed," never a silent success.
 ```

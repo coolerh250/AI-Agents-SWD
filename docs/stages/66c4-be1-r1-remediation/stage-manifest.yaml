@@ -1,0 +1,67 @@
+stage: "66C.4-BE1-R1"
+owner: "Claude Code remediation implementation session"
+task_type: "backend-contract-code-migration-security-remediation"
+status: "remediation-complete-pending-independent-closure-review"
+
+backend_change_allowed: true
+api_change_allowed: "deadline-predicate-and-timestamp-only"
+database_change_allowed: true
+migration_change_allowed: true
+canonical_contract_correction_allowed: true
+payload_validation_change_allowed: true
+
+frontend_change_allowed: false
+audit_transport_change_allowed: false
+event_transport_change_allowed: false
+scheduler_implementation_allowed: false
+scheduler_activation_allowed: false
+outbox_relay_implementation_allowed: false
+outbox_relay_activation_allowed: false
+live_producer_cutover_allowed: false
+runtime_outbox_write_allowed: false
+resume_implementation_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+deployment_allowed: false
+merge_allowed: false
+be2_authorized: false
+codex_authorized: false
+claude_design_authorized: false
+
+independent_closure_review_required: true
+remediation_session_may_approve_merge: false
+
+findings_remediated:
+  - id: "B-1"
+    severity: "blocking"
+    summary: "now()/transaction_timestamp() freeze at BEGIN; a transaction opened before due_at could claim after it"
+    status: "fixed"
+  - id: "B-2"
+    severity: "blocking"
+    summary: "outbox lacked persisted retry schedule, terminal death timestamp and bounded failure reason"
+    status: "fixed"
+  - id: "M-1"
+    severity: "medium"
+    summary: "payload guard inspected only top-level keys against an exact-match deny list"
+    status: "fixed"
+
+findings_deferred:
+  - id: "L-1"
+    summary: "payload size cap and event-type allowlist not DB-enforced"
+    status: "deferred"
+  - id: "L-2"
+    summary: "idempotency_key inserted without format validation"
+    status: "deferred"
+  - id: "L-3"
+    summary: "deleted clarification reported as already answered"
+    status: "deferred"
+
+markers:
+  remediation_self_verification: "STEP66C4_BE1_R1_REMEDIATION_VERIFY"
+  postgresql_evidence: "STEP66C4_BE1_R1_PG_EVIDENCE"
+  technical_verdict_owner: "independent Step 66C.4-BE1-R1-R reviewer only"
+
+pull_request:
+  number: 17
+  state: "draft"
+  merged: false

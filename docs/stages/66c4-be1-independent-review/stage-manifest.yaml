@@ -1,0 +1,86 @@
+stage: "66C.4-BE1-R"
+owner: "fresh-claude-code-review-subagent"
+task_type: "independent-technical-security-migration-review"
+status: "review-complete"
+
+source_of_truth:
+  main_required: true
+  latest_main_reviewed: "e03c22d"
+  reviewed_implementation_commit: "d2467f5"
+  reviewed_branch: "feature/66c4-be1-lifecycle-outbox-foundation"
+  reviewed_pull_request: "#17 (draft, NOT merged)"
+  review_branch: "review/66c4-be1-technical-security-migration"
+  canonical_contract: "docs/contracts/66c4-reminder-expiry-controlled-resume/"
+  product_decisions: "docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md"
+
+review_result:
+  review_process_marker: "STEP66C4_BE1_INDEPENDENT_REVIEW_VERIFY: PASS"
+  technical_verdict: "BE1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED"
+  deadline_verdict: "REMEDIATION_REQUIRED"
+  due_at_null_verdict: "SAFE"
+  migration_verdict: "PASS"
+  cas_api_verdict: "PASS"
+  outbox_foundation_verdict: "FOUNDATION_REMEDIATION_REQUIRED_BEFORE_MERGE"
+  disabled_foundation_verdict: "PASS"
+  security_verdict: "no-critical-no-high"
+  test_quality_verdict: "PASS_WITH_GAPS"
+  remediation_step_recommended: "66C.4-BE1-R1"
+
+reviewer_independent_session_required: true
+reviewer_independent_worktree_required: true
+original_implementation_session_allowed: false
+private_reasoning_transfer_allowed: false
+uncommitted_artifact_access_allowed: false
+
+implementation_change_allowed: false
+migration_change_allowed: false
+backend_change_allowed: false
+api_change_allowed: false
+workflow_change_allowed: false
+scheduler_allowed: false
+relay_allowed: false
+producer_cutover_allowed: false
+merge_allowed: false
+deployment_allowed: false
+be2_authorized: false
+codex_authorized: false
+claude_design_authorized: false
+
+isolated_postgresql_testing_allowed: true
+product_owner_review_required: true
+
+allowed_paths:
+  - "docs/contracts/66c4-reminder-expiry-controlled-resume/*review*.md"
+  - "docs/handoffs/66c4-reminder-expiry-controlled-resume/be1-review-result-handoff.md"
+  - "docs/test/step66c4-be1-independent-review-record.md"
+  - "docs/stages/66c4-be1-independent-review/**"
+  - "scripts/verify_step66c4_be1_independent_review.py"
+  - "tests/test_step66c4_be1_independent_review.py"
+  - "source/progress.md"
+forbidden_paths:
+  - "migrations/**"
+  - "shared/sdk/**"
+  - "apps/**"
+  - "services/**"
+  - "infra/**"
+  - "helm/**"
+  - "k8s/**"
+  - "frontend/**"
+  - ".github/workflows/**"
+
+security_checks:
+  secret_scan_required: true
+  public_repo_masking_required: true
+  no_internal_infra_identifiers: true
+  isolated_ephemeral_test_db_only: true
+  ephemeral_db_torn_down: true
+
+stop_conditions:
+  - implementation_file_modified_by_reviewer
+  - migration_file_modified_by_reviewer
+  - pull_request_merged
+  - shared_or_staging_or_production_database_migrated
+  - scheduler_or_relay_activated
+  - deployment_performed
+  - codex_or_claude_design_authorized
+  - forbidden_path_changed
