@@ -15737,3 +15737,44 @@ independent Step 66C.4-BE1-R1-R closure reviewer changes it.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
   NOT STARTED. PR #17 Draft and unmerged. Next authorized step: **Step 66C.4-BE1-R1-R**
   (independent remediation closure review by a fresh review subagent).
+
+## Step 66C.4-BE1-R1-R — Independent Remediation Closure Review
+
+**Process marker: `STEP66C4_BE1_R1_INDEPENDENT_CLOSURE_REVIEW_VERIFY: PASS`.
+Technical verdict (recorded separately, never conflated): `BE1_TECHNICAL_VERDICT: PASS`.
+Merge recommendation: `PR #17: READY_FOR_PRODUCT_OWNER_MERGE_AUTHORIZATION`.**
+
+- **Independence.** Performed by a FRESH Claude Code review subagent in an independent worktree,
+  with no role in implementing or remediating the code. No pre-written verdict accepted. Reviewer
+  branch `review/66c4-be1-r1-remediation-closure`; reviewed commit `0bb9944`. No implementation file
+  modified by the reviewer; PR #17 left untouched (still OPEN, Draft).
+- **B-1 deadline — CLOSED.** CAS uses `due_at > statement_timestamp()` and
+  `answered_at=statement_timestamp()`; no residual `now()`/`transaction_timestamp()` in the deadline
+  decision. Reviewer's own isolated-Postgres reproduction: a transaction opened before `due_at` and
+  executed after `due_at` was REJECTED (`CLAIMED=False`); a NEGATIVE CONTROL with the old
+  `due_at > now()` predicate SUCCEEDED (`CLAIMED=True`) under identical timing — the fixed test is
+  non-vacuous. Strict equality proven false (`due_at > due_at` matches 0 rows); `answered_at`
+  reflects statement time, not transaction BEGIN.
+- **B-2 outbox — CLOSED.** Migration 031 carries `available_at` (NOT NULL DEFAULT
+  `statement_timestamp()`), `dead_at`, bounded `last_error`, with status/timestamp coherence,
+  `attempts>=0`, idempotency UNIQUE and a pending+available_at claim index. Reviewer probed each
+  contradictory insert → CheckViolationError; duplicate key → UniqueViolationError. All 14 BE2
+  capabilities classified SUPPORTED_BY_CURRENT_SCHEMA: **BE2 needs no foundation schema change.**
+  `plan_retry_state`/`plan_replay_state` are pure (no I/O, no loop, no live caller).
+- **M-1 payload — CLOSED.** Positive per-event-type allowlist + scalar-only values. Every reviewer
+  bypass probe rejected (nested dict, list, float, oversized scalar/total, near-miss body keys,
+  case-variant secret key, column-owned duplication, unknown dotted event); legit canonical accepted;
+  no raw value leaked in error messages.
+- **Migration/fixture/tests — SAFE.** Additive migration, symmetric rollback, deterministic reapply,
+  `due_at NOT NULL` preserved, `DEFAULT statement_timestamp()` on a fresh table (no rewrite);
+  fail-closed destructive-fixture guard; mandatory PostgreSQL evidence **0 skipped / 0 failed**.
+- **Tests.** Reviewer's own suite `tests/test_step66c4_be1_r1_independent_closure_review.py`:
+  22 passed (incl. PG transaction-crossing + negative control, strict equality, statement-time
+  `answered_at`, outbox coherence). R1 suite 44 passed; BE1 data-model suite 15 passed; regression
+  222 passed. Affected-file black/ruff/mypy clean; `git diff --check` clean.
+- **Original review preserved.** Commit `f5417f4` unmodified; its defect-pinning verifier/tests still
+  exist there and were correctly NOT carried onto the feature branch (evidence preservation).
+- **Gate.** No scheduler/relay/live producer (0 runtime callers). No resume/dispatch/workflow resume.
+  No audit/event transport change. No deployment. `production_executed_true_count` = 0. Codex and
+  Claude Design remain unauthorized. Step 66C.4-BE2 NOT authorized by this review. Next step:
+  **Product Owner review and explicit merge authorization for PR #17** — not BE2.
