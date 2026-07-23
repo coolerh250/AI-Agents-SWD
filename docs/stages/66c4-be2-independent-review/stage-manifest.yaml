@@ -1,0 +1,30 @@
+stage: 66C.4-BE2-R
+title: Independent Poller, Relay, Transaction and Failure-Recovery Review
+reviewed_commit: 319123b
+feature_branch: feature/66c4-be2-reminder-expiry-outbox-relay
+review_branch: review/66c4-be2-poller-relay-transaction-recovery
+
+# Review stage — no implementation authority.
+implementation_change_allowed: false
+migration_change_allowed: false
+backend_change_allowed: false
+api_change_allowed: false
+shared_runtime_activation_allowed: false
+shared_database_migration_allowed: false
+producer_cutover_allowed: false
+deployment_allowed: false
+merge_allowed: false
+be3_authorized: false
+codex_authorized: false
+claude_design_authorized: false
+
+# Isolated ephemeral datastore testing was permitted and used.
+isolated_postgresql_testing_allowed: true
+isolated_redis_testing_allowed: true
+
+product_owner_review_required: true
+
+process_marker: "STEP66C4_BE2_INDEPENDENT_REVIEW_VERIFY: PASS"
+technical_verdict: "BE2_TECHNICAL_VERDICT: REMEDIATION_REQUIRED"
+
+status: "review-complete"

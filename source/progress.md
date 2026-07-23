@@ -15820,3 +15820,27 @@ NOT DEPLOYED, NOT RUNTIME VALIDATED, NOT ACTIVATED.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
   NOT started. Next authorized step: **Step 66C.4-BE2-R** (independent poller/relay/transaction/
   failure-recovery review by a fresh review subagent).
+
+### Step 66C.4-BE2-R — Independent review (COMPLETE; verdict REMEDIATION_REQUIRED)
+- **Fresh independent reviewer** (did not implement BE2) judged commit `319123b` on an isolated
+  ephemeral PostgreSQL 16 + Redis 7 stack (created for the review, destroyed afterwards; no shared
+  DB/Redis touched). Review branch `review/66c4-be2-poller-relay-transaction-recovery`.
+- **Markers (separate):** `STEP66C4_BE2_INDEPENDENT_REVIEW_VERIFY: PASS` (artifacts/verifier/tests
+  complete); **`BE2_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`**.
+- **Two blocking findings.** B-1 (§6.3): expiry commits clarification→`expired` + `clarification.expired`
+  outbox while a task in an unexpected state is left unchanged (guarded task UPDATE matches 0 rows,
+  result not inspected), with no observable reconciliation — reproduced (task=`running`). B-2 (§9):
+  the Redis XADD is awaited inside the open DB transaction while the outbox row is locked, with no
+  bounded timeout (`socket_timeout=None`, no `wait_for`); a broker-hang reproduction blocked
+  `publish_one` >14s holding the transaction + row lock (pool-exhaustion risk).
+- **Non-blocking:** LOW — `RETRY_BACKOFF_SECONDS[3]=3600` is dead code (effective `30/120/600→dead`,
+  4 attempts, no off-by-one); MEDIUM future-tied — `replay_dead` has no auth boundary (safe while
+  unexposed; BE3 must add RBAC); observation — dead rows not routed to `stream.deadletter` (deferred).
+- **Confirmed clean:** predicates, atomic rollback, single durable destination + audit-worker
+  envelope/projection compatibility, ack-loss same-identity resend, replay foundation not activated,
+  historical guard not weakened (precise 3-path allowlist), no shared activation/cutover/deployment,
+  no critical/high security issue. Vendor 28 passed/0 skipped; BE1 regression 69 passed; ruff/black/
+  mypy/`git diff --check` clean. Reviewer modified ZERO implementation files; PR #18 untouched.
+- **Gate.** `merge_allowed:false`, `deployment_allowed:false`, `producer_cutover_allowed:false`,
+  `be3_authorized:false`, `product_owner_review_required:true`. BE2 returns to the implementer for
+  B-1/B-2 remediation and a re-review before any merge/activation/BE3.
