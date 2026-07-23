@@ -54,10 +54,18 @@ Step 66C.4 contract is now canonical: the Reminder / Expiry / Controlled Resume 
   set and the six approved Product Owner decisions were merged to main at Step 66C.4-P-M (merge
   commit e109189), per docs/decisions/66c4-reminder-expiry-controlled-resume-product-decisions.md
   and docs/contracts/66c4-reminder-expiry-controlled-resume/contract-source-of-truth-record.md.
-Step 66C.4-BE1 is the next candidate stage (data model / migration / disabled outbox foundation),
-  pending a separate, explicit Product Owner authorization -- it remains NOT STARTED and NOT
-  AUTHORIZED, and is bound by the "BE1 Runtime Compatibility Gate" in the contract source-of-truth
-  record.
+Step 66C.4-BE1 (data model / migration / disabled outbox foundation) is now MERGED at Step
+  66C.4-BE1-M (merge commit 8080141, PR #17, reviewed head 0bb9944), after an independent review
+  (REMEDIATION_REQUIRED), a scoped remediation, and an independent closure review that recorded the
+  final BE1_TECHNICAL_VERDICT: PASS. BE1 status is MERGED / NOT DEPLOYED / NOT RUNTIME VALIDATED:
+  migration 031 is present in the repository but NOT applied to any shared runtime, the outbox
+  foundation is disabled (no live producer, no relay, no scheduler), and the "BE1 Runtime
+  Compatibility Gate" remains in force. See be1-merge-record.md, be1-technical-closure-record.md and
+  be1-source-of-truth-record.md.
+Step 66C.4-BE2 is the NEXT CANDIDATE stage but is NOT AUTHORIZED and NOT STARTED; it requires a
+  separate, explicit Product Owner authorization and, before any runtime producer cutover, the
+  relay/retry/DLQ/observability/rollback paths to be simultaneously available per the Runtime
+  Compatibility Gate.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

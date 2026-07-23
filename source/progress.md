@@ -15737,3 +15737,40 @@ independent Step 66C.4-BE1-R1-R closure reviewer changes it.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE2
   NOT STARTED. PR #17 Draft and unmerged. Next authorized step: **Step 66C.4-BE1-R1-R**
   (independent remediation closure review by a fresh review subagent).
+
+## Step 66C.4-BE1-M — Merge BE1 Foundation and Record Technical Closure
+
+**Marker: `STEP66C4_BE1_MERGE_VERIFY: PASS`. Step 66C.4-BE1 is now
+`MERGED / NOT DEPLOYED / NOT RUNTIME VALIDATED`. Step 66C.4-BE2 is `NEXT CANDIDATE / NOT AUTHORIZED`.**
+
+- **Authorization.** Product Owner accepted the independent closure review (Step 66C.4-BE1-R1-R —
+  `BE1_TECHNICAL_VERDICT: PASS`) and authorized a **non-squash merge commit** of PR #17
+  (`feature/66c4-be1-lifecycle-outbox-foundation @ 0bb9944`) into main.
+- **Merge.** Pre-merge main `e03c22d`; PR head `0bb9944` (head match enforced at merge); merge
+  commit **`8080141`** with two parents (`e03c22d` + `0bb9944`) — a true non-squash merge, history
+  preserved. PR #17 state MERGED. Final main `8080141`, pushed.
+- **Technical closure (recorded, verdicts kept separate from process markers).**
+  BE1 self-verify PASS (pending review) → independent review `f5417f4`
+  `BE1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED` (B-1 transaction-time deadline, B-2 outbox
+  durability, M-1 payload bypass) → R1 remediation `0bb9944`
+  (`STEP66C4_BE1_R1_REMEDIATION_VERIFY: PASS`, `STEP66C4_BE1_R1_PG_EVIDENCE: PASS`) → independent
+  closure review `2e1c369` (`STEP66C4_BE1_R1_INDEPENDENT_CLOSURE_REVIEW_VERIFY: PASS`) closing B-1/
+  B-2/M-1 → final `BE1_TECHNICAL_VERDICT: PASS`. Deferred Low ("deleted clarification may be
+  reported as already answered") remains DEFERRED / NOT FIXED IN BE1 (be1-deferred-low-findings.md).
+- **Source of truth on main.** Deadline predicate `due_at > statement_timestamp()`; answer/updated
+  timestamps `statement_timestamp()`; outbox foundation disabled (no live producer, no relay, no
+  scheduler) with durability fields `available_at`/`dead_at`/`last_error`/`published_at`/`attempts`/
+  `status`/`idempotency_key`; payload model = event-type positive allowlist. Migration 031 present
+  in the repository, **NOT applied to any shared runtime**. BE1 Runtime Compatibility Gate still in
+  force (merging the foundation does not authorize a producer cutover).
+- **Runtime and safety.** Runtime frontend code commit `513f190` (unchanged). No deployment. No
+  shared-runtime migration. No scheduler/relay activation. No producer cutover. No runtime outbox
+  write. No dispatch/resume. No external notification. `production_executed_true_count` = 0.
+- **Evidence preservation.** Review branches `review/66c4-be1-technical-security-migration @ f5417f4`
+  and `review/66c4-be1-r1-remediation-closure @ 2e1c369` preserved (not deleted/closed/force-pushed/
+  rewritten). Later housekeeping recommendation: ARCHIVE_OR_CLOSE_AFTER_SOURCE_OF_TRUTH_ACCEPTANCE
+  (not executed here).
+- **Gate.** Non-squash merge only; records + verifier added. Codex and Claude Design remain
+  unauthorized. Next authorized step: **Product Owner acceptance of the merged BE1 source of truth**;
+  Step 66C.4-BE2 is the next candidate but NOT authorized; deployment and shared-runtime migration
+  remain unauthorized.
