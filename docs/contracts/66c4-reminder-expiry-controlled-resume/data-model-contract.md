@@ -172,6 +172,26 @@ published and dead, and a terminal row can never lack its terminal timestamp.
    (set to NULL) — a published row carries no residual failure text.
 ```
 
+Exact attempt/backoff schedule (BINDING — Step 66C.4-BE2-R1 PO decision 1.2, closing the LOW
+off-by-one where the final 3600s backoff was dead code):
+
+```text
+RETRY_BACKOFF_SECONDS = (30, 120, 600, 3600)
+MAX_RETRIES           = 4   (every backoff is REACHED)
+MAX_PUBLISH_ATTEMPTS  = 5   (the 5th failure is terminal)
+
+attempt 1 fails -> attempts=1, available_at += 30s
+attempt 2 fails -> attempts=2, available_at += 120s
+attempt 3 fails -> attempts=3, available_at += 600s
+attempt 4 fails -> attempts=4, available_at += 3600s
+attempt 5 fails -> attempts=5, status=dead, dead_at := statement_timestamp()
+```
+
+Every failure (transient OR poison) consumes exactly one attempt; there is no immediate-dead
+classification, so a persistently-failing row cannot tight-loop -- it dies after the bounded
+schedule. A publish that exceeds the bounded publish timeout is one such transient failure
+(reason 'redis_publish_timeout'); see lifecycle-and-time-contract.md §7.3C.
+
 ### Operator replay semantics (BINDING, contract only)
 
 ```text

@@ -24,6 +24,16 @@ Reminder claim guard (canonical): status='open' AND answered_at IS NULL AND remi
   reminded here -- expiry handles it.
 Expiry claim guard (canonical): status='open' AND answered_at IS NULL
   AND due_at <= statement_timestamp().
+
+Expiry parent-task consistency (Step 66C.4-BE2-R1 B-1, PO decision 1.1): after claiming a due
+clarification, expiry LOCKS the parent task (SELECT ... FOR UPDATE) and reads its status before
+mutating anything. Only when the parent is 'clarification_needed' does the transaction expire the
+clarification, move the task to 'clarification_expired' (guarded UPDATE whose affected rowcount
+MUST be exactly 1, else the whole transaction rolls back), and insert the outbox row -- all or
+nothing. A terminal parent (canceled/aborted/completed/failed/... per TERMINAL_TASK_STATUSES) is
+SUPPRESSED with no mutation and a terminal_parent_suppressed metric. Any other (non-terminal,
+non-clarification_needed) parent is a lifecycle-invariant mismatch: no mutation, a
+reconciliation_failure metric, and a safe diagnostic -- never a silent, unobservable retry.
 """
 
 from __future__ import annotations
@@ -40,12 +50,16 @@ import asyncpg
 
 from shared.sdk.tasks import lifecycle_metrics as m
 from shared.sdk.tasks.lifecycle_outbox import insert_lifecycle_outbox_event
+from shared.sdk.tasks.models import TERMINAL_TASK_STATUSES
 from shared.sdk.tasks.store import DEFAULT_DATABASE_URL
 
 logger = logging.getLogger("clarification.lifecycle.poller")
 
 REMINDER_EVENT_TYPE = "clarification.reminder_recorded"
 EXPIRED_EVENT_TYPE = "clarification.expired"
+
+# The only parent-task status from which expiry may transition the task (PO decision 1.1).
+EXPIRABLE_PARENT_TASK_STATUS = "clarification_needed"
 
 DEFAULT_POLL_INTERVAL_SECONDS = 60.0
 DEFAULT_BATCH_SIZE = 50
@@ -58,6 +72,14 @@ def _reminder_key(clarification_id: str) -> str:
 
 def _expired_key(clarification_id: str) -> str:
     return f"{clarification_id}:expired"
+
+
+def _rowcount(command_tag: str) -> int:
+    """Affected-row count from an asyncpg command tag (e.g. 'UPDATE 1'). -1 if unparseable."""
+    try:
+        return int(command_tag.split()[-1])
+    except (ValueError, IndexError, AttributeError):
+        return -1
 
 
 class ClarificationLifecyclePoller:
@@ -133,8 +155,15 @@ class ClarificationLifecyclePoller:
                 status, claim_id = outcome
                 if status == "committed":
                     committed += 1
+                elif status == "suppressed_terminal":
+                    # Parent task already terminal: nothing mutated. Observable, and skipped this
+                    # cycle so one due row cannot starve the batch.
+                    skip.append(claim_id)
+                    m.TERMINAL_PARENT_SUPPRESSED_TOTAL.labels(poller=poller).inc()
                 elif status == "reconcile":
-                    # Rolled back on an unexpected outbox collision; do not re-select it this cycle.
+                    # Rolled back on a lifecycle-invariant mismatch (unexpected non-terminal
+                    # parent, guarded-update rowcount != 1, or an outbox collision). Observable;
+                    # not re-selected this cycle.
                     skip.append(claim_id)
                     m.RECONCILIATION_FAILURES_TOTAL.labels(poller=poller).inc()
             m.POLL_CYCLES_TOTAL.labels(poller=poller).inc()
@@ -243,6 +272,65 @@ class ClarificationLifecyclePoller:
                 return None
             cid = row["id"]
             task_id = row["task_id"]
+
+            # Lock the parent task and read its authoritative status BEFORE any mutation. Lock
+            # ordering is clarification-then-task; no other path locks BOTH tables in one
+            # transaction (the answer CAS and every task-status write are single-statement
+            # autocommit updates), so this introduces no new deadlock cycle.
+            task_status = await conn.fetchval(
+                "SELECT status FROM operator_tasks WHERE id=$1 FOR UPDATE", task_id
+            )
+
+            # Parent already terminal: leave clarification, task, and outbox untouched (PO 1.1).
+            # Suppression is observable via the terminal_parent_suppressed metric; the diagnostic
+            # carries only safe identifiers and the observed status.
+            if task_status in TERMINAL_TASK_STATUSES:
+                await tx.rollback()
+                logger.info(
+                    "expiry suppressed clarification_id=%s task_id=%s observed_task_status=%s "
+                    "reason_code=terminal_parent_suppressed",
+                    cid,
+                    task_id,
+                    task_status,
+                )
+                return ("suppressed_terminal", cid)
+
+            # Parent neither terminal nor clarification_needed: a lifecycle-invariant mismatch.
+            # Leave everything untouched and surface it as a reconciliation failure (PO 1.1).
+            if task_status != EXPIRABLE_PARENT_TASK_STATUS:
+                await tx.rollback()
+                logger.warning(
+                    "expiry mismatch clarification_id=%s task_id=%s observed_task_status=%s "
+                    "reason_code=reconciliation_required",
+                    cid,
+                    task_id,
+                    task_status,
+                )
+                return ("reconcile", cid)
+
+            # Parent is clarification_needed: perform the full atomic transition. The guarded
+            # UPDATE must affect EXACTLY one row (we hold the task lock, so this is an invariant
+            # check); a 0-row result rolls the whole transaction back -- no clarification expiry,
+            # no outbox row -- and is surfaced as a reconciliation failure.
+            tag = await conn.execute(
+                """
+                UPDATE operator_tasks
+                SET status='clarification_expired', updated_at=statement_timestamp()
+                WHERE id=$1 AND status='clarification_needed'
+                """,
+                task_id,
+            )
+            if _rowcount(tag) != 1:
+                await tx.rollback()
+                logger.warning(
+                    "expiry rolled back: guarded task update affected %s rows "
+                    "clarification_id=%s task_id=%s reason_code=reconciliation_required",
+                    _rowcount(tag),
+                    cid,
+                    task_id,
+                )
+                return ("reconcile", cid)
+
             await conn.execute(
                 """
                 UPDATE operator_clarification_requests
@@ -251,16 +339,6 @@ class ClarificationLifecyclePoller:
                 WHERE id=$1
                 """,
                 cid,
-            )
-            # Reuse the existing clarification_expired task status; guard so a task that has already
-            # moved to a terminal/other state (canceled, aborted, ...) is not clobbered.
-            await conn.execute(
-                """
-                UPDATE operator_tasks
-                SET status='clarification_expired', updated_at=now()
-                WHERE id=$1 AND status='clarification_needed'
-                """,
-                task_id,
             )
             try:
                 await insert_lifecycle_outbox_event(

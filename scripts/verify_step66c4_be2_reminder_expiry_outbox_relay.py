@@ -61,10 +61,13 @@ FORBIDDEN_CHANGED_PATHS = (
     "apps/communication-gateway/",
     "migrations/",
 )
-# Existing transport that must remain unchanged.
+# Existing transport that must remain unchanged. NOTE (Step 66C.4-BE2-R1): shared/sdk/event_bus/
+# is intentionally NOT listed -- PO decision 1.3 authorizes an additive, backward-compatible
+# bounded Redis socket-timeout on RedisStreamEventBus (default None preserves existing behaviour).
+# That single authorized change is asserted positively below; the audit producer path and the
+# retry/notification/audit workers must still be untouched.
 TRANSPORT_UNCHANGED_PATHS = (
     "shared/sdk/audit/",
-    "shared/sdk/event_bus/",
     "apps/retry-scheduler/",
     "apps/notification-worker/",
     "apps/audit-worker/",
@@ -202,6 +205,15 @@ def main() -> int:
         touched = [f for f in changed if f.startswith(prefix)]
         if touched:
             bad(f"check16: existing transport/producer changed: {touched}")
+    # 16b. The one authorized event_bus change is the additive bounded socket timeout only, and it
+    # must stay backward compatible (default None keeps existing callers unchanged).
+    bus_src = (ROOT / "shared" / "sdk" / "event_bus" / "redis_streams.py").read_text(
+        encoding="utf-8"
+    )
+    if "socket_timeout: float | None = None" not in bus_src or (
+        "socket_connect_timeout: float | None = None" not in bus_src
+    ):
+        bad("check16b: event_bus change is not the authorized backward-compatible socket timeout")
 
     # 17. No shared runtime activation: workers not referenced in any compose/k8s/helm/workflow.
     for prefix in ("infra/", "helm/", "k8s/", ".github/workflows/"):

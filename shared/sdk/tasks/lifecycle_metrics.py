@@ -39,7 +39,13 @@ DUPLICATE_SUPPRESSED_TOTAL = Counter(
 )
 RECONCILIATION_FAILURES_TOTAL = Counter(
     "clarification_reconciliation_failures_total",
-    "Lifecycle transitions rolled back on an unexpected outbox idempotency collision",
+    "Lifecycle transitions suppressed on a lifecycle-invariant mismatch (unexpected non-terminal "
+    "parent task, guarded-update rowcount != 1, or an outbox idempotency collision)",
+    ["poller"],
+)
+TERMINAL_PARENT_SUPPRESSED_TOTAL = Counter(
+    "clarification_terminal_parent_suppressed_total",
+    "Expiry transitions suppressed because the parent task was already in a terminal status",
     ["poller"],
 )
 POLL_DURATION_SECONDS = Histogram(

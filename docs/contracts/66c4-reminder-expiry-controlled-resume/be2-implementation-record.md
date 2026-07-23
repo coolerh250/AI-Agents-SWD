@@ -2,6 +2,12 @@
 
 > **Implementation record. NOT deployed. NOT runtime validated. No shared-runtime activation. No
 > shared migration. No existing producer cutover. No dispatch/resume. No external notification.**
+>
+> **Superseded in part by Step 66C.4-BE2-R1** (see be2-r1-remediation-record.md): the independent
+> Step 66C.4-BE2-R review returned `BE2_TECHNICAL_VERDICT: REMEDIATION_REQUIRED` for two blocking
+> findings — B-1 expiry parent-task consistency and B-2 unbounded Redis publish — both since closed.
+> The retry schedule was also corrected to reach all four backoffs (dead on the 5th attempt). This
+> record's original text is retained as history; where it differs, the BE2-R1 records govern.
 
 ## Scope
 

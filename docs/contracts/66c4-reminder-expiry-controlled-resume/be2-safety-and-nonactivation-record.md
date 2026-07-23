@@ -25,8 +25,11 @@ file references either worker (verified by test and by the verifier).
 
 ```text
 Migration / schema changed:      NO (BE1 schema on main is sufficient; no 032, no edit to 031)
-Existing producer cutover:       NO (shared/sdk/audit/**, shared/sdk/event_bus/**, retry-scheduler,
-                                 audit-worker, notification-worker all unchanged vs main)
+Existing producer cutover:       NO (shared/sdk/audit/**, retry-scheduler, audit-worker,
+                                 notification-worker unchanged vs main. Step 66C.4-BE2-R1 adds ONE
+                                 additive, backward-compatible bounded socket-timeout kwarg to
+                                 shared/sdk/event_bus/redis_streams.py; default None keeps every
+                                 existing caller identical — not a cutover. See be2-r1-relay-timeout-record.md)
 Runtime outbox writes:           NO
 Scheduler/relay implemented:     YES (code only)
 Shared activation:               NO

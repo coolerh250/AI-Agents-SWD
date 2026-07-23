@@ -52,6 +52,15 @@ TaskStatus = Literal[
     "canceled",
 ]
 
+# Canonical terminal operator_task statuses: a task in one of these has finished its lifecycle
+# and no reminder/expiry transition may mutate it. Defined here, next to TaskStatus, so callers
+# (Step 66C.4-BE2-R1 lifecycle poller) branch on a canonical fixed set rather than ad-hoc string
+# comparison. Includes the workflow-level terminal names (completed/aborted) defensively even
+# though the 66B.1 operator_tasks surface reaches only accepted/rejected/canceled/archived/failed.
+TERMINAL_TASK_STATUSES: frozenset[str] = frozenset(
+    {"accepted", "rejected", "canceled", "archived", "failed", "completed", "aborted"}
+)
+
 # States reachable through the 66B.1 API (create / submit). The full TaskStatus
 # enum above is defined now for later stages (66C+).
 TASK_ENVIRONMENTS: frozenset[str] = frozenset({"test", "staging"})

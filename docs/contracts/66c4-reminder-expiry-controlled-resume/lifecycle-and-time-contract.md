@@ -262,6 +262,52 @@ performed by this stage):
    expired / the decision window has closed," never a silent success.
 ```
 
+## 7.3B Expiry parent-task consistency (BINDING — added in Step 66C.4-BE2-R1)
+
+Closes independent-review blocking finding B-1. When the expiry worker claims a due
+clarification, it MUST lock the parent task and read its status BEFORE mutating anything, then
+branch:
+
+```text
+1. Parent task.status = clarification_needed (the ONLY expirable state):
+   In ONE transaction -- clarification 'open' -> 'expired' (expired_at := statement_timestamp()),
+   task -> clarification_expired via a GUARDED update whose affected rowcount MUST equal 1, and
+   the clarification.expired outbox INSERT. A rowcount != 1 rolls the WHOLE transaction back (no
+   clarification expiry, no outbox row) and is surfaced as a reconciliation failure. All-or-nothing.
+
+2. Parent task terminal (canonical TERMINAL_TASK_STATUSES:
+   accepted/rejected/canceled/archived/failed/completed/aborted):
+   SUPPRESS -- clarification unchanged, task unchanged, NO outbox row. Increment
+   terminal_parent_suppressed and write a bounded diagnostic (clarification_id, task_id,
+   observed_task_status, reason_code=terminal_parent_suppressed). No clarification.expired event
+   is emitted for a terminal parent.
+
+3. Parent task non-terminal but not clarification_needed (e.g. running/queued):
+   A lifecycle-invariant mismatch. Same as terminal: no mutation, no outbox; increment
+   reconciliation_failure and write a bounded diagnostic (reason_code=reconciliation_required).
+   The condition stays observable (the metric climbs) rather than silently retrying unobserved.
+```
+
+Lock ordering is clarification-then-task. No other path locks BOTH tables in one transaction (the
+answer CAS and every task-status write are single-statement autocommit updates), so this adds no
+deadlock cycle. `aborted`/`completed` are canonical-terminal but are not storable in
+operator_tasks (its CHECK constraint excludes them); they are covered by the set defensively.
+
+## 7.3C Bounded outbox publish (BINDING — added in Step 66C.4-BE2-R1)
+
+Closes independent-review blocking finding B-2. The relay MUST NOT hold its DB transaction / row
+lock across an unbounded Redis publish:
+
+```text
+- The Redis client is built with non-None socket_timeout and socket_connect_timeout.
+- The publish await is additionally capped by a total timeout (asyncio.wait_for), default 5s,
+  configurable within [1, 30]s; an out-of-range value is REJECTED at construction (never clamped).
+- A timeout is a TRANSIENT failure (attempts += 1, persisted backoff, last_error a bounded
+  secret-free reason 'redis_publish_timeout', status stays pending) -- never marked published.
+- An asyncio.CancelledError (shutdown) rolls the transaction back and is re-raised, so the row
+  stays pending and is recoverable later with the same event_id/idempotency_key.
+```
+
 ## Statement
 
 Planning document only. No backend/frontend runtime change. No API implementation change. No

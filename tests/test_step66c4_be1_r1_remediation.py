@@ -129,7 +129,9 @@ def test_retry_plan_persists_backoff_then_dies() -> None:
     second = lo.plan_retry_state(attempts=1, error="ConnectionError")
     assert second["backoff_seconds"] > first["backoff_seconds"]
 
-    terminal = lo.plan_retry_state(attempts=lo.MAX_DELIVERY_ATTEMPTS - 1, error="poison")
+    # Step 66C.4-BE2-R1 PO decision 1.2: dead only after the MAX_PUBLISH_ATTEMPTS-th failure
+    # (was the off-by-one MAX_DELIVERY_ATTEMPTS-1, which never reached the final 3600s backoff).
+    terminal = lo.plan_retry_state(attempts=lo.MAX_PUBLISH_ATTEMPTS - 1, error="poison")
     assert terminal["status"] == "dead"
     assert terminal["set_dead_at"] is True
     assert terminal["backoff_seconds"] is None

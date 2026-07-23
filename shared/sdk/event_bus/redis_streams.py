@@ -65,14 +65,31 @@ def build_dead_letter_event(
 class RedisStreamEventBus:
     """Async Redis Streams event bus for publishing and consuming events."""
 
-    def __init__(self, redis_url: str | None = None) -> None:
+    def __init__(
+        self,
+        redis_url: str | None = None,
+        *,
+        socket_timeout: float | None = None,
+        socket_connect_timeout: float | None = None,
+    ) -> None:
         self.redis_url = redis_url or os.environ.get("REDIS_URL", DEFAULT_REDIS_URL)
+        # Optional bounded socket timeouts. Default None preserves the existing behaviour for all
+        # current callers; a caller that must never block indefinitely on a hung broker (Step
+        # 66C.4-BE2-R1 outbox relay) passes bounded values so a stalled socket raises instead of
+        # pinning the caller (and, for the relay, its DB transaction and row lock).
+        self._socket_timeout = socket_timeout
+        self._socket_connect_timeout = socket_connect_timeout
         self._client: aioredis.Redis | None = None
 
     @property
     def client(self) -> aioredis.Redis:
         if self._client is None:
-            self._client = aioredis.from_url(self.redis_url, decode_responses=True)
+            kwargs: dict[str, object] = {"decode_responses": True}
+            if self._socket_timeout is not None:
+                kwargs["socket_timeout"] = self._socket_timeout
+            if self._socket_connect_timeout is not None:
+                kwargs["socket_connect_timeout"] = self._socket_connect_timeout
+            self._client = aioredis.from_url(self.redis_url, **kwargs)
         return self._client
 
     async def ensure_group(self, stream: str, group: str) -> None:

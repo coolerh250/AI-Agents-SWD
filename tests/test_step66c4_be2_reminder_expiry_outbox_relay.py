@@ -483,7 +483,10 @@ def test_pg_expiry_transitions_clarification_task_and_outbox_atomically() -> Non
 
 
 @requires_pg
-def test_pg_expiry_skips_answered_and_canceled_and_protects_terminal_task() -> None:
+def test_pg_expiry_skips_answered_and_suppresses_terminal_parent() -> None:
+    """Step 66C.4-BE2-R1 B-1: a due clarification whose parent task is already terminal is
+    SUPPRESSED -- clarification unchanged, task unchanged, NO outbox row (was: expired + emitted)."""
+
     async def scenario() -> None:
         conn = await asyncpg.connect(dsn=_DSN)
         try:
@@ -503,36 +506,31 @@ def test_pg_expiry_skips_answered_and_canceled_and_protects_terminal_task() -> N
                 status="answered",
                 answered=True,
             )
-            canceled = await _seed_clarification(
-                conn,
-                t_terminal,
-                reminder_sql="statement_timestamp() - interval '2 hours'",
-                due_sql="statement_timestamp() - interval '1 hour'",
-                status="canceled",
-            )
             poller = _poller_mod().ClarificationLifecyclePoller(_DSN)
-            # Only the open past-due clarification expires; answered/canceled skipped.
-            assert await poller.run_expiry_cycle(conn) == 1
+            # Terminal parent -> the open past-due clarification is suppressed, nothing committed.
+            assert await poller.run_expiry_cycle(conn) == 0
             assert (
                 await conn.fetchval(
                     "SELECT status FROM operator_clarification_requests WHERE id=$1",
                     uuid.UUID(cid),
                 )
-                == "expired"
+                == "open"  # NOT expired -- parent already terminal
             )
-            for other in (answered, canceled):
-                st = await conn.fetchval(
+            assert (
+                await conn.fetchval(
                     "SELECT status FROM operator_clarification_requests WHERE id=$1",
-                    uuid.UUID(other),
+                    uuid.UUID(answered),
                 )
-                assert st in ("answered", "canceled")
-            # The canceled task must NOT be clobbered to clarification_expired.
+                == "answered"
+            )
+            # The canceled task must NOT be clobbered, and NO clarification.expired row is emitted.
             assert (
                 await conn.fetchval(
                     "SELECT status FROM operator_tasks WHERE id=$1", uuid.UUID(t_terminal)
                 )
                 == "canceled"
             )
+            assert await conn.fetchval("SELECT count(*) FROM clarification_lifecycle_outbox") == 0
         finally:
             await conn.close()
 
@@ -799,7 +797,7 @@ def test_pg_relay_exhausts_to_dead_after_bounded_attempts() -> None:
             )
             assert row["status"] == "dead"
             assert row["dead_at"] is not None and row["published_at"] is None
-            assert row["attempts"] == 4  # MAX_DELIVERY_ATTEMPTS
+            assert row["attempts"] == 5  # MAX_PUBLISH_ATTEMPTS (Step 66C.4-BE2-R1 decision 1.2)
             assert len(row["last_error"]) <= 500 and "redis" not in row["last_error"].lower()
         finally:
             await conn.close()

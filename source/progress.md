@@ -15820,3 +15820,41 @@ NOT DEPLOYED, NOT RUNTIME VALIDATED, NOT ACTIVATED.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
   NOT started. Next authorized step: **Step 66C.4-BE2-R** (independent poller/relay/transaction/
   failure-recovery review by a fresh review subagent).
+
+## Step 66C.4-BE2-R1 — Expiry Consistency and Bounded Relay Timeout Remediation
+
+**Markers: `STEP66C4_BE2_R1_REMEDIATION_VERIFY: PASS` + `STEP66C4_BE2_R1_PG_REDIS_EVIDENCE: PASS`
+(self-verification only — `BE2_TECHNICAL_VERDICT` stays `REMEDIATION_REQUIRED` until the independent
+Step 66C.4-BE2-R1-R closure reviewer sets it). Status: remediated, NOT DEPLOYED, NOT RUNTIME
+VALIDATED, NOT ACTIVATED. PR #18 remains Draft.**
+
+- Closes the two blocking findings the independent Step 66C.4-BE2-R review (`c70f205`) confirmed:
+- **B-1 expiry consistency.** `_claim_one_expiry` now locks the parent task (`SELECT ... FOR
+  UPDATE`) and reads its status before mutating. Transition happens ONLY from `clarification_needed`
+  via a guarded task UPDATE whose affected rowcount MUST equal 1 (else the whole transaction rolls
+  back — no clarification expiry, no outbox). A terminal parent (canonical
+  `models.TERMINAL_TASK_STATUSES`) is suppressed (`clarification_terminal_parent_suppressed_total`,
+  safe diagnostic, no `clarification.expired` event); any other non-terminal parent is a
+  reconciliation failure (`clarification_reconciliation_failures_total`). Lock ordering
+  clarification→task adds no deadlock (no other path locks both tables in one transaction).
+- **B-2 bounded relay.** The publish now runs under `asyncio.wait_for` (default 5s, range [1,30],
+  out-of-range rejected at construction) and the relay's Redis client is built with non-None
+  `socket_timeout`/`socket_connect_timeout` (additive, backward-compatible kwargs on
+  `RedisStreamEventBus`; default None preserves every existing caller). A hung broker becomes a
+  transient retry (`redis_publish_timeout`), never `published`; `CancelledError` rolls back and
+  re-raises so the row stays pending. No producer cutover; the audit path is otherwise unchanged.
+- **Retry (PO 1.2).** `MAX_RETRIES=4`, `MAX_PUBLISH_ATTEMPTS=5`; backoffs 30/120/600/3600 all
+  reached; dead on the 5th failure (the previous off-by-one left 3600 as dead code). `replay_dead`
+  stays internal-only (PO 1.4) with a defense-line test asserting zero callers; RBAC deferred to BE3.
+- **Disclosed test updates.** Three previously-committed assertions that encoded the old behavior
+  were updated minimally and disclosed (terminal-parent expiry now asserts suppression;
+  dead-attempts 4→5; BE1-R1 retry threshold `MAX_PUBLISH_ATTEMPTS-1`). No committed review finding
+  or verdict was changed; the zero-caller/non-activation allowlist was not broadened.
+- **Tests.** 88 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 + Redis 7
+  (destroyed afterward; shared stack untouched). Mandatory regression 221 passed, 0 real regressions
+  (1 environment-only missing-origin-ref failure that passes on a full clone). ruff/black/mypy clean.
+- **Gate.** No schema/migration change (031 unchanged). No shared activation. No producer cutover.
+  No public replay. No resume/dispatch. No deployment. No external notification.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
+  NOT started. Next authorized step: **Step 66C.4-BE2-R1-R** (independent closure review by a fresh
+  review subagent).

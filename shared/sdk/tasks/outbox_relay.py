@@ -25,6 +25,15 @@ no claim-owner/lease column is needed and a worker crash rolls the claim back.
 Retry/dead (canonical, from BE1 plan_retry_state): persisted backoff in available_at, bounded
 attempts, terminal dead with dead_at + bounded last_error. Nothing is retried in a tight loop --
 a transient failure schedules a FUTURE available_at and the row is not eligible again until then.
+There are MAX_RETRIES=4 scheduled retries across MAX_PUBLISH_ATTEMPTS=5 total attempts; every one
+of the (30, 120, 600, 3600)s backoffs is reached before the 5th failure moves the row to dead.
+
+Bounded publish (Step 66C.4-BE2-R1 B-2): the publish runs under a hard total timeout
+(publish_timeout_seconds, default 5s, range [1, 30]) AND the relay's Redis client is built with
+bounded socket_timeout / socket_connect_timeout, so a hung broker can never pin the DB
+transaction, its row lock, or the connection. A timeout is a TRANSIENT failure (retry), never
+"published". An asyncio.CancelledError (shutdown) is re-raised, not swallowed, so the transaction
+rolls back and the row stays pending -- recoverable later with the same event_id/idempotency_key.
 """
 
 from __future__ import annotations
@@ -53,6 +62,31 @@ logger = logging.getLogger("clarification.outbox.relay")
 DEFAULT_POLL_INTERVAL_SECONDS = 5.0
 DEFAULT_BATCH_SIZE = 50
 DEFAULT_SHUTDOWN_TIMEOUT_SECONDS = 30.0
+
+# Bounded total publish timeout (Step 66C.4-BE2-R1 PO decision 1.3). The publish await is capped
+# so a hung broker can never pin the DB transaction / row lock / connection indefinitely (B-2).
+# Configurable in [1, 30]s; out-of-range is REJECTED at construction, never silently clamped.
+DEFAULT_PUBLISH_TIMEOUT_SECONDS = 5.0
+MIN_PUBLISH_TIMEOUT_SECONDS = 1.0
+MAX_PUBLISH_TIMEOUT_SECONDS = 30.0
+PUBLISH_TIMEOUT_ENV = "CLARIFICATION_OUTBOX_PUBLISH_TIMEOUT_SECONDS"
+# Safe, secret-free failure reason for a bounded-timeout publish (never a DSN/host/payload).
+PUBLISH_TIMEOUT_REASON = "redis_publish_timeout"
+
+
+def _resolve_publish_timeout(value: float | None) -> float:
+    """Validate the total publish timeout. Reject (never clamp) an out-of-range value so the
+    operator always knows the effective bound. Falls back to the env var, then the 5s default."""
+    if value is None:
+        env = os.environ.get(PUBLISH_TIMEOUT_ENV)
+        value = float(env) if env else DEFAULT_PUBLISH_TIMEOUT_SECONDS
+    if value < MIN_PUBLISH_TIMEOUT_SECONDS or value > MAX_PUBLISH_TIMEOUT_SECONDS:
+        raise ValueError(
+            "publish_timeout_seconds must be within "
+            f"[{MIN_PUBLISH_TIMEOUT_SECONDS}, {MAX_PUBLISH_TIMEOUT_SECONDS}] seconds"
+        )
+    return value
+
 
 # Bounded, safe result labels used in audit summaries (never a raw payload).
 _EVENT_RESULT = {
@@ -93,9 +127,17 @@ class ClarificationOutboxRelay:
         poll_interval_seconds: float = DEFAULT_POLL_INTERVAL_SECONDS,
         batch_size: int = DEFAULT_BATCH_SIZE,
         shutdown_timeout_seconds: float = DEFAULT_SHUTDOWN_TIMEOUT_SECONDS,
+        publish_timeout_seconds: float | None = None,
     ) -> None:
         self.database_url = database_url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-        self.bus = event_bus or RedisStreamEventBus()
+        self.publish_timeout_seconds = _resolve_publish_timeout(publish_timeout_seconds)
+        # The default bus is built with bounded socket timeouts so the transport layer itself
+        # never blocks forever; the asyncio.wait_for in _publish adds a hard total cap on top.
+        # An injected bus (tests) is used as-is.
+        self.bus = event_bus or RedisStreamEventBus(
+            socket_timeout=self.publish_timeout_seconds,
+            socket_connect_timeout=self.publish_timeout_seconds,
+        )
         self.poll_interval_seconds = poll_interval_seconds
         self.batch_size = batch_size
         self.shutdown_timeout_seconds = shutdown_timeout_seconds
@@ -129,21 +171,33 @@ class ClarificationOutboxRelay:
         """
         event_type = row["event_type"]
         try:
-            message_id = await publish_audit_event(
-                task_id=str(row["task_id"]),
-                workflow_id="",
-                agent="clarification-outbox-relay",
-                decision_type=event_type,
-                summary=f"clarification lifecycle {_EVENT_RESULT.get(event_type, 'event')}",
-                result=_EVENT_RESULT.get(event_type, "recorded"),
-                artifact_refs={
-                    "event_id": str(row["id"]),
-                    "clarification_id": str(row["clarification_id"]),
-                    "idempotency_key": row["idempotency_key"],
-                },
-                event_bus=self.bus,
-                close_bus=False,
+            # Hard total cap on the publish (B-2): a hung broker must never pin the caller's DB
+            # transaction/row lock. On timeout the coroutine is cancelled and the row is treated
+            # as a TRANSIENT failure (retry), NOT as published.
+            message_id = await asyncio.wait_for(
+                publish_audit_event(
+                    task_id=str(row["task_id"]),
+                    workflow_id="",
+                    agent="clarification-outbox-relay",
+                    decision_type=event_type,
+                    summary=f"clarification lifecycle {_EVENT_RESULT.get(event_type, 'event')}",
+                    result=_EVENT_RESULT.get(event_type, "recorded"),
+                    artifact_refs={
+                        "event_id": str(row["id"]),
+                        "clarification_id": str(row["clarification_id"]),
+                        "idempotency_key": row["idempotency_key"],
+                    },
+                    event_bus=self.bus,
+                    close_bus=False,
+                ),
+                timeout=self.publish_timeout_seconds,
             )
+        except asyncio.TimeoutError:  # broker hang -> bounded transient failure
+            return PublishResult(False, PUBLISH_TIMEOUT_REASON)
+        except asyncio.CancelledError:
+            # Shutdown/cancellation: do NOT swallow it as a transient error. Propagate so the
+            # caller rolls back and the row stays pending (recoverable with the same identity).
+            raise
         except Exception as exc:  # transport raised -> definite failure
             return PublishResult(False, _bounded_error(exc))
         if message_id is None:  # publisher dropped it -> definite failure
@@ -173,7 +227,10 @@ class ClarificationOutboxRelay:
             outcome = await self._process_claimed(connection, dict(row))
             await tx.commit()
             return outcome
-        except Exception:
+        except BaseException:
+            # BaseException (not just Exception) so an asyncio.CancelledError during publish also
+            # rolls the transaction back before it propagates -- the row lock is released and the
+            # row remains pending, recoverable later with the same event_id/idempotency_key.
             with contextlib.suppress(Exception):
                 await tx.rollback()
             raise
