@@ -15774,3 +15774,49 @@ independent Step 66C.4-BE1-R1-R closure reviewer changes it.**
   unauthorized. Next authorized step: **Product Owner acceptance of the merged BE1 source of truth**;
   Step 66C.4-BE2 is the next candidate but NOT authorized; deployment and shared-runtime migration
   remain unauthorized.
+
+## Step 66C.4-BE2 — Reminder / Expiry Poller and Transactional Outbox Relay
+
+**Marker: `STEP66C4_BE2_REMINDER_EXPIRY_OUTBOX_RELAY_VERIFY: PASS` (self-verification only —
+`BE2_TECHNICAL_VERDICT` requires the independent Step 66C.4-BE2-R reviewer). Status: implemented,
+NOT DEPLOYED, NOT RUNTIME VALIDATED, NOT ACTIVATED.**
+
+- **Authorization.** Product Owner authorized BE2 on the merged BE1 foundation (main `ab3c6cc`).
+  Branch `feature/66c4-be2-reminder-expiry-outbox-relay` off `origin/main`; Draft PR (NOT FOR MERGE).
+- **Lifecycle poller** (`shared/sdk/tasks/lifecycle_poller.py`). Reminder claim
+  `status='open' AND answered_at IS NULL AND reminder_sent_at IS NULL AND reminder_at <=
+  statement_timestamp() AND due_at > statement_timestamp()`; expiry claim
+  `status='open' AND answered_at IS NULL AND due_at <= statement_timestamp()`. One row per
+  transaction via `FOR UPDATE SKIP LOCKED`; lifecycle state UPDATE(s) + `insert_lifecycle_outbox_event`
+  (BE1 transaction-aware) commit atomically. Expiry reuses the existing `clarification_expired`
+  `operator_tasks.status` (no new status), guarded `WHERE status='clarification_needed'` so terminal
+  tasks are not clobbered. Past-due rows are expired, not reminded.
+- **Outbox relay** (`shared/sdk/tasks/outbox_relay.py`). Claims
+  `status='pending' AND available_at <= statement_timestamp()` with `FOR UPDATE SKIP LOCKED`;
+  publishes to the **single canonical durable destination** — the audit stream via the existing
+  `publish_audit_event` (id-or-None → reliable success/failure), downstream audit-worker produces
+  the projection. **At-least-once** with deterministic `event_id`+`idempotency_key`; **exactly-once
+  NOT claimed**. Persisted backoff (30/120/600/3600s, 4 attempts) in `available_at`; terminal `dead`
+  with `dead_at` + bounded `last_error` (exception class only). Internal `replay_dead` foundation
+  (dead→pending, attempts preserved), **no public endpoint**.
+- **No schema/transport change.** BE1 migration 031 sufficient — **no migration added/modified**.
+  `shared/sdk/audit/**`, `shared/sdk/event_bus/**`, `apps/retry-scheduler/**`, `audit-worker/**`,
+  `notification-worker/**`, `orchestrator/**` unchanged vs main. Existing producers NOT cut over.
+- **Non-activated.** Entrypoints `apps/clarification-lifecycle-worker` + `apps/clarification-outbox-relay`
+  exist but are referenced by no compose/k8s/helm/cron and are not imported by the orchestrator; no
+  background task on import.
+- **Observability.** Prometheus metrics (`shared/sdk/tasks/lifecycle_metrics.py`) for poll cycles,
+  claims, publish success/failure/retry/dead/replay, pending backlog + oldest-pending age, last-
+  success timestamps; `/health` + `/status` per worker; privacy-safe structured logs (no payload/
+  secret/DSN).
+- **Tests.** 28 passed, 0 skipped, 0 failed on isolated ephemeral PostgreSQL 16 + Redis 7 (both
+  destroyed afterwards; no shared DB/Redis touched): reminder/expiry atomicity, concurrency (exactly
+  one claim), rollback (§19.8 task-update failure, §19.9 outbox-insert failure), relay
+  publish/retry/dead, crash-before-commit recovery, Redis-outage backlog recovery, ack-failure
+  identity reuse, operator replay. Affected-file ruff/black/mypy clean; repo-wide pre-existing
+  issues unchanged.
+- **Gate.** No deployment. No shared migration. No scheduler/relay activation. No producer cutover.
+  No runtime outbox write. No resume/dispatch/workflow resume. No external notification.
+  `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
+  NOT started. Next authorized step: **Step 66C.4-BE2-R** (independent poller/relay/transaction/
+  failure-recovery review by a fresh review subagent).

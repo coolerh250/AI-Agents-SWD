@@ -1,0 +1,35 @@
+stage: "66C.4-BE2"
+owner: "Claude Code"
+task_type: "backend-lifecycle-poller-and-outbox-relay-implementation"
+status: "implementation-complete-pending-independent-review"
+
+backend_change_allowed: true
+database_schema_change_allowed: false
+migration_change_allowed: false
+internal_worker_implementation_allowed: true
+outbox_relay_implementation_allowed: true
+isolated_postgresql_testing_allowed: true
+isolated_redis_testing_allowed: true
+
+shared_runtime_activation_allowed: false
+shared_database_migration_allowed: false
+existing_producer_cutover_allowed: false
+external_notification_allowed: false
+resume_implementation_allowed: false
+workflow_dispatch_allowed: false
+workflow_resume_allowed: false
+frontend_change_allowed: false
+deployment_allowed: false
+merge_allowed: false
+
+be3_authorized: false
+codex_authorized: false
+claude_design_authorized: false
+independent_review_required: true
+
+markers:
+  self_verification: "STEP66C4_BE2_REMINDER_EXPIRY_OUTBOX_RELAY_VERIFY"
+  technical_verdict_owner: "independent Step 66C.4-BE2-R reviewer only"
+
+base_commit: "ab3c6cc"
+production_executed_true_count: 0

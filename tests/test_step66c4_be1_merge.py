@@ -97,11 +97,18 @@ def test_deadline_predicate_on_main_is_statement_time() -> None:
 
 
 def test_no_live_outbox_producer_on_main() -> None:
-    outbox_path = REPO / "shared" / "sdk" / "tasks" / "lifecycle_outbox.py"
+    # The outbox module plus, from Step 66C.4-BE2 (PO-authorized), the two NON-ACTIVATED worker
+    # modules are the only outbox callers; no other runtime module references it and neither worker
+    # is activated in any shared runtime. Updated in BE2.
+    allowed = {
+        REPO / "shared" / "sdk" / "tasks" / "lifecycle_outbox.py",
+        REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
+        REPO / "shared" / "sdk" / "tasks" / "outbox_relay.py",
+    }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):
         for path in base.rglob("*.py"):
-            if path == outbox_path or "__pycache__" in str(path):
+            if path in allowed or "__pycache__" in str(path):
                 continue
             txt = path.read_text(encoding="utf-8", errors="ignore")
             if "lifecycle_outbox" in txt or "clarification_lifecycle_outbox" in txt:
