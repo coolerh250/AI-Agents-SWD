@@ -79,13 +79,19 @@ Step 66C.4-BE3 planning is now MERGED at Step 66C.4-BE3-P-M (merge commit 90fc76
   (docs/contracts/66c4-reminder-expiry-controlled-resume/be3-*.md;
   STEP66C4_BE3_PLANNING_MERGE_VERIFY: PASS). Step 66C.4-BE3-P = MERGED / PRODUCT CONTRACT READY. No
   backend/API/migration/frontend/deployment code entered main.
-Step 66C.4-BE3-A (authorization model, repository and policy enforcement — the first implementation
-  slice) is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED; it requires a separate,
-  explicit Product Owner authorization and, before any runtime producer cutover, the
-  relay/retry/DLQ/observability/rollback paths to be simultaneously available per the Runtime
-  Compatibility Gate. The BE3 replay-authorization prerequisite (operator RBAC + two-person human
-  authorization + replay audit evidence + authorization-outcome persistence) is bound before any
-  operator-facing replay exposure; replay_dead remains internal-only.
+Step 66C.4-BE3-A (durable authorization model, repository and policy enforcement — the first
+  implementation slice) is IMPLEMENTED on branch feature/66c4-be3-resume-replay-authorization (Draft
+  PR, NOT FOR MERGE): migration 032 (resume_replay_authorizations, additive), the authorization
+  model/repository/policy/service, with single-use/time-bound/state-version-bound/revocable
+  semantics, two-person replay control, service-identity consume-only, team/project isolation, and
+  the production-approval gate (STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS; 14 real-PG
+  tests). NO resume/replay execution, NO public endpoint, NO dead-outbox replay call, NO shared
+  activation/deployment; migration 032 NOT applied to any shared DB.
+Step 66C.4-BE3-B (resume request/authorize/gated execution command) is the NEXT CANDIDATE but is NOT
+  AUTHORIZED and NOT STARTED; BE3-C (replay) follows. BE3-A+B+C are one implementation flow, then ONE
+  independent BE3-R security/transaction review (original-reviewer focused closure), then BE3-M
+  non-squash merge after Product Owner authorization. replay_dead remains internal-only; the Runtime
+  Compatibility Gate and the 11-item activation gate remain in force before any activation.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order
