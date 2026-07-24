@@ -15858,3 +15858,54 @@ VALIDATED, NOT ACTIVATED. PR #18 remains Draft.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
   NOT started. Next authorized step: **Step 66C.4-BE2-R1-R** (independent closure review by a fresh
   review subagent).
+
+## Step 66C.4-BE2-R1-R — Independent Remediation Closure Review
+
+**Markers (recorded separately): `STEP66C4_BE2_R1_INDEPENDENT_CLOSURE_REVIEW_VERIFY: PASS` (process)
++ final `BE2_TECHNICAL_VERDICT: PASS` (technical; declared by a fresh independent review subagent).**
+
+- Fresh Claude Code review subagent, independent session/worktree, reviewed feature tip `c2677f7`;
+  did not write the reviewed code and received no private reasoning. Review branch
+  `review/66c4-be2-r1-remediation-closure @ b22e4c7` (pushed).
+- **B-1 expiry consistency: CLOSED.** Real PG16 independently reproduced: clarification_needed full
+  transition; all 5 DB-valid terminals suppressed with 0 outbox; running/blocked/approved_for_execution
+  reconciled; rowcount-0 full rollback; NULL-parent reconciled; two-worker exactly-one + duplicate-poll
+  no-op; deadlock claim verified (only the poller locks both tables).
+- **B-2 bounded relay: CLOSED.** Real Redis7 `docker pause` hang returns bounded as a transient retry,
+  never published; row lock released; cancellation rolls back + re-raises; multi-row hang leaves no
+  pinned/leaked connection; ack-loss keeps identical identity; at-least-once preserved.
+- **Retry: CLOSED** (30/120/600/3600 all reached, dead on the 5th; poison shares the bounded schedule).
+  **Replay** internal-only, zero callers, BE3 prerequisites bound. **Historical tests/verifier** intact.
+  **Security:** no critical/high/future-blocking-medium.
+- **Tests:** own closure suite 22 passed; core mandatory 110 passed / 0 skipped / 0 failed (isolated
+  ephemeral PG16 + Redis7); regression green (the one `test_failure_retry_flow` item is a live full-stack
+  E2E environment artifact, not a regression; BE2-R1 does not touch that path). Reviewer modified zero
+  implementation files.
+- Coordinating session independently verified the reviewer's ACTIONS: only review artifacts added,
+  origin/feature still `c2677f7`, origin/main still `ab3c6cc`, PR #18 stayed Draft/unmerged, ephemeral
+  containers + worktree removed, shared stack untouched, committed files masking-clean. Next authorized
+  step: **Step 66C.4-BE2-M** (PO-authorized merge).
+
+## Step 66C.4-BE2-M — Merge BE2 Poller and Relay Implementation
+
+**Marker: `STEP66C4_BE2_MERGE_VERIFY: PASS`. Status: `Step 66C.4-BE2 = MERGED / NOT DEPLOYED / NOT
+RUNTIME VALIDATED / NOT ACTIVATED / NO PRODUCER CUTOVER`; `Step 66C.4-BE3 = NEXT CANDIDATE / NOT
+AUTHORIZED`.**
+
+- PR #18 (`feature/66c4-be2-reminder-expiry-outbox-relay @ c2677f7`) merged into main as a
+  **non-squash merge commit**: merge commit `161f4f3`, two parents `ab3c6cc` (main) + `c2677f7`
+  (feature). Draft -> Ready -> merged, `--match-head-commit` enforcing head == c2677f7. local main ==
+  origin/main == `161f4f3`; working tree clean; untracked none; `git diff --check` clean.
+- **Evidence commits preserved, not squashed:** original implementation `319123b`, original independent
+  review `c70f205` (`BE2_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`), R1 remediation `c2677f7`,
+  independent closure review `b22e4c7` (final `BE2_TECHNICAL_VERDICT: PASS`). Both verdicts recorded
+  separately, neither overwriting the other. All four review evidence branches preserved on origin.
+- **Records:** be2-merge-and-source-of-truth-record.md, step66c4-be2-merge-verification-record.md, merge
+  verifier `scripts/verify_step66c4_be2_merge.py` (14 checks). BE2 implementation (poller/relay/metrics
+  + both worker entrypoints) on main; retry semantics MAX_RETRIES=4 / MAX_PUBLISH_ATTEMPTS=5, backoffs
+  (30,120,600,3600).
+- **Gate.** The merge only lands code; it does not deploy or activate. No shared deployment, no migration
+  031 applied to a shared DB, no worker/relay activation, no producer cutover, no runtime outbox write,
+  no public replay / Admin Console control, no resume/dispatch. `production_executed_true_count` = 0.
+  Codex and Claude Design remain unauthorized. Next candidate: **Step 66C.4-BE3** (not authorized, not
+  started; replay-RBAC prerequisite bound).
