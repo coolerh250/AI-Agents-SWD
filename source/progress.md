@@ -15948,3 +15948,26 @@ DESIGNED (contract only) / NOT IMPLEMENTED / NOT MERGED / NOT DEPLOYED / NOT ACT
   `tests/test_step66c4_be3_planning.py` 11 passed. `replay_dead` remains internal-only; no public
   replay endpoint; `production_executed_true_count` = 0. Next authorization required: explicit PO
   authorization of **Step 66C.4-BE3-A** (first implementation slice).
+
+## Step 66C.4-BE3-P-M — Merge BE3 Planning Contract
+
+**Marker: `STEP66C4_BE3_PLANNING_MERGE_VERIFY: PASS`. Status: `Step 66C.4-BE3-P = MERGED / PRODUCT
+CONTRACT READY`; `Step 66C.4-BE3-A = NEXT CANDIDATE / NOT AUTHORIZED`; `Step 66C.4-BE3 = DESIGNED /
+NOT IMPLEMENTED / NOT DEPLOYED / NOT ACTIVATED`.**
+
+- PR #19 (`feature/66c4-be3-p-resume-replay-authorization-contract @ 81f38d2`) merged into main as a
+  **non-squash merge commit**: merge commit `90fc765`, two parents `33b776b` (main) + `81f38d2`
+  (planning branch). `--match-head-commit` enforced head == 81f38d2. local main == origin/main ==
+  `90fc765`; working tree clean; untracked none; `git diff --check` clean.
+- The BE3 resume/replay authorization contract is now canonical source of truth on main: the seven
+  `be3-*.md` contracts (master authorization, RBAC permission matrix, resume/replay state machine,
+  API/event, security/threat model, runtime activation gate, implementation slicing) + the
+  implementation handoff. The diff `33b776b..90fc765` contains NO apps/shared/migrations/services/
+  frontend/infra/helm/k8s/.github change — contract only.
+- **Records:** be3-planning-merge-and-source-of-truth-record.md; merge verifier
+  `scripts/verify_step66c4_be3_planning_merge.py` (12 checks).
+- **Gate.** No backend/API/repository implementation, no migration added/applied (031 NOT applied to
+  any shared DB), no resume/replay endpoint created, `replay_dead` remains internal-only, no
+  worker/relay activation, no deployment. `production_executed_true_count` = 0. Codex and Claude
+  Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
+  66C.4-BE3-A** (authorization model, repository and policy enforcement).

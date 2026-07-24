@@ -71,18 +71,21 @@ Step 66C.4-BE2 (reminder/expiry lifecycle poller + transactional outbox relay) i
   CUTOVER: the poller and relay exist in the repository but are wired into no shared runtime,
   migration 031 is NOT applied to any shared database, and the Runtime Compatibility Gate remains in
   force. See be2-merge-and-source-of-truth-record.md.
-Step 66C.4-BE3 planning is now COMPLETE at Step 66C.4-BE3-P (contract only): the operator-controlled
-  resume + replay authorization contract, RBAC permission matrix (reusing the six canonical
-  TASK_ROLES), resume/replay state machines, durable authorization model, API/event contract,
-  security/threat model, runtime activation gate, and BE3-A/B/C/R/M implementation slicing are
-  defined in docs/contracts/66c4-reminder-expiry-controlled-resume/be3-*.md
-  (STEP66C4_BE3_PLANNING_VERIFY: PASS). No backend/API/migration/frontend/deployment code was written.
-Step 66C.4-BE3 IMPLEMENTATION (BE3-A first) is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT
-  STARTED; it requires a separate, explicit Product Owner authorization and, before any runtime
-  producer cutover, the relay/retry/DLQ/observability/rollback paths to be simultaneously available
-  per the Runtime Compatibility Gate. The BE3 replay-authorization prerequisite (operator RBAC +
-  two-person human authorization + replay audit evidence + authorization-outcome persistence) is
-  bound before any operator-facing replay exposure; replay_dead remains internal-only.
+Step 66C.4-BE3 planning is now MERGED at Step 66C.4-BE3-P-M (merge commit 90fc765, PR #19, reviewed
+  head 81f38d2): the operator-controlled resume + replay authorization contract, RBAC permission
+  matrix (reusing the six canonical TASK_ROLES), resume/replay state machines, durable authorization
+  model, API/event contract, security/threat model, runtime activation gate, and BE3-A/B/C/R/M
+  implementation slicing are canonical source of truth on main
+  (docs/contracts/66c4-reminder-expiry-controlled-resume/be3-*.md;
+  STEP66C4_BE3_PLANNING_MERGE_VERIFY: PASS). Step 66C.4-BE3-P = MERGED / PRODUCT CONTRACT READY. No
+  backend/API/migration/frontend/deployment code entered main.
+Step 66C.4-BE3-A (authorization model, repository and policy enforcement — the first implementation
+  slice) is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED; it requires a separate,
+  explicit Product Owner authorization and, before any runtime producer cutover, the
+  relay/retry/DLQ/observability/rollback paths to be simultaneously available per the Runtime
+  Compatibility Gate. The BE3 replay-authorization prerequisite (operator RBAC + two-person human
+  authorization + replay audit evidence + authorization-outcome persistence) is bound before any
+  operator-facing replay exposure; replay_dead remains internal-only.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order
