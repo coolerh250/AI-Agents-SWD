@@ -15858,3 +15858,43 @@ VALIDATED, NOT ACTIVATED. PR #18 remains Draft.**
   `production_executed_true_count` = 0. Codex and Claude Design remain unauthorized. Step 66C.4-BE3
   NOT started. Next authorized step: **Step 66C.4-BE2-R1-R** (independent closure review by a fresh
   review subagent).
+
+## Step 66C.4-BE2-R1-R — Independent Remediation Closure Review
+
+**Markers: `STEP66C4_BE2_R1_INDEPENDENT_CLOSURE_REVIEW_VERIFY: PASS` (process) +
+`BE2_TECHNICAL_VERDICT: PASS` (independent technical conclusion, recorded separately). Fresh review
+subagent; did NOT write the code or the remediation. Reviewed feature tip `c2677f7` against the
+original review `c70f205`. PR #18 remains Draft; this review does not merge, deploy, or activate.**
+
+- **B-1 CLOSED.** Independently reproduced on isolated ephemeral PostgreSQL 16: full transition from
+  `clarification_needed`; every DB-valid terminal parent (canceled/rejected/accepted/archived/failed)
+  suppressed with no outbox; unexpected non-terminal (running/blocked/approved_for_execution)
+  reconciled with no mutation; guarded rowcount-0 full rollback (fault-injection seam); unreadable/
+  NULL parent reconciles; two-worker exactly-one + duplicate-poll no-op. Parent lock/read precedes
+  every mutation; `aborted`/`completed` confirmed defensive-only (excluded by the migration-029
+  CHECK). Deadlock claim verified: only the poller locks both tables; all other writers are
+  single-statement single-table.
+- **B-2 CLOSED.** Redis client built with non-None socket/connect timeouts AND the publish wrapped in
+  a total `asyncio.wait_for`; out-of-range publish timeout rejected at construction (0/0.9/31 raise).
+  Real Redis 7: normal publish lands on `stream.audit`; a `docker pause` broker hang returns bounded
+  (<10s) as a transient retry, never `published`. Fake-hang evidence: row lock released to a separate
+  connection; cancellation rolls back + re-raises (row pending, attempts=0); multi-row hang leaves no
+  pinned/leaked connection. `RedisStreamEventBus` change confirmed purely additive (default None;
+  XADD/publish body zero-diff).
+- **Retry CLOSED.** 30/120/600/3600 all reached, dead on the 5th attempt (3600 branch reachable);
+  poison + transient share the bounded schedule (no immediate-dead); restart continues from persisted
+  `available_at` and cannot tight-loop; `last_error` is a bounded class/reason only (no message/DSN).
+- **Replay / historical / observability / security.** `replay_dead` has zero runtime/API/startup
+  callers (word-boundary); BE3 RBAC prerequisite bound. The three modified historical assertions
+  remove only PO-overturned behavior; the BE2 verifier's transport check became a precise positive
+  assertion; the zero-caller/non-activation allowlist was not broadened. Metric labels bounded
+  (`{poller}`, `{event_type}`); no critical/high or future-blocking-medium security finding.
+- **Tests.** Own closure suite 22 passed / 0 skipped / 0 failed; core mandatory (BE2-R1 remediation +
+  BE2 + BE1-R1 + closure) 110 passed / 0 skipped / 0 failed; regression suites green individually;
+  both self-verifiers PASS. `test_failure_retry_flow` is an environment-only live full-stack E2E
+  (split data plane under the isolated-Redis methodology), not a code regression; retry/DLQ otherwise
+  green. Ephemeral PG16/Redis7 containers destroyed; shared stack left running and untouched.
+- **Gate.** No implementation file modified by the reviewer. No fix, no merge, no deploy, no shared
+  activation, no producer cutover, no public replay, no resume/dispatch, no BE3 start.
+  `production_executed_true_count` = 0. Recommendation: **RECOMMEND MERGE of PR #18** subject to the
+  coordinating session's process gate.
