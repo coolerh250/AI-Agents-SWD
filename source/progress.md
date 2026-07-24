@@ -15971,3 +15971,43 @@ NOT IMPLEMENTED / NOT DEPLOYED / NOT ACTIVATED`.**
   worker/relay activation, no deployment. `production_executed_true_count` = 0. Codex and Claude
   Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
   66C.4-BE3-A** (authorization model, repository and policy enforcement).
+
+## Step 66C.4-BE3-A — Authorization Model, Repository and Policy Enforcement
+
+**Marker: `STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS` (BE3-A self-verification only — the
+combined independent BE3-R review over BE3-A+B+C is still required). Status: durable authorization
+FOUNDATION implemented, NOT FOR MERGE (Draft PR), NOT ACTIVATED, NO resume/replay execution.**
+
+- Branch `feature/66c4-be3-resume-replay-authorization` (baseline main `5745ab7`); Draft PR — BE3-A/
+  B/C share this branch with distinct commits/markers. NOT committed to main.
+- **Migration 032** (`resume_replay_authorizations`, additive — one new table, no existing table
+  altered, no backfill) with a `_down.sql`. Columns cover resource/action/team/project binding,
+  request + decision + policy + resource_state_version + expiry + consumption + revocation +
+  idempotency. Constraints enforce: action/decision/policy allowlists, `expires_at > requested_at`,
+  consume-only-when-authorized, revoke-only-when-authorized, never-both-consumed-and-revoked, decided
+  coherence, and an AUTHORIZED-replay two-person constraint (`decided_by <> requested_by`). Partial
+  unique index `uq_rra_active_request` = one active request per (action, resource); expiry/isolation/
+  authorized-unconsumed indexes.
+- **Modules** (`shared/sdk/tasks/authorization_{model,repository,policy,service}.py`): enums +
+  bounded reason-code allowlist + single authoritative state projection + secret-free audit payload
+  builder; transaction-aware asyncpg CAS repository (create_request/approve/reject/cancel/revoke/
+  consume/expire_due — statement_timestamp() authoritative, affected-row verified); fail-closed
+  policy reusing the six canonical `rbac.py` TASK_ROLES (Operator requests/decides resume; Approver
+  authorizes replay with requester≠approver; Service Identity consume-only; team/project isolation
+  masked as not_found; production-effect consume requires a separate production_approval_reference);
+  internal service returning API-independent structured outcomes (forbidden/not_found_masked/
+  conflict/expired/stale_state/already_decided/already_consumed/revoked/production_approval_required/
+  invalid_transition). Single-use consume is an atomic CAS (state-version + expiry guarded);
+  concurrent consume → exactly one DB CAS wins (not distributed exactly-once).
+- **Tests:** 14 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (destroyed after;
+  shared stack untouched): migration up/down/reapply + constraints; request uniqueness + idempotency;
+  decisions; DB rejects replay self-approval; RBAC + isolation + service-identity; expiry + state-
+  version block consume; single-use + concurrent-consume-exactly-one; production gate; process-
+  failure-before-commit no partial state. Regression 174 passed (a prose-only BE2-R1 false positive
+  on the literal token `replay_dead` in the new docstrings was resolved by rewording to "dead-outbox
+  replay adapter"; no prior-stage assertion weakened). ruff/black/mypy clean.
+- **Gate.** No public HTTP endpoint, no `replay_dead` invocation, no resume/dispatch, no shared DB
+  migration (032 applied only to ephemeral test DBs), no worker/relay activation, no deployment, no
+  frontend. BE3-B and BE3-C NOT implemented. `production_executed_true_count` = 0. Codex and Claude
+  Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
+  66C.4-BE3-B** (resume request/authorize/gated execution command).
