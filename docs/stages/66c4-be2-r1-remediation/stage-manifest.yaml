@@ -1,0 +1,27 @@
+stage: "66C.4-BE2-R1"
+owner: "Claude Code remediation session"
+task_type: "expiry-consistency-and-bounded-relay-remediation"
+status: "remediation-complete-pending-independent-closure-review"
+
+backend_change_allowed: true
+contract_correction_allowed: true
+test_change_allowed: true
+
+database_schema_change_allowed: false
+migration_change_allowed: false
+shared_runtime_activation_allowed: false
+shared_database_migration_allowed: false
+producer_cutover_allowed: false
+public_replay_api_allowed: false
+resume_allowed: false
+workflow_dispatch_allowed: false
+frontend_change_allowed: false
+deployment_allowed: false
+merge_allowed: false
+
+be3_authorized: false
+codex_authorized: false
+claude_design_authorized: false
+
+independent_closure_review_required: true
+remediation_session_may_approve_merge: false

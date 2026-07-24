@@ -129,7 +129,9 @@ def test_retry_plan_persists_backoff_then_dies() -> None:
     second = lo.plan_retry_state(attempts=1, error="ConnectionError")
     assert second["backoff_seconds"] > first["backoff_seconds"]
 
-    terminal = lo.plan_retry_state(attempts=lo.MAX_DELIVERY_ATTEMPTS - 1, error="poison")
+    # Step 66C.4-BE2-R1 PO decision 1.2: dead only after the MAX_PUBLISH_ATTEMPTS-th failure
+    # (was the off-by-one MAX_DELIVERY_ATTEMPTS-1, which never reached the final 3600s backoff).
+    terminal = lo.plan_retry_state(attempts=lo.MAX_PUBLISH_ATTEMPTS - 1, error="poison")
     assert terminal["status"] == "dead"
     assert terminal["set_dead_at"] is True
     assert terminal["backoff_seconds"] is None
@@ -275,15 +277,24 @@ def test_no_relay_scheduler_or_live_producer_exists() -> None:
     for banned in ("while True", "asyncio.sleep", "create_task(", "XREADGROUP", "FOR UPDATE"):
         assert banned not in src, banned
 
+    # From Step 66C.4-BE2 (PO-authorized), the lifecycle poller (producer) and the outbox relay
+    # (consumer) are the authorized NON-ACTIVATED callers; no other runtime module references the
+    # outbox, and neither worker is activated in any shared runtime (asserted by the BE2
+    # no-activation tests). Updated in BE2.
+    allowed = {
+        lo_path,
+        REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
+        REPO / "shared" / "sdk" / "tasks" / "outbox_relay.py",
+    }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):
         for path in base.rglob("*.py"):
-            if path == lo_path or "__pycache__" in str(path):
+            if path in allowed or "__pycache__" in str(path):
                 continue
             text = path.read_text(encoding="utf-8", errors="ignore")
             if "lifecycle_outbox" in text or "clarification_lifecycle_outbox" in text:
                 offenders.append(str(path.relative_to(REPO)))
-    assert offenders == [], f"live runtime references to the outbox: {offenders}"
+    assert offenders == [], f"unexpected runtime references to the outbox: {offenders}"
 
 
 # --------------------------------------------------------------------------------------

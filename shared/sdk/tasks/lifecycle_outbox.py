@@ -67,10 +67,16 @@ ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE: dict[str, frozenset[str]] = {
 
 ALLOWED_EVENT_TYPES = frozenset(ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE)
 
-# Persisted backoff schedule (seconds) per attempt number. The LAST entry is not a cap on time
-# but the final delay; the retry budget is bounded by MAX_DELIVERY_ATTEMPTS.
+# Persisted backoff schedule (seconds). Every entry is REACHED: after the Nth publish attempt
+# fails the row waits RETRY_BACKOFF_SECONDS[N-1] before the next attempt. Step 66C.4-BE2-R1 PO
+# decision 1.2 makes the semantics exact (the previous code never reached the 3600 entry):
+#   attempt 1 fails -> attempts=1, +30s     attempt 2 fails -> attempts=2, +120s
+#   attempt 3 fails -> attempts=3, +600s     attempt 4 fails -> attempts=4, +3600s
+#   attempt 5 fails -> attempts=5, dead
+# So there are MAX_RETRIES=4 scheduled retries across MAX_PUBLISH_ATTEMPTS=5 total attempts.
 RETRY_BACKOFF_SECONDS: tuple[int, ...] = (30, 120, 600, 3600)
-MAX_DELIVERY_ATTEMPTS = len(RETRY_BACKOFF_SECONDS)
+MAX_RETRIES = len(RETRY_BACKOFF_SECONDS)  # 4 scheduled retries (each backoff is reached)
+MAX_PUBLISH_ATTEMPTS = MAX_RETRIES + 1  # 5 total attempts; the 5th failure is terminal (dead)
 
 
 def assert_safe_last_error(text: str | None) -> str | None:
@@ -147,7 +153,10 @@ def plan_retry_state(*, attempts: int, error: str | None) -> dict[str, Any]:
         raise ValueError("attempts must not be negative")
     next_attempts = attempts + 1
     bounded_error = assert_safe_last_error(error)
-    if next_attempts >= MAX_DELIVERY_ATTEMPTS:
+    # Dead only after the MAX_PUBLISH_ATTEMPTS-th attempt fails. Every failure -- transient or
+    # poison -- consumes exactly one attempt; there is no immediate-dead classification, so a
+    # persistently failing (poison) row cannot tight-loop, it dies after the bounded schedule.
+    if next_attempts >= MAX_PUBLISH_ATTEMPTS:
         return {
             "status": "dead",
             "attempts": next_attempts,

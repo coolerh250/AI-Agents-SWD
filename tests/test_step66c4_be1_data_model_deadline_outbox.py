@@ -130,19 +130,25 @@ def test_outbox_event_type_allowlist() -> None:
 
 
 def test_outbox_module_has_no_live_producer_import() -> None:
-    # Static guard: no runtime module imports lifecycle_outbox (disabled foundation).
+    # Static guard: the only modules that may reference the outbox are the outbox module itself and,
+    # from Step 66C.4-BE2 (PO-authorized), the two NON-ACTIVATED worker modules (the lifecycle
+    # poller that produces outbox rows and the relay that consumes them). No other runtime module
+    # references it, and neither worker is activated in any shared runtime (asserted separately by
+    # the BE2 no-activation tests). Updated in BE2.
+    allowed = {
+        REPO / "shared" / "sdk" / "tasks" / "lifecycle_outbox.py",
+        REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
+        REPO / "shared" / "sdk" / "tasks" / "outbox_relay.py",
+    }
     offenders = []
-    for path in (REPO / "apps").rglob("*.py"):
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if "lifecycle_outbox" in text:
-            offenders.append(str(path.relative_to(REPO)))
-    for path in (REPO / "shared").rglob("*.py"):
-        if path.name == "lifecycle_outbox.py":
-            continue
-        text = path.read_text(encoding="utf-8", errors="ignore")
-        if "lifecycle_outbox" in text:
-            offenders.append(str(path.relative_to(REPO)))
-    assert offenders == [], f"live runtime references to lifecycle_outbox: {offenders}"
+    for base in (REPO / "apps", REPO / "shared"):
+        for path in base.rglob("*.py"):
+            if path in allowed:
+                continue
+            text = path.read_text(encoding="utf-8", errors="ignore")
+            if "lifecycle_outbox" in text:
+                offenders.append(str(path.relative_to(REPO)))
+    assert offenders == [], f"unexpected runtime references to lifecycle_outbox: {offenders}"
 
 
 # --------------------------------------------------------------------------------------
