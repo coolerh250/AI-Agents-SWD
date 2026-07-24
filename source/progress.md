@@ -15909,3 +15909,42 @@ AUTHORIZED`.**
   no public replay / Admin Console control, no resume/dispatch. `production_executed_true_count` = 0.
   Codex and Claude Design remain unauthorized. Next candidate: **Step 66C.4-BE3** (not authorized, not
   started; replay-RBAC prerequisite bound).
+
+## Step 66C.4-BE3-P — Operator-Controlled Resume and Replay Authorization Contract
+
+**Marker: `STEP66C4_BE3_PLANNING_VERIFY: PASS` (planning contract only). Status: `Step 66C.4-BE3 =
+DESIGNED (contract only) / NOT IMPLEMENTED / NOT MERGED / NOT DEPLOYED / NOT ACTIVATED`.**
+
+- Contract-only stage: NO backend/API/migration/frontend/deployment code. Branch
+  `feature/66c4-be3-p-resume-replay-authorization-contract` (baseline main `33b776b`); NOT merged
+  (this stage forbids merge/implement/deploy/activate).
+- Defines the binding model for operator-controlled resume + authorized dead-event replay, extending
+  the existing Option-A `controlled-resume-contract.md` and reusing the six canonical
+  `shared/sdk/tasks/rbac.py` TASK_ROLES (no second RBAC):
+  - **RBAC matrix** (`be3-rbac-permission-matrix.md`): 6 roles x 13 actions; Operator requests,
+    Approver authorizes replay (two-person, requester != approver), Service Identity executes only
+    (never requests/authorizes), platform_admin `override policy` is always audited and never for a
+    production-effect task; production-effect keeps its separate approval gate.
+  - **State machines** (`be3-resume-replay-state-machine.md`): resume (not_eligible → eligible →
+    request_pending → authorization_pending → authorized → execution_pending → resumed; +
+    rejected/canceled/failed/expired) and replay (dead → requested → authorized → replayed;
+    only-dead, event_id/idempotency_key preserved, attempts never reset) with per-transition actor/
+    precondition/idempotency/tx-boundary/audit/failure.
+  - **Durable authorization** (`be3-api-event-contract.md`): resource-bound, action-bound, single-use,
+    time-bounded, state-version-bound, revocable; `/operations/resume-requests` + `/operations/
+    replay-requests` endpoints with 403/404-mask/409/idempotency; full resume.*/replay.* event set on
+    a single durable destination; 9 concurrency scenarios; at-least-once + state-bound idempotency,
+    exactly-once NOT claimed.
+  - **Security/threat model** (`be3-security-and-threat-model.md`): team isolation, two-person replay,
+    production separation, service-identity scope, authorization expiry, replay-storm rate limiting,
+    reason-code allowlist, no raw content/secret/DSN; T1–T8 threats + mitigations.
+  - **Activation gate** (`be3-runtime-activation-gate.md`): 11 prerequisites (031 applied, BE3 auth
+    migration, poller/relay deployed, retry/DLQ, rollback tested, cutover plan, RBAC, audit, E2E, PO
+    deployment authorization) + dispatch DISABLED-BY-DEFAULT; replay stays internal-only.
+  - **Slicing** (`be3-implementation-slicing-plan.md`): BE3-A (authorization model) → BE3-B (resume)
+    → BE3-C (replay) by one implementation flow, then ONE independent BE3-R review over the whole
+    (findings → original-reviewer focused closure), then BE3-M non-squash merge after PO authorization.
+- **Verifier/tests:** `scripts/verify_step66c4_be3_planning.py` (14 checks) PASS;
+  `tests/test_step66c4_be3_planning.py` 11 passed. `replay_dead` remains internal-only; no public
+  replay endpoint; `production_executed_true_count` = 0. Next authorization required: explicit PO
+  authorization of **Step 66C.4-BE3-A** (first implementation slice).
