@@ -278,13 +278,14 @@ def test_no_relay_scheduler_or_live_producer_exists() -> None:
         assert banned not in src, banned
 
     # From Step 66C.4-BE2 (PO-authorized), the lifecycle poller (producer) and the outbox relay
-    # (consumer) are the authorized NON-ACTIVATED callers; no other runtime module references the
-    # outbox, and neither worker is activated in any shared runtime (asserted by the BE2
-    # no-activation tests). Updated in BE2.
+    # (consumer) are the authorized NON-ACTIVATED callers; and from Step 66C.4-BE3-B (PO-authorized)
+    # the resume service writes the DISABLED-BY-DEFAULT resume audit/command rows (gated; no relay
+    # activated). No other runtime module references the outbox. Updated in BE2, then BE3-B.
     allowed = {
         lo_path,
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
         REPO / "shared" / "sdk" / "tasks" / "outbox_relay.py",
+        REPO / "shared" / "sdk" / "tasks" / "resume_service.py",
     }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):

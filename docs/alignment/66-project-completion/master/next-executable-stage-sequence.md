@@ -87,11 +87,22 @@ Step 66C.4-BE3-A (durable authorization model, repository and policy enforcement
   the production-approval gate (STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS; 14 real-PG
   tests). NO resume/replay execution, NO public endpoint, NO dead-outbox replay call, NO shared
   activation/deployment; migration 032 NOT applied to any shared DB.
-Step 66C.4-BE3-B (resume request/authorize/gated execution command) is the NEXT CANDIDATE but is NOT
-  AUTHORIZED and NOT STARTED; BE3-C (replay) follows. BE3-A+B+C are one implementation flow, then ONE
-  independent BE3-R security/transaction review (original-reviewer focused closure), then BE3-M
-  non-squash merge after Product Owner authorization. replay_dead remains internal-only; the Runtime
-  Compatibility Gate and the 11-item activation gate remain in force before any activation.
+Step 66C.4-BE3-B (operator-controlled resume request/authorize/gated execution command) is
+  IMPLEMENTED on the same branch (Draft PR #20, NOT FOR MERGE): migration 033 (resume_requests,
+  additive), the resume request model/repository/service, and the /operations/resume-requests API
+  (DISABLED-BY-DEFAULT via BE3_RESUME_API_ENABLED). DB-authoritative eligibility under row locks;
+  resume authorized ONLY by the policy/safety authority (a server-side capability, never client
+  input; an operator cannot self-authorize); Service-Identity-only, BE3_RESUME_COMMAND_ENABLED-gated
+  execution preparation that consumes the single-use authorization and writes a single durable
+  resume.execution_requested outbox command (command_id = the outbox row id); outbox failure rolls
+  back the consume; production gate intact; exact null-safe NOT NULL scope
+  (STEP66C4_BE3_B_OPERATOR_RESUME_VERIFY: PASS; 22 real-PG tests, 208 regression). NO orchestrator
+  call, NO resume execution, NO replay_dead, NO shared migration/deployment/activation.
+Step 66C.4-BE3-C (dead-event replay) is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED.
+  BE3-A+B+C are one implementation flow, then ONE independent BE3-R security/transaction review
+  (original-reviewer focused closure), then BE3-M non-squash merge after Product Owner authorization.
+  replay_dead remains internal-only; the Runtime Compatibility Gate and the 11-item activation gate
+  remain in force before any activation.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

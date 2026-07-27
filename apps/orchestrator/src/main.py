@@ -33,6 +33,7 @@ from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
 from project_api import router as project_router
+from operations_resume_api import router as operations_resume_router
 from task_api import router as task_router
 from workroom_api import router as workroom_router
 from workspace_api import router as workspace_router
@@ -266,6 +267,11 @@ app.include_router(task_router)
 # Stage 66C.1 (Step 66): Agent Workroom & Clarification data/API foundation (workroom
 # messages + clarification requests/answers; no UI, no workflow dispatch/resume).
 app.include_router(workroom_router)
+# Step 66C.4-BE3-B: operator-controlled resume request API foundation
+# (/operations/resume-requests). DISABLED-BY-DEFAULT (BE3_RESUME_API_ENABLED); no orchestrator
+# call, no resume execution, no event publish. The execution command path is a separate internal,
+# BE3_RESUME_COMMAND_ENABLED-gated service op and is NOT exposed as an endpoint.
+app.include_router(operations_resume_router)
 
 
 @app.get("/health")

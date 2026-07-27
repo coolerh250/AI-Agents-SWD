@@ -63,6 +63,20 @@ ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE: dict[str, frozenset[str]] = {
     "clarification.resume_requested": _COMMON_PAYLOAD_KEYS
     | {"resume_requested_at", "resume_requested_by"},
     "clarification.resume_authorized": _COMMON_PAYLOAD_KEYS | {"resume_authorized_at"},
+    # Step 66C.4-BE3-B resume request AUDIT-stream events (durable outbox evidence; identifiers
+    # only, never a raw clarification/answer body, never a secret). Each is written in the SAME
+    # transaction as its resume_requests state change.
+    "resume.requested": _COMMON_PAYLOAD_KEYS
+    | {"resume_request_id", "resource_state_version", "resume_requested_by"},
+    "resume.authorized": _COMMON_PAYLOAD_KEYS | {"resume_request_id", "authorization_id"},
+    "resume.rejected": _COMMON_PAYLOAD_KEYS | {"resume_request_id"},
+    "resume.canceled": _COMMON_PAYLOAD_KEYS | {"resume_request_id"},
+    "resume.resumed": _COMMON_PAYLOAD_KEYS | {"resume_request_id", "command_id"},
+    "resume.failed": _COMMON_PAYLOAD_KEYS | {"resume_request_id", "command_id"},
+    # The durable resume execution COMMAND (single destination -> orchestrator). GATED/DISABLED-BY-
+    # DEFAULT: BE3-B creates the row only and does NOT publish it or start a consumer.
+    "resume.execution_requested": _COMMON_PAYLOAD_KEYS
+    | {"resume_request_id", "authorization_id", "resource_state_version"},
 }
 
 ALLOWED_EVENT_TYPES = frozenset(ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE)

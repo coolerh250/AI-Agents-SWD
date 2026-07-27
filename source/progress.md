@@ -16068,3 +16068,44 @@ started.**
   no worker/relay activation, no frontend. BE3-B/BE3-C NOT implemented. `production_executed_true_count`
   = 0. All three markers (`...AUTHORIZATION_FOUNDATION_VERIFY`, `...CONTRACT_ALIGNMENT_VERIFY`,
   `...NULL_SCOPE_CLOSURE_VERIFY`) PASS. BE3-B requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-B — Operator-Controlled Resume Request, Authorization and Gated Execution Command
+
+**Marker: `STEP66C4_BE3_B_OPERATOR_RESUME_VERIFY: PASS` (PO-authorized; same feature branch, distinct
+commit). IMPLEMENTED / SELF-VERIFIED; NOT MERGED / NOT DEPLOYED / NOT ACTIVATED / NOT RUNTIME
+VALIDATED. Draft PR #20.**
+
+- **What.** The operator-controlled resume foundation on top of BE3-A: migration 033 (`resume_requests`,
+  additive durable request entity), `resume_request_model/repository/service`, and the
+  `/operations/resume-requests` API (create/get/authorize/reject/cancel), all DISABLED-BY-DEFAULT.
+- **Flow.** Operator requests → policy/safety authority authorizes/rejects → durable authorization
+  outcome (BE3-A) → Service Identity consumes → durable `resume.execution_requested` outbox command →
+  internal `confirm_resumed`/`confirm_failed` reconciliation foundation. No orchestrator is called and
+  no resume is executed.
+- **Eligibility (DB-authoritative, under row locks).** answered + `resume_eligible_at` set + parent
+  task non-terminal + resource_state_version match + no active request + scope + policy allow. Expired
+  clarification is never re-answered/resumed.
+- **Actors / spoof prevention.** Operators via the existing fail-closed test auth; the POLICY/SAFETY
+  AUTHORITY is a server-configured capability (`BE3_RESUME_POLICY_AUTHORITY_CAPABILITY` + header),
+  never a client role/body/query — `is_policy_authority` is set server-side only; `decided_by` is the
+  authority, never the requester. A plain operator (incl. the requester) cannot human-authorize
+  (`policy_authority_required`). Execution preparation is Service-Identity-only and internal (no
+  endpoint); the production-effect gate is unchanged (delegated to the BE3-A consume).
+- **Transactions.** One transaction per state change, locking clarification + task, re-validating
+  eligibility/scope/state-version. In prepare: consume + `execution_pending` + outbox command commit
+  atomically; an outbox failure rolls back the consume. Design decisions (no parallel conflicting
+  clarification columns; not_eligible/eligible as pre-request projections; NOT NULL scope;
+  per-request outbox idempotency identity) are recorded in
+  `docs/contracts/66c4-reminder-expiry-controlled-resume/be3-b-operator-controlled-resume-record.md`.
+- **Feature gates (env-only, disabled-by-default).** `BE3_RESUME_API_ENABLED` (whole router 503s when
+  off; no DB access), `BE3_RESUME_COMMAND_ENABLED` (prepare does nothing when off — no consume, no
+  outbox). Never read from a request body/query/header.
+- **Tests.** 22 real-PG BE3-B tests pass (0 skipped); backend regression 208 passed / 5 skipped
+  (pre-existing Redis-dependent BE2 relay tests). Two BE1/BE1-R1 "no live outbox producer" static
+  guards were EXTENDED (not weakened) to include `resume_service.py`, as BE2 did for the poller/relay.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after; shared
+  stack untouched.
+- **Gate.** No orchestrator call, no resume execution, no `replay_dead`, no event publish, no shared
+  migration/deployment, no worker/relay activation, no frontend, no BE3-C.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
+  review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.

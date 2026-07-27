@@ -132,13 +132,15 @@ def test_outbox_event_type_allowlist() -> None:
 def test_outbox_module_has_no_live_producer_import() -> None:
     # Static guard: the only modules that may reference the outbox are the outbox module itself and,
     # from Step 66C.4-BE2 (PO-authorized), the two NON-ACTIVATED worker modules (the lifecycle
-    # poller that produces outbox rows and the relay that consumes them). No other runtime module
-    # references it, and neither worker is activated in any shared runtime (asserted separately by
-    # the BE2 no-activation tests). Updated in BE2.
+    # poller that produces outbox rows and the relay that consumes them), and, from Step 66C.4-BE3-B
+    # (PO-authorized), the resume service that writes the DISABLED-BY-DEFAULT resume audit/command
+    # rows (gated by BE3_RESUME_API_ENABLED / BE3_RESUME_COMMAND_ENABLED; no relay is activated). No
+    # other runtime module references it. Updated in BE2, then BE3-B.
     allowed = {
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_outbox.py",
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
         REPO / "shared" / "sdk" / "tasks" / "outbox_relay.py",
+        REPO / "shared" / "sdk" / "tasks" / "resume_service.py",
     }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):
