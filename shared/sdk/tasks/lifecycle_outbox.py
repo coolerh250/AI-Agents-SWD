@@ -77,6 +77,20 @@ ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE: dict[str, frozenset[str]] = {
     # DEFAULT: BE3-B creates the row only and does NOT publish it or start a consumer.
     "resume.execution_requested": _COMMON_PAYLOAD_KEYS
     | {"resume_request_id", "authorization_id", "resource_state_version"},
+    # Step 66C.4-BE3-C dead-event replay AUDIT-stream evidence (identifiers only, never a raw
+    # outbox payload/clarification/answer body, never a secret). Each is written in the SAME
+    # transaction as its replay_requests state change. There is no replay "command" destination --
+    # replay execution is a synchronous internal DB mutation (dead -> pending) on the ORIGINAL
+    # business-event row itself; these rows are audit evidence ABOUT that mutation, never a second
+    # copy of the business event.
+    "replay.requested": _COMMON_PAYLOAD_KEYS
+    | {"replay_request_id", "outbox_event_id", "destination"},
+    "replay.authorized": _COMMON_PAYLOAD_KEYS | {"replay_request_id", "authorization_id"},
+    "replay.rejected": _COMMON_PAYLOAD_KEYS | {"replay_request_id"},
+    "replay.canceled": _COMMON_PAYLOAD_KEYS | {"replay_request_id"},
+    "replay.execution_blocked": _COMMON_PAYLOAD_KEYS | {"replay_request_id"},
+    "replay.executed": _COMMON_PAYLOAD_KEYS | {"replay_request_id", "outbox_event_id"},
+    "replay.failed": _COMMON_PAYLOAD_KEYS | {"replay_request_id"},
 }
 
 ALLOWED_EVENT_TYPES = frozenset(ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE)
@@ -112,6 +126,13 @@ EVENT_DESTINATIONS: dict[str, str] = {
     "resume.resumed": DESTINATION_AUDIT,
     "resume.failed": DESTINATION_AUDIT,
     "resume.execution_requested": DESTINATION_ORCHESTRATOR_COMMAND,
+    "replay.requested": DESTINATION_AUDIT,
+    "replay.authorized": DESTINATION_AUDIT,
+    "replay.rejected": DESTINATION_AUDIT,
+    "replay.canceled": DESTINATION_AUDIT,
+    "replay.execution_blocked": DESTINATION_AUDIT,
+    "replay.executed": DESTINATION_AUDIT,
+    "replay.failed": DESTINATION_AUDIT,
 }
 
 # Structural guarantee (import-time, not just a test): every allowlisted event_type has EXACTLY one

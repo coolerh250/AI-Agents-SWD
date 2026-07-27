@@ -98,9 +98,24 @@ Step 66C.4-BE3-B (operator-controlled resume request/authorize/gated execution c
   back the consume; production gate intact; exact null-safe NOT NULL scope
   (STEP66C4_BE3_B_OPERATOR_RESUME_VERIFY: PASS; 22 real-PG tests, 208 regression). NO orchestrator
   call, NO resume execution, NO replay_dead, NO shared migration/deployment/activation.
-Step 66C.4-BE3-C (dead-event replay) is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED.
-  BE3-A+B+C are one implementation flow, then ONE independent BE3-R security/transaction review
-  (original-reviewer focused closure), then BE3-M non-squash merge after Product Owner authorization.
+Step 66C.4-BE3-C (two-person-controlled dead-event replay) is IMPLEMENTED on the same branch (Draft
+  PR #20, NOT FOR MERGE): migration 034 (replay_requests, additive), the replay request
+  model/repository/service, and the /operations/replay-requests API (DISABLED-BY-DEFAULT via
+  BE3_REPLAY_API_ENABLED). Reuses the BE3-A durable authorization UNCHANGED with action_type='replay'
+  (requester != approver two-person control via the existing policy + DB constraint); a NEW
+  transaction-aware replay_dead_row adapter (the existing ClarificationOutboxRelay.replay_dead always
+  owns its own transaction and cannot compose with an authorization consume); a dead-episode
+  resource_state_version composite (dead_at:attempts, no new column); mandatory destination readiness
+  (default provider never reports ready -- no consumer exists for either destination);
+  server-derived production-effect (never client-trusted); bounded server-side rate limiting
+  (STEP66C4_BE3_C_AUTHORIZED_REPLAY_VERIFY: PASS; 27 real-PG + 5 DB-less tests, 253 regression). A
+  request_authorization savepoint composability fix was required (replay has no pre-authorization
+  claim gate like resume's clarification CAS). NO real replay_dead call in any shared runtime, NO
+  event publish, NO shared migration/deployment/activation, NO public execute endpoint.
+BE3-A + BE3-B + BE3-C are now ALL complete (self-verified) on this branch -- one implementation flow,
+  distinct commits + markers. The combined independent BE3-R security/transaction review over all
+  three is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED (original-reviewer focused
+  closure after findings), then BE3-M non-squash merge after separate Product Owner authorization.
   replay_dead remains internal-only; the Runtime Compatibility Gate and the 11-item activation gate
   remain in force before any activation.
 ```

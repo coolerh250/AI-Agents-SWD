@@ -142,6 +142,13 @@ def test_replay_dead_has_no_public_or_runtime_or_startup_caller() -> None:
     # Internal-only foundation: no API surface, no worker entrypoint, no startup registration
     # calls replay_dead or drives an automatic replay loop. Word-boundary match so the unrelated
     # retry-scheduler `replay_deadletter` is not a false positive.
+    #
+    # Step 66C.4-BE3-C (PO-authorized) adds a SECOND, transaction-aware authorized internal replay
+    # adapter (replay_request_repository.replay_dead_row) with its ONE authorized caller
+    # (replay_service.execute_authorized_replay -- internal, Service-Identity-only, NOT exposed as
+    # an endpoint; proven by the BE3-C self-verifier). Both are allowlisted here as definition/
+    # authorized-caller sites, exactly like outbox_relay.py's own definition. No API, worker
+    # entrypoint, or startup registration is added to either allowlist entry.
     import re
 
     callers = []
@@ -149,8 +156,12 @@ def test_replay_dead_has_no_public_or_runtime_or_startup_caller() -> None:
         for path in base.rglob("*.py"):
             if "__pycache__" in str(path):
                 continue
-            if path.name == "outbox_relay.py":
-                continue  # the definition site itself
+            if path.name in (
+                "outbox_relay.py",
+                "replay_request_repository.py",
+                "replay_service.py",
+            ):
+                continue  # the definition site + its one authorized internal caller
             txt = path.read_text(encoding="utf-8", errors="ignore")
             if re.search(r"replay_dead\b", txt):
                 callers.append(str(path.relative_to(REPO)))

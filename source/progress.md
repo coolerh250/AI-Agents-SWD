@@ -16146,3 +16146,62 @@ the same implementation session; no subagent). NOT FOR MERGE; BE3-C not started.
   migration/deployment, no worker/relay activation, no frontend, no BE3-C.
   `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
   review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-C — Authorized Dead-Event Replay
+
+**Marker: `STEP66C4_BE3_C_AUTHORIZED_REPLAY_VERIFY: PASS` (PO-authorized; same feature branch,
+distinct commit). IMPLEMENTED / SELF-VERIFIED; NOT MERGED / NOT DEPLOYED / NOT ACTIVATED / NOT
+RUNTIME VALIDATED. Draft PR #20. This completes BE3-A + BE3-B + BE3-C as one implementation flow.**
+
+- **What.** Two-person-controlled dead-event replay on top of BE3-A/B: migration 034
+  (`replay_requests`, additive durable request entity), `replay_request_model/repository/service`,
+  and the `/operations/replay-requests` API (create/get/authorize/reject/cancel), all
+  DISABLED-BY-DEFAULT.
+- **Flow.** Operator requests → Approver authorizes/rejects (requester != approver) → durable
+  authorization outcome (BE3-A, reused UNCHANGED with `action_type='replay'`) → Service Identity
+  consumes → the internal transaction-aware `replay_dead_row` adapter requeues the SAME dead event
+  (dead → pending) → durable audit evidence. No real `replay_dead` call in any shared runtime.
+- **New transaction-aware replay adapter.** The existing `ClarificationOutboxRelay.replay_dead`
+  (BE1/BE2) always owns/commits its own transaction, so it cannot compose atomically with an
+  authorization consume. `replay_request_repository.replay_dead_row` is a NEW function with the
+  SAME guard/attempts-preserving semantics that runs inside the CALLER's transaction instead —
+  the existing relay method is unchanged and untouched.
+- **Resource-state-version.** No new column: a replay request snapshots
+  `f"{dead_at.isoformat()}:{attempts}"` — the "dead episode" composite, unique per pending→dead
+  transition and frozen while dead — re-validated at authorize/execute; a stale snapshot is rejected
+  with no side effect. Documented equivalence to a dedicated version column in the contract record.
+- **Actors.** Operator requests/cancels-own; Approver (`reviewer_approver`/`platform_admin`,
+  canonical TASK_ROLES, no second RBAC) authorizes/rejects with requester != approver enforced by
+  BOTH the policy and the DB `chk_rra_replay_two_person` constraint (unchanged from BE3-A); Service
+  Identity only consumes + executes (no endpoint). Production-effect is derived SERVER-SIDE from the
+  event's owning task's own `production_effect` column — never trusted from request input.
+- **Destination readiness (mandatory).** `execute_authorized_replay` requires an injectable readiness
+  check; the DEFAULT provider reports EVERY destination `not_configured` (neither the BE2 audit relay
+  nor any orchestrator-command consumer is activated anywhere), so real execution is structurally
+  blocked today independent of the feature gate. A blocked attempt does not consume, does not mutate
+  the dead row, and does not change the request's state (stays `authorized`, retryable later) — only
+  a `replay.execution_blocked` audit row is written.
+- **Rate limiting.** Server-side, DB-derived, bounded, fail-closed: max 3 successful replays per
+  event / 24h, max 10 requests per actor / 24h (both configurable, both reject an invalid/
+  out-of-range value rather than silently clamp). No role bypasses the cap at the policy layer.
+- **Composability fix.** `authorization_service.request_authorization`'s `create_request` now runs
+  inside its own savepoint (`async with conn.transaction():`, promoted to a SAVEPOINT when nested) —
+  without this, a concurrent loser's `UniqueViolationError` would leave the CALLER's outer
+  transaction aborted, and the existing recovery re-query would itself raise
+  `InFailedSQLTransactionError`. Resume never hit this (a pre-authorization claim gate on the
+  clarification avoids it structurally); replay has no equivalent column on the merged outbox table,
+  so this fix was required. Backward-compatible; changes no successful-path behavior.
+- **Tests.** 27 real-PG BE3-C tests pass (0 skipped) + 5 DB-less; backend regression 253 passed / 5
+  skipped (pre-existing Redis-dependent BE2 tests). Two BE1/BE1-R1 outbox-producer guards and the
+  BE2-R1 replay_dead-caller guard were EXTENDED (not weakened) for the new authorized adapter/caller;
+  prose-only literal-token false positives were REWORDED (BE3-A precedent), not allowlisted.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after
+  (twice — dev run + a final confirmation on the exact committed/formatted bytes); shared stack
+  untouched both times.
+- **Gate.** No real `replay_dead` call in any shared runtime, no event publish, no BE2 relay/consumer
+  activation, no shared migration/deployment, no frontend, no public execute endpoint.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. BE3-A + BE3-B + BE3-C are now all
+  complete (self-verified) on this branch — the combined independent **BE3-R** security/transaction
+  review over all three is the next required gate (see
+  `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-abc-to-combined-review-handoff.md`),
+  followed by BE3-M (non-squash merge) only after separate explicit PO authorization.

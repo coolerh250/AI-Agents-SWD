@@ -94,21 +94,29 @@ async def request_authorization(
     if not outcome.allowed:
         return _deny(outcome)
     try:
-        row = await repo.create_request(
-            conn,
-            action_type=action_type,
-            resource_type=resource_type,
-            resource_id=resource_id,
-            requested_by=actor.principal_id,
-            requested_role=actor.role,
-            resource_state_version=resource_state_version,
-            expires_at=expires_at,
-            idempotency_key=idempotency_key,
-            team_id=resource_scope.team_id,
-            project_id=resource_scope.project_id,
-            production_effect=production_effect,
-            production_approval_reference=production_approval_reference,
-        )
+        # Step 66C.4-BE3-C: create_request runs inside its OWN savepoint (a nested
+        # conn.transaction() becomes a SAVEPOINT when the caller already has an outer transaction
+        # active). Without this, a UniqueViolationError here leaves the CALLER's outer transaction
+        # aborted, and the recovery `fetchrow` below would itself raise
+        # asyncpg.InFailedSQLTransactionError instead of returning a clean result -- exactly the
+        # composition BE3-B/BE3-C need (this call happens inside a larger request/authorize
+        # transaction that must stay healthy for the caller's own subsequent statements).
+        async with conn.transaction():
+            row = await repo.create_request(
+                conn,
+                action_type=action_type,
+                resource_type=resource_type,
+                resource_id=resource_id,
+                requested_by=actor.principal_id,
+                requested_role=actor.role,
+                resource_state_version=resource_state_version,
+                expires_at=expires_at,
+                idempotency_key=idempotency_key,
+                team_id=resource_scope.team_id,
+                project_id=resource_scope.project_id,
+                production_effect=production_effect,
+                production_approval_reference=production_approval_reference,
+            )
     except asyncpg.UniqueViolationError as exc:
         # Idempotent re-confirm on the same key; otherwise an active request already exists.
         existing = await conn.fetchrow(

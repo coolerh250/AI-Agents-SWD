@@ -33,6 +33,7 @@ from delivery_package_api import router as delivery_package_router
 from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
 from project_api import router as project_router
+from operations_replay_api import router as operations_replay_router
 from operations_resume_api import router as operations_resume_router
 from task_api import router as task_router
 from workroom_api import router as workroom_router
@@ -272,6 +273,12 @@ app.include_router(workroom_router)
 # call, no resume execution, no event publish. The execution command path is a separate internal,
 # BE3_RESUME_COMMAND_ENABLED-gated service op and is NOT exposed as an endpoint.
 app.include_router(operations_resume_router)
+# Step 66C.4-BE3-C: authorized dead-event replay request API foundation
+# (/operations/replay-requests). DISABLED-BY-DEFAULT (BE3_REPLAY_API_ENABLED); no dead-outbox
+# replay execution in any shared runtime, no event publish. The execution path is a separate internal,
+# BE3_REPLAY_EXECUTION_ENABLED-gated Service-Identity-only service op and is NOT exposed as an
+# endpoint (no public /execute or /replay-now route).
+app.include_router(operations_replay_router)
 
 
 @app.get("/health")
