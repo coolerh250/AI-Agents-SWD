@@ -16205,3 +16205,63 @@ RUNTIME VALIDATED. Draft PR #20. This completes BE3-A + BE3-B + BE3-C as one imp
   review over all three is the next required gate (see
   `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-abc-to-combined-review-handoff.md`),
   followed by BE3-M (non-squash merge) only after separate explicit PO authorization.
+
+## Step 66C.4-BE3-R — Combined Independent Security / Authorization / Transaction Review
+
+**Markers: `STEP66C4_BE3_COMBINED_INDEPENDENT_REVIEW_VERIFY: PASS` (process + artifacts complete)
+and `BE3_TECHNICAL_VERDICT: PASS` (independent judgment — CODE MERGE READINESS ONLY). REVIEW ONLY;
+NOT MERGED / NOT DEPLOYED / NOT ACTIVATED. Draft PR #20 remained Draft/OPEN/unmerged and untouched.**
+
+- **When / branch / commit.** Executed 2026-07-27. Review branch
+  `review/66c4-be3-combined-security-transaction` off feature head `6323972`; baseline (canonical
+  main) `5745ab7`; review diff `5745ab7..6323972`. One continuous combined review over BE3-A+B+C (no
+  piecemeal sub-review).
+- **Files added (this branch; no implementation file touched).**
+  `docs/contracts/66c4-reminder-expiry-controlled-resume/be3-combined-independent-review.md`,
+  `docs/test/step66c4-be3-combined-review-evidence.md`,
+  `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-combined-review-result.md`,
+  `scripts/verify_step66c4_be3_combined_review.py`,
+  `tests/test_step66c4_be3_combined_review.py`, and this progress entry.
+- **Target / method.** Internal test runtime, isolated ephemeral PostgreSQL 16 + isolated ephemeral
+  Redis 7 (both created for the review and destroyed after; shared PostgreSQL/Redis containers had
+  identical container IDs before and after — untouched). Detached worktree at `6323972`; review
+  test + verifier overlaid; run on the repo's project virtualenv.
+- **Test results (0 failed / 0 skipped for the review-relevant suites).** BE3-A/B/C/B-C1 = 87
+  passed / 0 skipped; BE1/BE2 remediation = 75 passed / 0 skipped; independent review suite = 16
+  passed / 0 skipped (incl. a real-Redis audit-relay routing test). Structural verifier PASS.
+  ruff / black / mypy / `git diff --check` / secret-scan clean on the reviewer's changed files. No
+  historical verifier or test was weakened.
+- **Independently confirmed sound.** Authorization single-use/CAS (exactly-one concurrent consume,
+  rollback complete, expired/revoked/stale never consume); dual-layer exact null-safe NOT NULL
+  scope isolation (NULL never a wildcard; cross-scope masked; direct-repo bypass impossible);
+  Policy-Authority trusted-principal + `hmac.compare_digest` capability, fail-closed, rotation-safe,
+  uniform 403, no header-logging leakage path; replay two-person control at policy AND DB
+  (`chk_rra_replay_two_person`); NO public replay execute/replay-now endpoint (all 5 route decorators
+  enumerated); total fail-closed command-vs-audit routing with the BE2 audit relay unable to claim a
+  command row (reproduced on real Redis); replay execution consume+dead-row+request+audit
+  commit/rollback atomicity; destination readiness fail-closed with no side effect; feature gates
+  default off / env-only / zero side effect; migrations additive with safe up/down/reapply.
+- **Dead-episode state version — independently PROVEN deterministic & collision-free.** The
+  `f"{dead_at.isoformat()}:{attempts}"` composite is safe because `attempts` is strictly monotonic
+  across dead episodes (preserved on replay, incremented on re-death — no decrement path) and
+  `dead_at` is PostgreSQL authoritative time set exactly once per episode and immutable while dead;
+  compared at the locked-row/CAS boundary; client cannot influence it; locale/timezone-independent.
+  A durable monotonic `replay_state_version` column is NOT required.
+- **Findings (recorded, not fixed by the reviewer).** No Critical/High. **M-1 (Medium, deferred):**
+  `production_approval_reference` is only non-empty-checked, not resolved to a real production
+  approval — a documented BE3 scope boundary (BE3 "neither creates nor validates production approval
+  itself"), no production effect reachable; MUST be resolved before any production-effect activation.
+  **L-1 (Medium, deferred):** per-actor replay-request rate cap is non-locking and can overshoot
+  under a concurrent burst (per-event hard cap and one-active-request-per-event are index-serialized
+  and safe); make it concurrency-safe before relying on it as a hard limit at activation. **L-2
+  (Low):** policy-layer `authorize_replay` two-person check is conditional on non-null `requested_by`
+  (DB constraint is the unconditional backstop; not exploitable).
+- **Verdict rationale.** Every enumerated no-compromise property (authorization/scope/Policy-
+  Authority/resume+replay transactions/command routing/two-person/rollback/state-version/production-
+  approval non-bypass-at-system-level/feature gates) is sound; M-1/L-1 are activation preconditions,
+  not merge blockers, for a disabled-by-default foundation.
+- **Gate.** No shared migration applied, no deployment, no gate activated outside the reviewer's own
+  ephemeral containers, no real resume/replay execution in any shared runtime.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged / NOT touched. Next: BE3 findings-
+  closure (M-1, L-1) by the original implementer, then BE3-M (non-squash merge) and any runtime
+  activation each only after separate explicit PO authorization.
