@@ -23,11 +23,13 @@ _OPERATOR_ROLES: frozenset[str] = frozenset(
 )
 _REPLAY_APPROVER_ROLES: frozenset[str] = frozenset({"reviewer_approver", "platform_admin"})
 
-# Human action -> the roles that may perform it (Service Identity is handled separately below).
+# Human action -> the roles that may perform it (Service Identity and Policy Authority are handled
+# separately below). NOTE (Step 66C.4-BE3-A-C1): authorize_resume / reject_resume are NOT here --
+# resume's authorization is the automated POLICY/SAFETY authority per controlled-resume-contract.md,
+# never a human operator by fiat. A plain Operator can REQUEST and CANCEL a resume, but can never
+# human-authorize one (not even their own). Replay authorization stays a human two-person control.
 _ACTION_ROLES: dict[str, frozenset[str]] = {
     "request_resume": _OPERATOR_ROLES,
-    "authorize_resume": _OPERATOR_ROLES,  # resume's gate is the policy check; no separation needed
-    "reject_resume": _OPERATOR_ROLES,
     "cancel_resume": _OPERATOR_ROLES,
     "request_replay": _OPERATOR_ROLES,
     "authorize_replay": _REPLAY_APPROVER_ROLES,  # + requester != approver (checked below)
@@ -36,17 +38,23 @@ _ACTION_ROLES: dict[str, frozenset[str]] = {
     "revoke": _OPERATOR_ROLES | _REPLAY_APPROVER_ROLES,
 }
 
+# resume authorize/reject are performed ONLY by the automated policy/safety authority principal.
+_POLICY_AUTHORITY_ACTIONS: frozenset[str] = frozenset({"authorize_resume", "reject_resume"})
+
 # Only these are consumable, and only by the Service Identity.
 _CONSUME_ACTIONS: frozenset[str] = frozenset({"consume_resume", "consume_replay"})
 
 
 @dataclass(frozen=True)
 class Actor:
-    """A human role principal, or the machine Service Identity (is_service_identity=True)."""
+    """A principal: a human role, the machine Service Identity (is_service_identity), or the
+    automated policy/safety authority (is_policy_authority) that authorizes resume. Exactly one of
+    the two machine flags may be set; a human sets neither."""
 
     principal_id: str
     role: str
     is_service_identity: bool = False
+    is_policy_authority: bool = False
 
 
 @dataclass(frozen=True)
@@ -103,9 +111,23 @@ def evaluate(
             )
         return PolicyOutcome(True, "ok", "policy_allow", "allow")
 
+    # Policy/safety authority: resume authorize/reject ONLY (never request/consume/replay).
+    if actor.is_policy_authority:
+        if action not in _POLICY_AUTHORITY_ACTIONS:
+            return PolicyOutcome(False, "forbidden", "policy_authority_scope", "deny")
+        iso = _isolation_ok(actor_scope, resource_scope)
+        if iso is not None:
+            return PolicyOutcome(False, "not_found_masked", iso, "deny")
+        return PolicyOutcome(True, "ok", "policy_allow", "allow")
+
+    # From here the actor is a human role principal.
     # A human may never consume.
     if action in _CONSUME_ACTIONS:
         return PolicyOutcome(False, "forbidden", "rbac_denied", "deny")
+    # A human may never human-authorize/reject a resume -- that is the policy authority's job. This
+    # blocks a plain Operator from authorizing any resume, including their own request.
+    if action in _POLICY_AUTHORITY_ACTIONS:
+        return PolicyOutcome(False, "forbidden", "policy_authority_required", "deny")
 
     if action not in _ACTION_ROLES:
         return PolicyOutcome(False, "forbidden", "unknown_action_type", "deny")

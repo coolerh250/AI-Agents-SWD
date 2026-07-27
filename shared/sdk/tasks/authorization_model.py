@@ -35,6 +35,8 @@ REASON_CODES: frozenset[str] = frozenset(
         "two_person_required",
         "service_identity_cannot_request",
         "service_identity_cannot_decide",
+        "policy_authority_required",
+        "policy_authority_scope",
         "production_approval_required",
         "invalid_transition",
         "already_decided",

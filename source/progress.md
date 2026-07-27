@@ -16011,3 +16011,31 @@ FOUNDATION implemented, NOT FOR MERGE (Draft PR), NOT ACTIVATED, NO resume/repla
   frontend. BE3-B and BE3-C NOT implemented. `production_executed_true_count` = 0. Codex and Claude
   Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
   66C.4-BE3-B** (resume request/authorize/gated execution command).
+
+## Step 66C.4-BE3-A-C1 — Authorization Scope and Actor Contract Alignment
+
+**Marker: `STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS` (targeted alignment of BE3-A by the same
+implementation session; no subagent). NOT FOR MERGE; BE3-B not started.**
+
+- **Repository scope enforcement (dual-layer):** every actor-facing repository method
+  (`get_authorization/approve/reject/cancel/revoke/consume`) now takes the actor's
+  `scope_team_id`/`scope_project_id` and binds them into the SQL predicate
+  (`(team_id IS NULL OR $t::uuid IS NULL OR team_id=$t::uuid) AND (project_id ...)`), so a DIRECT
+  repository call cannot bypass scope — a cross-scope call reads nothing / affects 0 rows and the
+  service maps it to `not_found_masked`. The policy layer still checks isolation (both layers).
+- **Resume actor semantics:** `authorize_resume`/`reject_resume` are removed from the human role map
+  and restricted to the automated policy/safety authority (`is_policy_authority` +
+  `_POLICY_AUTHORITY_ACTIONS`). A plain Operator (incl. the requester) is denied
+  (`policy_authority_required`); Service Identity denied (`service_identity_cannot_decide`); the
+  policy authority may only authorize/reject resume (`policy_authority_scope`). `decided_by` is the
+  authority, never the requester. Replay stays human two-person (requester != approver). Production-
+  effect resume still needs the separate production approval reference.
+- **Scope identifier types:** `project_id` and `team_id` changed from TEXT to canonical **UUID**
+  (migration 032 revised in place — unmerged/unapplied, no 033). Justified by the UUID identity
+  convention (not by "operator_tasks has no team_id"); no FK (operator_tasks.project_id has none and
+  an outbox_event's project scope is derived). Storage-layer UUID removes spelling ambiguity.
+- **Tests:** 17 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (added resume-
+  actor, production-effect-resume, and direct-repository scope-bypass groups); regression 85 passed.
+  ruff/black/mypy clean. No public API, no `replay_dead` call, no resume/dispatch, no shared
+  migration/deployment, no BE3-B. `production_executed_true_count` = 0. Both markers
+  (`STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY`, `STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY`) PASS.

@@ -7,7 +7,14 @@
 
 ```text
 STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS   (self-verification only)
+STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS         (Step 66C.4-BE3-A-C1 alignment)
 ```
+
+Step 66C.4-BE3-A-C1 alignment (see be3-a-contract-alignment-record.md) added dual-layer repository
+scope enforcement, moved resume authorization to a policy/safety authority (a plain operator, incl.
+the requester, cannot human-authorize), and made project_id/team_id the canonical UUID type. Test
+count rose from 14 to 17 (added resume-actor, production-effect-resume, and direct-repository
+scope-bypass tests); real-PG regression 85 passed.
 
 ## Environment
 

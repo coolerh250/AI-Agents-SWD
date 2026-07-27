@@ -5,13 +5,20 @@ transition is a guarded CAS UPDATE ... RETURNING that returns the row on success
 guard did not hold (the CAS lost). PostgreSQL statement_timestamp() is the authoritative clock for
 validity -- never a Python local clock.
 
-This module performs NO resume/replay execution, calls NO dead-outbox replay adapter, exposes NO HTTP route, and
-starts NO scheduler or loop. `expire_due_authorizations` is a one-shot repository operation for a
-caller/test to invoke; it is not a runtime loop.
+Scope enforcement (Step 66C.4-BE3-A-C1): every actor-facing read/transition takes the actor's
+team/project scope and binds it into the SQL predicate itself, so a DIRECT repository call cannot
+bypass the policy layer. The scope predicate is exactly the policy isolation rule:
+  (team_id IS NULL OR $scope_team IS NULL OR team_id = $scope_team)
+  AND (project_id IS NULL OR $scope_project IS NULL OR project_id = $scope_project)
+A cross-scope call therefore affects 0 rows / reads nothing (the caller maps that to
+not_found_masked). Passing None for a scope disables that dimension (system/maintenance use only,
+e.g. the expiry scan); actor-facing callers always pass the actor's scope.
 
-All methods take the CALLER's asyncpg connection and run inside the caller's transaction (they do
-not begin, commit, or close it), so an authorization transition and its audit/outbox row can commit
-atomically under the caller's boundary.
+This module performs NO resume/replay execution, calls NO dead-outbox replay adapter, exposes NO
+HTTP route, and starts NO scheduler or loop. `expire_due_authorizations` is a one-shot repository
+operation for a caller/test to invoke; it is not a runtime loop.
+
+All methods take the CALLER's asyncpg connection and run inside the caller's transaction.
 """
 
 from __future__ import annotations
@@ -21,7 +28,12 @@ from typing import Any
 
 import asyncpg
 
-_COLUMNS = "*"
+# The isolation predicate, shared by every actor-facing query. $A = scope_team, $B = scope_project.
+# The params are cast to ::uuid so a NULL scope (system/maintenance use) is not type-ambiguous.
+_SCOPE = (
+    "(team_id IS NULL OR {a}::uuid IS NULL OR team_id = {a}::uuid) "
+    "AND (project_id IS NULL OR {b}::uuid IS NULL OR project_id = {b}::uuid)"
+)
 
 
 def _row(record: asyncpg.Record | None) -> dict[str, Any] | None:
@@ -53,13 +65,13 @@ async def create_request(
     rejects a second ACTIVE request for the same (action_type, resource_id); the idempotency_key
     unique constraint rejects a duplicate key. Both surface as asyncpg.UniqueViolationError."""
     record = await conn.fetchrow(
-        f"""
+        """
         INSERT INTO resume_replay_authorizations
           (action_type, resource_type, resource_id, team_id, project_id, requested_by,
            requested_role, resource_state_version, expires_at, idempotency_key,
            production_effect, production_approval_reference)
         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
-        RETURNING {_COLUMNS}
+        RETURNING *
         """,
         action_type,
         resource_type,
@@ -79,12 +91,22 @@ async def create_request(
 
 
 async def get_authorization(
-    conn: asyncpg.Connection, authorization_id: str
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
+    """Read one authorization, scoped. A cross-scope id reads nothing (None)."""
     return _row(
         await conn.fetchrow(
-            f"SELECT {_COLUMNS} FROM resume_replay_authorizations WHERE authorization_id=$1",
+            f"""
+            SELECT * FROM resume_replay_authorizations
+            WHERE authorization_id=$1 AND {_SCOPE.format(a="$2", b="$3")}
+            """,
             authorization_id,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
@@ -94,8 +116,8 @@ async def get_active_by_resource(
 ) -> dict[str, Any] | None:
     return _row(
         await conn.fetchrow(
-            f"""
-            SELECT {_COLUMNS} FROM resume_replay_authorizations
+            """
+            SELECT * FROM resume_replay_authorizations
             WHERE action_type=$1 AND resource_id=$2
               AND decision IN ('pending','authorized')
               AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
@@ -115,9 +137,11 @@ async def approve(
     reason_code: str | None,
     policy_result: str,
     policy_version: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """CAS pending -> authorized. The chk_rra_replay_two_person DB constraint additionally rejects a
-    replay approval by the requester (defense in depth behind the policy service)."""
+    """CAS pending -> authorized, scoped. The chk_rra_replay_two_person DB constraint additionally
+    rejects a replay approval by the requester (defense in depth behind the policy service)."""
     return _row(
         await conn.fetchrow(
             f"""
@@ -126,7 +150,8 @@ async def approve(
                 decided_at=statement_timestamp(), decision_reason_code=$4,
                 policy_result=$5, policy_version=$6, updated_at=statement_timestamp()
             WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
-            RETURNING {_COLUMNS}
+              AND {_SCOPE.format(a="$7", b="$8")}
+            RETURNING *
             """,
             authorization_id,
             decided_by,
@@ -134,6 +159,8 @@ async def approve(
             reason_code,
             policy_result,
             policy_version,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
@@ -145,8 +172,10 @@ async def reject(
     decided_by: str,
     decided_role: str,
     reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """CAS pending -> rejected."""
+    """CAS pending -> rejected, scoped."""
     return _row(
         await conn.fetchrow(
             f"""
@@ -155,12 +184,15 @@ async def reject(
                 decided_at=statement_timestamp(), decision_reason_code=$4,
                 updated_at=statement_timestamp()
             WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
-            RETURNING {_COLUMNS}
+              AND {_SCOPE.format(a="$5", b="$6")}
+            RETURNING *
             """,
             authorization_id,
             decided_by,
             decided_role,
             reason_code,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
@@ -172,8 +204,10 @@ async def cancel(
     decided_by: str,
     decided_role: str,
     reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """CAS pending -> canceled."""
+    """CAS pending -> canceled, scoped."""
     return _row(
         await conn.fetchrow(
             f"""
@@ -182,12 +216,15 @@ async def cancel(
                 decided_at=statement_timestamp(), decision_reason_code=$4,
                 updated_at=statement_timestamp()
             WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
-            RETURNING {_COLUMNS}
+              AND {_SCOPE.format(a="$5", b="$6")}
+            RETURNING *
             """,
             authorization_id,
             decided_by,
             decided_role,
             reason_code,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
@@ -198,9 +235,11 @@ async def revoke(
     *,
     revoked_by: str,
     reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """CAS authorized (unconsumed/unrevoked/unexpired) -> revoked. A consumed authorization can
-    never be revoked (guarded by consumed_at IS NULL)."""
+    """CAS authorized (unconsumed/unrevoked/unexpired) -> revoked, scoped. A consumed authorization
+    can never be revoked (guarded by consumed_at IS NULL)."""
     return _row(
         await conn.fetchrow(
             f"""
@@ -209,11 +248,14 @@ async def revoke(
                 updated_at=statement_timestamp()
             WHERE authorization_id=$1 AND decision='authorized'
               AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
-            RETURNING {_COLUMNS}
+              AND {_SCOPE.format(a="$4", b="$5")}
+            RETURNING *
             """,
             authorization_id,
             revoked_by,
             reason_code,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
@@ -224,12 +266,14 @@ async def consume(
     *,
     consumed_by: str,
     resource_state_version: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
-    """Single-use atomic CAS. Succeeds only when the authorization is authorized, unconsumed,
-    unrevoked, unexpired (expired_at IS NULL AND expires_at > statement_timestamp()), and its
-    resource_state_version still matches. Returns the row on success, None on any failed guard.
-    Under concurrency EXACTLY ONE consume wins (this is a single DB CAS, not distributed
-    exactly-once)."""
+    """Single-use atomic CAS, scoped. Succeeds only when the authorization is authorized, unconsumed,
+    unrevoked, unexpired (expired_at IS NULL AND expires_at > statement_timestamp()), its
+    resource_state_version still matches, AND it is within the caller's scope. Returns the row on
+    success, None on any failed guard. Under concurrency EXACTLY ONE consume wins (this is a single
+    DB CAS, not distributed exactly-once)."""
     return _row(
         await conn.fetchrow(
             f"""
@@ -239,18 +283,22 @@ async def consume(
               AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
               AND expires_at > statement_timestamp()
               AND resource_state_version=$3
-            RETURNING {_COLUMNS}
+              AND {_SCOPE.format(a="$4", b="$5")}
+            RETURNING *
             """,
             authorization_id,
             consumed_by,
             resource_state_version,
+            scope_team_id,
+            scope_project_id,
         )
     )
 
 
 async def expire_due_authorizations(conn: asyncpg.Connection, *, limit: int = 500) -> int:
     """One-shot: mark unresolved authorizations whose deadline has passed as expired (durable
-    terminal marker). NOT a scheduler/loop. Returns the number of rows expired."""
+    terminal marker). NOT a scheduler/loop and NOT actor-facing (no scope filter). Returns the
+    number of rows expired."""
     tag = await conn.execute(
         """
         UPDATE resume_replay_authorizations

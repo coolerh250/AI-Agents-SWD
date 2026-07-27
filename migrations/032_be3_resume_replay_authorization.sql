@@ -24,11 +24,14 @@ CREATE TABLE IF NOT EXISTS resume_replay_authorizations (
     action_type             TEXT NOT NULL,                 -- 'resume' | 'replay'
     resource_type           TEXT NOT NULL,                 -- 'clarification' | 'outbox_event'
     resource_id             UUID NOT NULL,
-    -- Scope identifiers compared by equality for isolation. TEXT (not UUID) because there is no
-    -- team table upstream and no FK exists on operator_tasks.project_id either; TEXT keeps the
-    -- scope model flexible while staying bounded.
-    team_id                 TEXT,                          -- nullable: no team column upstream yet
-    project_id              TEXT,                          -- from operator_tasks.project_id (as text)
+    -- Scope identifiers, compared by equality for isolation. Both are UUID: project_id is the
+    -- canonical operator_tasks.project_id (a UUID), and every identity in this system is a UUID, so
+    -- a team scope key is a UUID too. Using the UUID type (not TEXT) makes the scope key canonical
+    -- and removes all whitespace/case/spelling ambiguity at the storage layer. No FK is declared:
+    -- operator_tasks.project_id itself carries no FK and is nullable, and an outbox_event resource's
+    -- project scope is derived (not guaranteed to be a projects row), so a FK would be unsound here.
+    team_id                 UUID,                          -- nullable: no team table upstream yet
+    project_id              UUID,                          -- canonical operator_tasks.project_id
     request_id              UUID NOT NULL DEFAULT uuid_generate_v4(),
 
     requested_by            TEXT NOT NULL,
@@ -99,8 +102,6 @@ CREATE TABLE IF NOT EXISTS resume_replay_authorizations (
     ),
     CONSTRAINT chk_rra_state_version_nonempty CHECK (length(btrim(resource_state_version)) > 0),
     CONSTRAINT chk_rra_requested_by_bounded CHECK (length(requested_by) <= 128),
-    CONSTRAINT chk_rra_team_id_bounded CHECK (team_id IS NULL OR length(team_id) <= 128),
-    CONSTRAINT chk_rra_project_id_bounded CHECK (project_id IS NULL OR length(project_id) <= 128),
     CONSTRAINT chk_rra_idempotency_key_bounded CHECK (length(idempotency_key) BETWEEN 1 AND 256),
     CONSTRAINT chk_rra_idempotency_key_nonempty CHECK (length(btrim(idempotency_key)) > 0)
 );

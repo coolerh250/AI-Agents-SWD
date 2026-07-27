@@ -199,8 +199,40 @@ def main() -> int:  # noqa: C901
     if "be3-r" not in rec or "independent" not in rec:
         bad("check16: record does not state the combined independent BE3-R is still required")
 
+    # ---- Step 66C.4-BE3-A-C1 contract-alignment checks --------------------------------
+    tests_src = TESTS.read_text(encoding="utf-8")
+
+    # A1. Dual-layer scope enforcement: repository predicate + policy isolation.
+    if "team_id = {a}::uuid" not in repo_src or "_SCOPE" not in repo_src:
+        bad("alignA1: repository transitions/reads do not bind team/project scope in SQL")
+    if "scope_team_id" not in repo_src or "scope_project_id" not in repo_src:
+        bad("alignA1: repository methods do not accept the actor scope")
+    if "_isolation_ok" not in policy:
+        bad("alignA1: policy isolation missing")
+    if "def test_pg_direct_repository_calls_cannot_bypass_scope" not in tests_src:
+        bad("alignA1: direct-repository scope-bypass test missing")
+
+    # A2. Resume requester cannot self human-authorize (policy authority only).
+    if "policy_authority_required" not in policy or "is_policy_authority" not in policy:
+        bad("alignA2: resume policy-authority separation missing")
+    if '_POLICY_AUTHORITY_ACTIONS: frozenset[str] = frozenset({"authorize_resume"' not in policy:
+        bad("alignA2: authorize_resume/reject_resume not restricted to the policy authority")
+    if '"authorize_resume":' in policy:
+        bad("alignA2: authorize_resume still present in the human role map")
+    if "def test_pg_resume_actor_model_operator_policy_authority_service" not in tests_src:
+        bad("alignA2: resume actor-model test missing")
+
+    # A3. Scope identifier type has an explicit safe basis (project_id UUID; canonical).
+    if "project_id              UUID" not in mig or "team_id                 UUID" not in mig:
+        bad("alignA3: project_id/team_id are not the canonical UUID type")
+
+    # A4. Migration up/down/reapply still covered.
+    if "def test_pg_migration_up_down_reapply_and_constraints" not in tests_src:
+        bad("alignA4: migration up/down/reapply test missing")
+
     if failures:
         print(f"{MARKER}: FAIL ({len(failures)} issue(s))")
+        print("STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: FAIL")
         return 1
 
     print("  [OK] migration 032 durable authorization schema (single-use/time-bound/state-version-")
@@ -210,6 +242,11 @@ def main() -> int:  # noqa: C901
     print("       dead-outbox replay call, NO resume/dispatch, NO shared activation/deployment;")
     print("       Draft PR not merged; BE3-B/C not implemented; combined BE3-R still required.")
     print(f"{MARKER}: PASS")
+    print("  [OK] contract alignment (BE3-A-C1): repository+policy dual-layer scope enforcement;")
+    print("       resume authorized only by the policy authority (a plain operator, incl. the")
+    print("       requester, cannot human-authorize); service-identity consume-only; project_id/")
+    print("       team_id are the canonical UUID type; migration up/down/reapply covered.")
+    print("STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS")
     print("  NOTE: BE3-A self-verification only; overall BE3 technical closure needs the combined")
     print("        independent BE3-R review over BE3-A+B+C.")
     return 0

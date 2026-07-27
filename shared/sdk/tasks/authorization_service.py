@@ -141,23 +141,15 @@ async def request_authorization(
 async def _load_visible(
     conn: asyncpg.Connection, authorization_id: str, actor: Actor, actor_scope: Scope
 ) -> tuple[dict[str, Any] | None, ServiceResult | None]:
-    row = await repo.get_authorization(conn, authorization_id)
+    # Dual-layer scope enforcement: the repository read itself is scoped, so a cross-scope id reads
+    # nothing and is masked as not_found (existence is never leaked across team/project).
+    row = await repo.get_authorization(
+        conn,
+        authorization_id,
+        scope_team_id=actor_scope.team_id,
+        scope_project_id=actor_scope.project_id,
+    )
     if row is None:
-        return None, ServiceResult(False, "not_found_masked", "resource_not_found")
-    resource_scope = Scope(
-        team_id=str(row["team_id"]) if row.get("team_id") else None,
-        project_id=str(row["project_id"]) if row.get("project_id") else None,
-    )
-    # Reuse the isolation check via a benign action to avoid leaking existence across scope.
-    iso = evaluate(
-        action="revoke",
-        actor=(
-            actor if not actor.is_service_identity else Actor(actor.principal_id, "platform_admin")
-        ),
-        actor_scope=actor_scope,
-        resource_scope=resource_scope,
-    )
-    if not iso.allowed and iso.result_kind == "not_found_masked":
         return None, ServiceResult(False, "not_found_masked", "resource_not_found")
     return row, None
 
@@ -195,6 +187,8 @@ async def authorize(
         reason_code="policy_allow",
         policy_result="allow",
         policy_version=policy_version,
+        scope_team_id=actor_scope.team_id,
+        scope_project_id=actor_scope.project_id,
     )
     if updated is None:
         return ServiceResult(False, "already_decided", "already_decided")
@@ -247,10 +241,17 @@ async def _decide_simple(
             decided_by=actor.principal_id,
             decided_role=actor.role,
             reason_code=reason_code,
+            scope_team_id=actor_scope.team_id,
+            scope_project_id=actor_scope.project_id,
         )
     else:  # revoke
         updated = await repo.revoke(
-            conn, authorization_id, revoked_by=actor.principal_id, reason_code=reason_code
+            conn,
+            authorization_id,
+            revoked_by=actor.principal_id,
+            reason_code=reason_code,
+            scope_team_id=actor_scope.team_id,
+            scope_project_id=actor_scope.project_id,
         )
     if updated is None:
         return ServiceResult(False, "invalid_transition", "invalid_transition")
@@ -331,6 +332,8 @@ async def consume(
         authorization_id,
         consumed_by=actor.principal_id,
         resource_state_version=resource_state_version,
+        scope_team_id=actor_scope.team_id,
+        scope_project_id=actor_scope.project_id,
     )
     if updated is not None:
         return ServiceResult(
@@ -346,8 +349,13 @@ async def consume(
                 reason_code="policy_allow",
             ),
         )
-    # Classify the CAS failure with a safe reason code (re-read authoritative state).
-    current = await repo.get_authorization(conn, authorization_id)
+    # Classify the CAS failure with a safe reason code (re-read authoritative state, in scope).
+    current = await repo.get_authorization(
+        conn,
+        authorization_id,
+        scope_team_id=actor_scope.team_id,
+        scope_project_id=actor_scope.project_id,
+    )
     now = await repo.db_now(conn)
     if current is None:
         return ServiceResult(False, "not_found_masked", "resource_not_found")

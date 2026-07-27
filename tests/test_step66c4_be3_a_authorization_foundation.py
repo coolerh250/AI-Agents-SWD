@@ -20,6 +20,12 @@ from step66c4_pg_safety import destructive_pg_refusal_reason
 REPO = Path(__file__).resolve().parents[1]
 MIGRATIONS = REPO / "migrations"
 
+# Scope identifiers are UUIDs (canonical identity type; storage-layer normalization).
+TEAM_A = "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
+PROJECT_A = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
+TEAM_B = "cccccccc-cccc-cccc-cccc-cccccccccccc"
+PROJECT_B = "dddddddd-dddd-dddd-dddd-dddddddddddd"
+
 
 def _model():
     from shared.sdk.tasks import authorization_model
@@ -103,7 +109,7 @@ def test_project_state_precedence() -> None:
 
 def test_policy_service_identity_and_two_person() -> None:
     p = _policy()
-    sc = p.Scope("t1", "p1")
+    sc = p.Scope(TEAM_A, PROJECT_A)
     op = p.Actor("alice", "agent_operator")
     appr = p.Actor("bob", "reviewer_approver")
     svc = p.Actor("svc", "service_identity", is_service_identity=True)
@@ -222,8 +228,8 @@ async def _new_request(
     state_version="v1",
     expires=None,
     key=None,
-    team="t1",
-    project="p1",
+    team=TEAM_A,
+    project=PROJECT_A,
     production=False,
     prod_ref=None,
 ):
@@ -451,7 +457,7 @@ def test_pg_service_rbac_isolation_and_service_identity() -> None:
         try:
             await _reset_and_migrate(conn)
             s, p = _svc(), _policy()
-            sc = p.Scope("t1", "p1")
+            sc = p.Scope(TEAM_A, PROJECT_A)
             op = p.Actor("alice", "agent_operator")
             appr = p.Actor("bob", "reviewer_approver")
             svc = p.Actor("svc", "service_identity", is_service_identity=True)
@@ -499,7 +505,7 @@ def test_pg_service_rbac_isolation_and_service_identity() -> None:
                 conn,
                 aid,
                 actor=p.Actor("z", "reviewer_approver"),
-                actor_scope=p.Scope("t2", "p9"),
+                actor_scope=p.Scope(TEAM_B, PROJECT_B),
                 policy_version="p1",
             )
             assert masked.result_kind == "not_found_masked"
@@ -528,7 +534,7 @@ def test_pg_replay_requester_cannot_self_approve_via_service() -> None:
         try:
             await _reset_and_migrate(conn)
             s, p = _svc(), _policy()
-            sc = p.Scope("t1", "p1")
+            sc = p.Scope(TEAM_A, PROJECT_A)
             # alice is an operator who is ALSO able to act as approver role here, but is the requester
             req = await s.request_authorization(
                 conn,
@@ -570,7 +576,7 @@ def test_pg_expiry_and_state_version_block_consume() -> None:
         try:
             await _reset_and_migrate(conn)
             r, s, p = _repo(), _svc(), _policy()
-            sc = p.Scope("t1", "p1")
+            sc = p.Scope(TEAM_A, PROJECT_A)
             svc = p.Actor("svc", "service_identity", is_service_identity=True)
 
             # expired authorization cannot consume. expires_at must be > requested_at, so create
@@ -686,7 +692,7 @@ def test_pg_production_gate_blocks_consume_without_reference() -> None:
         try:
             await _reset_and_migrate(conn)
             r, s, p = _repo(), _svc(), _policy()
-            sc = p.Scope("t1", "p1")
+            sc = p.Scope(TEAM_A, PROJECT_A)
             svc = p.Actor("svc", "service_identity", is_service_identity=True)
             # production-effect authorization with NO production approval reference
             a = await _new_request(conn, key="prod", production=True, prod_ref=None)
@@ -741,7 +747,7 @@ def test_pg_process_failure_before_commit_leaves_no_partial_state() -> None:
         try:
             await _reset_and_migrate(conn)
             s, p = _svc(), _policy()
-            sc = p.Scope("t1", "p1")
+            sc = p.Scope(TEAM_A, PROJECT_A)
             op = p.Actor("alice", "agent_operator")
             rid = str(uuid.uuid4())
             tx = conn.transaction()
@@ -767,6 +773,245 @@ def test_pg_process_failure_before_commit_leaves_no_partial_state() -> None:
                     uuid.UUID(rid),
                 )
                 == 0
+            )
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+# ---- Resume actor semantics (Step 66C.4-BE3-A-C1) -----------------------------------
+
+
+@requires_pg
+def test_pg_resume_actor_model_operator_policy_authority_service() -> None:
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            s, p = _svc(), _policy()
+            sc = p.Scope(TEAM_A, PROJECT_A)
+            op = p.Actor("alice", "agent_operator")
+            policy_authority = p.Actor(
+                "policy-safety", "policy_authority", is_policy_authority=True
+            )
+            svc = p.Actor("svc", "service_identity", is_service_identity=True)
+
+            rid = str(uuid.uuid4())
+            # Operator requests a resume.
+            req = await s.request_authorization(
+                conn,
+                actor=op,
+                actor_scope=sc,
+                resource_scope=sc,
+                action_type="resume",
+                resource_type="clarification",
+                resource_id=rid,
+                resource_state_version="v1",
+                expires_at=_future(),
+                idempotency_key="r-resume",
+            )
+            assert req.ok
+            aid = str(req.authorization["authorization_id"])
+            assert req.authorization["requested_by"] == "alice"
+
+            # The SAME operator cannot human-authorize their own resume.
+            self_auth = await s.authorize(conn, aid, actor=op, actor_scope=sc, policy_version="p1")
+            assert self_auth.result_kind == "forbidden"
+            assert self_auth.reason_code == "policy_authority_required"
+            # Another plain operator also cannot human-authorize a resume.
+            other_op = await s.authorize(
+                conn,
+                aid,
+                actor=p.Actor("carol", "platform_admin"),
+                actor_scope=sc,
+                policy_version="p1",
+            )
+            assert other_op.reason_code == "policy_authority_required"
+            # Service identity cannot authorize.
+            assert (
+                await s.authorize(conn, aid, actor=svc, actor_scope=sc, policy_version="p1")
+            ).result_kind == "forbidden"
+
+            # The policy/safety authority authorizes; decider is the authority, not the requester.
+            ok = await s.authorize(
+                conn, aid, actor=policy_authority, actor_scope=sc, policy_version="p1"
+            )
+            assert ok.ok and ok.state == "authorized"
+            row = await _repo().get_authorization(conn, aid)
+            assert row["decided_by"] == "policy-safety" and row["decided_by"] != row["requested_by"]
+
+            # Only the service identity consumes.
+            assert (
+                await s.consume(conn, aid, actor=op, actor_scope=sc, resource_state_version="v1")
+            ).result_kind == "forbidden"
+            consumed = await s.consume(
+                conn, aid, actor=svc, actor_scope=sc, resource_state_version="v1"
+            )
+            assert consumed.ok and consumed.state == "consumed"
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+@requires_pg
+def test_pg_production_effect_resume_still_gated() -> None:
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            s, p = _svc(), _policy()
+            sc = p.Scope(TEAM_A, PROJECT_A)
+            op = p.Actor("alice", "agent_operator")
+            policy_authority = p.Actor(
+                "policy-safety", "policy_authority", is_policy_authority=True
+            )
+            svc = p.Actor("svc", "service_identity", is_service_identity=True)
+            rid = str(uuid.uuid4())
+            req = await s.request_authorization(
+                conn,
+                actor=op,
+                actor_scope=sc,
+                resource_scope=sc,
+                action_type="resume",
+                resource_type="clarification",
+                resource_id=rid,
+                resource_state_version="v1",
+                expires_at=_future(),
+                idempotency_key="r-prod",
+                production_effect=True,
+            )
+            aid = str(req.authorization["authorization_id"])
+            await s.authorize(
+                conn, aid, actor=policy_authority, actor_scope=sc, policy_version="p1"
+            )
+            blocked = await s.consume(
+                conn, aid, actor=svc, actor_scope=sc, resource_state_version="v1"
+            )
+            assert blocked.result_kind == "production_approval_required"
+            assert (await _repo().get_authorization(conn, aid))["consumed_at"] is None
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+# ---- Repository scope enforcement / direct-bypass (Step 66C.4-BE3-A-C1) -------------
+
+
+@requires_pg
+def test_pg_direct_repository_calls_cannot_bypass_scope() -> None:
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            r = _repo()
+            # A row scoped to team/project A.
+            a = await _new_request(conn, key="scoped", team=TEAM_A, project=PROJECT_A)
+            aid = str(a["authorization_id"])
+
+            # A direct repository read with a different scope reads NOTHING (no content leak).
+            assert (
+                await r.get_authorization(
+                    conn, aid, scope_team_id=TEAM_B, scope_project_id=PROJECT_B
+                )
+                is None
+            )
+            assert (
+                await r.get_authorization(
+                    conn, aid, scope_team_id=TEAM_A, scope_project_id=PROJECT_B
+                )
+                is None
+            )
+            # Same-scope read returns the row.
+            assert (
+                await r.get_authorization(
+                    conn, aid, scope_team_id=TEAM_A, scope_project_id=PROJECT_A
+                )
+                is not None
+            )
+
+            # A direct cross-scope approve affects 0 rows (row stays pending).
+            assert (
+                await r.approve(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="policy_allow",
+                    policy_result="allow",
+                    policy_version="p1",
+                    scope_team_id=TEAM_B,
+                    scope_project_id=PROJECT_A,
+                )
+                is None
+            )
+            assert (await r.get_authorization(conn, aid))["decision"] == "pending"
+            # A direct cross-scope cancel also affects 0 rows.
+            assert (
+                await r.cancel(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="operator_canceled",
+                    scope_team_id=TEAM_B,
+                    scope_project_id=PROJECT_B,
+                )
+                is None
+            )
+
+            # In-scope approve, then cross-scope revoke/consume are blocked at the repository.
+            assert (
+                await r.approve(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="policy_allow",
+                    policy_result="allow",
+                    policy_version="p1",
+                    scope_team_id=TEAM_A,
+                    scope_project_id=PROJECT_A,
+                )
+                is not None
+            )
+            assert (
+                await r.revoke(
+                    conn,
+                    aid,
+                    revoked_by="bob",
+                    reason_code="operator_revoked",
+                    scope_team_id=TEAM_B,
+                    scope_project_id=PROJECT_A,
+                )
+                is None
+            )
+            assert (
+                await r.consume(
+                    conn,
+                    aid,
+                    consumed_by="svc",
+                    resource_state_version="v1",
+                    scope_team_id=TEAM_B,
+                    scope_project_id=PROJECT_B,
+                )
+                is None
+            )
+            row = await r.get_authorization(conn, aid)
+            assert row["revoked_at"] is None and row["consumed_at"] is None  # untouched cross-scope
+            # In-scope consume succeeds.
+            assert (
+                await r.consume(
+                    conn,
+                    aid,
+                    consumed_by="svc",
+                    resource_state_version="v1",
+                    scope_team_id=TEAM_A,
+                    scope_project_id=PROJECT_A,
+                )
+                is not None
             )
         finally:
             await conn.close()
