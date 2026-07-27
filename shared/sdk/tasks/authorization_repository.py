@@ -5,14 +5,16 @@ transition is a guarded CAS UPDATE ... RETURNING that returns the row on success
 guard did not hold (the CAS lost). PostgreSQL statement_timestamp() is the authoritative clock for
 validity -- never a Python local clock.
 
-Scope enforcement (Step 66C.4-BE3-A-C1): every actor-facing read/transition takes the actor's
+Scope enforcement (Step 66C.4-BE3-A-C1 / -C2): every actor-facing read/transition takes the actor's
 team/project scope and binds it into the SQL predicate itself, so a DIRECT repository call cannot
-bypass the policy layer. The scope predicate is exactly the policy isolation rule:
-  (team_id IS NULL OR $scope_team IS NULL OR team_id = $scope_team)
-  AND (project_id IS NULL OR $scope_project IS NULL OR project_id = $scope_project)
-A cross-scope call therefore affects 0 rows / reads nothing (the caller maps that to
-not_found_masked). Passing None for a scope disables that dimension (system/maintenance use only,
-e.g. the expiry scan); actor-facing callers always pass the actor's scope.
+bypass the policy layer. The scope predicate is EXACT null-safe equality (Step 66C.4-BE3-A-C2 --
+NULL is never a wildcard):
+  team_id IS NOT DISTINCT FROM $scope_team
+  AND project_id IS NOT DISTINCT FROM $scope_project
+Since team_id/project_id are NOT NULL on the row, a NULL caller scope matches nothing (fail-closed),
+and a mismatched scope matches nothing. A cross-scope or NULL-scope call therefore affects 0 rows /
+reads nothing (the caller maps that to not_found_masked). `expire_due_authorizations` is the only
+unscoped operation: it is a non-actor-facing maintenance scan, not an actor read/transition.
 
 This module performs NO resume/replay execution, calls NO dead-outbox replay adapter, exposes NO
 HTTP route, and starts NO scheduler or loop. `expire_due_authorizations` is a one-shot repository
@@ -29,11 +31,10 @@ from typing import Any
 import asyncpg
 
 # The isolation predicate, shared by every actor-facing query. $A = scope_team, $B = scope_project.
-# The params are cast to ::uuid so a NULL scope (system/maintenance use) is not type-ambiguous.
-_SCOPE = (
-    "(team_id IS NULL OR {a}::uuid IS NULL OR team_id = {a}::uuid) "
-    "AND (project_id IS NULL OR {b}::uuid IS NULL OR project_id = {b}::uuid)"
-)
+# EXACT null-safe equality (Step 66C.4-BE3-A-C2): NULL is NOT a wildcard. team_id/project_id are
+# NOT NULL on the row, so a NULL caller scope matches no row (fail-closed). Params are cast to
+# ::uuid so a NULL bind is not type-ambiguous.
+_SCOPE = "team_id IS NOT DISTINCT FROM {a}::uuid " "AND project_id IS NOT DISTINCT FROM {b}::uuid"
 
 
 def _row(record: asyncpg.Record | None) -> dict[str, Any] | None:
@@ -112,18 +113,28 @@ async def get_authorization(
 
 
 async def get_active_by_resource(
-    conn: asyncpg.Connection, *, action_type: str, resource_id: str
+    conn: asyncpg.Connection,
+    *,
+    action_type: str,
+    resource_id: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
 ) -> dict[str, Any] | None:
+    """Read the single active authorization for a resource, scoped. A NULL/cross scope reads
+    nothing (the scope predicate is exact null-safe equality)."""
     return _row(
         await conn.fetchrow(
-            """
+            f"""
             SELECT * FROM resume_replay_authorizations
             WHERE action_type=$1 AND resource_id=$2
               AND decision IN ('pending','authorized')
               AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+              AND {_SCOPE.format(a="$3", b="$4")}
             """,
             action_type,
             resource_id,
+            scope_team_id,
+            scope_project_id,
         )
     )
 

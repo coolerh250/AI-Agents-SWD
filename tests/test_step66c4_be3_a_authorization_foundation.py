@@ -26,6 +26,10 @@ PROJECT_A = "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
 TEAM_B = "cccccccc-cccc-cccc-cccc-cccccccccccc"
 PROJECT_B = "dddddddd-dddd-dddd-dddd-dddddddddddd"
 
+# Every helper row is created in team/project A; actor-facing repository calls in these tests must
+# pass that scope explicitly (Step 66C.4-BE3-A-C2: a NULL scope is never a wildcard).
+SCOPE_A = {"scope_team_id": TEAM_A, "scope_project_id": PROJECT_A}
+
 
 def _model():
     from shared.sdk.tasks import authorization_model
@@ -343,6 +347,7 @@ def test_pg_request_and_active_uniqueness_and_idempotency() -> None:
                 decided_by="alice",
                 decided_role="agent_operator",
                 reason_code="operator_canceled",
+                **SCOPE_A,
             )
             await _new_request(conn, resource_id=rid, key="k4")
         finally:
@@ -372,6 +377,7 @@ def test_pg_decisions_approve_reject_cancel_revoke() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
             assert up is not None and up["decision"] == "authorized"
             # duplicate approve is a no-op (CAS lost)
@@ -384,10 +390,13 @@ def test_pg_decisions_approve_reject_cancel_revoke() -> None:
                     reason_code="policy_allow",
                     policy_result="allow",
                     policy_version="p1",
+                    **SCOPE_A,
                 )
                 is None
             )
-            rev = await r.revoke(conn, aid, revoked_by="bob", reason_code="operator_revoked")
+            rev = await r.revoke(
+                conn, aid, revoked_by="bob", reason_code="operator_revoked", **SCOPE_A
+            )
             assert rev is not None and rev["revoked_at"] is not None
             # reject a fresh pending
             b = await _new_request(conn, key="b", resource_id=str(uuid.uuid4()))
@@ -399,6 +408,7 @@ def test_pg_decisions_approve_reject_cancel_revoke() -> None:
                     decided_by="bob",
                     decided_role="reviewer_approver",
                     reason_code="policy_deny",
+                    **SCOPE_A,
                 )
                 is not None
             )
@@ -412,6 +422,7 @@ def test_pg_decisions_approve_reject_cancel_revoke() -> None:
                     reason_code="policy_allow",
                     policy_result="allow",
                     policy_version="p1",
+                    **SCOPE_A,
                 )
                 is None
             )
@@ -440,6 +451,7 @@ def test_pg_db_rejects_replay_self_approval() -> None:
                     reason_code="policy_allow",
                     policy_result="allow",
                     policy_version="p1",
+                    **SCOPE_A,
                 )
         finally:
             await conn.close()
@@ -591,6 +603,7 @@ def test_pg_expiry_and_state_version_block_consume() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
             # force the deadline into the past (backdating requested_at too so the
             # expires_at > requested_at constraint still holds), then run the expiry scan
@@ -616,13 +629,14 @@ def test_pg_expiry_and_state_version_block_consume() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
             stale = await s.consume(
                 conn, bid, actor=svc, actor_scope=sc, resource_state_version="v2-changed"
             )
             assert stale.result_kind == "stale_state"
             # the authorization remains durably non-consumed
-            assert (await r.get_authorization(conn, bid))["consumed_at"] is None
+            assert (await r.get_authorization(conn, bid, **SCOPE_A))["consumed_at"] is None
         finally:
             await conn.close()
 
@@ -649,6 +663,7 @@ def test_pg_single_use_and_concurrent_consume_exactly_one() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
         finally:
             await setup.close()
@@ -658,7 +673,7 @@ def test_pg_single_use_and_concurrent_consume_exactly_one() -> None:
             try:
                 async with c.transaction():
                     row = await _repo().consume(
-                        c, aid, consumed_by="svc", resource_state_version="v1"
+                        c, aid, consumed_by="svc", resource_state_version="v1", **SCOPE_A
                     )
                     return row is not None
             finally:
@@ -669,11 +684,11 @@ def test_pg_single_use_and_concurrent_consume_exactly_one() -> None:
 
         verify = await asyncpg.connect(dsn=_DSN)
         try:
-            row = await _repo().get_authorization(verify, aid)
+            row = await _repo().get_authorization(verify, aid, **SCOPE_A)
             assert row["consumed_at"] is not None
             # a later consume is idempotently rejected (already consumed)
             again = await _repo().consume(
-                verify, aid, consumed_by="svc", resource_state_version="v1"
+                verify, aid, consumed_by="svc", resource_state_version="v1", **SCOPE_A
             )
             assert again is None
         finally:
@@ -705,12 +720,13 @@ def test_pg_production_gate_blocks_consume_without_reference() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
             blocked = await s.consume(
                 conn, aid, actor=svc, actor_scope=sc, resource_state_version="v1"
             )
             assert blocked.result_kind == "production_approval_required"
-            assert (await r.get_authorization(conn, aid))["consumed_at"] is None
+            assert (await r.get_authorization(conn, aid, **SCOPE_A))["consumed_at"] is None
             # with a reference present, consume proceeds (BE3-A does not validate the ref itself)
             b = await _new_request(
                 conn,
@@ -728,6 +744,7 @@ def test_pg_production_gate_blocks_consume_without_reference() -> None:
                 reason_code="policy_allow",
                 policy_result="allow",
                 policy_version="p1",
+                **SCOPE_A,
             )
             ok = await s.consume(conn, bid, actor=svc, actor_scope=sc, resource_state_version="v1")
             assert ok.ok and ok.state == "consumed"
@@ -838,7 +855,7 @@ def test_pg_resume_actor_model_operator_policy_authority_service() -> None:
                 conn, aid, actor=policy_authority, actor_scope=sc, policy_version="p1"
             )
             assert ok.ok and ok.state == "authorized"
-            row = await _repo().get_authorization(conn, aid)
+            row = await _repo().get_authorization(conn, aid, **SCOPE_A)
             assert row["decided_by"] == "policy-safety" and row["decided_by"] != row["requested_by"]
 
             # Only the service identity consumes.
@@ -890,7 +907,7 @@ def test_pg_production_effect_resume_still_gated() -> None:
                 conn, aid, actor=svc, actor_scope=sc, resource_state_version="v1"
             )
             assert blocked.result_kind == "production_approval_required"
-            assert (await _repo().get_authorization(conn, aid))["consumed_at"] is None
+            assert (await _repo().get_authorization(conn, aid, **SCOPE_A))["consumed_at"] is None
         finally:
             await conn.close()
 
@@ -947,7 +964,7 @@ def test_pg_direct_repository_calls_cannot_bypass_scope() -> None:
                 )
                 is None
             )
-            assert (await r.get_authorization(conn, aid))["decision"] == "pending"
+            assert (await r.get_authorization(conn, aid, **SCOPE_A))["decision"] == "pending"
             # A direct cross-scope cancel also affects 0 rows.
             assert (
                 await r.cancel(
@@ -999,7 +1016,7 @@ def test_pg_direct_repository_calls_cannot_bypass_scope() -> None:
                 )
                 is None
             )
-            row = await r.get_authorization(conn, aid)
+            row = await r.get_authorization(conn, aid, **SCOPE_A)
             assert row["revoked_at"] is None and row["consumed_at"] is None  # untouched cross-scope
             # In-scope consume succeeds.
             assert (
@@ -1013,6 +1030,233 @@ def test_pg_direct_repository_calls_cannot_bypass_scope() -> None:
                 )
                 is not None
             )
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+# ---- NULL-scope wildcard closure (Step 66C.4-BE3-A-C2) ------------------------------
+
+
+@requires_pg
+def test_pg_null_caller_scope_is_not_wildcard() -> None:
+    """A NULL caller scope must NEVER act as a wildcard: it can neither read nor transition a
+    scoped row. Exact scope still works; a mismatched UUID stays masked."""
+
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            r = _repo()
+            a = await _new_request(conn, key="nullscope", team=TEAM_A, project=PROJECT_A)
+            aid = str(a["authorization_id"])
+            rid = str(a["resource_id"])
+
+            # 1-2. A NULL caller team OR project reads nothing (no wildcard on either dimension).
+            assert (
+                await r.get_authorization(conn, aid, scope_team_id=None, scope_project_id=PROJECT_A)
+                is None
+            )
+            assert (
+                await r.get_authorization(conn, aid, scope_team_id=TEAM_A, scope_project_id=None)
+                is None
+            )
+            assert (
+                await r.get_authorization(conn, aid, scope_team_id=None, scope_project_id=None)
+                is None
+            )
+            # 10. A mismatched UUID stays masked; 9. exact scope reads the row.
+            assert (
+                await r.get_authorization(
+                    conn, aid, scope_team_id=TEAM_B, scope_project_id=PROJECT_A
+                )
+                is None
+            )
+            assert await r.get_authorization(conn, aid, **SCOPE_A) is not None
+            # get_active_by_resource is scoped the same way.
+            assert (
+                await r.get_active_by_resource(
+                    conn,
+                    action_type="replay",
+                    resource_id=rid,
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            assert (
+                await r.get_active_by_resource(
+                    conn, action_type="replay", resource_id=rid, **SCOPE_A
+                )
+                is not None
+            )
+
+            # 3. NULL caller scope cannot approve.
+            assert (
+                await r.approve(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="policy_allow",
+                    policy_result="allow",
+                    policy_version="p1",
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            assert (await r.get_authorization(conn, aid, **SCOPE_A))["decision"] == "pending"
+            # 4. NULL caller scope cannot cancel.
+            assert (
+                await r.cancel(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="operator_canceled",
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            # Authorize in-scope so revoke/consume have an authorized target to attempt.
+            assert (
+                await r.approve(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="policy_allow",
+                    policy_result="allow",
+                    policy_version="p1",
+                    **SCOPE_A,
+                )
+                is not None
+            )
+            # 5. NULL caller scope cannot revoke.
+            assert (
+                await r.revoke(
+                    conn,
+                    aid,
+                    revoked_by="bob",
+                    reason_code="operator_revoked",
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            # 6. NULL caller scope cannot consume.
+            assert (
+                await r.consume(
+                    conn,
+                    aid,
+                    consumed_by="svc",
+                    resource_state_version="v1",
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            row = await r.get_authorization(conn, aid, **SCOPE_A)
+            assert row["revoked_at"] is None and row["consumed_at"] is None
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+@requires_pg
+def test_pg_null_row_scope_rejected_by_not_null_schema() -> None:
+    """A row can never carry a NULL team_id/project_id, so a NULL row scope can never be matched by
+    an arbitrary caller: the NOT NULL schema rejects the insert outright."""
+
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            # 7. NULL team_id insert rejected.
+            with pytest.raises(asyncpg.NotNullViolationError):
+                await _new_request(conn, key="nullteam", team=None, project=PROJECT_A)
+            # 8. NULL project_id insert rejected.
+            with pytest.raises(asyncpg.NotNullViolationError):
+                await _new_request(conn, key="nullproj", team=TEAM_A, project=None)
+        finally:
+            await conn.close()
+
+    _run(scenario())
+
+
+@requires_pg
+def test_pg_service_null_scope_fail_closed() -> None:
+    """11-12. The service (and a direct repository call) are both fail-closed for a NULL actor
+    scope: no request is created, an existing row is masked, and a direct NULL-scope CAS is a
+    no-op."""
+
+    async def scenario() -> None:
+        conn = await asyncpg.connect(dsn=_DSN)
+        try:
+            await _reset_and_migrate(conn)
+            s, p, r = _svc(), _policy(), _repo()
+            sc = p.Scope(TEAM_A, PROJECT_A)
+            null_sc = p.Scope(None, None)
+            op = p.Actor("alice", "agent_operator")
+
+            # A request with a NULL actor/resource scope is denied and creates no row.
+            denied = await s.request_authorization(
+                conn,
+                actor=op,
+                actor_scope=null_sc,
+                resource_scope=null_sc,
+                action_type="replay",
+                resource_type="outbox_event",
+                resource_id=str(uuid.uuid4()),
+                resource_state_version="v1",
+                expires_at=_future(),
+                idempotency_key="null-req",
+            )
+            assert not denied.ok and denied.result_kind == "not_found_masked"
+            assert await conn.fetchval("SELECT count(*) FROM resume_replay_authorizations") == 0
+
+            # A real A-scoped request; a NULL-scope actor cannot even see it (service masks it).
+            req = await s.request_authorization(
+                conn,
+                actor=op,
+                actor_scope=sc,
+                resource_scope=sc,
+                action_type="replay",
+                resource_type="outbox_event",
+                resource_id=str(uuid.uuid4()),
+                resource_state_version="v1",
+                expires_at=_future(),
+                idempotency_key="null-auth",
+            )
+            aid = str(req.authorization["authorization_id"])
+            masked = await s.authorize(
+                conn,
+                aid,
+                actor=p.Actor("bob", "reviewer_approver"),
+                actor_scope=null_sc,
+                policy_version="p1",
+            )
+            assert masked.result_kind == "not_found_masked"
+            # A direct repository approve with a NULL scope also affects nothing.
+            assert (
+                await r.approve(
+                    conn,
+                    aid,
+                    decided_by="bob",
+                    decided_role="reviewer_approver",
+                    reason_code="policy_allow",
+                    policy_result="allow",
+                    policy_version="p1",
+                    scope_team_id=None,
+                    scope_project_id=None,
+                )
+                is None
+            )
+            assert (await r.get_authorization(conn, aid, **SCOPE_A))["decision"] == "pending"
         finally:
             await conn.close()
 

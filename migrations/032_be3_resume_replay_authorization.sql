@@ -24,14 +24,17 @@ CREATE TABLE IF NOT EXISTS resume_replay_authorizations (
     action_type             TEXT NOT NULL,                 -- 'resume' | 'replay'
     resource_type           TEXT NOT NULL,                 -- 'clarification' | 'outbox_event'
     resource_id             UUID NOT NULL,
-    -- Scope identifiers, compared by equality for isolation. Both are UUID: project_id is the
-    -- canonical operator_tasks.project_id (a UUID), and every identity in this system is a UUID, so
-    -- a team scope key is a UUID too. Using the UUID type (not TEXT) makes the scope key canonical
-    -- and removes all whitespace/case/spelling ambiguity at the storage layer. No FK is declared:
-    -- operator_tasks.project_id itself carries no FK and is nullable, and an outbox_event resource's
-    -- project scope is derived (not guaranteed to be a projects row), so a FK would be unsound here.
-    team_id                 UUID,                          -- nullable: no team table upstream yet
-    project_id              UUID,                          -- canonical operator_tasks.project_id
+    -- Scope identifiers, compared by exact (null-safe) equality for isolation. Both are UUID and
+    -- NOT NULL: a resume/replay authorization is always resource-bound to a team AND a project, so
+    -- there is no legitimate global/system scope here (Step 66C.4-BE3-A-C2). Making them NOT NULL,
+    -- and matching them with IS NOT DISTINCT FROM in the repository, means a NULL can never act as a
+    -- wildcard that widens visibility. If a global/system-scoped authorization is ever needed, it
+    -- must be modelled explicitly (e.g. a scope_type column or a dedicated Service-Identity path),
+    -- never by leaving a scope NULL. No FK is declared: operator_tasks.project_id itself carries no
+    -- FK and is nullable, and an outbox_event resource's project scope is derived (not guaranteed to
+    -- be a projects row), so a FK would be unsound here.
+    team_id                 UUID NOT NULL,
+    project_id              UUID NOT NULL,                 -- canonical operator_tasks.project_id
     request_id              UUID NOT NULL DEFAULT uuid_generate_v4(),
 
     requested_by            TEXT NOT NULL,

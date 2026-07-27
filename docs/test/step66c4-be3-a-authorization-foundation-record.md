@@ -8,6 +8,7 @@
 ```text
 STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS   (self-verification only)
 STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS         (Step 66C.4-BE3-A-C1 alignment)
+STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY: PASS         (Step 66C.4-BE3-A-C2 null-scope closure)
 ```
 
 Step 66C.4-BE3-A-C1 alignment (see be3-a-contract-alignment-record.md) added dual-layer repository
@@ -15,6 +16,13 @@ scope enforcement, moved resume authorization to a policy/safety authority (a pl
 the requester, cannot human-authorize), and made project_id/team_id the canonical UUID type. Test
 count rose from 14 to 17 (added resume-actor, production-effect-resume, and direct-repository
 scope-bypass tests); real-PG regression 85 passed.
+
+Step 66C.4-BE3-A-C2 null-scope closure (see be3-a-null-scope-closure-record.md) made team_id/
+project_id NOT NULL and changed the repository scope predicate to EXACT null-safe equality
+(`IS NOT DISTINCT FROM`) so a NULL is never a wildcard; policy isolation is now fail-closed on a
+missing scope. Test count rose from 17 to 20 (added null-caller-not-wildcard, NOT NULL-row-rejection,
+and service NULL-scope fail-closed tests); backend DB regression 186 passed / 5 skipped (pre-existing
+Redis-dependent BE2 relay tests, non-mandatory).
 
 ## Environment
 
@@ -31,7 +39,8 @@ The shared aiagents-test stack was NOT touched.
 ### BE3-A foundation (real PostgreSQL 16)
 
 ```text
-tests/test_step66c4_be3_a_authorization_foundation.py -> 14 passed, 0 skipped, 0 failed
+tests/test_step66c4_be3_a_authorization_foundation.py -> 20 passed, 0 skipped, 0 failed
+  (14 original + 3 BE3-A-C1 alignment + 3 BE3-A-C2 null-scope closure)
 ```
 
 Coverage: migration up/down/reapply + constraints/indexes + existing-feature-unchanged; request +

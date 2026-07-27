@@ -16039,3 +16039,32 @@ implementation session; no subagent). NOT FOR MERGE; BE3-B not started.**
   ruff/black/mypy clean. No public API, no `replay_dead` call, no resume/dispatch, no shared
   migration/deployment, no BE3-B. `production_executed_true_count` = 0. Both markers
   (`STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY`, `STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY`) PASS.
+
+## Step 66C.4-BE3-A-C2 — NULL-Scope Wildcard Closure
+
+**Marker: `STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY: PASS` (targeted closure of the repository scope
+predicate's NULL wildcard by the same implementation session; no subagent). NOT FOR MERGE; BE3-B not
+started.**
+
+- **Problem closed.** The C1 predicate `(team_id IS NULL OR $t::uuid IS NULL OR team_id=$t)` treated
+  NULL as a wildcard, so a NULL caller scope (or a NULL row scope) could match across teams/projects.
+- **Scope model.** `team_id`/`project_id` are now **UUID NOT NULL** (migration 032 revised in place,
+  unmerged/unapplied — no 033). Resume/replay authorization is always team- AND project-bound; there
+  is no legitimate global/system scope, and any future one must be explicit (e.g. a `scope_type`
+  column), never NULL.
+- **Exact predicate.** Every actor-facing repository read/transition
+  (`get_authorization/get_active_by_resource/approve/reject/cancel/revoke/consume`) now uses EXACT
+  null-safe equality `team_id IS NOT DISTINCT FROM $t::uuid AND project_id IS NOT DISTINCT FROM $p`.
+  A NULL/mismatched caller scope matches no row (fail-closed → `not_found_masked`, no mutation, no
+  leak). `expire_due_authorizations` stays the only unscoped op (non-actor-facing maintenance scan).
+- **Policy fail-closed (dual-layer preserved).** `_isolation_ok` now denies when EITHER the actor or
+  the resource scope is missing (None) — NULL is never a wildcard at the policy layer either.
+- **Tests.** 20 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (added
+  `test_pg_null_caller_scope_is_not_wildcard`, `test_pg_null_row_scope_rejected_by_not_null_schema`,
+  `test_pg_service_null_scope_fail_closed`). Backend DB regression 186 passed / 5 skipped (pre-existing
+  Redis-dependent BE2 relay tests, non-mandatory). ruff/black/mypy clean. Ephemeral PG + worktree
+  destroyed; shared internal test stack untouched.
+- **Gate.** No public API, no `replay_dead` call, no resume/dispatch, no shared migration/deployment,
+  no worker/relay activation, no frontend. BE3-B/BE3-C NOT implemented. `production_executed_true_count`
+  = 0. All three markers (`...AUTHORIZATION_FOUNDATION_VERIFY`, `...CONTRACT_ALIGNMENT_VERIFY`,
+  `...NULL_SCOPE_CLOSURE_VERIFY`) PASS. BE3-B requires separate explicit PO authorization.

@@ -7,7 +7,8 @@ endpoint, dead-outbox replay invocation, shared activation, or deployment. This 
 self-verification only; it is NOT an overall BE3 technical PASS (the combined independent BE3-R
 review over BE3-A+B+C is still required).
 
-Marker: STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS | FAIL
+Markers: STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY, STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY
+(Step 66C.4-BE3-A-C1), and STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY (Step 66C.4-BE3-A-C2): PASS|FAIL
 """
 
 from __future__ import annotations
@@ -203,7 +204,7 @@ def main() -> int:  # noqa: C901
     tests_src = TESTS.read_text(encoding="utf-8")
 
     # A1. Dual-layer scope enforcement: repository predicate + policy isolation.
-    if "team_id = {a}::uuid" not in repo_src or "_SCOPE" not in repo_src:
+    if "team_id IS NOT DISTINCT FROM {a}::uuid" not in repo_src or "_SCOPE" not in repo_src:
         bad("alignA1: repository transitions/reads do not bind team/project scope in SQL")
     if "scope_team_id" not in repo_src or "scope_project_id" not in repo_src:
         bad("alignA1: repository methods do not accept the actor scope")
@@ -230,9 +231,35 @@ def main() -> int:  # noqa: C901
     if "def test_pg_migration_up_down_reapply_and_constraints" not in tests_src:
         bad("alignA4: migration up/down/reapply test missing")
 
+    # ---- Step 66C.4-BE3-A-C2 null-scope wildcard closure checks -----------------------
+    # C2-1. Repository predicate is EXACT null-safe equality; the NULL-wildcard form is gone.
+    if "IS NOT DISTINCT FROM" not in repo_src:
+        bad("c2-1: repository scope predicate is not exact null-safe equality")
+    if "IS NULL OR" in repo_src:
+        bad("c2-1: repository still contains a NULL-wildcard scope clause")
+    # C2-2. Scope columns are NOT NULL (no NULL row scope can ever exist).
+    if "team_id                 UUID NOT NULL" not in mig:
+        bad("c2-2: team_id is not NOT NULL")
+    if "project_id              UUID NOT NULL" not in mig:
+        bad("c2-2: project_id is not NOT NULL")
+    # C2-3. Policy isolation is fail-closed on a missing scope (NULL is never a wildcard).
+    if "actor_scope.team_id is None or resource_scope.team_id is None" not in policy:
+        bad("c2-3: policy isolation is not fail-closed on a NULL team scope")
+    if "actor_scope.project_id is None or resource_scope.project_id is None" not in policy:
+        bad("c2-3: policy isolation is not fail-closed on a NULL project scope")
+    # C2-4. Null-scope closure tests present.
+    for t in (
+        "def test_pg_null_caller_scope_is_not_wildcard",
+        "def test_pg_null_row_scope_rejected_by_not_null_schema",
+        "def test_pg_service_null_scope_fail_closed",
+    ):
+        if t not in tests_src:
+            bad(f"c2-4: null-scope closure test missing: {t}")
+
     if failures:
         print(f"{MARKER}: FAIL ({len(failures)} issue(s))")
         print("STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: FAIL")
+        print("STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY: FAIL")
         return 1
 
     print("  [OK] migration 032 durable authorization schema (single-use/time-bound/state-version-")
@@ -247,6 +274,13 @@ def main() -> int:  # noqa: C901
     print("       requester, cannot human-authorize); service-identity consume-only; project_id/")
     print("       team_id are the canonical UUID type; migration up/down/reapply covered.")
     print("STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS")
+    print("  [OK] null-scope closure (BE3-A-C2): repository scope predicate is EXACT null-safe")
+    print("       equality (IS NOT DISTINCT FROM) -- NULL is never a wildcard; team_id/project_id")
+    print(
+        "       are NOT NULL so no NULL row scope can exist; policy isolation is fail-closed on a"
+    )
+    print("       missing scope; a direct NULL-scope repository call is a no-op (fail-closed).")
+    print("STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY: PASS")
     print("  NOTE: BE3-A self-verification only; overall BE3 technical closure needs the combined")
     print("        independent BE3-R review over BE3-A+B+C.")
     return 0

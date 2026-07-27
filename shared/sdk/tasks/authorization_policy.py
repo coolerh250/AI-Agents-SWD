@@ -75,13 +75,19 @@ class PolicyOutcome:
 
 def _isolation_ok(actor_scope: Scope, resource_scope: Scope) -> str | None:
     """Return None when the actor may see the resource, else the denial reason code. Cross-scope
-    denial is reported so the caller can mask it as not_found (never leak existence)."""
-    if resource_scope.team_id is not None and actor_scope.team_id is not None:
-        if resource_scope.team_id != actor_scope.team_id:
-            return "cross_team_denied"
-    if resource_scope.project_id is not None and actor_scope.project_id is not None:
-        if resource_scope.project_id != actor_scope.project_id:
-            return "cross_project_denied"
+    denial is reported so the caller can mask it as not_found (never leak existence).
+
+    Fail-closed (Step 66C.4-BE3-A-C2): a resume/replay authorization is always team- AND
+    project-scoped, so a missing (None) scope on EITHER the actor or the resource is a denial --
+    NULL is never a wildcard that widens visibility."""
+    if actor_scope.team_id is None or resource_scope.team_id is None:
+        return "cross_team_denied"
+    if actor_scope.team_id != resource_scope.team_id:
+        return "cross_team_denied"
+    if actor_scope.project_id is None or resource_scope.project_id is None:
+        return "cross_project_denied"
+    if actor_scope.project_id != resource_scope.project_id:
+        return "cross_project_denied"
     return None
 
 
