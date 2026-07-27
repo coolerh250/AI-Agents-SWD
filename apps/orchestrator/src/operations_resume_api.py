@@ -12,15 +12,29 @@ The resume execution COMMAND path is a separate, internal, BE3_RESUME_COMMAND_EN
 op (resume_service.prepare_execution); it is NOT exposed here.
 
 Principal model (be3-rbac-permission-matrix.md, §8): Operators authenticate via the existing
-fail-closed test auth (task_api._authenticate, X-Task-Actor/X-Task-Role). The POLICY/SAFETY
-AUTHORITY that authorizes/rejects a resume is NOT a client-asserted role: it is granted ONLY when a
-server-configured capability (BE3_RESUME_POLICY_AUTHORITY_CAPABILITY) is presented and matches. It
-is never read from the request body, query, or the role header. Scope (team_id/project_id) is
+fail-closed test auth (task_api._authenticate, X-Task-Actor/X-Task-Role). The POLICY/SAFETY AUTHORITY
+that authorizes/rejects a resume is NOT a client-asserted role and is NOT satisfiable by an ordinary
+Operator, even one that knows or guesses a header value (Step 66C.4-BE3-B-C1). It requires BOTH:
+  1. the authenticated actor id (X-Task-Actor) exactly matches a server-configured trusted principal
+     id (BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID) -- an internal service account, never a human
+     Operator's own actor id; and
+  2. the caller presents the correct server-side capability (current or, during a rotation window,
+     previous -- BE3_RESUME_POLICY_AUTHORITY_CAPABILITY[_PREVIOUS]) over a dedicated header, compared
+     with hmac.compare_digest (constant-time; never `==`/`!=` on the secret).
+Both conditions are always evaluated (no short-circuit) so failure timing cannot distinguish "wrong
+principal" from "wrong/missing capability" from "not configured" -- every failure raises the SAME
+403 policy_authority_required, and the presented value is NEVER echoed into a log, audit payload, or
+exception. The capability is NEVER read from the request body, query string, or the general
+X-Task-Role header. A resolved policy-authority Actor carries a fixed role label
+(_POLICY_AUTHORITY_ROLE), never the caller's own X-Task-Role, and is_policy_authority=True restricts
+it (in authorization_policy.evaluate) to ONLY authorize_resume/reject_resume -- it can never request,
+cancel, consume, or touch the independent production-approval gate. Scope (team_id/project_id) is
 supplied by the caller and enforced by EXACT null-safe equality in the repository (BE3-A-C2).
 """
 
 from __future__ import annotations
 
+import hmac
 import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
@@ -94,15 +108,67 @@ def _operator(request: Request) -> Actor:
     return Actor(principal_id=ctx.actor, role=ctx.role)
 
 
+# The policy authority is an internal machine identity, not one of the six TASK_ROLES -- this is
+# an audit label only (authorization_policy.evaluate branches on is_policy_authority BEFORE any
+# TASK_ROLES membership check, so this string never needs to be a valid TASK_ROLE).
+_POLICY_AUTHORITY_ROLE = "policy_authority"
+
+# Defense in depth: bound the header before any comparison so an oversized/malformed value is
+# rejected outright rather than fed into hmac.compare_digest.
+_MAX_CAPABILITY_HEADER_CHARS = 256
+
+
+def _configured_policy_authority_principal() -> str:
+    """The single trusted internal principal id allowed to ever become the policy authority.
+    Unset -> the mechanism is off and can never be satisfied (fail-closed)."""
+    return os.environ.get("BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID", "").strip()
+
+
+def _configured_capabilities() -> tuple[str, ...]:
+    """Current + optional previous capability value, enabling smooth rotation: an operator sets a
+    new BE3_RESUME_POLICY_AUTHORITY_CAPABILITY and keeps the old value in
+    BE3_RESUME_POLICY_AUTHORITY_CAPABILITY_PREVIOUS until every internal caller has picked up the
+    new one, then clears _PREVIOUS. Unset/empty entries are dropped; both unset -> [] (fail-closed:
+    nothing can ever match)."""
+    values = (
+        os.environ.get("BE3_RESUME_POLICY_AUTHORITY_CAPABILITY", "").strip(),
+        os.environ.get("BE3_RESUME_POLICY_AUTHORITY_CAPABILITY_PREVIOUS", "").strip(),
+    )
+    return tuple(v for v in values if v)
+
+
+def _capability_matches(presented: str, configured: tuple[str, ...]) -> bool:
+    """Constant-time membership check. Rejects an empty/oversized presented value outright (never
+    compared); otherwise compares against EVERY configured value (no short-circuit on the first
+    match) so timing does not reveal which rotation slot, if any, is currently valid."""
+    if not presented or len(presented) > _MAX_CAPABILITY_HEADER_CHARS or not configured:
+        return False
+    matched = False
+    presented_bytes = presented.encode("utf-8")
+    for value in configured:
+        if hmac.compare_digest(presented_bytes, value.encode("utf-8")):
+            matched = True
+    return matched
+
+
 def _policy_authority(request: Request) -> Actor:
-    """Resolve the policy/safety authority ONLY from a server-configured capability, never from the
-    body/query/role. Fail-closed: an unset capability can never be satisfied."""
+    """Resolve the policy/safety authority: an authenticated TRUSTED PRINCIPAL (a fixed,
+    server-configured internal principal id -- never an arbitrary Operator, even one who adds the
+    header themselves) presenting the correct server-side capability (current or previous) over a
+    dedicated header. NEVER read from the request body, query string, or the general X-Task-Role
+    header. Both checks always run (no short-circuit); every failure -- missing/empty/oversized/
+    malformed capability, an unconfigured server, or a mismatched principal id -- raises the
+    IDENTICAL 403 policy_authority_required, and the presented value is never logged, audited, or
+    echoed in the response."""
     ctx = task_api._authenticate(request)
-    expected = os.environ.get("BE3_RESUME_POLICY_AUTHORITY_CAPABILITY", "").strip()
+    trusted_principal = _configured_policy_authority_principal()
     presented = request.headers.get("X-Resume-Policy-Authority", "").strip()
-    if not expected or presented != expected:
+    configured = _configured_capabilities()
+    principal_ok = bool(trusted_principal) and ctx.actor == trusted_principal
+    capability_ok = _capability_matches(presented, configured)
+    if not (principal_ok and capability_ok):
         raise HTTPException(status_code=403, detail="policy_authority_required")
-    return Actor(principal_id=ctx.actor, role=ctx.role, is_policy_authority=True)
+    return Actor(principal_id=ctx.actor, role=_POLICY_AUTHORITY_ROLE, is_policy_authority=True)
 
 
 async def _deny_rbac(actor: Actor, action: str, reason: str) -> None:

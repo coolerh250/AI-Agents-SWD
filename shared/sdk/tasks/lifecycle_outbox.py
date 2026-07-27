@@ -81,6 +81,78 @@ ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE: dict[str, frozenset[str]] = {
 
 ALLOWED_EVENT_TYPES = frozenset(ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE)
 
+# Durable destination classification (Step 66C.4-BE3-B-C1). One outbox row -> exactly ONE durable
+# destination, decided by event_type -- never guessed, never left to a relay's discretion.
+# 'audit' rows are the ONLY rows the existing BE2 audit relay (ClarificationOutboxRelay) may
+# claim/publish, via publish_audit_event, to the canonical stream.audit destination. Its downstream
+# audit-worker projects stream.audit into audit_logs -- that is the ONE durable destination with a
+# downstream projection for every audit-classified event type; no row is ever fanned out to two
+# destinations. 'orchestrator_command' rows (currently only resume.execution_requested) are for a
+# SEPARATE, DEDICATED orchestrator-command consumer that no stage has built or activated yet -- the
+# existing audit relay's claim query explicitly excludes them (audit_relay_claimable_event_types
+# below), so it can never claim one, publish it to the wrong stream, or mark it 'published' when it
+# never reached its real destination. Today these rows simply accumulate as 'pending' (in practice
+# zero, since BE3_RESUME_COMMAND_ENABLED defaults false) until a real command consumer exists and
+# the runtime activation gate (be3-runtime-activation-gate.md) is separately satisfied; this module
+# builds NO such consumer, starts NO loop, and activates nothing.
+DESTINATION_AUDIT = "audit"
+DESTINATION_ORCHESTRATOR_COMMAND = "orchestrator_command"
+
+EVENT_DESTINATIONS: dict[str, str] = {
+    "clarification.reminder_due": DESTINATION_AUDIT,
+    "clarification.reminder_recorded": DESTINATION_AUDIT,
+    "clarification.expired": DESTINATION_AUDIT,
+    "clarification.resume_eligible": DESTINATION_AUDIT,
+    "clarification.resume_requested": DESTINATION_AUDIT,
+    "clarification.resume_authorized": DESTINATION_AUDIT,
+    "resume.requested": DESTINATION_AUDIT,
+    "resume.authorized": DESTINATION_AUDIT,
+    "resume.rejected": DESTINATION_AUDIT,
+    "resume.canceled": DESTINATION_AUDIT,
+    "resume.resumed": DESTINATION_AUDIT,
+    "resume.failed": DESTINATION_AUDIT,
+    "resume.execution_requested": DESTINATION_ORCHESTRATOR_COMMAND,
+}
+
+# Structural guarantee (import-time, not just a test): every allowlisted event_type has EXACTLY one
+# destination classification. A new event type added to ALLOWED_PAYLOAD_KEYS_BY_EVENT_TYPE without
+# a matching EVENT_DESTINATIONS entry fails the module import outright -- there is no unclassified/
+# NULL/"unknown" destination that could silently fall through to the audit relay.
+assert (
+    set(EVENT_DESTINATIONS) == ALLOWED_EVENT_TYPES
+), "every lifecycle_outbox event_type must have an explicit destination classification"
+
+
+def destination_for_event_type(event_type: str) -> str:
+    """The single durable destination for an event_type. Raises for anything not on the allowlist
+    -- there is no guessed/default destination for an unknown event_type."""
+    if event_type not in EVENT_DESTINATIONS:
+        raise ValueError(f"unknown lifecycle outbox event_type: {event_type}")
+    return EVENT_DESTINATIONS[event_type]
+
+
+def audit_relay_claimable_event_types() -> frozenset[str]:
+    """The event types the AUDIT relay (ClarificationOutboxRelay) may claim/publish. Derived from
+    EVENT_DESTINATIONS so it can never include an orchestrator-command (or any future non-audit)
+    row -- membership is fail-closed by construction, not by a denylist that must be kept in sync.
+    """
+    return frozenset(t for t, d in EVENT_DESTINATIONS.items() if d == DESTINATION_AUDIT)
+
+
+async def count_pending_by_destination(conn: asyncpg.Connection, destination: str) -> int:
+    """Read-only visibility helper (NOT a consumer, NOT a claim): count pending rows for a
+    destination. Performs no claim, no publish, no state mutation -- for tests/ops visibility of
+    orchestrator-command backlog while no dedicated consumer exists."""
+    event_types = [t for t, d in EVENT_DESTINATIONS.items() if d == destination]
+    if not event_types:
+        return 0
+    return await conn.fetchval(
+        "SELECT count(*) FROM clarification_lifecycle_outbox "
+        "WHERE status='pending' AND event_type = ANY($1::text[])",
+        event_types,
+    )
+
+
 # Persisted backoff schedule (seconds). Every entry is REACHED: after the Nth publish attempt
 # fails the row waits RETRY_BACKOFF_SECONDS[N-1] before the next attempt. Step 66C.4-BE2-R1 PO
 # decision 1.2 makes the semantics exact (the previous code never reached the 3600 entry):

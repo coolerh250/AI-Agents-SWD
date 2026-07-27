@@ -16109,3 +16109,40 @@ VALIDATED. Draft PR #20.**
   migration/deployment, no worker/relay activation, no frontend, no BE3-C.
   `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
   review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-B-C1 — Policy Authority and Command Routing Alignment
+
+**Marker: `STEP66C4_BE3_B_AUTHORITY_ROUTING_ALIGNMENT_VERIFY: PASS` (targeted alignment of BE3-B by
+the same implementation session; no subagent). NOT FOR MERGE; BE3-C not started.**
+
+- **Policy authority authentication boundary (closed a real gap).** Before: any authenticated actor
+  presenting the correct capability header became the policy authority (a plain Operator who added
+  the header themselves would have succeeded). Now: resolving the authority requires BOTH (1) the
+  authenticated actor id == a server-configured trusted principal
+  (`BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID`, an internal service account — never an Operator's own
+  actor id) AND (2) the presented capability (current or previous —
+  `BE3_RESUME_POLICY_AUTHORITY_CAPABILITY[_PREVIOUS]`, supporting smooth rotation) matches via
+  `hmac.compare_digest` (constant-time). Both checks always run (no short-circuit); every failure is
+  the identical `403 policy_authority_required`; the capability value is never logged/audited/echoed.
+  The resolved role (`policy_authority`) is not one of the six TASK_ROLES and stays restricted (via
+  the unchanged BE3-A-C1 policy) to authorize_resume/reject_resume only — it can never request,
+  cancel, consume, or touch the independent production-approval gate. The API feature gate still
+  runs before the capability comparison, so a disabled API performs no credential comparison / DB op.
+- **Command outbox destination routing (closed a real gap).** Every `lifecycle_outbox` event_type now
+  has an explicit, single, structurally-guaranteed destination (`EVENT_DESTINATIONS`; import-time
+  assertion that every allowlisted type is classified). The existing (already-merged) BE2 audit relay
+  (`ClarificationOutboxRelay`) claim query and backlog sampler are now scoped to
+  `audit_relay_claimable_event_types()`, so it can never claim, mis-publish, or falsely mark
+  'published' the `resume.execution_requested` orchestrator-command row — fully backward compatible
+  (every pre-existing audit event type is still claimed/published exactly as before). No dedicated
+  command consumer is built here; a command row simply accumulates (currently always zero, since
+  `BE3_RESUME_COMMAND_ENABLED` defaults false) until a future, separately-authorized consumer +
+  runtime activation gate exist.
+- **Tests.** 18 real-PG BE3-B-C1 tests pass (0 skipped); backend regression 226 passed / 5 skipped
+  (pre-existing Redis-dependent BE2 tests). The pre-existing BE3-B API capability test was updated
+  (not weakened) for the trusted-principal model. ruff/black/mypy/`git diff --check`/secret-scan
+  clean. Isolated ephemeral PG16 destroyed after; shared stack untouched.
+- **Gate.** No orchestrator call, no resume execution, no `replay_dead`, no event publish, no shared
+  migration/deployment, no worker/relay activation, no frontend, no BE3-C.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
+  review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.

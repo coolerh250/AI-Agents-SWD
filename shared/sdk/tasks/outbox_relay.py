@@ -18,6 +18,17 @@ Single durable destination (Step 66C.4-BE2 decision, recorded in be2-outbox-rela
   partial-success state to track and no transport is rewritten. The event_id (outbox row id) and
   idempotency_key travel in artifact_refs so a downstream consumer can dedupe.
 
+Destination routing (Step 66C.4-BE3-B-C1): this relay is the AUDIT relay ONLY. Its claim query is
+  explicitly restricted to `lifecycle_outbox.audit_relay_claimable_event_types()` -- the set of
+  event_types classified DESTINATION_AUDIT. A row classified DESTINATION_ORCHESTRATOR_COMMAND
+  (currently only resume.execution_requested, from Step 66C.4-BE3-B) is NEVER matched by this
+  query, so this relay can never claim it, never publish it to stream.audit (the wrong
+  destination), and never mark it 'published' when it never reached an orchestrator. A dedicated
+  orchestrator-command consumer is a SEPARATE, not-yet-built component; until one exists (and the
+  runtime activation gate is separately satisfied), an orchestrator-command row simply accumulates
+  as 'pending' -- in the current disabled posture this is always zero rows, since
+  BE3_RESUME_COMMAND_ENABLED defaults false.
+
 Claim model (canonical, binding): a row is claimed with SELECT ... FOR UPDATE SKIP LOCKED inside
 the relay's own transaction and the claim is never held across a process/transaction boundary, so
 no claim-owner/lease column is needed and a worker crash rolls the claim back.
@@ -52,6 +63,7 @@ from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.tasks import lifecycle_metrics as m
 from shared.sdk.tasks.lifecycle_outbox import (
     MAX_LAST_ERROR_CHARS,
+    audit_relay_claimable_event_types,
     plan_replay_state,
     plan_retry_state,
 )
@@ -214,13 +226,20 @@ class ClarificationOutboxRelay:
         tx = connection.transaction()
         await tx.start()
         try:
-            row = await connection.fetchrow("""
+            # Destination routing (BE3-B-C1): only DESTINATION_AUDIT event types are eligible for
+            # this (audit) relay -- an orchestrator-command row (or any future non-audit type) can
+            # never be matched here, regardless of status/available_at.
+            row = await connection.fetchrow(
+                """
                 SELECT * FROM clarification_lifecycle_outbox
                 WHERE status='pending' AND available_at <= statement_timestamp()
+                  AND event_type = ANY($1::text[])
                 ORDER BY available_at, created_at
                 FOR UPDATE SKIP LOCKED
                 LIMIT 1
-                """)
+                """,
+                list(audit_relay_claimable_event_types()),
+            )
             if row is None:
                 await tx.rollback()
                 return None
@@ -329,12 +348,18 @@ class ClarificationOutboxRelay:
                 await connection.close()
 
     async def _sample_backlog(self, conn: asyncpg.Connection) -> None:
-        row = await conn.fetchrow("""
+        # Scoped to THIS relay's own claimable (audit) backlog -- never conflated with an
+        # orchestrator-command backlog, which no consumer here manages (BE3-B-C1).
+        row = await conn.fetchrow(
+            """
             SELECT count(*) AS pending,
                    COALESCE(EXTRACT(EPOCH FROM (statement_timestamp() - min(created_at))), 0)
                      AS oldest_age
-            FROM clarification_lifecycle_outbox WHERE status='pending'
-            """)
+            FROM clarification_lifecycle_outbox
+            WHERE status='pending' AND event_type = ANY($1::text[])
+            """,
+            list(audit_relay_claimable_event_types()),
+        )
         if row is not None:
             m.OUTBOX_PENDING_COUNT.set(int(row["pending"]))
             m.OUTBOX_OLDEST_PENDING_AGE_SECONDS.set(float(row["oldest_age"]))

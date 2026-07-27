@@ -1083,9 +1083,22 @@ def test_api_feature_gate_and_capability(monkeypatch) -> None:
     r = c.post(f"/operations/resume-requests/{rid}/authorize", json=dec, headers=op_headers)
     assert r.status_code == 403 and r.json()["detail"] == "policy_authority_required"
 
-    # authorize WITH the server-configured capability -> succeeds
+    # Step 66C.4-BE3-B-C1: the capability alone is NOT sufficient -- the caller must ALSO
+    # authenticate as the configured trusted principal, never an ordinary Operator's own actor id.
     monkeypatch.setenv("BE3_RESUME_POLICY_AUTHORITY_CAPABILITY", CAPABILITY)
-    auth_headers = {**op_headers, "X-Resume-Policy-Authority": CAPABILITY}
+    monkeypatch.setenv("BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID", "policy-safety-service")
+
+    # the SAME operator adding the capability header themselves is still denied (wrong principal)
+    self_spoof_headers = {**op_headers, "X-Resume-Policy-Authority": CAPABILITY}
+    r = c.post(f"/operations/resume-requests/{rid}/authorize", json=dec, headers=self_spoof_headers)
+    assert r.status_code == 403 and r.json()["detail"] == "policy_authority_required"
+
+    # authorize as the trusted principal WITH the server-configured capability -> succeeds
+    auth_headers = {
+        "X-Task-Actor": "policy-safety-service",
+        "X-Task-Role": "platform_admin",
+        "X-Resume-Policy-Authority": CAPABILITY,
+    }
     r = c.post(f"/operations/resume-requests/{rid}/authorize", json=dec, headers=auth_headers)
     assert r.status_code == 200 and r.json()["state"] == "authorized", r.text
 
