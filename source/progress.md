@@ -15971,3 +15971,354 @@ NOT IMPLEMENTED / NOT DEPLOYED / NOT ACTIVATED`.**
   worker/relay activation, no deployment. `production_executed_true_count` = 0. Codex and Claude
   Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
   66C.4-BE3-A** (authorization model, repository and policy enforcement).
+
+## Step 66C.4-BE3-A — Authorization Model, Repository and Policy Enforcement
+
+**Marker: `STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY: PASS` (BE3-A self-verification only — the
+combined independent BE3-R review over BE3-A+B+C is still required). Status: durable authorization
+FOUNDATION implemented, NOT FOR MERGE (Draft PR), NOT ACTIVATED, NO resume/replay execution.**
+
+- Branch `feature/66c4-be3-resume-replay-authorization` (baseline main `5745ab7`); Draft PR — BE3-A/
+  B/C share this branch with distinct commits/markers. NOT committed to main.
+- **Migration 032** (`resume_replay_authorizations`, additive — one new table, no existing table
+  altered, no backfill) with a `_down.sql`. Columns cover resource/action/team/project binding,
+  request + decision + policy + resource_state_version + expiry + consumption + revocation +
+  idempotency. Constraints enforce: action/decision/policy allowlists, `expires_at > requested_at`,
+  consume-only-when-authorized, revoke-only-when-authorized, never-both-consumed-and-revoked, decided
+  coherence, and an AUTHORIZED-replay two-person constraint (`decided_by <> requested_by`). Partial
+  unique index `uq_rra_active_request` = one active request per (action, resource); expiry/isolation/
+  authorized-unconsumed indexes.
+- **Modules** (`shared/sdk/tasks/authorization_{model,repository,policy,service}.py`): enums +
+  bounded reason-code allowlist + single authoritative state projection + secret-free audit payload
+  builder; transaction-aware asyncpg CAS repository (create_request/approve/reject/cancel/revoke/
+  consume/expire_due — statement_timestamp() authoritative, affected-row verified); fail-closed
+  policy reusing the six canonical `rbac.py` TASK_ROLES (Operator requests/decides resume; Approver
+  authorizes replay with requester≠approver; Service Identity consume-only; team/project isolation
+  masked as not_found; production-effect consume requires a separate production_approval_reference);
+  internal service returning API-independent structured outcomes (forbidden/not_found_masked/
+  conflict/expired/stale_state/already_decided/already_consumed/revoked/production_approval_required/
+  invalid_transition). Single-use consume is an atomic CAS (state-version + expiry guarded);
+  concurrent consume → exactly one DB CAS wins (not distributed exactly-once).
+- **Tests:** 14 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (destroyed after;
+  shared stack untouched): migration up/down/reapply + constraints; request uniqueness + idempotency;
+  decisions; DB rejects replay self-approval; RBAC + isolation + service-identity; expiry + state-
+  version block consume; single-use + concurrent-consume-exactly-one; production gate; process-
+  failure-before-commit no partial state. Regression 174 passed (a prose-only BE2-R1 false positive
+  on the literal token `replay_dead` in the new docstrings was resolved by rewording to "dead-outbox
+  replay adapter"; no prior-stage assertion weakened). ruff/black/mypy clean.
+- **Gate.** No public HTTP endpoint, no `replay_dead` invocation, no resume/dispatch, no shared DB
+  migration (032 applied only to ephemeral test DBs), no worker/relay activation, no deployment, no
+  frontend. BE3-B and BE3-C NOT implemented. `production_executed_true_count` = 0. Codex and Claude
+  Design remain unauthorized. Next authorization required: explicit PO authorization of **Step
+  66C.4-BE3-B** (resume request/authorize/gated execution command).
+
+## Step 66C.4-BE3-A-C1 — Authorization Scope and Actor Contract Alignment
+
+**Marker: `STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY: PASS` (targeted alignment of BE3-A by the same
+implementation session; no subagent). NOT FOR MERGE; BE3-B not started.**
+
+- **Repository scope enforcement (dual-layer):** every actor-facing repository method
+  (`get_authorization/approve/reject/cancel/revoke/consume`) now takes the actor's
+  `scope_team_id`/`scope_project_id` and binds them into the SQL predicate
+  (`(team_id IS NULL OR $t::uuid IS NULL OR team_id=$t::uuid) AND (project_id ...)`), so a DIRECT
+  repository call cannot bypass scope — a cross-scope call reads nothing / affects 0 rows and the
+  service maps it to `not_found_masked`. The policy layer still checks isolation (both layers).
+- **Resume actor semantics:** `authorize_resume`/`reject_resume` are removed from the human role map
+  and restricted to the automated policy/safety authority (`is_policy_authority` +
+  `_POLICY_AUTHORITY_ACTIONS`). A plain Operator (incl. the requester) is denied
+  (`policy_authority_required`); Service Identity denied (`service_identity_cannot_decide`); the
+  policy authority may only authorize/reject resume (`policy_authority_scope`). `decided_by` is the
+  authority, never the requester. Replay stays human two-person (requester != approver). Production-
+  effect resume still needs the separate production approval reference.
+- **Scope identifier types:** `project_id` and `team_id` changed from TEXT to canonical **UUID**
+  (migration 032 revised in place — unmerged/unapplied, no 033). Justified by the UUID identity
+  convention (not by "operator_tasks has no team_id"); no FK (operator_tasks.project_id has none and
+  an outbox_event's project scope is derived). Storage-layer UUID removes spelling ambiguity.
+- **Tests:** 17 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (added resume-
+  actor, production-effect-resume, and direct-repository scope-bypass groups); regression 85 passed.
+  ruff/black/mypy clean. No public API, no `replay_dead` call, no resume/dispatch, no shared
+  migration/deployment, no BE3-B. `production_executed_true_count` = 0. Both markers
+  (`STEP66C4_BE3_A_AUTHORIZATION_FOUNDATION_VERIFY`, `STEP66C4_BE3_A_CONTRACT_ALIGNMENT_VERIFY`) PASS.
+
+## Step 66C.4-BE3-A-C2 — NULL-Scope Wildcard Closure
+
+**Marker: `STEP66C4_BE3_A_NULL_SCOPE_CLOSURE_VERIFY: PASS` (targeted closure of the repository scope
+predicate's NULL wildcard by the same implementation session; no subagent). NOT FOR MERGE; BE3-B not
+started.**
+
+- **Problem closed.** The C1 predicate `(team_id IS NULL OR $t::uuid IS NULL OR team_id=$t)` treated
+  NULL as a wildcard, so a NULL caller scope (or a NULL row scope) could match across teams/projects.
+- **Scope model.** `team_id`/`project_id` are now **UUID NOT NULL** (migration 032 revised in place,
+  unmerged/unapplied — no 033). Resume/replay authorization is always team- AND project-bound; there
+  is no legitimate global/system scope, and any future one must be explicit (e.g. a `scope_type`
+  column), never NULL.
+- **Exact predicate.** Every actor-facing repository read/transition
+  (`get_authorization/get_active_by_resource/approve/reject/cancel/revoke/consume`) now uses EXACT
+  null-safe equality `team_id IS NOT DISTINCT FROM $t::uuid AND project_id IS NOT DISTINCT FROM $p`.
+  A NULL/mismatched caller scope matches no row (fail-closed → `not_found_masked`, no mutation, no
+  leak). `expire_due_authorizations` stays the only unscoped op (non-actor-facing maintenance scan).
+- **Policy fail-closed (dual-layer preserved).** `_isolation_ok` now denies when EITHER the actor or
+  the resource scope is missing (None) — NULL is never a wildcard at the policy layer either.
+- **Tests.** 20 passed / 0 skipped / 0 failed on isolated ephemeral PostgreSQL 16 (added
+  `test_pg_null_caller_scope_is_not_wildcard`, `test_pg_null_row_scope_rejected_by_not_null_schema`,
+  `test_pg_service_null_scope_fail_closed`). Backend DB regression 186 passed / 5 skipped (pre-existing
+  Redis-dependent BE2 relay tests, non-mandatory). ruff/black/mypy clean. Ephemeral PG + worktree
+  destroyed; shared internal test stack untouched.
+- **Gate.** No public API, no `replay_dead` call, no resume/dispatch, no shared migration/deployment,
+  no worker/relay activation, no frontend. BE3-B/BE3-C NOT implemented. `production_executed_true_count`
+  = 0. All three markers (`...AUTHORIZATION_FOUNDATION_VERIFY`, `...CONTRACT_ALIGNMENT_VERIFY`,
+  `...NULL_SCOPE_CLOSURE_VERIFY`) PASS. BE3-B requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-B — Operator-Controlled Resume Request, Authorization and Gated Execution Command
+
+**Marker: `STEP66C4_BE3_B_OPERATOR_RESUME_VERIFY: PASS` (PO-authorized; same feature branch, distinct
+commit). IMPLEMENTED / SELF-VERIFIED; NOT MERGED / NOT DEPLOYED / NOT ACTIVATED / NOT RUNTIME
+VALIDATED. Draft PR #20.**
+
+- **What.** The operator-controlled resume foundation on top of BE3-A: migration 033 (`resume_requests`,
+  additive durable request entity), `resume_request_model/repository/service`, and the
+  `/operations/resume-requests` API (create/get/authorize/reject/cancel), all DISABLED-BY-DEFAULT.
+- **Flow.** Operator requests → policy/safety authority authorizes/rejects → durable authorization
+  outcome (BE3-A) → Service Identity consumes → durable `resume.execution_requested` outbox command →
+  internal `confirm_resumed`/`confirm_failed` reconciliation foundation. No orchestrator is called and
+  no resume is executed.
+- **Eligibility (DB-authoritative, under row locks).** answered + `resume_eligible_at` set + parent
+  task non-terminal + resource_state_version match + no active request + scope + policy allow. Expired
+  clarification is never re-answered/resumed.
+- **Actors / spoof prevention.** Operators via the existing fail-closed test auth; the POLICY/SAFETY
+  AUTHORITY is a server-configured capability (`BE3_RESUME_POLICY_AUTHORITY_CAPABILITY` + header),
+  never a client role/body/query — `is_policy_authority` is set server-side only; `decided_by` is the
+  authority, never the requester. A plain operator (incl. the requester) cannot human-authorize
+  (`policy_authority_required`). Execution preparation is Service-Identity-only and internal (no
+  endpoint); the production-effect gate is unchanged (delegated to the BE3-A consume).
+- **Transactions.** One transaction per state change, locking clarification + task, re-validating
+  eligibility/scope/state-version. In prepare: consume + `execution_pending` + outbox command commit
+  atomically; an outbox failure rolls back the consume. Design decisions (no parallel conflicting
+  clarification columns; not_eligible/eligible as pre-request projections; NOT NULL scope;
+  per-request outbox idempotency identity) are recorded in
+  `docs/contracts/66c4-reminder-expiry-controlled-resume/be3-b-operator-controlled-resume-record.md`.
+- **Feature gates (env-only, disabled-by-default).** `BE3_RESUME_API_ENABLED` (whole router 503s when
+  off; no DB access), `BE3_RESUME_COMMAND_ENABLED` (prepare does nothing when off — no consume, no
+  outbox). Never read from a request body/query/header.
+- **Tests.** 22 real-PG BE3-B tests pass (0 skipped); backend regression 208 passed / 5 skipped
+  (pre-existing Redis-dependent BE2 relay tests). Two BE1/BE1-R1 "no live outbox producer" static
+  guards were EXTENDED (not weakened) to include `resume_service.py`, as BE2 did for the poller/relay.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after; shared
+  stack untouched.
+- **Gate.** No orchestrator call, no resume execution, no `replay_dead`, no event publish, no shared
+  migration/deployment, no worker/relay activation, no frontend, no BE3-C.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
+  review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-B-C1 — Policy Authority and Command Routing Alignment
+
+**Marker: `STEP66C4_BE3_B_AUTHORITY_ROUTING_ALIGNMENT_VERIFY: PASS` (targeted alignment of BE3-B by
+the same implementation session; no subagent). NOT FOR MERGE; BE3-C not started.**
+
+- **Policy authority authentication boundary (closed a real gap).** Before: any authenticated actor
+  presenting the correct capability header became the policy authority (a plain Operator who added
+  the header themselves would have succeeded). Now: resolving the authority requires BOTH (1) the
+  authenticated actor id == a server-configured trusted principal
+  (`BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID`, an internal service account — never an Operator's own
+  actor id) AND (2) the presented capability (current or previous —
+  `BE3_RESUME_POLICY_AUTHORITY_CAPABILITY[_PREVIOUS]`, supporting smooth rotation) matches via
+  `hmac.compare_digest` (constant-time). Both checks always run (no short-circuit); every failure is
+  the identical `403 policy_authority_required`; the capability value is never logged/audited/echoed.
+  The resolved role (`policy_authority`) is not one of the six TASK_ROLES and stays restricted (via
+  the unchanged BE3-A-C1 policy) to authorize_resume/reject_resume only — it can never request,
+  cancel, consume, or touch the independent production-approval gate. The API feature gate still
+  runs before the capability comparison, so a disabled API performs no credential comparison / DB op.
+- **Command outbox destination routing (closed a real gap).** Every `lifecycle_outbox` event_type now
+  has an explicit, single, structurally-guaranteed destination (`EVENT_DESTINATIONS`; import-time
+  assertion that every allowlisted type is classified). The existing (already-merged) BE2 audit relay
+  (`ClarificationOutboxRelay`) claim query and backlog sampler are now scoped to
+  `audit_relay_claimable_event_types()`, so it can never claim, mis-publish, or falsely mark
+  'published' the `resume.execution_requested` orchestrator-command row — fully backward compatible
+  (every pre-existing audit event type is still claimed/published exactly as before). No dedicated
+  command consumer is built here; a command row simply accumulates (currently always zero, since
+  `BE3_RESUME_COMMAND_ENABLED` defaults false) until a future, separately-authorized consumer +
+  runtime activation gate exist.
+- **Tests.** 18 real-PG BE3-B-C1 tests pass (0 skipped); backend regression 226 passed / 5 skipped
+  (pre-existing Redis-dependent BE2 tests). The pre-existing BE3-B API capability test was updated
+  (not weakened) for the trusted-principal model. ruff/black/mypy/`git diff --check`/secret-scan
+  clean. Isolated ephemeral PG16 destroyed after; shared stack untouched.
+- **Gate.** No orchestrator call, no resume execution, no `replay_dead`, no event publish, no shared
+  migration/deployment, no worker/relay activation, no frontend, no BE3-C.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. The combined independent **BE3-R**
+  review over BE3-A+B+C remains the required gate. BE3-C requires separate explicit PO authorization.
+
+## Step 66C.4-BE3-C — Authorized Dead-Event Replay
+
+**Marker: `STEP66C4_BE3_C_AUTHORIZED_REPLAY_VERIFY: PASS` (PO-authorized; same feature branch,
+distinct commit). IMPLEMENTED / SELF-VERIFIED; NOT MERGED / NOT DEPLOYED / NOT ACTIVATED / NOT
+RUNTIME VALIDATED. Draft PR #20. This completes BE3-A + BE3-B + BE3-C as one implementation flow.**
+
+- **What.** Two-person-controlled dead-event replay on top of BE3-A/B: migration 034
+  (`replay_requests`, additive durable request entity), `replay_request_model/repository/service`,
+  and the `/operations/replay-requests` API (create/get/authorize/reject/cancel), all
+  DISABLED-BY-DEFAULT.
+- **Flow.** Operator requests → Approver authorizes/rejects (requester != approver) → durable
+  authorization outcome (BE3-A, reused UNCHANGED with `action_type='replay'`) → Service Identity
+  consumes → the internal transaction-aware `replay_dead_row` adapter requeues the SAME dead event
+  (dead → pending) → durable audit evidence. No real `replay_dead` call in any shared runtime.
+- **New transaction-aware replay adapter.** The existing `ClarificationOutboxRelay.replay_dead`
+  (BE1/BE2) always owns/commits its own transaction, so it cannot compose atomically with an
+  authorization consume. `replay_request_repository.replay_dead_row` is a NEW function with the
+  SAME guard/attempts-preserving semantics that runs inside the CALLER's transaction instead —
+  the existing relay method is unchanged and untouched.
+- **Resource-state-version.** No new column: a replay request snapshots
+  `f"{dead_at.isoformat()}:{attempts}"` — the "dead episode" composite, unique per pending→dead
+  transition and frozen while dead — re-validated at authorize/execute; a stale snapshot is rejected
+  with no side effect. Documented equivalence to a dedicated version column in the contract record.
+- **Actors.** Operator requests/cancels-own; Approver (`reviewer_approver`/`platform_admin`,
+  canonical TASK_ROLES, no second RBAC) authorizes/rejects with requester != approver enforced by
+  BOTH the policy and the DB `chk_rra_replay_two_person` constraint (unchanged from BE3-A); Service
+  Identity only consumes + executes (no endpoint). Production-effect is derived SERVER-SIDE from the
+  event's owning task's own `production_effect` column — never trusted from request input.
+- **Destination readiness (mandatory).** `execute_authorized_replay` requires an injectable readiness
+  check; the DEFAULT provider reports EVERY destination `not_configured` (neither the BE2 audit relay
+  nor any orchestrator-command consumer is activated anywhere), so real execution is structurally
+  blocked today independent of the feature gate. A blocked attempt does not consume, does not mutate
+  the dead row, and does not change the request's state (stays `authorized`, retryable later) — only
+  a `replay.execution_blocked` audit row is written.
+- **Rate limiting.** Server-side, DB-derived, bounded, fail-closed: max 3 successful replays per
+  event / 24h, max 10 requests per actor / 24h (both configurable, both reject an invalid/
+  out-of-range value rather than silently clamp). No role bypasses the cap at the policy layer.
+- **Composability fix.** `authorization_service.request_authorization`'s `create_request` now runs
+  inside its own savepoint (`async with conn.transaction():`, promoted to a SAVEPOINT when nested) —
+  without this, a concurrent loser's `UniqueViolationError` would leave the CALLER's outer
+  transaction aborted, and the existing recovery re-query would itself raise
+  `InFailedSQLTransactionError`. Resume never hit this (a pre-authorization claim gate on the
+  clarification avoids it structurally); replay has no equivalent column on the merged outbox table,
+  so this fix was required. Backward-compatible; changes no successful-path behavior.
+- **Tests.** 27 real-PG BE3-C tests pass (0 skipped) + 5 DB-less; backend regression 253 passed / 5
+  skipped (pre-existing Redis-dependent BE2 tests). Two BE1/BE1-R1 outbox-producer guards and the
+  BE2-R1 replay_dead-caller guard were EXTENDED (not weakened) for the new authorized adapter/caller;
+  prose-only literal-token false positives were REWORDED (BE3-A precedent), not allowlisted.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after
+  (twice — dev run + a final confirmation on the exact committed/formatted bytes); shared stack
+  untouched both times.
+- **Gate.** No real `replay_dead` call in any shared runtime, no event publish, no BE2 relay/consumer
+  activation, no shared migration/deployment, no frontend, no public execute endpoint.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged. BE3-A + BE3-B + BE3-C are now all
+  complete (self-verified) on this branch — the combined independent **BE3-R** security/transaction
+  review over all three is the next required gate (see
+  `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-abc-to-combined-review-handoff.md`),
+  followed by BE3-M (non-squash merge) only after separate explicit PO authorization.
+
+## Step 66C.4-BE3-R — Combined Independent Security/Authorization/Transaction Review
+
+**Verdict: `BE3_TECHNICAL_VERDICT: PASS`** (code-merge readiness of a disabled-by-default foundation
+only). Conducted on a separate branch (`review/66c4-be3-combined-security-transaction` @ `5626403`,
+never merged into this feature branch) by an independent reviewer with no access to this branch's
+implementation reasoning, over `5745ab7..6323972`. No Critical/High finding; every no-compromise
+property (authorization single-use/CAS, scope isolation, Policy-Authority unforgeability, resume
+transactions, command routing, replay two-person control, transaction/rollback completeness, the
+dead-episode state-version's determinism) independently re-derived and re-tested — 87+75+16 tests
+passed on isolated ephemeral PostgreSQL 16 + Redis 7. Two Medium findings recorded as mandatory
+activation preconditions (not merge blockers): **M-1** (`production_approval_reference` checked only
+for non-emptiness, not resolved to a real approval) and **L-1** (per-actor replay rate cap non-locking,
+can overshoot under a concurrent burst). Full detail:
+`docs/contracts/66c4-reminder-expiry-controlled-resume/be3-combined-independent-review.md` (fetched
+from the review branch). Next: BE3-R1 findings-closure (below), then explicit PO authorization for
+BE3-M.
+
+## Step 66C.4-BE3-R1 — Required Findings Remediation (M-1, L-1)
+
+**Marker: `STEP66C4_BE3_R1_FINDINGS_REMEDIATION_VERIFY: PASS`. IMPLEMENTED / SELF-VERIFIED; NOT
+MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR #20.**
+
+- **What.** Closes the two Medium findings from the BE3-R combined independent review.
+- **M-1 (production approval reference resolution).** Preflight found NO existing table in this
+  codebase models a production-effect approval bound to BE3's team/project/resource/action
+  (`human_approval_policies` targets a different concern — LLM proposal/auto-fix grants;
+  `operator_action_requests` has no team/project columns) — recorded as an architecture blocker per
+  the operator's own stop condition rather than faked shut. The Product Owner then authorized a new
+  dedicated registry after a short planning checkpoint
+  (`be3-r1-m1-production-approval-contract.md`) that recorded the derivable design (approver roles =
+  {`reviewer_approver`,`platform_admin`}, cited from `ai-team-work-rbac-blueprint.md` §3's "Approve /
+  reject gated action" row — the same pair replay already uses) and surfaced three genuine open
+  decisions, answered 2026-07-28: **resource-scoped + single-use** (not task-scoped/reusable), the
+  **same 1s–24h validity bound** as everywhere else in BE3, state-version binding **N/A** (inherits
+  the bound authorization's own staleness protection). Built: migration 035
+  (`production_action_approvals`, additive), `production_approval_model/repository/service.py`, and a
+  transaction-aware `resolve_and_consume_approval` wired into the ONE shared
+  `authorization_service.consume()` used by BOTH resume and replay — a missing/invalid/unknown/
+  revoked/expired/already-consumed/wrong-action/wrong-resource/wrong-scope/stale-version reference is
+  now REJECTED (never just checked non-empty), and a post-approval-consume authorization CAS failure
+  raises to force a full rollback (mirrors BE3-C's own `replay_dead_row` post-consume guard pattern).
+  No public grant/revoke HTTP endpoint in this stage (internal-service-only, explicit scope boundary).
+  A pre-existing, previously-unflagged, OUT-OF-SCOPE gap is noted for visibility: resume's
+  `production_effect` flag itself (unlike replay's) is still client-supplied, not server-derived.
+- **L-1 (replay rate-limit concurrency).** The per-actor cap now uses a PostgreSQL
+  transaction-scoped advisory lock (`pg_advisory_xact_lock`, keyed on team_id+project_id+actor_id,
+  acquired before any row lock for a consistent lock order) to serialize the check-then-insert
+  sequence, closing the overshoot. Also closed a related, previously-unflagged gap: the count was
+  GLOBAL per-actor with no team/project scoping at all — it is now scoped by
+  `(team_id, project_id, requested_by)`, with a supporting index added to the still-unapplied
+  migration 034 in place.
+- **Tests.** New `tests/test_step66c4_be3_r1_findings_remediation.py`: 17 passed, 0 skipped (real
+  PostgreSQL 16). Two pre-existing tests that had encoded the M-1 gap as expected/documented behavior
+  were UPDATED (not weakened) to assert the corrected fail-closed behavior:
+  `test_step66c4_be3_a_authorization_foundation.py::test_pg_production_gate_blocks_consume_without_reference`
+  and `test_step66c4_be3_b_operator_resume.py::test_pg_production_effect_independently_gated`.
+  Full regression (BE1/BE1-R1/BE2-R1 + BE3-A/B/B-C1/C + BE3-R1): 179 passed / 0 skipped / 0 failed.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after;
+  shared stack untouched. Migration 035 up/down/reapply independently verified.
+- **Gate.** `be3-runtime-activation-gate.md` §A.0 records both closures. No shared migration, no
+  deployment, no activation, no new HTTP endpoint, no frontend. `production_executed_true_count` = 0.
+  Draft PR #20 NOT merged. Next: explicit Product Owner authorization for BE3-M (non-squash merge).
+
+## Step 66C.4-BE3-R2 — Resume Production-Effect Authoritative Closure (finding R2-1)
+
+**Marker: `STEP66C4_BE3_R2_RESUME_PRODUCTION_EFFECT_VERIFY: PASS`. IMPLEMENTED / SELF-VERIFIED; NOT
+MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR #20.**
+
+- **What.** Closes finding R2-1, noted during BE3-R1 for visibility but out of that stage's scope:
+  resume's `production_effect` classification was still client-supplied (`ResumeRequestCreate.
+  production_effect` in the request body), unlike replay's (already server-derived, BE3-R-reviewed
+  as sound).
+- **Preflight.** Authoritative source confirmed: `operator_tasks.production_effect` (`BOOLEAN NOT
+  NULL DEFAULT false`, migration 029), read via the SAME `lock_task` row lock resume already takes
+  for eligibility. `operator_clarification_requests.task_id NOT NULL REFERENCES operator_tasks(id)`
+  is the sole clarification→task relationship — the resume API never accepts a client-supplied
+  `task_id`, so the owning task is always resolved via this FK. All three resume entry points
+  (request/authorize/consume) previously read production_effect from client input or nowhere at
+  all; now all three derive it from the SAME source via one shared function.
+- **Fix.** `resume_request_model.authoritative_production_effect(task_row)` derives the
+  classification fail-closed (defaults to production-effect if ever unresolvable, mirroring
+  replay's convention). `resume_service.request_resume` no longer accepts `production_effect` as a
+  parameter AT ALL (removed, not merely ignored) — it is computed immediately after the task row
+  lock and passed to the BE3-A authorization. `resource_state_version` now takes `(clarification,
+  task)` and folds the production-effect classification into its own snapshot, so `authorize_resume`
+  and `prepare_execution` (which already re-lock clarification+task for eligibility) automatically
+  reject a stale/changed classification via the EXISTING `stale_state` CAS path — no new revalidation
+  code was needed beyond updating the version formula and its call sites.
+  `apps/orchestrator/src/operations_resume_api.py`'s `ResumeRequestCreate` no longer has a
+  `production_effect` field (Pydantic silently drops an unrecognized client-sent key by default).
+  The BE3-R1 production-approval resolver (`authorization_service.consume` ->
+  `production_action_approvals`) is reused completely unmodified.
+- **No migration required.** `resource_state_version` is a recomputed TEXT snapshot; folding in an
+  additional authoritative fact needed no schema change.
+- **Grant path (re-confirmed, not re-implemented).** `production_approval_service.grant_production_
+  approval`/`revoke_production_approval` remain internal-service-only (no HTTP router); RBAC gated to
+  canonical `{reviewer_approver, platform_admin}`; a Service Identity's role string is never in that
+  set regardless of its identity flag.
+- **Tests.** New `tests/test_step66c4_be3_r2_resume_production_effect.py`: 14 passed, 0 skipped (10
+  real-PG + 4 DB-less) — covers client-downgrade/upgrade-has-no-effect, three state-change-race
+  scenarios (non-production→production before authorize/consume; production→non-production before
+  consume), production-approval integration (blocked/valid/wrong-resource/stale-version), scope
+  isolation (cross-project masked, NULL fail-closed), and a same-transaction rollback proving an
+  outbox-insert failure undoes BOTH the BE3 authorization consume AND the production approval
+  consume together. Two pre-existing tests (BE3-B, BE3-R1) that constructed a resume via the
+  now-removed request parameter were UPDATED (not weakened) to seed the owning task's own column
+  instead. Full regression (BE1/BE1-R1/BE2-R1 + BE3-A/B/B-C1/C + BE3-R1 + BE3-R2): 193 passed / 0
+  skipped / 0 failed. ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16
+  destroyed after; shared stack untouched.
+- **Gate.** `be3-runtime-activation-gate.md` §A.1 records this closure.
+  `production_executed_true_count` = 0. No shared migration, no deployment, no activation, no new
+  HTTP endpoint. Draft PR #20 NOT merged. Per the original combined review's own handoff instruction,
+  the next required gate is a **focused closure by the ORIGINAL independent reviewer** (not a new
+  full review, not this implementation session) over the complete finding set — M-1, L-1 (BE3-R1)
+  and R2-1 (BE3-R2) — before BE3-M (non-squash merge), which itself still requires separate explicit
+  Product Owner authorization.

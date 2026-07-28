@@ -1,0 +1,333 @@
+"""Step 66C.4-BE3-A -- durable resume/replay authorization repository.
+
+Transaction-aware asyncpg repository over resume_replay_authorizations (migration 032). Every state
+transition is a guarded CAS UPDATE ... RETURNING that returns the row on success and None when the
+guard did not hold (the CAS lost). PostgreSQL statement_timestamp() is the authoritative clock for
+validity -- never a Python local clock.
+
+Scope enforcement (Step 66C.4-BE3-A-C1 / -C2): every actor-facing read/transition takes the actor's
+team/project scope and binds it into the SQL predicate itself, so a DIRECT repository call cannot
+bypass the policy layer. The scope predicate is EXACT null-safe equality (Step 66C.4-BE3-A-C2 --
+NULL is never a wildcard):
+  team_id IS NOT DISTINCT FROM $scope_team
+  AND project_id IS NOT DISTINCT FROM $scope_project
+Since team_id/project_id are NOT NULL on the row, a NULL caller scope matches nothing (fail-closed),
+and a mismatched scope matches nothing. A cross-scope or NULL-scope call therefore affects 0 rows /
+reads nothing (the caller maps that to not_found_masked). `expire_due_authorizations` is the only
+unscoped operation: it is a non-actor-facing maintenance scan, not an actor read/transition.
+
+This module performs NO resume/replay execution, calls NO dead-outbox replay adapter, exposes NO
+HTTP route, and starts NO scheduler or loop. `expire_due_authorizations` is a one-shot repository
+operation for a caller/test to invoke; it is not a runtime loop.
+
+All methods take the CALLER's asyncpg connection and run inside the caller's transaction.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any
+
+import asyncpg
+
+# The isolation predicate, shared by every actor-facing query. $A = scope_team, $B = scope_project.
+# EXACT null-safe equality (Step 66C.4-BE3-A-C2): NULL is NOT a wildcard. team_id/project_id are
+# NOT NULL on the row, so a NULL caller scope matches no row (fail-closed). Params are cast to
+# ::uuid so a NULL bind is not type-ambiguous.
+_SCOPE = "team_id IS NOT DISTINCT FROM {a}::uuid " "AND project_id IS NOT DISTINCT FROM {b}::uuid"
+
+
+def _row(record: asyncpg.Record | None) -> dict[str, Any] | None:
+    return dict(record) if record is not None else None
+
+
+async def db_now(conn: asyncpg.Connection) -> datetime:
+    """The DB statement clock -- the authoritative 'now' for state projection/validity."""
+    return await conn.fetchval("SELECT statement_timestamp()")
+
+
+async def create_request(
+    conn: asyncpg.Connection,
+    *,
+    action_type: str,
+    resource_type: str,
+    resource_id: str,
+    requested_by: str,
+    requested_role: str,
+    resource_state_version: str,
+    expires_at: datetime,
+    idempotency_key: str,
+    team_id: str | None = None,
+    project_id: str | None = None,
+    production_effect: bool = False,
+    production_approval_reference: str | None = None,
+) -> dict[str, Any]:
+    """Insert a new pending authorization request. The uq_rra_active_request partial unique index
+    rejects a second ACTIVE request for the same (action_type, resource_id); the idempotency_key
+    unique constraint rejects a duplicate key. Both surface as asyncpg.UniqueViolationError."""
+    record = await conn.fetchrow(
+        """
+        INSERT INTO resume_replay_authorizations
+          (action_type, resource_type, resource_id, team_id, project_id, requested_by,
+           requested_role, resource_state_version, expires_at, idempotency_key,
+           production_effect, production_approval_reference)
+        VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        RETURNING *
+        """,
+        action_type,
+        resource_type,
+        resource_id,
+        team_id,
+        project_id,
+        requested_by,
+        requested_role,
+        resource_state_version,
+        expires_at,
+        idempotency_key,
+        production_effect,
+        production_approval_reference,
+    )
+    assert record is not None  # INSERT ... RETURNING always yields a row on success
+    return dict(record)
+
+
+async def get_authorization(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Read one authorization, scoped. A cross-scope id reads nothing (None)."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            SELECT * FROM resume_replay_authorizations
+            WHERE authorization_id=$1 AND {_SCOPE.format(a="$2", b="$3")}
+            """,
+            authorization_id,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def get_active_by_resource(
+    conn: asyncpg.Connection,
+    *,
+    action_type: str,
+    resource_id: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Read the single active authorization for a resource, scoped. A NULL/cross scope reads
+    nothing (the scope predicate is exact null-safe equality)."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            SELECT * FROM resume_replay_authorizations
+            WHERE action_type=$1 AND resource_id=$2
+              AND decision IN ('pending','authorized')
+              AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+              AND {_SCOPE.format(a="$3", b="$4")}
+            """,
+            action_type,
+            resource_id,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def approve(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    decided_by: str,
+    decided_role: str,
+    reason_code: str | None,
+    policy_result: str,
+    policy_version: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """CAS pending -> authorized, scoped. The chk_rra_replay_two_person DB constraint additionally
+    rejects a replay approval by the requester (defense in depth behind the policy service)."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            UPDATE resume_replay_authorizations
+            SET decision='authorized', decided_by=$2, decided_role=$3,
+                decided_at=statement_timestamp(), decision_reason_code=$4,
+                policy_result=$5, policy_version=$6, updated_at=statement_timestamp()
+            WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
+              AND {_SCOPE.format(a="$7", b="$8")}
+            RETURNING *
+            """,
+            authorization_id,
+            decided_by,
+            decided_role,
+            reason_code,
+            policy_result,
+            policy_version,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def reject(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    decided_by: str,
+    decided_role: str,
+    reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """CAS pending -> rejected, scoped."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            UPDATE resume_replay_authorizations
+            SET decision='rejected', decided_by=$2, decided_role=$3,
+                decided_at=statement_timestamp(), decision_reason_code=$4,
+                updated_at=statement_timestamp()
+            WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
+              AND {_SCOPE.format(a="$5", b="$6")}
+            RETURNING *
+            """,
+            authorization_id,
+            decided_by,
+            decided_role,
+            reason_code,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def cancel(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    decided_by: str,
+    decided_role: str,
+    reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """CAS pending -> canceled, scoped."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            UPDATE resume_replay_authorizations
+            SET decision='canceled', decided_by=$2, decided_role=$3,
+                decided_at=statement_timestamp(), decision_reason_code=$4,
+                updated_at=statement_timestamp()
+            WHERE authorization_id=$1 AND decision='pending' AND expired_at IS NULL
+              AND {_SCOPE.format(a="$5", b="$6")}
+            RETURNING *
+            """,
+            authorization_id,
+            decided_by,
+            decided_role,
+            reason_code,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def revoke(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    revoked_by: str,
+    reason_code: str | None,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """CAS authorized (unconsumed/unrevoked/unexpired) -> revoked, scoped. A consumed authorization
+    can never be revoked (guarded by consumed_at IS NULL)."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            UPDATE resume_replay_authorizations
+            SET revoked_at=statement_timestamp(), revoked_by=$2, revocation_reason_code=$3,
+                updated_at=statement_timestamp()
+            WHERE authorization_id=$1 AND decision='authorized'
+              AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+              AND {_SCOPE.format(a="$4", b="$5")}
+            RETURNING *
+            """,
+            authorization_id,
+            revoked_by,
+            reason_code,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def consume(
+    conn: asyncpg.Connection,
+    authorization_id: str,
+    *,
+    consumed_by: str,
+    resource_state_version: str,
+    scope_team_id: str | None = None,
+    scope_project_id: str | None = None,
+) -> dict[str, Any] | None:
+    """Single-use atomic CAS, scoped. Succeeds only when the authorization is authorized, unconsumed,
+    unrevoked, unexpired (expired_at IS NULL AND expires_at > statement_timestamp()), its
+    resource_state_version still matches, AND it is within the caller's scope. Returns the row on
+    success, None on any failed guard. Under concurrency EXACTLY ONE consume wins (this is a single
+    DB CAS, not distributed exactly-once)."""
+    return _row(
+        await conn.fetchrow(
+            f"""
+            UPDATE resume_replay_authorizations
+            SET consumed_at=statement_timestamp(), consumed_by=$2, updated_at=statement_timestamp()
+            WHERE authorization_id=$1 AND decision='authorized'
+              AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+              AND expires_at > statement_timestamp()
+              AND resource_state_version=$3
+              AND {_SCOPE.format(a="$4", b="$5")}
+            RETURNING *
+            """,
+            authorization_id,
+            consumed_by,
+            resource_state_version,
+            scope_team_id,
+            scope_project_id,
+        )
+    )
+
+
+async def expire_due_authorizations(conn: asyncpg.Connection, *, limit: int = 500) -> int:
+    """One-shot: mark unresolved authorizations whose deadline has passed as expired (durable
+    terminal marker). NOT a scheduler/loop and NOT actor-facing (no scope filter). Returns the
+    number of rows expired."""
+    tag = await conn.execute(
+        """
+        UPDATE resume_replay_authorizations
+        SET expired_at=statement_timestamp(), updated_at=statement_timestamp()
+        WHERE decision IN ('pending','authorized')
+          AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+          AND expires_at <= statement_timestamp()
+          AND authorization_id IN (
+            SELECT authorization_id FROM resume_replay_authorizations
+            WHERE decision IN ('pending','authorized')
+              AND consumed_at IS NULL AND revoked_at IS NULL AND expired_at IS NULL
+              AND expires_at <= statement_timestamp()
+            LIMIT $1
+          )
+        """,
+        limit,
+    )
+    try:
+        return int(tag.split()[-1])
+    except (ValueError, IndexError, AttributeError):
+        return 0
