@@ -4,6 +4,50 @@
 > defines the prerequisites that must ALL be satisfied, and explicitly Product-Owner-authorized,
 > before any BE3 resume/replay capability is ever turned on.**
 
+## A.0 BE3-R1 findings-closure evidence (added Step 66C.4-BE3-R1)
+
+The BE3-R combined independent review recorded two Medium findings as **mandatory activation
+preconditions** (not merge blockers for the disabled foundation itself). Both are now CLOSED at the
+code level; this does not itself authorize activation -- items 1-11 below remain required in full.
+
+```text
+Finding M-1 (production approval reference resolution):
+  IMPLEMENTED:              production_action_approvals registry (migration 035) + a
+                             transaction-aware resolve_and_consume_approval resolver
+                             (production_approval_repository.py), wired into the ONE shared
+                             authorization_service.consume() integration point used by BOTH the
+                             resume and replay consume paths.
+  TESTED:                   tests/test_step66c4_be3_r1_findings_remediation.py -- missing/unknown/
+                             invalid reference, revoked, expired, already-consumed, wrong team/
+                             project/resource/action, stale resource-state-version, concurrent
+                             revoke-vs-consume (exactly one safe outcome), end-to-end through BOTH
+                             resume and replay, real PostgreSQL 16.
+  TRANSACTIONALLY VERIFIED: the approval row is locked (FOR UPDATE) and validated in the SAME
+                             transaction as the authorization consume; a post-approval-consume
+                             authorization CAS failure raises to force a full rollback (no
+                             half-mutated state).
+  FAIL-CLOSED:               a missing, unparsable, unknown, revoked, expired, already-consumed,
+                             wrong-scope/resource/action, or stale-version reference is REJECTED --
+                             the authorization is never consumed and no command/replay mutation
+                             occurs.
+
+Finding L-1 (per-actor replay rate-limit concurrency):
+  CONCURRENCY-SAFE:          a PostgreSQL transaction-scoped advisory lock
+                             (pg_advisory_xact_lock, keyed on team_id+project_id+actor_id) serializes
+                             the count-then-insert sequence in replay_service.request_replay; the
+                             count itself is now scoped by (team_id, project_id, requested_by), not
+                             a global per-actor count.
+  POSTGRESQL-VERIFIED:       tests/test_step66c4_be3_r1_findings_remediation.py -- 20-way and 50-way
+                             concurrent bursts never exceed the configured hard cap, cross-team/
+                             cross-project/cross-actor isolation, idempotent-retry-not-double-
+                             counted, rolling-window expiry, platform_admin cannot bypass, invalid
+                             config fails closed.
+```
+
+Design record: `be3-r1-m1-production-approval-contract.md` (planning checkpoint: derivable design
+decisions cited from canonical governance, plus the three genuine Product Owner decisions this
+required, and their answers). Remediation record: `be3-r1-required-findings-remediation-record.md`.
+
 ## A. Activation prerequisites (ALL required before any activation)
 
 ```text

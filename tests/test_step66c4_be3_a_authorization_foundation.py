@@ -203,6 +203,7 @@ async def _apply(conn, name: str) -> None:
 
 
 async def _reset_and_migrate(conn) -> None:
+    await conn.execute("DROP TABLE IF EXISTS production_action_approvals CASCADE;")
     await conn.execute("DROP TABLE IF EXISTS resume_replay_authorizations CASCADE;")
     await conn.execute(
         "DROP TABLE IF EXISTS clarification_lifecycle_outbox, operator_clarification_requests, "
@@ -214,6 +215,7 @@ async def _reset_and_migrate(conn) -> None:
         "030_workroom_clarification_foundation.sql",
         "031_clarification_lifecycle_outbox_foundation.sql",
         "032_be3_resume_replay_authorization.sql",
+        "035_be3_production_action_approvals.sql",
     ):
         await _apply(conn, name)
 
@@ -727,7 +729,10 @@ def test_pg_production_gate_blocks_consume_without_reference() -> None:
             )
             assert blocked.result_kind == "production_approval_required"
             assert (await r.get_authorization(conn, aid, **SCOPE_A))["consumed_at"] is None
-            # with a reference present, consume proceeds (BE3-A does not validate the ref itself)
+
+            # Step 66C.4-BE3-R1 (finding M-1 closure): a bogus/non-existent reference is REJECTED,
+            # never silently accepted -- BE3-A/R1 now resolves the reference against the
+            # authoritative production_action_approvals registry, not just checks non-emptiness.
             b = await _new_request(
                 conn,
                 key="prod2",
@@ -746,8 +751,95 @@ def test_pg_production_gate_blocks_consume_without_reference() -> None:
                 policy_version="p1",
                 **SCOPE_A,
             )
-            ok = await s.consume(conn, bid, actor=svc, actor_scope=sc, resource_state_version="v1")
+            fake = await s.consume(
+                conn, bid, actor=svc, actor_scope=sc, resource_state_version="v1"
+            )
+            assert not fake.ok and fake.result_kind == "production_approval_required"
+            assert fake.reason_code == "production_approval_invalid_reference"
+            assert (await r.get_authorization(conn, bid, **SCOPE_A))["consumed_at"] is None
+
+            # WITH a REAL, resource-bound, granted production approval -> consume proceeds and the
+            # approval is durably consumed alongside it (single-use).
+            from shared.sdk.tasks import production_approval_service as approvals
+
+            c_resource_id = str(uuid.uuid4())
+            async with conn.transaction():
+                grant = await approvals.grant_production_approval(
+                    conn,
+                    actor=p.Actor("carol", "reviewer_approver"),
+                    actor_scope=sc,
+                    action_type="replay",
+                    resource_type="outbox_event",
+                    resource_id=c_resource_id,
+                    resource_state_version="v3",
+                    expires_at=_future(),
+                    idempotency_key=f"grant:{uuid.uuid4()}",
+                )
+            assert grant.ok and grant.approval is not None, grant.reason_code
+            approval_id = str(grant.approval["approval_id"])
+
+            c = await _new_request(
+                conn,
+                key="prod3",
+                resource_id=c_resource_id,
+                production=True,
+                state_version="v3",
+                prod_ref=approval_id,
+            )
+            cid = str(c["authorization_id"])
+            await r.approve(
+                conn,
+                cid,
+                decided_by="bob",
+                decided_role="reviewer_approver",
+                reason_code="policy_allow",
+                policy_result="allow",
+                policy_version="p1",
+                **SCOPE_A,
+            )
+            # a stale resource_state_version at consume time is ALSO rejected by the approval CAS
+            stale = await s.consume(
+                conn, cid, actor=svc, actor_scope=sc, resource_state_version="v-wrong"
+            )
+            assert not stale.ok and stale.reason_code in (
+                "production_approval_stale_state",
+                "stale_state",
+            )
+            ok = await s.consume(conn, cid, actor=svc, actor_scope=sc, resource_state_version="v3")
             assert ok.ok and ok.state == "consumed"
+            approval_row = await conn.fetchrow(
+                "SELECT state, consumed_by_authorization_id FROM production_action_approvals "
+                "WHERE approval_id=$1",
+                uuid.UUID(approval_id),
+            )
+            assert approval_row["state"] == "consumed"
+            assert str(approval_row["consumed_by_authorization_id"]) == cid
+
+            # the SAME approval cannot back a second consume (single-use)
+            d = await _new_request(
+                conn,
+                key="prod4",
+                resource_id=c_resource_id,
+                production=True,
+                state_version="v3",
+                prod_ref=approval_id,
+            )
+            did = str(d["authorization_id"])
+            await r.approve(
+                conn,
+                did,
+                decided_by="bob",
+                decided_role="reviewer_approver",
+                reason_code="policy_allow",
+                policy_result="allow",
+                policy_version="p1",
+                **SCOPE_A,
+            )
+            reused = await s.consume(
+                conn, did, actor=svc, actor_scope=sc, resource_state_version="v3"
+            )
+            assert not reused.ok
+            assert reused.reason_code == "production_approval_already_consumed"
         finally:
             await conn.close()
 

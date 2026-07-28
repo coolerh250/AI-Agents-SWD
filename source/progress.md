@@ -16205,3 +16205,66 @@ RUNTIME VALIDATED. Draft PR #20. This completes BE3-A + BE3-B + BE3-C as one imp
   review over all three is the next required gate (see
   `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-abc-to-combined-review-handoff.md`),
   followed by BE3-M (non-squash merge) only after separate explicit PO authorization.
+
+## Step 66C.4-BE3-R — Combined Independent Security/Authorization/Transaction Review
+
+**Verdict: `BE3_TECHNICAL_VERDICT: PASS`** (code-merge readiness of a disabled-by-default foundation
+only). Conducted on a separate branch (`review/66c4-be3-combined-security-transaction` @ `5626403`,
+never merged into this feature branch) by an independent reviewer with no access to this branch's
+implementation reasoning, over `5745ab7..6323972`. No Critical/High finding; every no-compromise
+property (authorization single-use/CAS, scope isolation, Policy-Authority unforgeability, resume
+transactions, command routing, replay two-person control, transaction/rollback completeness, the
+dead-episode state-version's determinism) independently re-derived and re-tested — 87+75+16 tests
+passed on isolated ephemeral PostgreSQL 16 + Redis 7. Two Medium findings recorded as mandatory
+activation preconditions (not merge blockers): **M-1** (`production_approval_reference` checked only
+for non-emptiness, not resolved to a real approval) and **L-1** (per-actor replay rate cap non-locking,
+can overshoot under a concurrent burst). Full detail:
+`docs/contracts/66c4-reminder-expiry-controlled-resume/be3-combined-independent-review.md` (fetched
+from the review branch). Next: BE3-R1 findings-closure (below), then explicit PO authorization for
+BE3-M.
+
+## Step 66C.4-BE3-R1 — Required Findings Remediation (M-1, L-1)
+
+**Marker: `STEP66C4_BE3_R1_FINDINGS_REMEDIATION_VERIFY: PASS`. IMPLEMENTED / SELF-VERIFIED; NOT
+MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR #20.**
+
+- **What.** Closes the two Medium findings from the BE3-R combined independent review.
+- **M-1 (production approval reference resolution).** Preflight found NO existing table in this
+  codebase models a production-effect approval bound to BE3's team/project/resource/action
+  (`human_approval_policies` targets a different concern — LLM proposal/auto-fix grants;
+  `operator_action_requests` has no team/project columns) — recorded as an architecture blocker per
+  the operator's own stop condition rather than faked shut. The Product Owner then authorized a new
+  dedicated registry after a short planning checkpoint
+  (`be3-r1-m1-production-approval-contract.md`) that recorded the derivable design (approver roles =
+  {`reviewer_approver`,`platform_admin`}, cited from `ai-team-work-rbac-blueprint.md` §3's "Approve /
+  reject gated action" row — the same pair replay already uses) and surfaced three genuine open
+  decisions, answered 2026-07-28: **resource-scoped + single-use** (not task-scoped/reusable), the
+  **same 1s–24h validity bound** as everywhere else in BE3, state-version binding **N/A** (inherits
+  the bound authorization's own staleness protection). Built: migration 035
+  (`production_action_approvals`, additive), `production_approval_model/repository/service.py`, and a
+  transaction-aware `resolve_and_consume_approval` wired into the ONE shared
+  `authorization_service.consume()` used by BOTH resume and replay — a missing/invalid/unknown/
+  revoked/expired/already-consumed/wrong-action/wrong-resource/wrong-scope/stale-version reference is
+  now REJECTED (never just checked non-empty), and a post-approval-consume authorization CAS failure
+  raises to force a full rollback (mirrors BE3-C's own `replay_dead_row` post-consume guard pattern).
+  No public grant/revoke HTTP endpoint in this stage (internal-service-only, explicit scope boundary).
+  A pre-existing, previously-unflagged, OUT-OF-SCOPE gap is noted for visibility: resume's
+  `production_effect` flag itself (unlike replay's) is still client-supplied, not server-derived.
+- **L-1 (replay rate-limit concurrency).** The per-actor cap now uses a PostgreSQL
+  transaction-scoped advisory lock (`pg_advisory_xact_lock`, keyed on team_id+project_id+actor_id,
+  acquired before any row lock for a consistent lock order) to serialize the check-then-insert
+  sequence, closing the overshoot. Also closed a related, previously-unflagged gap: the count was
+  GLOBAL per-actor with no team/project scoping at all — it is now scoped by
+  `(team_id, project_id, requested_by)`, with a supporting index added to the still-unapplied
+  migration 034 in place.
+- **Tests.** New `tests/test_step66c4_be3_r1_findings_remediation.py`: 17 passed, 0 skipped (real
+  PostgreSQL 16). Two pre-existing tests that had encoded the M-1 gap as expected/documented behavior
+  were UPDATED (not weakened) to assert the corrected fail-closed behavior:
+  `test_step66c4_be3_a_authorization_foundation.py::test_pg_production_gate_blocks_consume_without_reference`
+  and `test_step66c4_be3_b_operator_resume.py::test_pg_production_effect_independently_gated`.
+  Full regression (BE1/BE1-R1/BE2-R1 + BE3-A/B/B-C1/C + BE3-R1): 179 passed / 0 skipped / 0 failed.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after;
+  shared stack untouched. Migration 035 up/down/reapply independently verified.
+- **Gate.** `be3-runtime-activation-gate.md` §A.0 records both closures. No shared migration, no
+  deployment, no activation, no new HTTP endpoint, no frontend. `production_executed_true_count` = 0.
+  Draft PR #20 NOT merged. Next: explicit Product Owner authorization for BE3-M (non-squash merge).

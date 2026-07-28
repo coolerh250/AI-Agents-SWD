@@ -319,13 +319,42 @@ async def expire_due_replay_requests(
 # ---- Rate limiting (server-side, DB-derived; bounded read-only COUNT queries) -------------------
 
 
+async def acquire_actor_rate_limit_lock(
+    conn: asyncpg.Connection, *, team_id: str, project_id: str, actor_id: str
+) -> None:
+    """Step 66C.4-BE3-R1 (finding L-1 closure): serialize the check-then-insert rate-limit sequence
+    for one (team_id, project_id, actor_id) key within the CALLER's transaction. A PostgreSQL
+    transaction-level advisory lock (`pg_advisory_xact_lock`, auto-released at commit/rollback, never
+    held across a connection reuse) blocks a concurrent caller with the SAME key until this
+    transaction ends, so `count_recent_requests_by_actor` + the eventual INSERT below can never race
+    for that key -- a plain COUNT-then-INSERT with no lock can overshoot the cap under concurrency,
+    which is exactly finding L-1. A hash collision between two DIFFERENT keys can only cause extra
+    (harmless) serialization between unrelated actors/scopes; it can never loosen or merge their
+    caps, since the actual COUNT query below is still exactly scoped by (team_id, project_id,
+    actor_id). Must be called BEFORE any row lock in the caller (lock_outbox_event etc.) so every
+    call path acquires locks in the same order and cannot deadlock against itself."""
+    await conn.execute(
+        "SELECT pg_advisory_xact_lock(hashtextextended($1, 0))",
+        f"be3-replay-actor-rate:{team_id}:{project_id}:{actor_id}",
+    )
+
+
 async def count_recent_requests_by_actor(
-    conn: asyncpg.Connection, actor_id: str, *, window_hours: int
+    conn: asyncpg.Connection, actor_id: str, *, team_id: str, project_id: str, window_hours: int
 ) -> int:
+    """Count of replay requests BY THIS ACTOR, scoped to (team_id, project_id) (Step 66C.4-BE3-R1,
+    finding L-1) so cross-team/cross-project rate-limit statistics are isolated and never share a
+    budget. Counts every request row regardless of its later state (executed/canceled/rejected/
+    expired all count) -- the cap protects against replay-request STORMS, not just successful
+    replays, and an idempotent retry never adds a second row (uq_rpr_idempotency_key), so it is never
+    double-counted. Call only while holding acquire_actor_rate_limit_lock for the same key."""
     return await conn.fetchval(
         "SELECT count(*) FROM replay_requests "
-        "WHERE requested_by=$1 AND requested_at >= statement_timestamp() - ($2 || ' hours')::interval",
+        "WHERE requested_by=$1 AND team_id=$2::uuid AND project_id=$3::uuid "
+        "AND requested_at >= statement_timestamp() - ($4 || ' hours')::interval",
         actor_id,
+        team_id,
+        project_id,
         str(window_hours),
     )
 

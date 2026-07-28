@@ -92,6 +92,13 @@ CREATE INDEX IF NOT EXISTS idx_rpr_state ON replay_requests (state);
 CREATE INDEX IF NOT EXISTS idx_rpr_requested_by_requested_at
     ON replay_requests (requested_by, requested_at);
 
+-- Step 66C.4-BE3-R1 (finding L-1 closure): the per-actor rate-limit count is scoped by
+-- (team_id, project_id, requested_by) so cross-team/cross-project actor statistics are isolated
+-- (never share a budget) -- see acquire_actor_rate_limit_lock / count_recent_requests_by_actor in
+-- replay_request_repository.py.
+CREATE INDEX IF NOT EXISTS idx_rpr_scope_actor_requested_at
+    ON replay_requests (team_id, project_id, requested_by, requested_at);
+
 CREATE INDEX IF NOT EXISTS idx_rpr_event_executed_at
     ON replay_requests (outbox_event_id, executed_at) WHERE state = 'executed';
 

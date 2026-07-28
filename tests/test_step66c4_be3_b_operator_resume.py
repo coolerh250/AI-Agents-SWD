@@ -146,6 +146,7 @@ async def _apply(conn, name: str) -> None:
 
 
 async def _reset_and_migrate(conn) -> None:
+    await conn.execute("DROP TABLE IF EXISTS production_action_approvals CASCADE;")
     await conn.execute("DROP TABLE IF EXISTS resume_requests CASCADE;")
     await conn.execute("DROP TABLE IF EXISTS resume_replay_authorizations CASCADE;")
     await conn.execute(
@@ -159,6 +160,7 @@ async def _reset_and_migrate(conn) -> None:
         "031_clarification_lifecycle_outbox_foundation.sql",
         "032_be3_resume_replay_authorization.sql",
         "033_be3_resume_requests.sql",
+        "035_be3_production_action_approvals.sql",
     ):
         await _apply(conn, name)
 
@@ -218,6 +220,10 @@ def _op(principal: str = "alice", role: str = "agent_operator"):
 
 def _authority(principal: str = "policy-safety", role: str = "platform_admin"):
     return _policy().Actor(principal, role, is_policy_authority=True)
+
+
+def _approver(principal: str = "bob", role: str = "reviewer_approver"):
+    return _policy().Actor(principal, role)
 
 
 def _service_identity(principal: str = "svc"):
@@ -892,17 +898,80 @@ def test_pg_production_effect_independently_gated(monkeypatch) -> None:
                 )
             assert blocked.result_kind == "production_approval_required"
 
-            # WITH an approval reference -> consume proceeds
+            # Step 66C.4-BE3-R1 (finding M-1 closure): a bogus/non-existent reference is REJECTED,
+            # never silently accepted -- the reference is now resolved against the authoritative
+            # production_action_approvals registry, not just checked for non-emptiness.
             await _reset_and_migrate(conn)
-            _clar2, rid2 = await _authorized_request(
-                conn, s, monkeypatch, production=True, prod_ref="approval-123"
+            _clar_bad, rid_bad = await _authorized_request(
+                conn, s, monkeypatch, production=True, prod_ref="not-a-real-approval"
             )
+            _enable_command(monkeypatch)
+            async with conn.transaction():
+                bad = await s.prepare_execution(
+                    conn, rid_bad, actor=_service_identity(), actor_scope=_scope()
+                )
+            assert bad.result_kind == "production_approval_required"
+            assert bad.reason_code == "production_approval_invalid_reference"
+            auth = await conn.fetchrow(
+                "SELECT consumed_at FROM resume_replay_authorizations LIMIT 1"
+            )
+            assert auth["consumed_at"] is None
+
+            # WITH a REAL, resource-bound, granted production approval -> consume proceeds and the
+            # approval is durably consumed alongside it.
+            await _reset_and_migrate(conn)
+            from shared.sdk.tasks import production_approval_service as approvals
+
+            _enable_api(monkeypatch)
+            _t, clar2 = await _seed(conn)
+            clar_row = await conn.fetchrow(
+                "SELECT * FROM operator_clarification_requests WHERE id=$1", uuid.UUID(clar2)
+            )
+            state_version = _model().resource_state_version(dict(clar_row))
+            async with conn.transaction():
+                grant = await approvals.grant_production_approval(
+                    conn,
+                    actor=_approver(),
+                    actor_scope=_scope(),
+                    action_type="resume",
+                    resource_type="clarification",
+                    resource_id=clar2,
+                    resource_state_version=state_version,
+                    expires_at=await _future(conn),
+                    idempotency_key=f"grant:{uuid.uuid4()}",
+                )
+            assert grant.ok and grant.approval is not None, grant.reason_code
+            approval_id = str(grant.approval["approval_id"])
+
+            req2 = await _request(
+                conn,
+                s,
+                clar2,
+                key=f"x:{uuid.uuid4()}",
+                production_effect=True,
+                production_approval_reference=approval_id,
+            )
+            assert req2.ok, req2.reason_code
+            rid2 = str(req2.resume_request["resume_request_id"])
+            async with conn.transaction():
+                await s.authorize_resume(
+                    conn, rid2, actor=_authority(), actor_scope=_scope(), policy_version="v1"
+                )
             _enable_command(monkeypatch)
             async with conn.transaction():
                 ok = await s.prepare_execution(
                     conn, rid2, actor=_service_identity(), actor_scope=_scope()
                 )
             assert ok.ok and ok.state == "execution_pending"
+            approval_row = await conn.fetchrow(
+                "SELECT state, consumed_by_authorization_id FROM production_action_approvals "
+                "WHERE approval_id=$1",
+                uuid.UUID(approval_id),
+            )
+            assert approval_row["state"] == "consumed"
+            assert str(approval_row["consumed_by_authorization_id"]) == str(
+                req2.resume_request["authorization_id"]
+            )
         finally:
             await conn.close()
 

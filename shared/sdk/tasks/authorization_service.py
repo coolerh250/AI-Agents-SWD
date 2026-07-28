@@ -21,6 +21,7 @@ from typing import Any
 import asyncpg
 
 from shared.sdk.tasks import authorization_repository as repo
+from shared.sdk.tasks import production_approval_repository as approval_repo
 from shared.sdk.tasks.authorization_model import (
     build_audit_payload,
     project_state,
@@ -335,6 +336,43 @@ async def consume(
     )
     if not outcome.allowed:
         return _deny(outcome)
+
+    # Step 66C.4-BE3-R1 (finding M-1 closure): `evaluate()` above only checked that a reference is
+    # PRESENT (a cheap, pure, no-I/O pre-check). For a production-effect consume, the reference must
+    # additionally resolve against the authoritative production_action_approvals registry -- exists,
+    # granted (not consumed/revoked/expired), and bound to the SAME action_type/resource_type/
+    # resource_id/team_id/project_id/resource_state_version as THIS authorization -- and is consumed
+    # here, atomically, in THIS transaction. An invalid/stale/expired/revoked/wrong-scope approval
+    # returns here WITHOUT ever consuming the authorization itself (repo.consume below never runs).
+    if row.get("production_effect"):
+        approval_row, approval_reason = await approval_repo.resolve_and_consume_approval(
+            conn,
+            row.get("production_approval_reference"),
+            action_type=row["action_type"],
+            resource_type=row["resource_type"],
+            resource_id=str(row["resource_id"]),
+            team_id=str(row["team_id"]),
+            project_id=str(row["project_id"]),
+            resource_state_version=resource_state_version,
+            consumed_by=actor.principal_id,
+            consumed_by_authorization_id=authorization_id,
+        )
+        if approval_row is None:
+            reason = f"production_approval_{approval_reason}"
+            return ServiceResult(
+                False,
+                "production_approval_required",
+                reason,
+                None,
+                await _audit(
+                    conn,
+                    event="authorization.consume_rejected",
+                    row=row,
+                    actor=actor,
+                    reason_code=reason,
+                ),
+            )
+
     updated = await repo.consume(
         conn,
         authorization_id,
@@ -356,6 +394,19 @@ async def consume(
                 actor=actor,
                 reason_code="policy_allow",
             ),
+        )
+    if row.get("production_effect"):
+        # Step 66C.4-BE3-R1 (finding M-1 closure): the production approval was ALREADY consumed
+        # (single-use) above, but the authorization's own CAS just failed (lost a concurrent race,
+        # expired, revoked, or went stale between our earlier checks and this UPDATE). Returning a
+        # soft ServiceResult here would COMMIT the approval consume while leaving the authorization
+        # unconsumed -- a real partial mutation (the approval is now burned for nothing, and this
+        # authorization can never again present a validly-consumed approval for the SAME reference).
+        # Raise so the WHOLE transaction, including the approval consume above, rolls back together --
+        # the same defensive pattern already used by replay_service.execute_authorized_replay for the
+        # analogous post-consume adapter-failure case.
+        raise RuntimeError(
+            "authorization consume CAS failed after a successful production-approval consume"
         )
     # Classify the CAS failure with a safe reason code (re-read authoritative state, in scope).
     current = await repo.get_authorization(
