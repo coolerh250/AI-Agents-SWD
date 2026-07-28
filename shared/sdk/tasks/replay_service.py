@@ -111,6 +111,16 @@ async def request_replay(
     if not pre.allowed:
         return _deny(pre.result_kind, pre.reason_code)
 
+    # Step 66C.4-BE3-R1 (finding L-1 closure): serialize this actor's rate-limit check-then-insert
+    # within (team, project, actor) BEFORE any row lock below, so every call path acquires locks in
+    # the same order (advisory lock first, dead-row lock second) and cannot deadlock against itself.
+    await repo.acquire_actor_rate_limit_lock(
+        conn,
+        team_id=actor_scope.team_id or "",
+        project_id=actor_scope.project_id or "",
+        actor_id=actor.principal_id,
+    )
+
     event_row = await repo.lock_outbox_event(conn, outbox_event_id)
     if event_row is None:
         return _deny("not_found_masked", "resource_not_found")
@@ -132,7 +142,11 @@ async def request_replay(
     # event per window. "One active request per event" is enforced by the DB partial unique index.
     window_hours = model.rate_limit_window_hours()
     actor_count = await repo.count_recent_requests_by_actor(
-        conn, actor.principal_id, window_hours=window_hours
+        conn,
+        actor.principal_id,
+        team_id=actor_scope.team_id or "",
+        project_id=actor_scope.project_id or "",
+        window_hours=window_hours,
     )
     if actor_count >= model.max_requests_per_actor_per_window():
         return _deny("rate_limited", "rate_limited")

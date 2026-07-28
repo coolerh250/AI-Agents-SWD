@@ -38,6 +38,20 @@ REASON_CODES: frozenset[str] = frozenset(
         "policy_authority_required",
         "policy_authority_scope",
         "production_approval_required",
+        # Step 66C.4-BE3-R1 (finding M-1 closure): specific reasons a production_approval_reference
+        # failed authoritative resolution (production_approval_repository.resolve_and_consume_approval).
+        # All map to the SAME result_kind ("production_approval_required", HTTP 409) -- only the
+        # reason_code differs, for audit/debugging precision on this Service-Identity-only path.
+        "production_approval_invalid_reference",
+        "production_approval_not_found",
+        "production_approval_already_consumed",
+        "production_approval_already_revoked",
+        "production_approval_expired",
+        "production_approval_wrong_action",
+        "production_approval_wrong_resource",
+        "production_approval_wrong_scope",
+        "production_approval_stale_state",
+        "production_approval_conflict",
         "invalid_transition",
         "already_decided",
         "already_consumed",
