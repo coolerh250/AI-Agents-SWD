@@ -16382,3 +16382,74 @@ MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR
   full review, not this implementation session) over the complete finding set — M-1, L-1 (BE3-R1)
   and R2-1 (BE3-R2) — before BE3-M (non-squash merge), which itself still requires separate explicit
   Product Owner authorization.
+
+## Step 66C.4-BE3-R-FC — Focused Findings-Closure Review (M-1, L-1, R2-1)
+
+**Markers: `STEP66C4_BE3_R1_R2_FOCUSED_CLOSURE_VERIFY: PASS` (closure process + artifacts complete)
+and `BE3_TECHNICAL_VERDICT: PASS` (M-1, L-1, R2-1 all independently CLOSED). CLOSURE REVIEW ONLY;
+NOT MERGED / NOT DEPLOYED / NOT ACTIVATED. Draft PR #20 remained Draft/OPEN/unmerged and untouched.**
+
+- **When / who / branch.** Executed 2026-07-28 by the ORIGINAL Step 66C.4-BE3-R independent reviewer
+  (same reviewer as `be3-combined-independent-review.md` / original review commit `5626403`; not a
+  new reviewer, no additional subagents; did not participate in R1/R2 implementation). Same review
+  branch `review/66c4-be3-combined-security-transaction`; the feature head `5a413bf` was merged into
+  it for in-tree inspection, then the closure artifacts added as a separate closure commit. No
+  implementation file modified by the reviewer; original BE3-R verdict/findings/evidence untouched
+  (append-only).
+- **Reviewed range.** Closure diff `6323972..5a413bf` (R1 `b1bac36` M-1 registry + L-1 advisory lock;
+  R2 `5a413bf` R2-1 resume production-effect). Canonical main `5745ab7`. Did NOT re-run the full BE3
+  architecture review.
+- **Files added (closure artifacts only).**
+  `docs/contracts/66c4-reminder-expiry-controlled-resume/be3-r1-r2-focused-closure-review.md`,
+  `docs/test/step66c4-be3-r1-r2-focused-closure-evidence.md`,
+  `docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-r1-r2-focused-closure-result.md`,
+  `scripts/verify_step66c4_be3_r1_r2_focused_closure.py`,
+  `tests/test_step66c4_be3_r1_r2_focused_closure.py`, and this entry.
+- **Target / method.** Internal test runtime, isolated ephemeral PostgreSQL 16 (no Redis needed for
+  these three findings; the one Redis path — audit-relay routing — is unaffected by R1/R2). Detached
+  worktree at `5a413bf`; reviewer test + verifier overlaid; run on the repo's project virtualenv.
+  Ephemeral container + worktree destroyed after; shared PostgreSQL/Redis container IDs identical
+  before/after (untouched).
+- **M-1 CLOSED.** `production_action_approvals` (migration 035) is the authoritative registry
+  (resource/action/team/project/state-version/time-bound, single-use, revocable, durably decided,
+  FK-traced). `resolve_and_consume_approval` FOR UPDATE-locks the approval before any check (no
+  TOCTOU) and consumes it in the SAME transaction as `authorization_service.consume`; a post-approval
+  authz-CAS failure raises to roll back both. Independently reproduced: valid → allowed & consumed
+  once; missing/non-UUID/unknown/revoked/expired/consumed/wrong-action/wrong-resource/wrong-scope/
+  stale → blocked, authorization & approval unconsumed; concurrent revoke-vs-consume → exactly one;
+  injected outbox failure on replay execute → approval + authorization + dead-row all revert;
+  grant boundary = {reviewer_approver, platform_admin} only (Service Identity / Operator denied); no
+  HTTP grant/revoke endpoint.
+- **L-1 CLOSED.** `pg_advisory_xact_lock(hashtextextended("be3-replay-actor-rate:{team}:{project}:
+  {actor}"))` — server-side hash (NOT Python `hash()`), xact-scoped (auto-released on
+  commit/rollback), acquired before the dead-row lock; count scoped by (team, project, actor).
+  Independently reproduced on real PostgreSQL 16: 20 concurrent/cap 10 → exactly 10; 50 concurrent/
+  cap 3 → exactly 3; per-scope independent caps; same idempotency key → one row; lock released on
+  rollback; platform_admin capped; invalid config fails closed; rolling-window excludes old; per-
+  event 3-success cap unchanged.
+- **R2-1 CLOSED.** Resume `production_effect` derived server-side from `operator_tasks.production_effect`
+  under the task lock (fail-closed), folded into the canonical `resource_state_version`, revalidated
+  at request+authorize+consume; `production_effect` removed from `ResumeRequestCreate` (client cannot
+  supply/upgrade/downgrade — a sent field is silently dropped and cannot influence classification).
+  Independently reproduced: production task → production authorization (consume needs a valid
+  registry approval); non-production task → non-production authorization (consume allowed without
+  approval); classification flip after request → `stale_state` with no side effect; cross-project →
+  `not_found_masked`; NULL scope → fail closed.
+- **Positive inversion.** The original BE3-R M-1 finding-demonstration test now FAILS unchanged
+  against `5a413bf` (bogus reference rejected as `production_approval_invalid_reference`) — a
+  confirmation the fix landed; the historical test was NOT modified (append-only).
+- **Tests.** Independent focused-closure suite 22 passed / 0 skipped; combined mandatory run (that +
+  BE3-R1/R2 + BE3-A/B/C + B-C1) 140 passed / 0 skipped (repeated on final formatted bytes); BE1/BE2
+  regression 75 passed / 0 skipped. Structural verifier PASS. ruff/black/mypy/`git diff --check`/
+  secret-scan clean on the reviewer's added files.
+- **Findings.** No new Critical/High; no new activation-blocking Medium. One non-blocking
+  observation (R2-obs-1): the API silently drops an unrecognized client-sent `production_effect`
+  field (matches existing convention, cannot affect classification — proven); optional `extra=
+  "forbid"` hardening, not required for closure.
+- **Activation gate.** §A.0/§A.1 record M-1/L-1/R2-1 as code-level CLOSED while preserving items 1-11
+  (not marked complete) and the NO-deployment / NO-shared-migration / NO-activation posture:
+  Deployment readiness — NO; Runtime activation readiness — NO; Shared migration readiness — NO.
+- **Gate.** No shared migration applied, no deployment, no gate activated outside the reviewer's own
+  ephemeral container, no real resume/replay execution in any shared runtime.
+  `production_executed_true_count` = 0. Draft PR #20 NOT merged / NOT touched. Next: Product-Owner-
+  authorized BE3-M merge decision (still a separate explicit authorization); no activation.
