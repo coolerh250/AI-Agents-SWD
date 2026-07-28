@@ -16268,3 +16268,57 @@ MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR
 - **Gate.** `be3-runtime-activation-gate.md` §A.0 records both closures. No shared migration, no
   deployment, no activation, no new HTTP endpoint, no frontend. `production_executed_true_count` = 0.
   Draft PR #20 NOT merged. Next: explicit Product Owner authorization for BE3-M (non-squash merge).
+
+## Step 66C.4-BE3-R2 — Resume Production-Effect Authoritative Closure (finding R2-1)
+
+**Marker: `STEP66C4_BE3_R2_RESUME_PRODUCTION_EFFECT_VERIFY: PASS`. IMPLEMENTED / SELF-VERIFIED; NOT
+MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR #20.**
+
+- **What.** Closes finding R2-1, noted during BE3-R1 for visibility but out of that stage's scope:
+  resume's `production_effect` classification was still client-supplied (`ResumeRequestCreate.
+  production_effect` in the request body), unlike replay's (already server-derived, BE3-R-reviewed
+  as sound).
+- **Preflight.** Authoritative source confirmed: `operator_tasks.production_effect` (`BOOLEAN NOT
+  NULL DEFAULT false`, migration 029), read via the SAME `lock_task` row lock resume already takes
+  for eligibility. `operator_clarification_requests.task_id NOT NULL REFERENCES operator_tasks(id)`
+  is the sole clarification→task relationship — the resume API never accepts a client-supplied
+  `task_id`, so the owning task is always resolved via this FK. All three resume entry points
+  (request/authorize/consume) previously read production_effect from client input or nowhere at
+  all; now all three derive it from the SAME source via one shared function.
+- **Fix.** `resume_request_model.authoritative_production_effect(task_row)` derives the
+  classification fail-closed (defaults to production-effect if ever unresolvable, mirroring
+  replay's convention). `resume_service.request_resume` no longer accepts `production_effect` as a
+  parameter AT ALL (removed, not merely ignored) — it is computed immediately after the task row
+  lock and passed to the BE3-A authorization. `resource_state_version` now takes `(clarification,
+  task)` and folds the production-effect classification into its own snapshot, so `authorize_resume`
+  and `prepare_execution` (which already re-lock clarification+task for eligibility) automatically
+  reject a stale/changed classification via the EXISTING `stale_state` CAS path — no new revalidation
+  code was needed beyond updating the version formula and its call sites.
+  `apps/orchestrator/src/operations_resume_api.py`'s `ResumeRequestCreate` no longer has a
+  `production_effect` field (Pydantic silently drops an unrecognized client-sent key by default).
+  The BE3-R1 production-approval resolver (`authorization_service.consume` ->
+  `production_action_approvals`) is reused completely unmodified.
+- **No migration required.** `resource_state_version` is a recomputed TEXT snapshot; folding in an
+  additional authoritative fact needed no schema change.
+- **Grant path (re-confirmed, not re-implemented).** `production_approval_service.grant_production_
+  approval`/`revoke_production_approval` remain internal-service-only (no HTTP router); RBAC gated to
+  canonical `{reviewer_approver, platform_admin}`; a Service Identity's role string is never in that
+  set regardless of its identity flag.
+- **Tests.** New `tests/test_step66c4_be3_r2_resume_production_effect.py`: 14 passed, 0 skipped (10
+  real-PG + 4 DB-less) — covers client-downgrade/upgrade-has-no-effect, three state-change-race
+  scenarios (non-production→production before authorize/consume; production→non-production before
+  consume), production-approval integration (blocked/valid/wrong-resource/stale-version), scope
+  isolation (cross-project masked, NULL fail-closed), and a same-transaction rollback proving an
+  outbox-insert failure undoes BOTH the BE3 authorization consume AND the production approval
+  consume together. Two pre-existing tests (BE3-B, BE3-R1) that constructed a resume via the
+  now-removed request parameter were UPDATED (not weakened) to seed the owning task's own column
+  instead. Full regression (BE1/BE1-R1/BE2-R1 + BE3-A/B/B-C1/C + BE3-R1 + BE3-R2): 193 passed / 0
+  skipped / 0 failed. ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16
+  destroyed after; shared stack untouched.
+- **Gate.** `be3-runtime-activation-gate.md` §A.1 records this closure.
+  `production_executed_true_count` = 0. No shared migration, no deployment, no activation, no new
+  HTTP endpoint. Draft PR #20 NOT merged. Per the original combined review's own handoff instruction,
+  the next required gate is a **focused closure by the ORIGINAL independent reviewer** (not a new
+  full review, not this implementation session) over the complete finding set — M-1, L-1 (BE3-R1)
+  and R2-1 (BE3-R2) — before BE3-M (non-squash merge), which itself still requires separate explicit
+  Product Owner authorization.

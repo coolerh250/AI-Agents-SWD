@@ -726,7 +726,10 @@ def test_pg_m1_resume_consume_end_to_end_valid_and_invalid() -> None:
                         "SELECT * FROM operator_clarification_requests WHERE id=$1",
                         uuid.UUID(clar),
                     )
-                )
+                ),
+                dict(
+                    await conn.fetchrow("SELECT * FROM operator_tasks WHERE id=$1", uuid.UUID(_t))
+                ),
             )
             # invalid reference never lets the authorization consume (no approval need be granted at
             # all for this half -- an invalid/unresolvable reference is rejected regardless)
@@ -779,7 +782,10 @@ def test_pg_m1_resume_consume_end_to_end_valid_and_invalid() -> None:
                         "SELECT * FROM operator_clarification_requests WHERE id=$1",
                         uuid.UUID(clar2),
                     )
-                )
+                ),
+                dict(
+                    await conn.fetchrow("SELECT * FROM operator_tasks WHERE id=$1", uuid.UUID(_t2))
+                ),
             )
             g2 = await _grant(
                 conn,

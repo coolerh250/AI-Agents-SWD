@@ -172,12 +172,14 @@ async def _seed(
     task_status: str = "clarification_needed",
     answered: bool = True,
     eligible: bool = True,
+    production_effect: bool = False,
 ) -> tuple[str, str]:
     task_id = await conn.fetchval(
-        "INSERT INTO operator_tasks (title, task_type, created_by, status, project_id) "
-        "VALUES ('t', 'software_delivery', 'alice', $1, $2) RETURNING id",
+        "INSERT INTO operator_tasks (title, task_type, created_by, status, project_id, "
+        "production_effect) VALUES ('t', 'software_delivery', 'alice', $1, $2, $3) RETURNING id",
         task_status,
         uuid.UUID(project_id) if project_id else None,
+        production_effect,
     )
     qmsg = await conn.fetchval(
         "INSERT INTO task_messages (task_id, sender_type, sender_id, message_type, body) "
@@ -703,13 +705,15 @@ def test_pg_cancel_authorize_race_single_outcome(monkeypatch) -> None:
 
 async def _authorized_request(conn, s, monkeypatch, *, production=False, prod_ref=None):
     _enable_api(monkeypatch)
-    _, clar = await _seed(conn)
+    # Step 66C.4-BE3-R2: production_effect is no longer a request parameter -- it is derived
+    # server-side from the owning task's OWN column, so a test that wants a production-effect
+    # resume must seed the TASK as production-effect, not pass it through the request.
+    _, clar = await _seed(conn, production_effect=production)
     req = await _request(
         conn,
         s,
         clar,
         key=f"x:{uuid.uuid4()}",
-        production_effect=production,
         production_approval_reference=prod_ref,
     )
     rid = str(req.resume_request["resume_request_id"])
@@ -923,11 +927,14 @@ def test_pg_production_effect_independently_gated(monkeypatch) -> None:
             from shared.sdk.tasks import production_approval_service as approvals
 
             _enable_api(monkeypatch)
-            _t, clar2 = await _seed(conn)
+            _t, clar2 = await _seed(conn, production_effect=True)
             clar_row = await conn.fetchrow(
                 "SELECT * FROM operator_clarification_requests WHERE id=$1", uuid.UUID(clar2)
             )
-            state_version = _model().resource_state_version(dict(clar_row))
+            task_row = await conn.fetchrow(
+                "SELECT * FROM operator_tasks WHERE id=$1", uuid.UUID(_t)
+            )
+            state_version = _model().resource_state_version(dict(clar_row), dict(task_row))
             async with conn.transaction():
                 grant = await approvals.grant_production_approval(
                     conn,
@@ -948,7 +955,6 @@ def test_pg_production_effect_independently_gated(monkeypatch) -> None:
                 s,
                 clar2,
                 key=f"x:{uuid.uuid4()}",
-                production_effect=True,
                 production_approval_reference=approval_id,
             )
             assert req2.ok, req2.reason_code

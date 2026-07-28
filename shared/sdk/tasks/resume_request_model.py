@@ -122,15 +122,27 @@ def resume_command_enabled() -> bool:
 # ---- Authoritative projections -----------------------------------------------------------------
 
 
-def resource_state_version(clarification_row: dict[str, Any]) -> str:
-    """A deterministic version string for the clarification the resume is bound to.
+def authoritative_production_effect(task_row: dict[str, Any]) -> bool:
+    """The SERVER-AUTHORITATIVE production-effect classification for a resume, derived from the
+    owning task's own `production_effect` column -- NEVER from request input (Step 66C.4-BE3-R2,
+    finding R2-1). Fail-closed: an unresolvable/missing value is treated as production-effect."""
+    return bool(task_row.get("production_effect", True))
 
-    Composed from the clarification's authoritative, stable fields; if the clarification's state
-    changes (e.g. it is later expired/canceled or re-answered) the version changes and any
-    outstanding authorization becomes stale (consume aborts, no side effect)."""
+
+def resource_state_version(clarification_row: dict[str, Any], task_row: dict[str, Any]) -> str:
+    """A deterministic version string for the clarification+task the resume is bound to.
+
+    Composed from the clarification's authoritative, stable fields AND the owning task's
+    authoritative `production_effect` classification (Step 66C.4-BE3-R2): production-effect is a
+    security-material fact, so if it changes (non-production -> production or vice versa) the
+    version MUST change too -- an authorization requested/authorized under the OLD classification
+    must never remain consumable once the task's classification has changed (stale_state, no side
+    effect; a new resume request is required). If the clarification's state changes (e.g. it is
+    later expired/canceled or re-answered) the version changes for the same reason."""
     status = clarification_row.get("status")
     answer_ref = clarification_row.get("answer_message_id")
-    return f"{status}:{answer_ref if answer_ref is not None else '-'}"
+    production_effect = authoritative_production_effect(task_row)
+    return f"{status}:{answer_ref if answer_ref is not None else '-'}:{production_effect}"
 
 
 def project_state(row: dict[str, Any]) -> str:

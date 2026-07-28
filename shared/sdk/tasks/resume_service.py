@@ -82,10 +82,14 @@ async def request_resume(
     clarification_id: str,
     idempotency_key: str,
     expires_at: datetime,
-    production_effect: bool = False,
     production_approval_reference: str | None = None,
 ) -> ResumeResult:
-    """Operator creates a resume request + pending authorization (one transaction)."""
+    """Operator creates a resume request + pending authorization (one transaction).
+
+    Step 66C.4-BE3-R2 (finding R2-1 closure): production_effect is NEVER accepted from the caller --
+    it is derived here, under the task row lock, from the owning task's OWN `production_effect`
+    column (the same authoritative-derivation pattern replay already used). A client can neither
+    upgrade nor downgrade this classification."""
     if not model.resume_api_enabled():
         return _deny("feature_disabled", "feature_disabled")
 
@@ -119,7 +123,12 @@ async def request_resume(
     if denial is not None:
         return denial
 
-    state_version = model.resource_state_version(clar)
+    # Server-side authoritative production-effect derivation (Step 66C.4-BE3-R2, finding R2-1):
+    # from the owning task's OWN production_effect column, NEVER from request input. Folded into
+    # the state version itself (below) so a LATER change to this classification invalidates any
+    # outstanding request/authorization bound to the OLD classification.
+    production_effect = model.authoritative_production_effect(task)
+    state_version = model.resource_state_version(clar, task)
 
     # Claim the clarification-level active slot FIRST (atomic dedup, under the row lock). This gates
     # the authorization insert so its active-request unique index can never fire inside this
@@ -233,7 +242,7 @@ async def authorize_resume(
         return _deny("not_found_masked", "resource_not_found")
     if task["status"] in model.TERMINAL_TASK_STATUSES:
         return _deny("conflict", "resource_terminal")
-    if model.resource_state_version(clar) != rr["resource_state_version"]:
+    if model.resource_state_version(clar, task) != rr["resource_state_version"]:
         return _deny("stale_state", "stale_state")
 
     outcome = await authz.authorize(
@@ -386,7 +395,7 @@ async def prepare_execution(
         return _deny("not_found_masked", "resource_not_found")
     if task["status"] in model.TERMINAL_TASK_STATUSES:
         return _deny("conflict", "resource_terminal")
-    if model.resource_state_version(clar) != rr["resource_state_version"]:
+    if model.resource_state_version(clar, task) != rr["resource_state_version"]:
         return _deny("stale_state", "stale_state")
 
     # Consume the single-use authorization (service-identity-only + production gate + CAS). Any

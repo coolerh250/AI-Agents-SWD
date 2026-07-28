@@ -78,12 +78,16 @@ _STATUS_BY_KIND = {
 
 
 class ResumeRequestCreate(BaseModel):
+    # Step 66C.4-BE3-R2 (finding R2-1 closure): production_effect is deliberately NOT a field here.
+    # It is a security-material classification and must be derived server-side from the owning
+    # task's own production_effect column (resume_service.request_resume), never accepted from a
+    # client -- a client can neither upgrade nor downgrade it. Only the approval REFERENCE (an
+    # opaque id resolved against the authoritative registry) remains client-suppliable.
     clarification_id: str
     team_id: str
     project_id: str
     idempotency_key: str
     expires_in_seconds: int = Field(default=3600, ge=1, le=86400)
-    production_effect: bool = False
     production_approval_reference: str | None = None
 
 
@@ -208,7 +212,6 @@ async def create_resume_request(payload: ResumeRequestCreate, request: Request) 
                 clarification_id=payload.clarification_id,
                 idempotency_key=payload.idempotency_key,
                 expires_at=expires_at,
-                production_effect=payload.production_effect,
                 production_approval_reference=payload.production_approval_reference,
             )
             _raise_for(result)

@@ -48,6 +48,36 @@ Design record: `be3-r1-m1-production-approval-contract.md` (planning checkpoint:
 decisions cited from canonical governance, plus the three genuine Product Owner decisions this
 required, and their answers). Remediation record: `be3-r1-required-findings-remediation-record.md`.
 
+## A.1 BE3-R2 findings-closure evidence (added Step 66C.4-BE3-R2)
+
+A further finding (R2-1) surfaced during BE3-R1 was closed in a dedicated follow-up stage: resume's
+`production_effect` classification was still client-supplied (unlike replay's, which the BE3-R
+review already confirmed is server-derived). Now closed at the code level:
+
+```text
+Resume production-effect authoritative derivation:
+  IMPLEMENTED:                derived from operator_tasks.production_effect under the SAME task row
+                               lock already taken for eligibility, at all three resume entry points
+                               (request/authorize/consume) via one shared derivation function.
+  SERVER-DERIVED:              no request field, no service parameter -- there is no code path for a
+                               client to supply, upgrade, or downgrade the classification.
+  STATE-VERSION-BOUND:         folded directly into resume's resource_state_version CAS predicate;
+                               a task classification change invalidates any outstanding request/
+                               authorization bound to the OLD classification.
+  TRANSACTIONALLY REVALIDATED: re-locked and recomputed at authorize time AND at consume time (not
+                               just at request time).
+  CLIENT-DOWNGRADE-PROOF:      production_effect removed entirely from the API request schema
+                               (Pydantic silently drops an unrecognized client-sent field); tested
+                               directly against a production-effect task with no client override
+                               attempted or possible.
+  POSTGRESQL-VERIFIED:         tests/test_step66c4_be3_r2_resume_production_effect.py, real
+                               PostgreSQL 16.
+```
+
+Until this stage, resume's production-effect consume path relied on a client-supplied boolean for
+its authoritative decision — an activation-blocking gap now closed. Remediation record:
+`be3-r2-resume-production-effect-remediation-record.md`.
+
 ## A. Activation prerequisites (ALL required before any activation)
 
 ```text
