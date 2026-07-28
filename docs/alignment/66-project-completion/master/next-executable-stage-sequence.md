@@ -123,9 +123,15 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   BE3 feature gates (BE3_RESUME_API_ENABLED, BE3_RESUME_COMMAND_ENABLED, BE3_REPLAY_API_ENABLED,
   BE3_REPLAY_EXECUTION_ENABLED) remain default-false, replay_dead remains internal-only, and the
   Runtime Compatibility Gate plus the 11-item activation gate (be3-runtime-activation-gate.md)
-  remain in force before any activation. The next candidate is runtime activation planning against
-  that 11-item gate; each item requires its own separate, explicit Product Owner authorization, and
-  none has been given.
+  remain in force before any activation. Runtime activation READINESS PLANNING is now complete at
+  Step 66C.4-BE3-RA-P (planning/inventory only; see be3-runtime-activation-readiness-plan.md,
+  be3-runtime-activation-stage-sequence.md): all 11 gate items are classified, the single most
+  consequential finding is that no runtime-callable caller or consumer exists yet for either
+  resume-command or replay-execution (both are internal-service-only functions with zero production
+  call sites), and a proposed 12-stage sequence (RA-1..RA-12) is handed off but NOT authorized or
+  started. The next candidate is RA-1 (Shared Migration Rehearsal and Rollback Proof); each of the
+  12 stages requires its own separate, explicit Product Owner authorization, and none has been
+  given.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

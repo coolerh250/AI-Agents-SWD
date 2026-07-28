@@ -16387,3 +16387,72 @@ VALIDATED / NOT ACTIVATED / NO SHARED MIGRATION.**
   planning against the 11-item `be3-runtime-activation-gate.md` prerequisite list, each item
   requiring its own separate, explicit Product Owner authorization; no such authorization has been
   given.
+
+## Step 66C.4-BE3-RA-P — Runtime Activation Readiness Planning
+
+**Marker: `STEP66C4_BE3_RUNTIME_ACTIVATION_PLANNING_VERIFY: PASS`. Planning/inventory only. NO
+deployment, NO migration application, NO feature-gate enablement, NO runtime validation, NO
+implementation PR.**
+
+- **What.** Product Owner authorized a planning-only stage to classify all 11
+  `be3-runtime-activation-gate.md` §A prerequisites and design a proposed (not authorized) runtime
+  activation sequence, per the ground rule that code existing in an isolated test container is not
+  the same as runtime readiness.
+- **Single most consequential finding.** No process anywhere in the repository ever consumes a
+  `DESTINATION_ORCHESTRATOR_COMMAND` outbox row, and no production code ever authenticates as
+  Service Identity or Policy Authority (confirmed by direct code inspection: `is_service_identity=
+  True` has 12 call sites, all in test helpers under `tests/`, zero in any `apps/` or `shared/sdk/`
+  file; `prepare_execution` and
+  `execute_authorized_replay` are explicitly documented as NOT exposed via any HTTP endpoint). Even
+  with all four feature gates flipped true, neither function would ever run today — activation
+  readiness requires new implementation work, not merely enabling switches.
+- **Gate classifications (11 items).** Gates 1/2 (migrations 031-035 applied to a shared runtime):
+  NOT_IMPLEMENTED. Gates 3/4 (BE2 poller/relay deployed): BLOCKED_BY_DEPENDENCY on BE2's own
+  still-open activation decision. Gate 5 (retry/DLQ E2E): PARTIALLY_IMPLEMENTED (proven for the
+  audit destination only). Gate 6 (rollback tested): PARTIALLY_IMPLEMENTED (gate-flip and migration
+  down-scripts individually proven; combined rehearsal never performed). Gate 7 (producer cutover
+  plan): REQUIRES_PRODUCT_DECISION (reinterpreted for BE3 as the Policy Authority/Service Identity
+  question). Gates 8/9 (RBAC, audit evidence): IMPLEMENTED_NOT_RUNTIME_VALIDATED (extensively
+  code-verified, never exercised in a live multi-tenant runtime). Gate 10 (runtime E2E):
+  NOT_IMPLEMENTED (structurally blocked on the consumer/caller gap above). Gate 11 (PO deployment
+  authorization): REQUIRES_PRODUCT_DECISION by definition.
+- **Additional standalone gaps identified.** Production approval grant path (no HTTP surface for a
+  real approver), Policy Authority credential provisioning (mechanism built, never provisioned in
+  any environment), Service Identity authentication (flag exists, no real authenticator),
+  BE3-specific metrics (none exist), runtime reconciliation (none exists), Admin Console visibility
+  (none, BE3 was explicitly no-frontend), runbook/incident response (none exists).
+- **Proposed sequence (12 stages, reordered from the candidate list against actual dependencies).**
+  RA-1 Shared Migration Rehearsal and Rollback Proof -> RA-2 Identity and Secret Provisioning
+  Decision -> RA-3 BE2 Audit-Path Activation Decision -> RA-4 Resume Command Consumer Foundation ->
+  RA-5 Replay Execution Runtime Foundation -> RA-6 Production Approval Grant Path -> RA-7 Metrics,
+  Logs, Health and Runtime Reconciliation -> RA-8 Disabled Runtime Deployment -> RA-9 API-only
+  Controlled Validation -> RA-10 Command-path Controlled Validation -> RA-11 Replay-path Controlled
+  Validation -> RA-12 Activation Go/No-Go Review. RA-4/RA-5 were split (the candidate list combined
+  them) because resume-command needs both a caller AND a downstream consumer, while
+  replay-execution needs only a caller (BE3-C's adapter is already synchronous, single-transaction).
+  Each stage is single-capability, independently verifiable, rollback-defined, and
+  authorization-bounded; RA-9/10/11/12 are classified CRITICAL (shared activation / production-
+  effect path) requiring independent review + focused closure + explicit Product Owner gate, per
+  this project's established risk-based verification policy.
+- **Product decisions inventory.** 11 open decisions recorded (grant path owner, approval-request
+  visibility, canonical operator identity source, Service Identity mechanism, Policy Authority
+  secret delivery, first-validation environment, allowed validation events, operation cap, rollback
+  abort threshold, Admin Console evidence requirements, initial activation boundary) — none answered
+  by this stage.
+- **§9 safety checks (performed, not modified).** All four feature gates confirmed default-false in
+  code; no BE3 consumer/poller/relay service exists in `infra/docker-compose/docker-compose.yml`;
+  no startup migration auto-applies 031-035 (the only automated migration mechanism, the Kubernetes
+  migration-job Helm template, is itself fail-closed and unwired to any live cluster); no default
+  credential or environment sets `BE3_RESUME_POLICY_AUTHORITY_PRINCIPAL_ID`/`_CAPABILITY` or any
+  BE3 feature gate anywhere under `infra/`. No blocking finding recorded.
+- **Artifacts.** `be3-runtime-activation-readiness-plan.md`,
+  `be3-runtime-activation-stage-sequence.md`, `step66c4-be3-runtime-activation-planning-evidence.md`,
+  `scripts/verify_step66c4_be3_runtime_activation_planning.py`,
+  `tests/test_step66c4_be3_runtime_activation_planning.py`, this section, and
+  `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** No migration applied, no feature gate enabled, no worker/relay/consumer
+  started, no production approval created, no resume/replay/dispatch executed, no deployment, no
+  runtime secret changed, no Compose/Helm/Kubernetes runtime value changed, no runtime validation
+  performed, no implementation PR opened, Codex/Claude Design not authorized.
+  `production_executed_true_count` = 0. This stage stops here; the first RA-1 stage is NOT
+  automatically started and requires its own separate, explicit Product Owner authorization.
