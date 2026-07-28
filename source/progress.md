@@ -16322,3 +16322,68 @@ MERGED / NOT DEPLOYED / NOT ACTIVATED. Same feature branch, new commit. Draft PR
   full review, not this implementation session) over the complete finding set — M-1, L-1 (BE3-R1)
   and R2-1 (BE3-R2) — before BE3-M (non-squash merge), which itself still requires separate explicit
   Product Owner authorization.
+
+## Step 66C.4-BE3-R-FC — Focused Findings Closure (M-1, L-1, R2-1)
+
+**Marker: `STEP66C4_BE3_R1_R2_FOCUSED_CLOSURE_VERIFY: PASS`. Final `BE3_TECHNICAL_VERDICT: PASS`.
+Performed by the ORIGINAL BE3-R independent reviewer (resumed from its own transcript, not a new
+reviewer, not additional subagents); NOT this implementation session.**
+
+- **What.** The original combined independent reviewer re-derived every M-1/L-1/R2-1 check against
+  real PostgreSQL 16 in its own existing worktree/branch, rather than accepting the implementation
+  session's self-verifiers as sole evidence: production-approval registry authoritativeness and
+  actor boundary; approval resolution fail-closed behavior across every invalid/stale/wrong-scope
+  input, with same-transaction consume and rollback (including a post-approval-consume authz-CAS
+  failure forcing full rollback); the advisory-lock rate-cap's key determinism, lock ordering, and
+  20-/50-way concurrent-burst caps; and resume's production-effect server-derivation, client
+  downgrade/upgrade resistance, and all three state-change-race directions.
+- **Result.** All three findings independently CLOSED, no new Critical/High/activation-blocking
+  finding (one non-blocking hardening note: an unrecognized client `production_effect` field is
+  silently dropped by Pydantic — proven harmless, not a security finding). New independent focused-
+  closure suite: 22 passed / 0 skipped. Combined mandatory run (focused-closure + BE3-R1 + BE3-R2 +
+  BE3-A/B/B-C1/C): 140 passed / 0 skipped. BE1/BE2 regression: 75 passed / 0 skipped. ruff/black/
+  mypy/secret-scan clean.
+- **Artifacts.** One new commit (`2712ad4`) on the ORIGINAL review branch
+  (`review/66c4-be3-combined-security-transaction`, preceded by a merge of the feature head for
+  in-tree inspection) — touches only closure docs/test/verifier files, no implementation file.
+  The original review's own record, evidence, and `5626403` commit were preserved untouched
+  (append-only). No new review branch was created; no PR was opened for the review branch.
+- **Gate.** No shared migration, no deployment, no activation. Draft PR #20 remained
+  Draft/OPEN/untouched throughout this stage. Next: explicit Product Owner authorization for BE3-M
+  (non-squash merge of PR #20).
+
+## Step 66C.4-BE3-M — Merge to Main
+
+**Marker: `STEP66C4_BE3_MERGE_VERIFY: PASS`. BE3 is now MERGED / NOT DEPLOYED / NOT RUNTIME
+VALIDATED / NOT ACTIVATED / NO SHARED MIGRATION.**
+
+- **What.** With `Step 66C.4-BE3-R-FC: PASS` and `BE3_TECHNICAL_VERDICT: PASS` accepted, the
+  Product Owner authorized a non-squash merge of PR #20 into `main`.
+- **Preflight.** Confirmed pre-merge `main` = `5745ab7`; PR #20 state OPEN/Draft, `baseRefName` =
+  `main`, `headRefOid` = `5a413bf0d2134ecea53c3f851a3aaf5ef25c6a59` (matches the approved head
+  exactly), `mergedAt` = null; working tree clean. Confirmed all ten evidence-chain commits
+  (`da758f2`, `1164464`, `c2bc5cb`, `962963f`, `2949e20`, `6323972`, `5626403`, `b1bac36`,
+  `5a413bf`, `2712ad4`) exist, and that the original review/R1/R2/focused-closure markers and the
+  original `BE3_TECHNICAL_VERDICT` history were all present and un-overwritten, before proceeding.
+- **Merge.** `gh pr ready 20`, then re-verified the full head OID, then
+  `gh pr merge 20 --merge --match-head-commit <oid>` — a genuine non-squash, non-rebase, two-parent
+  merge commit `284d706` (parents `5745ab7` + `5a413bf`, exactly as required; no newer unreviewed
+  main existed at merge time). PR #20 state: MERGED.
+- **Post-merge verification.** `main` fast-forwarded to `284d706`; local `main` == `origin/main`;
+  working tree clean, no untracked files; `git diff --check` clean; merge-commit parentage
+  independently re-derived via `git show --no-patch`.
+- **Records.** `be3-merge-and-source-of-truth-record.md`,
+  `step66c4-be3-merge-verification-record.md`, `scripts/verify_step66c4_be3_merge.py` (15 checks,
+  PASS), this section, and `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** No migration (032/033/034/035) applied to any shared database; all four
+  BE3 feature gates (`BE3_RESUME_API_ENABLED`, `BE3_RESUME_COMMAND_ENABLED`,
+  `BE3_REPLAY_API_ENABLED`, `BE3_REPLAY_EXECUTION_ENABLED`) remain default-false on main; no
+  deployment; no lifecycle poller/relay/command-consumer activation; no runtime resume/replay/
+  dispatch; no production approval runtime grant; review evidence branches (BE1/BE2/BE3) all
+  preserved, none deleted; `production_executed_true_count` = 0.
+- **Status.** `Step 66C.4-BE3`: MERGED / NOT DEPLOYED / NOT RUNTIME VALIDATED / NOT ACTIVATED / NO
+  SHARED MIGRATION / NO RUNTIME RESUME OR REPLAY. Sub-stages: BE3-A MERGED, BE3-B MERGED, BE3-C
+  MERGED, BE3-R PASS, BE3-R1/R2 findings CLOSED, BE3-M PASS. Next candidate: runtime activation
+  planning against the 11-item `be3-runtime-activation-gate.md` prerequisite list, each item
+  requiring its own separate, explicit Product Owner authorization; no such authorization has been
+  given.

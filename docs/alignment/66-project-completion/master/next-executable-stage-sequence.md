@@ -112,12 +112,20 @@ Step 66C.4-BE3-C (two-person-controlled dead-event replay) is IMPLEMENTED on the
   request_authorization savepoint composability fix was required (replay has no pre-authorization
   claim gate like resume's clarification CAS). NO real replay_dead call in any shared runtime, NO
   event publish, NO shared migration/deployment/activation, NO public execute endpoint.
-BE3-A + BE3-B + BE3-C are now ALL complete (self-verified) on this branch -- one implementation flow,
-  distinct commits + markers. The combined independent BE3-R security/transaction review over all
-  three is the NEXT CANDIDATE but is NOT AUTHORIZED and NOT STARTED (original-reviewer focused
-  closure after findings), then BE3-M non-squash merge after separate Product Owner authorization.
-  replay_dead remains internal-only; the Runtime Compatibility Gate and the 11-item activation gate
-  remain in force before any activation.
+BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VERDICT: PASS, two
+  Medium findings M-1/L-1 recorded as activation preconditions) + BE3-R1/R2 remediation (M-1, L-1,
+  R2-1) + the focused closure by the ORIGINAL independent reviewer (STEP66C4_BE3_R1_R2_FOCUSED_
+  CLOSURE_VERIFY: PASS, final BE3_TECHNICAL_VERDICT: PASS) are now MERGED to main at Step
+  66C.4-BE3-M (merge commit 284d706, PR #20, reviewed head 5a413bf; see
+  be3-merge-and-source-of-truth-record.md and step66c4-be3-merge-verification-record.md). BE3
+  status is MERGED / NOT DEPLOYED / NOT RUNTIME VALIDATED / NOT ACTIVATED / NO SHARED MIGRATION:
+  migrations 032-035 are present in the repository but NOT applied to any shared database, all four
+  BE3 feature gates (BE3_RESUME_API_ENABLED, BE3_RESUME_COMMAND_ENABLED, BE3_REPLAY_API_ENABLED,
+  BE3_REPLAY_EXECUTION_ENABLED) remain default-false, replay_dead remains internal-only, and the
+  Runtime Compatibility Gate plus the 11-item activation gate (be3-runtime-activation-gate.md)
+  remain in force before any activation. The next candidate is runtime activation planning against
+  that 11-item gate; each item requires its own separate, explicit Product Owner authorization, and
+  none has been given.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order
