@@ -16512,3 +16512,55 @@ review (RA-1R) is the next required gate. NOT applied to any shared database. Dr
   validation. `production_executed_true_count: 0`. Gates 1/2/6 in `be3-runtime-activation-gate.md`
   remain IMPLEMENTED / REHEARSED, PENDING RA-1R independent review — NOT marked CLOSED by this
   self-verified stage. Next: Product-Owner-authorized independent review (Step 66C.4-BE3-RA-1R).
+
+### Step 66C.4-BE3-RA-1R — Independent migration / rollback / locking review (review only)
+
+- **What.** An independent reviewer (not the RA-1A implementation session) re-derived every RA-1A
+  claim from scratch against an isolated ephemeral PostgreSQL 16.14 on an internal test runtime
+  (distinct container/port from the implementation session's; destroyed after). Review branch
+  `review/66c4-be3-ra1-migration-rollback` from feature head 27184b5; baseline main 18f11fe; PR #21
+  confirmed Draft/OPEN/unmerged before and after and left untouched. No file under review modified
+  (`migration_runner.py`, `migrations/*`, `test_step66c4_be3_ra1_migration_rehearsal.py`).
+- **Markers (never conflated).** Process: `STEP66C4_BE3_RA1_INDEPENDENT_REVIEW_VERIFY: PASS`.
+  Technical verdict: `RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED` (scoped to the future
+  shared-apply readiness foundation — the new `migration_runner.py` — NOT to the isolated rehearsal,
+  which is correct and re-derives, and NOT to migrations 031-035, which have no blocking defect).
+- **Findings.** H-1 (High, blocks shared-apply): `apply_chain_locked` issues no ROLLBACK on failure;
+  its `finally`-block `pg_advisory_unlock` runs on an aborted connection, itself raises
+  `InFailedSQLTransactionError`, masks the real migration error, and never releases the advisory
+  lock (freed only by connection teardown) — empirically confirmed; the module docstring's
+  "lock is released even if a migration fails" is not honored by the code, and RA-1A's own suite
+  never exercises this path. M-1 (Medium): `schema_fingerprint` does not detect FK ON DELETE/UPDATE
+  changes, CHECK-expression changes (same name), or deferrability (5/6 §10 mutations detected).
+  M-2 (Medium): no migration ledger / version provenance (existence-only introspection). M-3
+  (Medium): no bounded lock-wait / statement timeout; no dry-run/plan/current-state/audit model.
+  L-1/L-2 (Low): down-script CASCADE asymmetry; "no partial schema" ≠ chain atomicity. No Critical.
+- **What re-derived cleanly.** 031-035 FK dependency chain (029/030 baseline; 032 FK-free; 033→032+030+029;
+  034→032+031; 035 optional FK→032); out-of-order fails closed; duplicate idempotent (fingerprint
+  equal); ambiguous-commit safe via blind reapply (identical fingerprint); existing data fully
+  preserved (full-row equality, ctid unchanged, six 031 columns NULL, no backfill/rewrite);
+  pre-activation down removes only new tables and reapply reproduces the exact fingerprint; post-write
+  rollback non-destructive; old-version compatibility exercised (SELECT *, explicit column list,
+  read+write); advisory lock session-level with deterministic `hashtextextended` key, released on
+  success/Python-exception/cancellation+close/forced-kill; runner logs no DSN/credential. Pre-activation
+  down is correctly documented (never overclaimed as a production/post-write rollback strategy).
+- **Tests.** New `tests/test_step66c4_be3_ra1_independent_review.py`: **14 passed, 0 skipped** (real
+  PostgreSQL 16), including the `apply_chain_locked` failure-path characterization, two full
+  concurrent migrators with injected `pg_sleep` + injected mid-chain failure, all four lock-cleanup
+  teardown paths, forced backend termination, and all six §10 fingerprint mutations. RA-1A's own 12
+  tests independently re-run: **12 passed**. Regression re-run on BOTH commits: baseline 18f11fe =
+  3 failed / 314 passed / 5 skipped; feature 27184b5 = 3 failed / 340 passed / 5 skipped
+  (= 314 + 12 RA-1A + 14 review). The three failures are byte-identical on both commits, none
+  RA-1A-related (stale BE1-M / BE3-planning guards vs already-merged BE3 code; one PATH-dependent
+  bare-`python` subprocess in a different stage's verifier — independently evaluated, not an RA-1
+  blocker). ruff/black/mypy/`git diff --check`/secret-scan clean on the two added Python files.
+- **Records.** `be3-ra1-independent-migration-review.md`,
+  `step66c4-be3-ra1-independent-review-evidence.md`, `be3-ra1-independent-review-result.md`,
+  `scripts/verify_step66c4_be3_ra1_independent_review.py`,
+  `tests/test_step66c4_be3_ra1_independent_review.py`, and this section added.
+- **Scope discipline.** Review only — no implementation modified. No shared/test/staging/production
+  database touched. No feature gate enabled (all four confirmed default-false). No worker/relay/
+  consumer started. No deployment. No runtime resume/replay. No production approval. No branch or PR
+  merged; PR #21 left Draft/OPEN/unmerged. `production_executed_true_count: 0`. Gates 1/2/6 remain
+  PENDING — this review does NOT close them. Next: Product-Owner decision (remediation of
+  H-1/M-1/M-2/M-3 then re-review, or otherwise); no RA-2 or other stage started by this review.
