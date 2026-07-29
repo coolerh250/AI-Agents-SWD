@@ -137,7 +137,10 @@ def test_outbox_module_has_no_live_producer_import() -> None:
     # rows (gated by BE3_RESUME_API_ENABLED / BE3_RESUME_COMMAND_ENABLED; no relay is activated), and,
     # from Step 66C.4-BE3-C (PO-authorized), the replay service that writes DISABLED-BY-DEFAULT
     # replay audit rows (gated by BE3_REPLAY_API_ENABLED / BE3_REPLAY_EXECUTION_ENABLED; no consumer
-    # activated). No other runtime module references it. Updated in BE2, then BE3-B, then BE3-C.
+    # activated), and, from Step 66C.4-BE3-RA-1B (PO-authorized), the migration-rehearsal runner,
+    # which only names the table as a plain string for schema-fingerprint/ledger bookkeeping
+    # purposes -- it never imports lifecycle_outbox.py and is not a producer or consumer.
+    # No other runtime module references it. Updated in BE2, then BE3-B, then BE3-C, then RA-1B.
     allowed = {
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_outbox.py",
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
@@ -146,6 +149,7 @@ def test_outbox_module_has_no_live_producer_import() -> None:
         REPO / "shared" / "sdk" / "tasks" / "replay_service.py",
         REPO / "shared" / "sdk" / "tasks" / "replay_request_repository.py",
         REPO / "shared" / "sdk" / "tasks" / "replay_request_model.py",
+        REPO / "shared" / "sdk" / "backup_dr" / "migration_runner.py",
     }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):

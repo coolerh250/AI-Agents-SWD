@@ -281,8 +281,11 @@ def test_no_relay_scheduler_or_live_producer_exists() -> None:
     # (consumer) are the authorized NON-ACTIVATED callers; from Step 66C.4-BE3-B (PO-authorized) the
     # resume service writes the DISABLED-BY-DEFAULT resume audit/command rows (gated; no relay
     # activated); from Step 66C.4-BE3-C (PO-authorized) the replay service writes DISABLED-BY-DEFAULT
-    # replay audit rows (gated; no consumer activated). No other runtime module references the
-    # outbox. Updated in BE2, then BE3-B, then BE3-C.
+    # replay audit rows (gated; no consumer activated); from Step 66C.4-BE3-RA-1B (PO-authorized)
+    # the migration-rehearsal runner only names the table as a plain string for schema-fingerprint/
+    # ledger bookkeeping -- it never imports lifecycle_outbox.py and is not a producer or consumer.
+    # No other runtime module references the outbox. Updated in BE2, then BE3-B, then BE3-C, then
+    # RA-1B.
     allowed = {
         lo_path,
         REPO / "shared" / "sdk" / "tasks" / "lifecycle_poller.py",
@@ -291,6 +294,7 @@ def test_no_relay_scheduler_or_live_producer_exists() -> None:
         REPO / "shared" / "sdk" / "tasks" / "replay_service.py",
         REPO / "shared" / "sdk" / "tasks" / "replay_request_repository.py",
         REPO / "shared" / "sdk" / "tasks" / "replay_request_model.py",
+        REPO / "shared" / "sdk" / "backup_dr" / "migration_runner.py",
     }
     offenders = []
     for base in (REPO / "apps", REPO / "shared"):
