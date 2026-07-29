@@ -16631,3 +16631,62 @@ to any shared database. Same feature branch, new commit. Draft PR #21.**
   self-verified remediation does not close them. Next: a **focused closure** by the **original
   RA-1R independent reviewer** (not a new full review, not this implementation session) over
   H-1/M-1/M-2/M-3, requiring separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-1FC — Focused Migration-Runner Closure (H-1/M-1/M-2/M-3, review only)
+
+**Markers (never conflated). Process: `STEP66C4_BE3_RA1B_FOCUSED_CLOSURE_VERIFY: PASS`. Technical:
+`RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`. Performed by the ORIGINAL RA-1R reviewer (continuity),
+NOT a new reviewer or the RA-1B implementation session. Review branch
+`review/66c4-be3-ra1-migration-rollback`; reviewer-only integration merge `19cff82` of `b31e655`
+(NOT FOR MAIN, no PR); Draft PR #21 confirmed Draft/OPEN/unmerged before and after; original review
+commit `352d546` preserved.**
+
+- **Scope.** ONLY H-1/M-1/M-2/M-3 over the RA-1B remediation (`b31e655`, parent `27184b5`). No re-run
+  of the full RA-1 architecture review; L-1/L-2 out of scope. Re-derived from committed
+  `migration_runner.py`/CLI and direct experiments on a fresh isolated ephemeral PostgreSQL 16.14
+  (distinct container/port from every prior RA-1 stage; destroyed after).
+- **Per-finding verdict.** **H-1 CLOSED** — cleanup order capture→ROLLBACK→unlock→restore→re-raise
+  the ORIGINAL error; every step bounded/cancellation-safe and never raises; connection disposed on
+  any cleanup failure; verified via mid-file failure (original DivisionByZeroError preserved, reusable
+  True, lock released), forced-backend-termination disposal (reusable False, conn closed), cancellation
+  release+propagation, and a real asyncpg.Pool borrower being clean after a failure; attribute-attach
+  safe on all reachable exception types. **M-1 CLOSED** — `pg_get_constraintdef` + `indexdef`/access-
+  method detect all 11 §8 mutation categories, including FK MATCH, constraint validation-state, and
+  index access-method (the three RA-1B never tested); deterministic + nullability round-trip stable.
+  **M-2 REMEDIATION_REQUIRED** — Gap A (§13, blocking): no coherent ledger vs. down/reapply strategy;
+  after a raw down the ledger still says 'applied', `plan_chain` reports drift 'ok'/current='035'
+  (does NOT fail closed on the ledger-vs-schema mismatch), and reapply reports SUCCESS while silently
+  skipping and NOT recreating dropped tables; neither a ledger-aware down nor a documented fail-closed
+  exclusion exists (RA-1B docs silent). Gap B (§12): ambiguous-commit reconcile validates only
+  checksum + table existence (expected_fingerprint is never recorded on an 'applying' row), so a
+  wrong-shaped/tampered table is reconciled as good. (Checksum-mismatch, untracked-schema,
+  partial-applying, wrong-shaped-ledger, clean ambiguous-commit, and the 029/030 boundary are all
+  correct.) **M-3 REMEDIATION_REQUIRED** — `redact_for_operator` blocks `postgres://` but NOT the
+  canonical asyncpg `postgresql://` scheme (that DSN form passes unredacted), and the CLI's
+  `asyncpg.connect()` sits outside the redacting try so a wrong-DSN failure prints a raw traceback,
+  not the §18 redacted single-JSON object; no credential-VALUE leak was demonstrated (asyncpg does not
+  echo the password), so this is a redaction-completeness + output-contract defect. Bounded
+  lock-wait/timeouts/plan-mode/CLI-exit-codes (0/1/2) are independently verified working. §19 allowlist
+  additions are precise single file-path literals, no broadening; both BE1 guards still pass.
+- **Overall verdict:** `RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED` (all four must be closed for
+  PASS; ledger/down inconsistency and secret-control gaps may not be closed as PASS_WITH_GAPS).
+- **Tests.** New `tests/test_step66c4_be3_ra1b_focused_closure.py`: **20 passed, 0 skipped** (real
+  PostgreSQL 16). Directly-affected RA-1 suites together (RA-1A 12 + RA-1B 23 + this 20): **55 passed
+  / 0 failed / 0 skipped**. Regression re-run on BOTH commits: baseline `18f11fe` = 3 failed / 314
+  passed / 5 skipped; feature `b31e655` = 3 failed / 369 passed / 5 skipped (= 314 + 12 + 23 + 20).
+  Same 3 pre-existing failures (identical node IDs) on both, none migration/backup/CLI-related, no new
+  failure, no additional skip, no assertion weakened; both BE1 allowlist guards pass on feature.
+  ruff/black/mypy/`git diff --check`/secret-scan clean on the two added Python files. Fresh isolated
+  PG16 destroyed after; shared stack untouched.
+- **Records.** `be3-ra1b-focused-closure-review.md`, `step66c4-be3-ra1b-focused-closure-evidence.md`,
+  `be3-ra1b-focused-closure-result.md`, `scripts/verify_step66c4_be3_ra1b_focused_closure.py`,
+  `tests/test_step66c4_be3_ra1b_focused_closure.py`, and this section added. Prior RA-1R finding
+  documents were NOT modified (closure reference appended only via this section).
+- **Scope discipline.** Review only — no implementation modified (`migration_runner.py`,
+  `run_platform_migrations.py`, `migrations/*`, RA-1A + RA-1B suites, both BE1 guards byte-identical
+  to `b31e655`). No shared/test/staging/production database touched. No feature gate enabled (all four
+  default-false). No worker/relay/consumer started. No deployment. No runtime resume/replay. No
+  production approval. No branch or PR merged; PR #21 left Draft/OPEN/unmerged. Reviewer-only merge
+  `19cff82` exists only on the review branch. `production_executed_true_count: 0`. Gates 1/2/6 remain
+  PENDING — this review does NOT close them. Next: Product-Owner decision (remediate M-2 gaps A+B and
+  M-3, then re-check; or otherwise); no RA-2 or other stage started by this review.
