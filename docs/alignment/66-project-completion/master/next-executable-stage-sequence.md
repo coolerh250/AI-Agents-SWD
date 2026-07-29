@@ -139,9 +139,25 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   (shared/sdk/backup_dr/migration_runner.py); migrations 031-035 themselves were NOT modified. Gates
   1/2/6 are IMPLEMENTED / REHEARSED, PENDING RA-1R independent review — NOT marked CLOSED by this
   self-verified stage. No shared migration was applied; all four feature gates remain default-false.
-  The next candidate is Step 66C.4-BE3-RA-1R (independent review of this rehearsal); each remaining
-  RA-stage requires its own separate, explicit Product Owner authorization, and none has been given
-  beyond RA-1A itself.
+  Step 66C.4-BE3-RA-1R (independent migration/rollback/locking review) is now COMPLETE (review
+  branch review/66c4-be3-ra1-migration-rollback, commit 352d546, pushed to origin, unmerged):
+  STEP66C4_BE3_RA1_INDEPENDENT_REVIEW_VERIFY: PASS, final verdict RA1_TECHNICAL_VERDICT:
+  REMEDIATION_REQUIRED (one High finding -- H-1, aborted-transaction cleanup/lock-release failure --
+  and three Medium findings -- M-1 fingerprint blind spots, M-2 no migration ledger, M-3 unbounded
+  waits/no operational controls; migrations 031-035 themselves had no blocking defect). Step
+  66C.4-BE3-RA-1B (targeted remediation of H-1/M-1/M-2/M-3) is now REMEDIATED / SELF-VERIFIED (see
+  be3-ra1b-migration-runner-remediation-record.md,
+  step66c4-be3-ra1b-migration-runner-remediation-evidence.md): apply_chain_locked now rolls back
+  before unlocking and never masks the original error; the schema fingerprint captures FK actions
+  and CHECK expressions; a new additive migration ledger (platform_schema_migrations) provides
+  version/checksum provenance with fail-closed checksum-mismatch and untracked-schema handling and
+  strict ambiguous-commit reconciliation; lock-wait/statement timeouts are bounded and a read-only
+  plan mode plus operator CLI (scripts/run_platform_migrations.py) were added. Migrations 031-035
+  remain unmodified; all four feature gates remain default-false; no shared migration was applied.
+  Gates 1/2/6 remain PENDING -- this self-verified remediation does not close them. The next
+  candidate is a **focused closure** by the **original RA-1R independent reviewer** over
+  H-1/M-1/M-2/M-3; each remaining RA-stage requires its own separate, explicit Product Owner
+  authorization, and none has been given beyond RA-1A/RA-1R/RA-1B themselves.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

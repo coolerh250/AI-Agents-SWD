@@ -16512,3 +16512,99 @@ review (RA-1R) is the next required gate. NOT applied to any shared database. Dr
   validation. `production_executed_true_count: 0`. Gates 1/2/6 in `be3-runtime-activation-gate.md`
   remain IMPLEMENTED / REHEARSED, PENDING RA-1R independent review — NOT marked CLOSED by this
   self-verified stage. Next: Product-Owner-authorized independent review (Step 66C.4-BE3-RA-1R).
+
+## Step 66C.4-BE3-RA-1R — Independent Migration and Rollback Review
+
+**Marker: `STEP66C4_BE3_RA1_INDEPENDENT_REVIEW_VERIFY: PASS`. Final verdict:
+`RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`. Review branch
+`review/66c4-be3-ra1-migration-rollback` (commit `352d546`), pushed to origin, unmerged.**
+
+- **What.** An independent reviewer (a separate session, not this implementation session; own
+  isolated worktree, own ephemeral PostgreSQL 16.14 on a distinct container/port) re-derived every
+  RA-1A claim from scratch: migration ordering/dependencies, migration-runner transaction/lock
+  semantics, schema-fingerprint coverage, existing-data preservation, pre-activation down/reapply,
+  and post-write rollback. `migration_runner.py`, `migrations/*`, and the RA-1A test file were
+  confirmed byte-identical to the reviewed commit (git-verified empty diff) — no implementation was
+  modified by the review.
+- **Findings.** No Critical. **H-1** (High): `apply_chain_locked`'s failure-path cleanup attempted
+  `pg_advisory_unlock` on a connection already left in an aborted-transaction state by the failed
+  migration; the unlock attempt itself failed, masking the real migration error and never actually
+  releasing the lock via `unlock` (only eventually via connection teardown). **M-1** (Medium): the
+  schema fingerprint was blind to FK ON DELETE/ON UPDATE actions and CHECK-expression changes under
+  an unchanged constraint name. **M-2** (Medium): no migration ledger/version-provenance mechanism
+  existed — schema state was determined by existence-introspection alone. **M-3** (Medium): no
+  bounded lock-wait/statement timeout, no dry-run/plan/operator-facing apply model. Two Low notes
+  (down-script CASCADE ordering; "no partial schema" is not the same claim as chain atomicity).
+  Migrations 031-035 themselves: no blocking defect. The isolated rehearsal's own claims reproduced
+  independently (regression: 314 passed on baseline main, 340 on the reviewed feature head, same 3
+  pre-existing failures both places, no new failure).
+- **Gate.** Gates 1/2/6 remain PENDING (not closed by this review). PR #21 confirmed
+  Draft/OPEN/unmerged before and after, untouched. Next: targeted remediation of H-1/M-1/M-2/M-3 by
+  the original RA-1A implementation session, per the review's own recommendation.
+
+## Step 66C.4-BE3-RA-1B — Migration Runner Safety, Provenance and Operational Controls Remediation
+
+**Marker: `STEP66C4_BE3_RA1B_MIGRATION_RUNNER_REMEDIATION_VERIFY: PASS`. Self-verified only; a
+focused closure by the ORIGINAL RA-1R independent reviewer is the next required gate. NOT applied
+to any shared database. Same feature branch, new commit. Draft PR #21.**
+
+- **What.** Closed all four findings (H-1, M-1, M-2, M-3) from the RA-1R independent review.
+  Before any implementation change, `origin/review/66c4-be3-ra1-migration-rollback` was confirmed
+  pushed at `352d546` (append-only, no PR, no merge), per this stage's own preservation
+  requirement.
+- **H-1.** `apply_chain_locked`'s cleanup order is now: capture the original exception -> explicit
+  `ROLLBACK` -> advisory unlock -> (M-3: restore session timeouts) -> re-raise the ORIGINAL
+  exception. Every cleanup step is isolated via `_safe_cleanup_step` (never raises itself, returns
+  the exception instead), bounded (10s, `asyncio.wait_for` + `asyncio.shield`, cancellation-safe),
+  and `BaseException`-caught (covers `CancelledError`). Any cleanup-step failure proactively closes
+  the connection (`.ra1b_connection_reusable = False` attached to the re-raised original exception
+  for programmatic inspection) rather than handing back a poisoned or still-locked connection.
+- **M-1.** The constraints query now reads `pg_constraint` directly via `pg_get_constraintdef()` —
+  PostgreSQL's own canonical semantic definition, capturing CHECK expression bodies, FK source/
+  target columns, FK ON DELETE/ON UPDATE/MATCH actions, and deferrability — plus explicit
+  deferrable/initially-deferred/validated columns; indexes gain an explicit access-method column
+  (predicates/expressions were already captured via `indexdef`).
+- **M-2.** A new, additive, runner-owned ledger table (`platform_schema_migrations`, bootstrapped
+  under the chain lock) tracks version/filename/SHA-256/status/timestamps/expected-observed
+  fingerprint per attempt. `apply_chain_with_ledger` uses it to skip already-applied (checksum-
+  matched) migrations, fail closed on a checksum mismatch (`MigrationChecksumMismatchError`, row
+  never overwritten), fail closed on schema that exists with no ledger record
+  (`UntrackedSchemaError`/`UNTRACKED_SCHEMA`, never auto-adopted), and reconcile an ambiguous prior
+  `applying` attempt ONLY when filename, checksum, AND observed fingerprint all match
+  (`reconciled_after_ambiguous_commit`) — otherwise `SchemaDriftError`, chain stops. The migration
+  file's own transaction and the ledger's bookkeeping are explicitly separate transactions,
+  documented as such.
+- **M-3.** The advisory-lock wait is now bounded (`pg_try_advisory_lock` polling against a
+  monotonic deadline, default 30s/[1s,300s]); `statement_timeout`/`lock_timeout`/
+  `idle_in_transaction_session_timeout` are set (bounded, default 30000ms/[1000ms,600000ms]) and
+  restored after (connection discarded if restore fails); invalid configuration raises
+  `MigrationConfigError` immediately. A read-only `plan_chain` (no DDL, no ledger writes, no lock)
+  and a new operator-facing CLI (`scripts/run_platform_migrations.py --plan`/`--apply`,
+  `PLATFORM_MIGRATIONS_DATABASE_URL` from the environment only) give a dry-run and clear exit codes
+  (0 success, 1 failure, 2 missing config), with every error passed through `redact_for_operator`.
+- **Tests.** New `tests/test_step66c4_be3_ra1b_migration_runner_remediation.py`: **23 passed, 0
+  skipped** (real PostgreSQL 16) — covering every §22-mandated H-1/M-1/M-2/M-3 scenario, including a
+  forced-backend-termination test proving connection disposal on a genuine rollback-step failure.
+  RA-1A's own rehearsal suite needed NO modification (12 passed alongside, 35 total, 0 failed) —
+  none of its assertions exercise `apply_chain_locked`'s failure path directly or depend on
+  `schema_fingerprint`'s exact literal content (only equality). Full step66c4-tagged regression:
+  349 passed / 5 skipped / 3 failed — the same 3 pre-existing baseline failures RA-1A already
+  identified (confirmed unchanged). Two OTHER BE1/BE1-R1 static-guard tests briefly showed a new
+  failure because the ledger's fingerprint catalog names the real `clarification_lifecycle_outbox`
+  table as a plain string (not an import or producer/consumer relationship); both were fixed by
+  extending their already-established, repeatedly-exercised allowlist (same pattern used for
+  BE2/BE3-B/BE3-C), with no weakening of either guard. ruff/black/mypy/`git diff --check`/
+  secret-scan clean. Isolated ephemeral PG16 (distinct container/port) destroyed after; the shared
+  aiagents-test stack's postgres/redis containers were already stopped (unrelated host restart)
+  before this stage and remained so throughout.
+- **Records.** `be3-ra1b-migration-runner-remediation-record.md`,
+  `step66c4-be3-ra1b-migration-runner-remediation-evidence.md`,
+  `be3-ra1b-to-focused-closure-handoff.md`, `scripts/verify_step66c4_be3_ra1b_migration_runner_
+  remediation.py`, this section, and `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** Migrations 029-035 unmodified (no defect found in them). No shared
+  migration application, no deployment, no feature-gate change, no worker/relay/consumer, no
+  runtime validation, no merge. Review branch 352d546 unmodified, unmerged. Draft PR #21 remains
+  Draft/OPEN/untouched. `production_executed_true_count: 0`. Gates 1/2/6 remain PENDING — this
+  self-verified remediation does not close them. Next: a **focused closure** by the **original
+  RA-1R independent reviewer** (not a new full review, not this implementation session) over
+  H-1/M-1/M-2/M-3, requiring separate, explicit Product Owner authorization.
