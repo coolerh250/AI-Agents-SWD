@@ -129,9 +129,19 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   consequential finding is that no runtime-callable caller or consumer exists yet for either
   resume-command or replay-execution (both are internal-service-only functions with zero production
   call sites), and a proposed 12-stage sequence (RA-1..RA-12) is handed off but NOT authorized or
-  started. The next candidate is RA-1 (Shared Migration Rehearsal and Rollback Proof); each of the
-  12 stages requires its own separate, explicit Product Owner authorization, and none has been
-  given.
+  started. Step 66C.4-BE3-RA-1A (Isolated Migration Rehearsal and Rollback Proof) is now REHEARSED /
+  SELF-VERIFIED (see be3-ra1-migration-rehearsal-and-rollback-plan.md,
+  step66c4-be3-ra1-migration-rehearsal-evidence.md): migrations 031-035 rehearsed stepwise on
+  isolated PostgreSQL 16 with existing-data preservation, failure injection, duplicate/out-of-order/
+  concurrent-migrator coverage, pre-activation down rehearsal, reapply/fingerprint equality, and a
+  non-destructive post-write rollback simulation; a genuine, previously-open concurrent-migrator gap
+  was found and closed with a new additive advisory-lock safeguard
+  (shared/sdk/backup_dr/migration_runner.py); migrations 031-035 themselves were NOT modified. Gates
+  1/2/6 are IMPLEMENTED / REHEARSED, PENDING RA-1R independent review — NOT marked CLOSED by this
+  self-verified stage. No shared migration was applied; all four feature gates remain default-false.
+  The next candidate is Step 66C.4-BE3-RA-1R (independent review of this rehearsal); each remaining
+  RA-stage requires its own separate, explicit Product Owner authorization, and none has been given
+  beyond RA-1A itself.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

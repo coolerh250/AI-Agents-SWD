@@ -16456,3 +16456,59 @@ implementation PR.**
   performed, no implementation PR opened, Codex/Claude Design not authorized.
   `production_executed_true_count` = 0. This stage stops here; the first RA-1 stage is NOT
   automatically started and requires its own separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-1A — Isolated Migration Rehearsal and Rollback Proof
+
+**Marker: `STEP66C4_BE3_RA1_MIGRATION_REHEARSAL_VERIFY: PASS`. Self-verified only; independent
+review (RA-1R) is the next required gate. NOT applied to any shared database. Draft branch
+`feature/66c4-be3-ra1-migration-rehearsal`.**
+
+- **What.** Product Owner authorized RA-1: an isolated, repeatable, auditable PostgreSQL 16
+  rehearsal proving pre-031 schema → apply 031→035 (stepwise-validated) → rollback rehearsal →
+  reapply → validate again, plus failure injection, duplicate/out-of-order/concurrent-migrator
+  behavior, and a non-destructive post-write rollback simulation. No shared, test, staging, or
+  production database was touched.
+- **Preflight.** Confirmed the actual pre-031 baseline is TWO files (029 + 030, not 030 alone); no
+  separate migration-runner tool or bookkeeping/ledger table exists anywhere in the repository
+  (every migration is idempotent, self-contained `BEGIN;...COMMIT;`, applied by direct execution);
+  ordering is filename-convention only; the Kubernetes migration Job template is fail-closed and
+  unwired; no shared-DB apply mechanism exists at startup. No ambiguity required stopping.
+- **Genuine gap found and closed.** No serialization existed between two concurrent callers
+  applying the same migration chain to the same database. Closed via a new, minimal, additive
+  safeguard — `shared/sdk/backup_dr/migration_runner.py` (`apply_chain_locked`, a session-level
+  `pg_advisory_lock` keyed by `hashtextextended()`, held for the whole chain; `schema_fingerprint`,
+  a deterministic columns/constraints/indexes snapshot for equality comparison). Migrations 031-035
+  themselves were NOT modified — no defect was found in them.
+- **Non-obvious operational finding.** A failed multi-statement migration `execute()` leaves the
+  ISSUING connection's session in "aborted transaction" state (refusing further commands until an
+  explicit `ROLLBACK`), even though the data-level change is already rolled back server-side; a
+  second, independent connection is completely unaffected. Documented as a real requirement for any
+  future migration tooling (reconnect or `ROLLBACK` after a failure), not a defect.
+- **Schema-fingerprint fix.** The first fingerprint implementation compared PostgreSQL's
+  auto-generated, OID-embedded per-column NOT NULL pseudo-constraint names, which are unstable
+  across a DROP+CREATE even when the real schema is identical; fixed by excluding that specific
+  auto-generated-name pattern (nullability is already captured by `is_nullable`).
+- **Tests.** New `tests/test_step66c4_be3_ra1_migration_rehearsal.py`: **12 passed, 0 skipped** (real
+  PostgreSQL 16) — stepwise up-rehearsal, existing-data preservation (full-row sentinel equality),
+  early/late failure injection, connection-state proof, duplicate invocation (fingerprint-equal),
+  out-of-order attempt (deterministic `UndefinedTableError`), concurrent migrators (serialization
+  proven directly via a non-blocking `pg_try_advisory_lock` probe, not wall-clock timing — an
+  earlier timing-based version produced a false failure and was replaced), pre-activation down
+  rehearsal, reapply + schema-fingerprint equality, and a non-destructive post-write rollback
+  simulation (including an old-version-compatibility check against `operator_tasks`). Full
+  regression: 326 passed / 5 skipped / 3 failed — all three failures independently reconfirmed
+  present on the unmodified baseline commit (18f11fe) before any RA-1A file was overlaid (two are
+  stale historical verifiers from BE1-M/BE3-planning predating BE3's own merged implementation; one
+  is this remote host's own PATH lacking a bare `python` executable) — none introduced by RA-1A.
+  ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated ephemeral PG16 destroyed after;
+  the shared stack was not running before this stage and was not started by it.
+- **Records.** `be3-ra1-migration-rehearsal-and-rollback-plan.md`,
+  `step66c4-be3-ra1-migration-rehearsal-evidence.md`, `be3-ra1-to-independent-review-handoff.md`,
+  `scripts/verify_step66c4_be3_ra1_migration_rehearsal.py`, this section, and
+  `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** No shared/test/staging/production database touched. No feature gate
+  enabled (all four confirmed default-false). No worker/relay/consumer started. No production
+  approval granted. No Compose/Helm/Kubernetes runtime value changed. No deployment. No runtime
+  validation. `production_executed_true_count: 0`. Gates 1/2/6 in `be3-runtime-activation-gate.md`
+  remain IMPLEMENTED / REHEARSED, PENDING RA-1R independent review — NOT marked CLOSED by this
+  self-verified stage. Next: Product-Owner-authorized independent review (Step 66C.4-BE3-RA-1R).
