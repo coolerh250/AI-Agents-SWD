@@ -16768,3 +16768,69 @@ shared database. Same feature branch, new commit. Draft PR #21.**
   focused closure** by the **original RA-1R independent reviewer** (not a new full review, not this
   implementation session) over M-2A/M-2B/M-3A/M-3B, requiring separate, explicit Product Owner
   authorization.
+
+## Step 66C.4-BE3-RA-1FC2 — Second Focused Ledger/Manifest/CLI Closure (M-2A/M-2B/M-3A/M-3B, review only)
+
+**Markers (never conflated). Process: `STEP66C4_BE3_RA1C_SECOND_FOCUSED_CLOSURE_VERIFY: PASS`.
+Technical: `RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`. Performed by the ORIGINAL RA-1R/RA-1FC
+reviewer (continuity), NOT a new reviewer or the RA-1C implementation session. Review branch
+`review/66c4-be3-ra1-migration-rollback`; reviewer-only integration merge `07f839f` of `7820b4b`
+(NOT FOR MAIN, no PR); Draft PR #21 confirmed Draft/OPEN/unmerged before and after; prior review
+commit `9cd841f` preserved.**
+
+- **Scope.** ONLY M-2A/M-2B/M-3A/M-3B over the RA-1C remediation (`7820b4b`, parent `b31e655`). No
+  re-run of the full RA-1 review. Re-derived from committed `migration_runner.py`/CLI/manifests and
+  direct experiments on a fresh isolated ephemeral PostgreSQL 16.14 (distinct container/port from
+  every prior RA-1 stage; destroyed after).
+- **Per-finding verdict.** **M-2A CLOSED** — `plan_chain` + `apply_chain_with_ledger` re-verify every
+  `applied`/`reconciled_after_ambiguous_commit` row against the committed canonical manifest
+  fingerprint, not just the file checksum; all eight §4 out-of-band mutation cases (table/column/
+  index absent, CHECK/FK-ON DELETE/FK-ON UPDATE changed, wrong shape, reconciled+later drift) fail
+  closed (plan `ledger_schema_mismatch`; apply `LedgerSchemaMismatchError`; no silent skip, no
+  recreation); raw down → plan/apply fail closed, tables not recreated, ledger not auto-edited, only
+  a destroyed+recreated DB reapplies; destructive-down-unsupported policy documented with no
+  ledger-edit/down/mark-rolled-back affordance. **M-2B CLOSED** — five committed, correctly-scoped
+  canonical manifests (031 owns outbox+operator_clarification_requests; 032-035 own only their created
+  table); no runtime regeneration path; `expected_fingerprint` recorded on the applying row BEFORE any
+  DDL; post-apply observed==expected required; ambiguous reconcile strictly rejects null-expected/
+  wrong-shape/missing-index/changed-CHECK/tampered-expected and reconciles only an exact match (closes
+  the RA-1FC M-2B gap). **M-3A CLOSED** — `redact_for_operator` detects every DSN scheme (postgres/
+  postgresql/postgresql+asyncpg/redis/rediss/http(s)), bare user:pass@host userinfo, and key=value
+  credential fields, collapsing the whole message; diagnostic codes survive (closes the RA-1FC
+  postgresql:// gap). **M-3B REMEDIATION_REQUIRED (narrow, Low)** — the originating defect (connect
+  path raising a raw traceback) is fully closed: `_connect_or_none`/`_print_connect_failure` emit
+  exactly one JSON object (`database_connect_failed`, exception text omitted), exit 1, no traceback,
+  no secret, verified for --plan/--apply across malformed/unreachable/auth DSNs even under asyncio
+  DEBUG; success emits one JSON object on stdout with stderr empty. RESIDUAL: the missing-configuration
+  path (`_dsn_from_env`, DSN unset) prints a PLAIN-TEXT line, not the single JSON object spec §17
+  requires (exit 2 + no-secret + no-traceback are correct). One-line fix; no security impact. Per §26
+  (CLI error-output contract may not be PASS_WITH_GAPS), this prevents a clean M-3B closure.
+- **Overall verdict:** `RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED`, driven solely by the M-3B
+  missing-config single-JSON residual (M-2A/M-2B/M-3A all CLOSED).
+- **Test-update integrity (§20).** The three RA-1B tests RA-1C adjusted were only adapted to the new
+  stricter manifest/expected-fingerprint contract (two now insert the real manifest fingerprint as
+  `expected_fingerprint`; one monkeypatches an isolated manifest copy so the synthetic-file DDL-failure
+  path is still exercised). No assertion weakened, no xfail/skip, no swallowed exception, no removed
+  negative case.
+- **Tests.** New `tests/test_step66c4_be3_ra1c_second_focused_closure.py`: **16 passed, 0 skipped**
+  (real PostgreSQL 16). Directly-affected RA-1 suites (RA-1A 12 + RA-1B 23 + RA-1C 31 + this 16):
+  **82 passed / 0 failed / 0 skipped**. Regression re-run on BOTH commits: baseline `18f11fe` = 3
+  failed / 314 passed / 5 skipped; feature `7820b4b` = 3 failed / 396 passed / 5 skipped
+  (= 314 + 12 + 23 + 31 + 16). Same 3 pre-existing failures (identical node IDs) on both, none
+  migration/backup/CLI-related, no new failure, no additional skip, no assertion weakened; both BE1
+  allowlist guards pass on feature. ruff/black/mypy/`git diff --check`/secret-scan clean on the two
+  added Python files. Fresh isolated PG16 destroyed after; shared stack untouched.
+- **Records.** `be3-ra1c-second-focused-closure-review.md`,
+  `step66c4-be3-ra1c-second-focused-closure-evidence.md`, `be3-ra1c-second-focused-closure-result.md`,
+  `scripts/verify_step66c4_be3_ra1c_second_focused_closure.py`,
+  `tests/test_step66c4_be3_ra1c_second_focused_closure.py`, and this section added. Prior RA-1R/RA-1FC
+  finding documents were NOT modified (closure reference appended only via this section).
+- **Scope discipline.** Review only — no implementation, manifest, or test-under-review modified
+  (`migration_runner.py`, `run_platform_migrations.py`, `migration_manifests/*`, `migrations/*`, and
+  the RA-1A/RA-1B/RA-1C suites byte-identical to `7820b4b`). No shared/test/staging/production database
+  touched. No feature gate enabled (all four default-false). No worker/relay/consumer started. No
+  deployment. No runtime resume/replay. No production approval. No branch or PR merged; PR #21 left
+  Draft/OPEN/unmerged. Reviewer-only merge `07f839f` exists only on the review branch.
+  `production_executed_true_count: 0`. Gates 1/2/6 remain PENDING — this review does NOT close them.
+  Next: Product-Owner decision (remediate the one M-3B missing-config JSON residual then re-check, or
+  explicitly accept it); no RA-2 or other stage started by this review.
