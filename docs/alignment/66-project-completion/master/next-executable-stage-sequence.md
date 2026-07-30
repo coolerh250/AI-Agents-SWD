@@ -158,6 +158,34 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   candidate is a **focused closure** by the **original RA-1R independent reviewer** over
   H-1/M-1/M-2/M-3; each remaining RA-stage requires its own separate, explicit Product Owner
   authorization, and none has been given beyond RA-1A/RA-1R/RA-1B themselves.
+  Step 66C.4-BE3-RA-1FC (focused closure by the original RA-1R reviewer over H-1/M-1/M-2/M-3) is
+  now COMPLETE (same review branch, reviewer-only integration commit 19cff82, focused-closure
+  commit 9cd841f, pushed to origin, unmerged, unmodified by any implementation change --
+  independently confirmed via zero-diff on every reviewed file): STEP66C4_BE3_RA1B_FOCUSED_CLOSURE_
+  VERIFY: PASS, RA1_TECHNICAL_VERDICT: REMEDIATION_REQUIRED. H-1 and M-1 CLOSED. Four remaining
+  gaps found (M-2A: an applied ledger row was never re-checked against the actual schema, so a raw
+  isolated down left plan/apply silently claiming health; M-2B: ambiguous-commit reconciliation
+  accepted a null expected fingerprint and a wrong-shaped table; M-3A: redact_for_operator missed
+  the canonical postgresql:// scheme; M-3B: the CLI's connect() call sat outside its redacting
+  try). Step 66C.4-BE3-RA-1C (targeted remediation of M-2A/M-2B/M-3A/M-3B) is now REMEDIATED /
+  SELF-VERIFIED (see be3-ra1c-ledger-schema-cli-remediation-record.md,
+  step66c4-be3-ra1c-ledger-schema-cli-evidence.md): plan_chain and apply_chain_with_ledger now
+  re-verify an applied/reconciled ledger row's actual schema against a committed canonical manifest
+  every time (shared/sdk/backup_dr/migration_manifests/{031..035}.json, generated once from a clean
+  isolated rehearsal); the expected fingerprint is set from that manifest BEFORE any DDL runs and
+  reconciliation now requires a non-null, manifest-validated match; redact_for_operator recognizes
+  every connection-string scheme this project uses (not a fixed substring list) and collapses the
+  whole message on detection; the CLI's connect attempt is wrapped in a protected path returning
+  exactly one redacted JSON object on failure. A destructive-down policy was explicitly recorded:
+  ledger-managed destructive down is NOT supported for shared environments (future shared rollback
+  is disable-gates/stop-consumers/roll-back-application-version/retain-tables-and-data/forward-fix;
+  RA-1A's isolated down rehearsal remains valid only as an ephemeral, no-business-data exercise).
+  Migrations 031-035 remain unmodified; all four feature gates remain default-false; no shared
+  migration was applied. Gates 1/2/6 remain PENDING -- this self-verified remediation does not
+  close them. The next candidate is a **second focused closure** by the **original RA-1R
+  independent reviewer** over M-2A/M-2B/M-3A/M-3B; each remaining RA-stage requires its own
+  separate, explicit Product Owner authorization, and none has been given beyond RA-1A/RA-1R/
+  RA-1B/RA-1FC/RA-1C themselves.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

@@ -27,6 +27,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, os.getcwd())
 
@@ -54,33 +55,65 @@ def _dsn_from_env() -> str:
     return dsn
 
 
-async def _run_plan(dsn: str) -> int:
+def _print_connect_failure(mode: str) -> int:
+    """M-3B: a connection failure must never raise a raw traceback -- it prints exactly one
+    redacted JSON object to stderr and exits 1. The underlying exception text is deliberately NOT
+    included (asyncpg/libpq connect errors routinely echo the DSN, host, port, and database name
+    verbatim), so this never depends on redact_for_operator catching every possible phrasing."""
+    payload = {
+        "result_code": "database_connect_failed",
+        "mode": mode,
+        "success": False,
+        "message": "Database connection failed.",
+        "failed_version": None,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+    return 1
+
+
+async def _connect_or_none(dsn: str) -> Any:
     import asyncpg
 
-    conn = await asyncpg.connect(dsn=dsn)
+    try:
+        return await asyncpg.connect(dsn=dsn)
+    except BaseException:  # noqa: BLE001 -- deliberately reports any failure, never a raw traceback
+        return None
+
+
+async def _run_plan(dsn: str) -> int:
+    conn = await _connect_or_none(dsn)
+    if conn is None:
+        return _print_connect_failure("plan")
     try:
         plan = await runner.plan_chain(conn, MIGRATIONS_DIR, RA1_CHAIN)
     finally:
         await conn.close()
-    print(json.dumps(runner.plan_to_dict(plan), indent=2, sort_keys=True))
-    if plan.untracked_versions:
+    payload = runner.plan_to_dict(plan)
+    if plan.result_code != "success":
+        print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
         return 1
-    if any(status == "checksum_mismatch" for status in plan.drift_status.values()):
-        return 1
+    print(json.dumps(payload, indent=2, sort_keys=True))
     return 0
 
 
 async def _run_apply(dsn: str) -> int:
-    import asyncpg
-
-    conn = await asyncpg.connect(dsn=dsn)
+    conn = await _connect_or_none(dsn)
+    if conn is None:
+        return _print_connect_failure("apply")
     try:
         try:
             result = await runner.apply_chain_with_ledger(conn, MIGRATIONS_DIR, RA1_CHAIN)
         except BaseException as exc:  # noqa: BLE001 -- deliberately reports any failure, redacted
             payload = {
                 "result_code": getattr(exc, "ra1b_result_code", "failed"),
+                "mode": "apply",
+                "success": False,
+                "migration_version": getattr(exc, "ra1b_failed_version", None),
                 "failed_version": getattr(exc, "ra1b_failed_version", None),
+                "ledger_status": getattr(exc, "ra1c_ledger_status", None),
+                "expected_fingerprint": getattr(exc, "ra1c_expected_fingerprint", None),
+                "observed_fingerprint": getattr(exc, "ra1c_observed_fingerprint", None),
+                "diagnostic_code": getattr(exc, "ra1c_diagnostic_code", None),
                 "connection_reusable": getattr(exc, "ra1b_connection_reusable", None),
                 "error": runner.redact_for_operator(str(exc)),
             }

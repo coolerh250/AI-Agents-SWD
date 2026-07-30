@@ -19,6 +19,7 @@ import asyncio
 import contextlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -571,13 +572,18 @@ def test_pg_ambiguous_commit_reconciles_when_schema_matches(dsn: str) -> None:
                 conn, MIGRATIONS, ("031_clarification_lifecycle_outbox_foundation.sql",)
             )
             checksum = r._sha256_file(MIGRATIONS / "032_be3_resume_replay_authorization.sql")
+            manifest = await r._validate_manifest(
+                conn, "032_be3_resume_replay_authorization.sql", checksum
+            )
             await _apply(conn, "032_be3_resume_replay_authorization.sql")  # DDL "already committed"
             await conn.execute(
                 f"INSERT INTO {r.LEDGER_TABLE} "
-                "(migration_version, migration_filename, migration_sha256, status, runner_version) "
-                "VALUES ('032', '032_be3_resume_replay_authorization.sql', $1, 'applying', $2)",
+                "(migration_version, migration_filename, migration_sha256, status, runner_version, "
+                "expected_fingerprint) "
+                "VALUES ('032', '032_be3_resume_replay_authorization.sql', $1, 'applying', $2, $3)",
                 checksum,
                 r.RUNNER_VERSION,
+                manifest.canonical_semantic_fingerprint,
             )
             result = await r.apply_chain_with_ledger(
                 conn, MIGRATIONS, ("032_be3_resume_replay_authorization.sql",)
@@ -630,12 +636,17 @@ def test_pg_partial_schema_in_applying_state_rejected_as_drifted(dsn: str) -> No
             r = _runner()
             await r.ensure_ledger_bootstrapped(conn)
             checksum = r._sha256_file(MIGRATIONS / "032_be3_resume_replay_authorization.sql")
+            manifest = await r._validate_manifest(
+                conn, "032_be3_resume_replay_authorization.sql", checksum
+            )
             await conn.execute(
                 f"INSERT INTO {r.LEDGER_TABLE} "
-                "(migration_version, migration_filename, migration_sha256, status, runner_version) "
-                "VALUES ('032', '032_be3_resume_replay_authorization.sql', $1, 'applying', $2)",
+                "(migration_version, migration_filename, migration_sha256, status, runner_version, "
+                "expected_fingerprint) "
+                "VALUES ('032', '032_be3_resume_replay_authorization.sql', $1, 'applying', $2, $3)",
                 checksum,
                 r.RUNNER_VERSION,
+                manifest.canonical_semantic_fingerprint,
             )
             # No actual table exists -- ledger says "applying" but schema is INCOMPLETE.
             with pytest.raises(r.SchemaDriftError):
@@ -653,7 +664,7 @@ def test_pg_partial_schema_in_applying_state_rejected_as_drifted(dsn: str) -> No
 
 
 @requires_pg
-def test_pg_failed_migration_ledger_state_recorded(dsn: str) -> None:
+def test_pg_failed_migration_ledger_state_recorded(dsn: str, tmp_path: Path, monkeypatch) -> None:
     async def scenario() -> None:
         conn = await asyncpg.connect(dsn=dsn)
         try:
@@ -667,6 +678,19 @@ def test_pg_failed_migration_ledger_state_recorded(dsn: str) -> None:
             )
             tmp = REPO / "migrations" / "032_ra1b_tmp_ledger_fail.sql"
             tmp.write_text(broken, encoding="utf-8")
+            # This is a synthetic fault-injection file, not the real migration 032 -- its manifest
+            # binding (filename + checksum) must be adjusted to match, in an isolated copy of the
+            # manifests directory, so RA-1C's manifest-filename check doesn't short-circuit the
+            # DDL-failure path this test actually exercises.
+            bad_manifests = tmp_path / "manifests_for_tmp_ledger_fail"
+            bad_manifests.mkdir()
+            for f in r.MANIFESTS_DIR.glob("*.json"):
+                shutil.copy(f, bad_manifests / f.name)
+            data = json.loads((bad_manifests / "032.json").read_text(encoding="utf-8"))
+            data["migration_filename"] = "032_ra1b_tmp_ledger_fail.sql"
+            data["migration_sha256"] = r._sha256_file(tmp)
+            (bad_manifests / "032.json").write_text(json.dumps(data), encoding="utf-8")
+            monkeypatch.setattr(r, "MANIFESTS_DIR", bad_manifests)
             try:
                 with pytest.raises(asyncpg.PostgresError):
                     await r.apply_chain_with_ledger(

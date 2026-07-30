@@ -41,6 +41,43 @@ RA-1B closes four findings from the RA-1R independent review:
       plus an operator-facing CLI (``scripts/run_platform_migrations.py --plan`` / ``--apply``) give a
       dry-run and a clear non-zero exit code on failure, with a structured, secret-free result.
 
+RA-1C closes four further findings from the RA-1R reviewer's focused closure of RA-1B (M-2A, M-2B,
+M-3A, M-3B). H-1 and M-1 are unmodified.
+
+  M-2A (an ``applied``/``reconciled_after_ambiguous_commit`` ledger row was never re-checked against
+      the ACTUAL schema): every time such a row is encountered again (in both ``plan_chain`` and
+      ``apply_chain_with_ledger``), the runner now recomputes the owned-object schema fingerprint and
+      requires it to still match the migration's committed canonical manifest -- not just that the
+      checksum of the file on disk is unchanged. A table/index/constraint that is missing, altered, or
+      wrong-shaped (including one dropped by a raw isolated-rehearsal "down") now fails closed
+      (``LedgerSchemaMismatchError`` on apply; ``drift_status == "ledger_schema_mismatch"`` on plan)
+      instead of being silently treated as healthy.
+
+  M-2B (ambiguous-commit reconciliation had no trustworthy expected fingerprint): a new, committed,
+      per-migration canonical manifest (``shared/sdk/backup_dr/migration_manifests/<version>.json``,
+      produced once from a clean isolated PostgreSQL 16 rehearsal, never generated from the database
+      currently being checked) supplies the ``expected_fingerprint`` BEFORE any DDL runs -- it is
+      recorded on the ledger's ``applying`` row at INSERT time, never learned after the fact from a
+      successful apply. Reconciliation of an ambiguous "applying" row now additionally requires a
+      non-null expected fingerprint (``ExpectedFingerprintMissingError`` if absent) and manifest
+      validation (``MigrationManifestError`` if the manifest is missing, or its filename/checksum/
+      PostgreSQL-major-version/format-version does not match) before the observed-vs-expected
+      comparison is trusted.
+
+  M-3A (``redact_for_operator`` missed the canonical ``postgresql://`` DSN scheme): redaction no longer
+      relies on a single substring marker. It recognizes every connection-string scheme this project
+      uses (``postgres``/``postgresql``/``postgresql+asyncpg``/``redis``/``rediss``/``http(s)``), any
+      bare ``user:password@host`` userinfo fragment, and key=value credential fields (password/secret/
+      token/apikey/dsn), and collapses the ENTIRE message to a fixed, endpoint-free string whenever any
+      of these is detected -- a partial in-place substitution could otherwise leave an unanticipated
+      fragment (username, host, port, database name, query-string token) exposed.
+
+  M-3B (the CLI's ``asyncpg.connect()`` call sat outside its redacting ``try``): both ``--plan`` and
+      ``--apply`` now wrap the connection attempt itself in a protected path that never raises a raw
+      traceback -- a connect failure prints exactly one redacted JSON object
+      (``result_code: "database_connect_failed"``) to stderr and exits 1, and the CLI never prints to
+      both stdout and stderr in the same invocation.
+
 None of this is wired into any shared runtime. Migrations 029-035 are unmodified.
 """
 
@@ -50,6 +87,7 @@ import asyncio
 import contextlib
 import dataclasses
 import hashlib
+import json
 import re
 import time
 import uuid
@@ -73,10 +111,22 @@ MAX_STATEMENT_TIMEOUT_MS = 600_000
 
 CLEANUP_STEP_TIMEOUT_SECONDS = 10.0
 
-RUNNER_VERSION = "ra1b-1"
+RUNNER_VERSION = "ra1c-1"
 LEDGER_TABLE = "platform_schema_migrations"
 
-_FORBIDDEN_VALUE_MARKERS = ("password", "secret", "token", "dsn=", "postgres://", "redis://")
+MANIFEST_FORMAT_VERSION = 1
+SUPPORTED_POSTGRES_MAJOR_VERSIONS = (16,)
+MANIFESTS_DIR = Path(__file__).resolve().parent / "migration_manifests"
+
+# Redaction detectors (M-3A): every connection-string scheme this project uses, a bare
+# "user:password@host" userinfo fragment even without a recognized scheme, and key=value credential
+# fields. Detection drives a whole-message collapse (see redact_for_operator) rather than a targeted
+# substring replacement, so an unanticipated fragment can never slip through a partial substitution.
+_SECRET_SCHEME_RE = re.compile(
+    r"(postgres(?:ql)?(?:\+asyncpg)?|redis|rediss|https?)://", re.IGNORECASE
+)
+_SECRET_USERINFO_RE = re.compile(r"[A-Za-z0-9_.+-]+:[^\s@/]*@")
+_SECRET_KV_RE = re.compile(r"(?i)\b(password|passwd|secret|token|apikey|api_key|dsn)\b\s*[:=]")
 
 
 class MigrationConfigError(ValueError):
@@ -100,6 +150,25 @@ class UntrackedSchemaError(Exception):
 class SchemaDriftError(Exception):
     """The observed schema does not match what an ambiguous or partially-applied ledger entry
     expects. Fails closed; the chain stops."""
+
+
+class MigrationManifestError(Exception):
+    """MIGRATION_MANIFEST_INVALID: a migration's committed canonical manifest is missing, or its
+    filename/checksum/PostgreSQL-major-version/format-version/owned-object list does not match what
+    is being checked. Fails closed; never auto-regenerated or overwritten from a live database."""
+
+
+class LedgerSchemaMismatchError(Exception):
+    """LEDGER_SCHEMA_MISMATCH: the ledger records a version as applied/reconciled, but the ACTUAL
+    schema no longer matches that migration's canonical manifest fingerprint (a table, index, or
+    constraint is missing, altered, or wrong-shaped -- including after a raw isolated-rehearsal
+    "down"). Fails closed; never silently treated as healthy and never blindly reapplied."""
+
+
+class ExpectedFingerprintMissingError(Exception):
+    """An ambiguous "applying" ledger row has no recorded expected fingerprint, so it cannot be
+    safely reconciled. Fails closed rather than treating a null expectation as an automatic match.
+    """
 
 
 # ---- Migration catalog (runner-owned; does not modify migrations/*.sql) -------------------------
@@ -146,11 +215,25 @@ def _utcnow_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _looks_secret_shaped(text: str) -> bool:
+    if _SECRET_SCHEME_RE.search(text):
+        return True
+    if _SECRET_USERINFO_RE.search(text):
+        return True
+    if _SECRET_KV_RE.search(text):
+        return True
+    return False
+
+
 def redact_for_operator(text: str) -> str:
     """Never surface a DSN, password, token, or credential-shaped string in an operator-facing
-    error or log. Bounded length so a runaway message can't flood output either."""
-    lowered = text.lower()
-    if any(marker in lowered for marker in _FORBIDDEN_VALUE_MARKERS):
+    error or log. Detection covers every connection-string scheme this project uses (postgres/
+    postgresql/postgresql+asyncpg/redis/rediss/http(s)), a bare user:password@host userinfo
+    fragment, and key=value credential fields -- not a single substring marker. Whenever any of
+    these is detected the ENTIRE message is collapsed to a fixed, endpoint-free string (a partial
+    in-place substitution could otherwise leave username, host, port, database name, or a
+    query-string token exposed). Bounded length so a runaway message can't flood output either."""
+    if _looks_secret_shaped(text):
         return "[redacted: message contained secret-shaped content]"
     return text[:500]
 
@@ -368,9 +451,107 @@ async def schema_fingerprint(conn: Any, table_names: Sequence[str]) -> dict[str,
 
 
 def _stable_json(obj: Any) -> str:
-    import json
-
     return json.dumps(obj, sort_keys=True, default=str)
+
+
+# ---- Canonical migration manifests (M-2B: golden expected fingerprint) ---------------------------
+#
+# Each committed manifest (shared/sdk/backup_dr/migration_manifests/<version>.json) is produced ONCE
+# from a clean, isolated PostgreSQL 16 rehearsal and committed after review -- never generated from,
+# or trusted from, the database currently being checked. It supplies the expected_fingerprint BEFORE
+# any DDL runs, so reconciliation of an ambiguous commit never has to "learn" what to expect from a
+# possibly-compromised or possibly-drifted live schema.
+
+
+@dataclasses.dataclass(frozen=True)
+class MigrationManifest:
+    migration_version: str
+    migration_filename: str
+    migration_sha256: str
+    postgres_major_version: int
+    owned_objects: tuple[str, ...]
+    canonical_semantic_fingerprint: str
+    manifest_format_version: int
+
+
+def _load_manifest(filename: str) -> MigrationManifest:
+    version = _migration_version(filename)
+    path = MANIFESTS_DIR / f"{version}.json"
+    if not path.is_file():
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_MISSING: no canonical manifest at {path.name}"
+        )
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} is not valid JSON"
+        ) from exc
+    try:
+        manifest = MigrationManifest(
+            migration_version=str(data["migration_version"]),
+            migration_filename=str(data["migration_filename"]),
+            migration_sha256=str(data["migration_sha256"]),
+            postgres_major_version=int(data["postgres_major_version"]),
+            owned_objects=tuple(data["owned_objects"]),
+            canonical_semantic_fingerprint=str(data["canonical_semantic_fingerprint"]),
+            manifest_format_version=int(data["manifest_format_version"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} is missing or has an invalid field"
+        ) from exc
+    if manifest.manifest_format_version != MANIFEST_FORMAT_VERSION:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} format version "
+            f"{manifest.manifest_format_version} is not recognized (expected "
+            f"{MANIFEST_FORMAT_VERSION})"
+        )
+    if manifest.migration_version != version:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} migration_version does not match its filename"
+        )
+    if manifest.migration_filename != filename:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} migration_filename does not match {filename}"
+        )
+    expected_owned = set(
+        MIGRATION_FINGERPRINT_TABLES.get(filename, MIGRATION_CREATED_TABLES.get(filename, ()))
+    )
+    if expected_owned and set(manifest.owned_objects) != expected_owned:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {path.name} owned_objects does not match the runner's own "
+            f"catalog for {filename}"
+        )
+    return manifest
+
+
+async def _validate_manifest(conn: Any, filename: str, checksum: str) -> MigrationManifest:
+    """Load AND fully validate a migration's canonical manifest: filename/version/format already
+    checked by ``_load_manifest``; here we additionally confirm the manifest's recorded checksum
+    matches the migration file actually on disk, and that the connected PostgreSQL major version is
+    both supported and matches what the manifest was generated against. Fails closed on any
+    mismatch -- never regenerates or overwrites the manifest, never proceeds on a best-effort basis.
+    """
+    manifest = _load_manifest(filename)
+    if manifest.migration_sha256 != checksum:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: {filename}'s on-disk checksum does not match its "
+            "committed canonical manifest"
+        )
+    if manifest.postgres_major_version not in SUPPORTED_POSTGRES_MAJOR_VERSIONS:
+        raise MigrationManifestError(
+            "MIGRATION_MANIFEST_INVALID: manifest declares an unsupported PostgreSQL major version "
+            f"{manifest.postgres_major_version}"
+        )
+    server_version_num = await conn.fetchval("SHOW server_version_num")
+    connected_major = int(server_version_num) // 10000
+    if connected_major != manifest.postgres_major_version:
+        raise MigrationManifestError(
+            f"MIGRATION_MANIFEST_INVALID: connected PostgreSQL major version {connected_major} does "
+            f"not match the manifest's {manifest.postgres_major_version}"
+        )
+    return manifest
 
 
 # ---- Migration ledger (M-2: version/checksum/status provenance) ----------------------------------
@@ -407,26 +588,38 @@ async def ensure_ledger_bootstrapped(conn: Any) -> None:
 
 
 async def _insert_applying_row(
-    conn: Any, version: str, filename: str, checksum: str, runner_version: str
+    conn: Any,
+    version: str,
+    filename: str,
+    checksum: str,
+    runner_version: str,
+    expected_fingerprint: str,
 ) -> str:
+    """Insert the 'applying' row WITH its expected_fingerprint already populated from the migration's
+    canonical manifest -- M-2B requires this to exist BEFORE the migration SQL runs, never learned
+    from the schema after a successful apply."""
     row = await conn.fetchrow(
         f"INSERT INTO {LEDGER_TABLE} "
-        "(migration_version, migration_filename, migration_sha256, status, runner_version) "
-        "VALUES ($1, $2, $3, 'applying', $4) RETURNING attempt_id",
+        "(migration_version, migration_filename, migration_sha256, status, runner_version, "
+        "expected_fingerprint) "
+        "VALUES ($1, $2, $3, 'applying', $4, $5) RETURNING attempt_id",
         version,
         filename,
         checksum,
         runner_version,
+        expected_fingerprint,
     )
     return str(row["attempt_id"])
 
 
-async def _mark_applied(conn: Any, attempt_id: str, fingerprint_str: str) -> None:
+async def _mark_applied(conn: Any, attempt_id: str, observed_fingerprint_str: str) -> None:
+    """Record the observed fingerprint only -- expected_fingerprint was already set (from the
+    manifest) at INSERT time and must never be overwritten here."""
     await conn.execute(
         f"UPDATE {LEDGER_TABLE} SET status = 'applied', applied_at = statement_timestamp(), "
-        "expected_fingerprint = $2, observed_fingerprint = $2 WHERE attempt_id = $1",
+        "observed_fingerprint = $2 WHERE attempt_id = $1",
         attempt_id,
-        fingerprint_str,
+        observed_fingerprint_str,
     )
 
 
@@ -507,6 +700,11 @@ async def apply_chain_with_ledger(
     pending_ledger_update: tuple[str, str] | None = None
     saved_timeouts: dict[str, str] | None = None
     cleanup_errors: list[BaseException] = []
+    # M-2A/M-2B structured-result fields (RA-1C), attached to the raised exception on failure.
+    ledger_status_out: str | None = None
+    expected_fingerprint_out: str | None = None
+    observed_fingerprint_out: str | None = None
+    diagnostic_code: str | None = None
 
     try:
         await ensure_ledger_bootstrapped(conn)
@@ -516,7 +714,6 @@ async def apply_chain_with_ledger(
             version = _migration_version(filename)
             checksum = _sha256_file(migrations_dir / filename)
             created_tables = MIGRATION_CREATED_TABLES.get(filename, ())
-            fp_tables = MIGRATION_FINGERPRINT_TABLES.get(filename, created_tables)
 
             existing = await conn.fetchrow(
                 f"SELECT * FROM {LEDGER_TABLE} WHERE migration_version = $1 "
@@ -524,15 +721,40 @@ async def apply_chain_with_ledger(
                 version,
             )
 
-            if existing is not None and existing["status"] == "applied":
+            if existing is not None and existing["status"] in (
+                "applied",
+                "reconciled_after_ambiguous_commit",
+            ):
                 if existing["migration_sha256"] != checksum:
                     failed_version = version
                     result_code = "checksum_mismatch"
+                    ledger_status_out = existing["status"]
+                    diagnostic_code = "checksum_mismatch"
                     raise MigrationChecksumMismatchError(
                         f"MIGRATION_CHECKSUM_MISMATCH: {filename} ledger checksum does not match "
                         "the file on disk"
                     )
-                continue  # ledger-authoritative idempotent skip
+                # M-2A: an applied/reconciled row is re-verified against the ACTUAL schema every
+                # time it is encountered again -- not just that the file's checksum is unchanged.
+                # This is the ONLY thing that can detect a table/index/constraint dropped or altered
+                # out of band (including by a raw isolated-rehearsal "down").
+                manifest = await _validate_manifest(conn, filename, checksum)
+                observed_now = _stable_json(
+                    await schema_fingerprint(conn, list(manifest.owned_objects))
+                )
+                if observed_now != manifest.canonical_semantic_fingerprint:
+                    failed_version = version
+                    result_code = "ledger_schema_mismatch"
+                    ledger_status_out = existing["status"]
+                    expected_fingerprint_out = manifest.canonical_semantic_fingerprint
+                    observed_fingerprint_out = observed_now
+                    diagnostic_code = "ledger_schema_mismatch"
+                    raise LedgerSchemaMismatchError(
+                        f"LEDGER_SCHEMA_MISMATCH: {version}: ledger status={existing['status']} but "
+                        "the actual schema no longer matches the canonical manifest fingerprint "
+                        "(missing, altered, or wrong-shaped object)"
+                    )
+                continue  # ledger-authoritative idempotent skip, schema independently reconfirmed
 
             if existing is not None and existing["status"] == "applying":
                 attempt_id = str(existing["attempt_id"])
@@ -545,6 +767,31 @@ async def apply_chain_with_ledger(
                     pending_ledger_update = (attempt_id, "drifted")
                     raise SchemaDriftError(
                         f"{version}: ledger 'applying' row does not match this filename/checksum"
+                    )
+                # M-2B: reconciliation of an ambiguous prior attempt requires a NON-NULL expected
+                # fingerprint (never treat "no expectation recorded" as an automatic match) plus a
+                # valid, matching canonical manifest, before the observed-vs-expected comparison is
+                # trusted at all.
+                if existing["expected_fingerprint"] is None:
+                    failed_version = version
+                    result_code = "expected_fingerprint_missing"
+                    ledger_status_out = existing["status"]
+                    diagnostic_code = "expected_fingerprint_missing"
+                    pending_ledger_update = (attempt_id, "drifted")
+                    raise ExpectedFingerprintMissingError(
+                        f"{version}: ledger 'applying' row has no recorded expected fingerprint; "
+                        "cannot safely reconcile"
+                    )
+                manifest = await _validate_manifest(conn, filename, checksum)
+                if existing["expected_fingerprint"] != manifest.canonical_semantic_fingerprint:
+                    failed_version = version
+                    result_code = "drifted"
+                    ledger_status_out = existing["status"]
+                    expected_fingerprint_out = manifest.canonical_semantic_fingerprint
+                    pending_ledger_update = (attempt_id, "drifted")
+                    raise SchemaDriftError(
+                        f"{version}: ledger's recorded expected fingerprint no longer matches the "
+                        "canonical manifest"
                     )
                 complete = all(
                     [
@@ -559,10 +806,15 @@ async def apply_chain_with_ledger(
                     raise SchemaDriftError(
                         f"{version}: ledger shows 'applying' but the target schema is incomplete"
                     )
-                observed = _stable_json(await schema_fingerprint(conn, fp_tables))
-                if existing["expected_fingerprint"] not in (None, observed):
+                observed = _stable_json(
+                    await schema_fingerprint(conn, list(manifest.owned_objects))
+                )
+                if observed != existing["expected_fingerprint"]:
                     failed_version = version
                     result_code = "drifted"
+                    ledger_status_out = existing["status"]
+                    expected_fingerprint_out = existing["expected_fingerprint"]
+                    observed_fingerprint_out = observed
                     pending_ledger_update = (attempt_id, "drifted")
                     raise SchemaDriftError(
                         f"{version}: observed schema does not match the recorded expected fingerprint"
@@ -585,8 +837,15 @@ async def apply_chain_with_ledger(
                     "procedure"
                 )
 
+            # M-2B apply lifecycle: acquire chain lock (done, outer) -> verify checksum (done above)
+            # -> load+validate canonical manifest -> calculate expected fingerprint from the manifest
+            # -> insert ledger row WITH that expected_fingerprint -> execute migration SQL ->
+            # calculate observed fingerprint -> require observed == expected -> mark applied.
+            manifest = await _validate_manifest(conn, filename, checksum)
+            expected_fingerprint = manifest.canonical_semantic_fingerprint
+
             attempt_id = await _insert_applying_row(
-                conn, version, filename, checksum, RUNNER_VERSION
+                conn, version, filename, checksum, RUNNER_VERSION, expected_fingerprint
             )
 
             try:
@@ -597,7 +856,18 @@ async def apply_chain_with_ledger(
                 pending_ledger_update = (attempt_id, "failed")
                 raise
 
-            observed = _stable_json(await schema_fingerprint(conn, fp_tables))
+            observed = _stable_json(await schema_fingerprint(conn, list(manifest.owned_objects)))
+            if observed != expected_fingerprint:
+                failed_version = version
+                result_code = "fingerprint_mismatch"
+                expected_fingerprint_out = expected_fingerprint
+                observed_fingerprint_out = observed
+                diagnostic_code = "fingerprint_mismatch"
+                pending_ledger_update = (attempt_id, "drifted")
+                raise SchemaDriftError(
+                    f"{version}: observed schema after apply does not match the canonical manifest "
+                    "fingerprint"
+                )
             await _mark_applied(conn, attempt_id, observed)
             applied.append(version)
 
@@ -645,6 +915,10 @@ async def apply_chain_with_ledger(
         original_error.ra1b_cleanup_errors = cleanup_errors  # type: ignore[attr-defined]
         original_error.ra1b_result_code = result_code  # type: ignore[attr-defined]
         original_error.ra1b_failed_version = failed_version  # type: ignore[attr-defined]
+        original_error.ra1c_ledger_status = ledger_status_out  # type: ignore[attr-defined]
+        original_error.ra1c_expected_fingerprint = expected_fingerprint_out  # type: ignore[attr-defined]
+        original_error.ra1c_observed_fingerprint = observed_fingerprint_out  # type: ignore[attr-defined]
+        original_error.ra1c_diagnostic_code = diagnostic_code  # type: ignore[attr-defined]
         raise original_error
 
     return MigrationRunResult(
@@ -669,6 +943,9 @@ def result_to_dict(result: MigrationRunResult) -> dict[str, Any]:
 # ---- Read-only plan / dry-run (M-3) ---------------------------------------------------------------
 
 
+_PLAN_HEALTHY_DRIFT_STATUSES = ("ok", "pending")
+
+
 @dataclasses.dataclass
 class MigrationPlan:
     current_version: str | None
@@ -680,6 +957,7 @@ class MigrationPlan:
     untracked_versions: list[str]
     lock_required: bool
     expected_operations: list[str]
+    result_code: str
 
 
 async def plan_chain(conn: Any, migrations_dir: Path, filenames: Sequence[str]) -> MigrationPlan:
@@ -718,13 +996,36 @@ async def plan_chain(conn: Any, migrations_dir: Path, filenames: Sequence[str]) 
                 version,
             )
 
-        if row is not None and row["status"] == "applied":
+        if row is not None and row["status"] in ("applied", "reconciled_after_ambiguous_commit"):
             if row["migration_sha256"] != checksum:
                 drift_status[version] = "checksum_mismatch"
+                pending.append(version)
                 ops.append(f"{version}: BLOCKED -- checksum mismatch vs ledger")
-            else:
-                drift_status[version] = "ok"
-                current_version = version
+                continue
+            # M-2A: re-verify the ACTUAL schema against the migration's canonical manifest every
+            # time, rather than trusting a checksum match alone -- catches a table/index/constraint
+            # that was dropped or altered out of band (including a raw isolated-rehearsal "down").
+            try:
+                manifest = await _validate_manifest(conn, filename, checksum)
+            except MigrationManifestError as exc:
+                drift_status[version] = "manifest_invalid"
+                pending.append(version)
+                ops.append(f"{version}: BLOCKED -- {exc}")
+                continue
+            observed_now = _stable_json(
+                await schema_fingerprint(conn, list(manifest.owned_objects))
+            )
+            if observed_now != manifest.canonical_semantic_fingerprint:
+                drift_status[version] = "ledger_schema_mismatch"
+                pending.append(version)
+                ops.append(
+                    f"{version}: BLOCKED -- ledger status={row['status']} but the actual schema no "
+                    "longer matches the canonical manifest fingerprint; "
+                    "recreate_ephemeral_database_or_use_forward_fix"
+                )
+                continue
+            drift_status[version] = "ok"
+            current_version = version
             continue
 
         if row is not None and row["status"] == "applying":
@@ -743,6 +1044,12 @@ async def plan_chain(conn: Any, migrations_dir: Path, filenames: Sequence[str]) 
         pending.append(version)
         ops.append(f"{version}: apply")
 
+    result_code = "success"
+    for version in drift_status:
+        if drift_status[version] not in _PLAN_HEALTHY_DRIFT_STATUSES:
+            result_code = drift_status[version]
+            break
+
     return MigrationPlan(
         current_version=current_version,
         target_version=(_migration_version(filenames[-1]) if filenames else None),
@@ -753,6 +1060,7 @@ async def plan_chain(conn: Any, migrations_dir: Path, filenames: Sequence[str]) 
         untracked_versions=untracked,
         lock_required=bool(pending),
         expected_operations=ops,
+        result_code=result_code,
     )
 
 
