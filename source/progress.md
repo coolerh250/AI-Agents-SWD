@@ -16608,3 +16608,134 @@ to any shared database. Same feature branch, new commit. Draft PR #21.**
   self-verified remediation does not close them. Next: a **focused closure** by the **original
   RA-1R independent reviewer** (not a new full review, not this implementation session) over
   H-1/M-1/M-2/M-3, requiring separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-1FC — Focused Migration-Runner Closure
+
+**Marker: `STEP66C4_BE3_RA1B_FOCUSED_CLOSURE_VERIFY: PASS`. `RA1_TECHNICAL_VERDICT:
+REMEDIATION_REQUIRED`. Performed by the original RA-1R independent reviewer, on the same review
+branch, never merged, never pushed to origin until this session confirmed and pushed it. Draft PR
+#21 untouched throughout.**
+
+- **What.** The original RA-1R reviewer (continuity preserved; no new reviewer, no new
+  implementation subagent) performed a focused closure of the RA-1B remediation (`b31e655`) scoped
+  ONLY to H-1/M-1/M-2/M-3, using its own new worktree and a fresh isolated ephemeral PostgreSQL 16.
+  A reviewer-only integration commit (`19cff82`, merge of `b31e655` into the review branch) and a
+  focused-closure commit (`9cd841f`, five new artifacts) were added to
+  `review/66c4-be3-ra1-migration-rollback` — NOT FOR MAIN, no PR, no source-of-truth claim.
+  Confirmed via direct `git diff`: every file under review (`migration_runner.py`, the CLI,
+  migrations/*, the RA-1A/RA-1B test suites, both BE1 allowlist guards) remained byte-identical to
+  `b31e655`.
+- **H-1 and M-1: CLOSED**, independently reconfirmed (rollback-before-unlock, original-error
+  preservation, cancellation-safety, pool/session safety, cleanup-failure disposal; all 11
+  fingerprint-mutation categories detected, including FK MATCH/validation-state/index
+  access-method — beyond what RA-1B itself had tested).
+- **M-2 and M-3: REMEDIATION_REQUIRED**, with two concrete, source-verified gaps each:
+  - **M-2 gap A (blocking):** `plan_chain`'s "applied" branch checked only the file checksum, never
+    the actual schema — after a raw isolated-rehearsal down, the ledger still says "applied," plan
+    reports drift "ok," and a reapply silently no-ops while falsely reporting success with the
+    schema still absent. No ledger-aware down semantics, no documented destructive-down exclusion.
+  - **M-2 gap B:** ambiguous-commit reconciliation accepted a wrong-shaped table (checksum +
+    existence only, not shape) and never required a non-null expected fingerprint.
+  - **M-3 gap A:** `redact_for_operator`'s `_FORBIDDEN_VALUE_MARKERS` contained `"postgres://"` but
+    not the canonical `"postgresql://"` scheme — a `postgresql://` DSN passed through unredacted.
+  - **M-3 gap B:** both `asyncpg.connect()` calls in the CLI sat OUTSIDE their redacting `try`
+    blocks — a connect failure raised a raw, unredacted traceback instead of the documented
+    single-JSON contract.
+- **Independent verification.** I (the orchestrating session) independently confirmed every claim
+  before relaying it: the review-branch commits, the zero-diff on all protected files, the
+  self-verifier PASS (re-run), PR #21's unchanged Draft/OPEN/unmerged state, the shared test-host
+  containers' unchanged stopped state, and — by direct source inspection — that both the M-3
+  redaction gap (`"postgres://"` present, `"postgresql://"` absent from the marker list) and the
+  M-2 plan gap (`plan_chain`'s applied-branch never referencing `schema_state`/re-fingerprinting)
+  were genuine, not overstated. I then pushed the review branch to origin (`9cd841f`) for
+  preservation, since it had only existed locally in the reviewer's worktree until then.
+- **Regression.** Baseline (`18f11fe`): 314 passed. Feature (`b31e655`, reviewer's own tree
+  including its 20 new closure tests): 369 passed, same 3 pre-existing failures, no new failure, no
+  weakened assertion.
+- **Records (review branch only, commit `9cd841f`).** `be3-ra1b-focused-closure-review.md`,
+  `step66c4-be3-ra1b-focused-closure-evidence.md`, `be3-ra1b-focused-closure-result.md`,
+  `scripts/verify_step66c4_be3_ra1b_focused_closure.py`,
+  `tests/test_step66c4_be3_ra1b_focused_closure.py` (20 tests).
+- **Scope discipline.** No shared migration, deployment, feature-gate change, worker/relay/
+  consumer, or runtime action. No merge. `production_executed_true_count: 0`. Gates 1/2/6 remain
+  PENDING. Next: Product-Owner-authorized targeted remediation of M-2A/M-2B/M-3A/M-3B (see
+  Step 66C.4-BE3-RA-1C below).
+
+## Step 66C.4-BE3-RA-1C — Ledger–Schema Consistency and CLI Redaction Closure
+
+**Marker: `STEP66C4_BE3_RA1C_LEDGER_SCHEMA_CLI_VERIFY: PASS`. Self-verified only; a SECOND focused
+closure by the ORIGINAL RA-1R independent reviewer is the next required gate. NOT applied to any
+shared database. Same feature branch, new commit. Draft PR #21.**
+
+- **What.** Closed all four findings (M-2A, M-2B, M-3A, M-3B) from the RA-1FC focused closure.
+  H-1 and M-1 (already CLOSED) were not modified. Baseline confirmed first:
+  `origin/feature/66c4-be3-ra1-migration-rehearsal = b31e655`,
+  `origin/review/66c4-be3-ra1-migration-rollback = 9cd841f`, PR #21 Draft/OPEN/unmerged, clean tree.
+- **M-2A.** Both `plan_chain` and `apply_chain_with_ledger` now re-verify an `applied`/
+  `reconciled_after_ambiguous_commit` ledger row against the ACTUAL schema every time it is
+  encountered — not just that the file checksum is unchanged. They recompute the owned-object
+  schema fingerprint and require it to still equal the migration's committed canonical manifest;
+  any mismatch (missing table, dropped index, altered FK action/CHECK expression, wrong-shaped
+  object) fails closed (`LedgerSchemaMismatchError` on apply; `drift_status ==
+  "ledger_schema_mismatch"` on plan, which also drives the new `MigrationPlan.result_code` so
+  `--plan` exits non-zero). Verified directly: table absent, wrong-shaped, missing index, changed
+  FK action, changed CHECK expression, and a reconciled row later drifting — all six independently
+  detected.
+- **Destructive-down policy, explicitly recorded.** Ledger-managed destructive down is **NOT
+  supported** for shared environments. Future shared rollback (if ever authorized): disable feature
+  gates, stop poller/relay/consumer, roll back the application version, RETAIN migration tables and
+  business data, forward-fix under separate authorization. RA-1A's isolated pre-activation down
+  rehearsal remains valid ONLY as an ephemeral, no-business-data exercise. Verified directly: a raw
+  down after a ledger-aware apply produces `ledger_schema_mismatch` (not silent success) on both
+  plan and apply, with no table silently recreated; destroying and recreating the ephemeral
+  database is the only supported recovery, and a clean apply afterward succeeds.
+- **M-2B.** Five committed canonical manifests
+  (`shared/sdk/backup_dr/migration_manifests/{031..035}.json`), each produced ONCE from a clean
+  isolated PostgreSQL 16 rehearsal using the runner's own `schema_fingerprint()` function, supply
+  `expected_fingerprint` BEFORE any DDL runs — set on the ledger's `applying` row at INSERT time,
+  never learned after a successful apply. Manifest validation (`_load_manifest`/
+  `_validate_manifest`) fails closed on a missing file, invalid JSON, unrecognized format version,
+  mismatched version/filename/owned-objects, mismatched checksum, or an unsupported/mismatched
+  PostgreSQL major version. Ambiguous-commit reconciliation now additionally requires a non-null
+  expected fingerprint (`ExpectedFingerprintMissingError` if absent — the exact RA-1FC gap) and a
+  valid, matching manifest before the observed-vs-expected comparison is trusted.
+- **M-3A.** `redact_for_operator` no longer relies on a fixed substring list. New detectors
+  (`_SECRET_SCHEME_RE`, `_SECRET_USERINFO_RE`, `_SECRET_KV_RE`) recognize every connection-string
+  scheme this project uses (`postgres`/`postgresql`/`postgresql+asyncpg`/`redis`/`rediss`/
+  `http(s)`), a bare `user:password@host` userinfo fragment, and key=value credential fields
+  (password/secret/token/apikey/dsn) — collapsing the ENTIRE message to a fixed, endpoint-free
+  string whenever any is detected, so a partial in-place substitution can never leave an
+  unanticipated fragment exposed.
+- **M-3B.** Both `--plan` and `--apply` now wrap the connection attempt itself
+  (`_connect_or_none`/`_print_connect_failure`) in a protected path — a connect failure always
+  prints exactly one redacted JSON object (`result_code: "database_connect_failed"`) to stderr and
+  exits 1, never a raw traceback, and the CLI never prints to both stdout and stderr in the same
+  invocation.
+- **Tests.** New `tests/test_step66c4_be3_ra1c_ledger_schema_cli.py`: **31 passed, 0 skipped** (real
+  PostgreSQL 16) — covering every §17-mandated scenario (ledger/schema consistency, raw-down
+  policy, manifest validation, ambiguous-commit reconciliation, DSN redaction, CLI connect-failure
+  contract). RA-1A's own suite needed no modification. Three of RA-1B's OWN tests needed a
+  legitimate update (not a weakening — see the remediation record): two ambiguous-commit tests
+  previously inserted a null `expected_fingerprint` (exactly the gap this stage closes) and now
+  supply the real manifest's fingerprint, continuing to exercise their original assertions; one
+  fault-injection test using a synthetic filename now supplies an isolated, monkeypatched manifest
+  matching that filename so the DDL-failure path it tests is still reached. Full regression
+  alongside RA-1A/RA-1B/BE1-allowlist suites: **125 passed, 0 failed, 0 skipped**. Full
+  step66c4-tagged suite: **380 passed / 5 skipped / 3 failed** — the same 3 pre-existing baseline
+  failures every prior stage has identified, confirmed unchanged; count reconciles exactly (349
+  pre-RA-1C + 31 new = 380). ruff/black/mypy/`git diff --check`/secret-scan clean. Isolated
+  ephemeral PostgreSQL 16 (distinct container/port) destroyed after; the shared aiagents-test
+  stack's postgres/redis containers confirmed unchanged (still stopped) throughout.
+- **Records.** `be3-ra1c-ledger-schema-cli-remediation-record.md`,
+  `step66c4-be3-ra1c-ledger-schema-cli-evidence.md`,
+  `be3-ra1c-to-second-focused-closure-handoff.md`,
+  `scripts/verify_step66c4_be3_ra1c_ledger_schema_cli.py`, this section, and
+  `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** Migrations 029-035 unmodified (no defect found in them). H-1/M-1 design
+  unmodified. No shared migration application, no deployment, no feature-gate change, no
+  worker/relay/consumer, no runtime validation, no merge. Review branch `9cd841f` unmodified,
+  unmerged. Draft PR #21 remains Draft/OPEN/untouched. `production_executed_true_count: 0`. Gates
+  1/2/6 remain PENDING — this self-verified remediation does not close them. Next: a **second
+  focused closure** by the **original RA-1R independent reviewer** (not a new full review, not this
+  implementation session) over M-2A/M-2B/M-3A/M-3B, requiring separate, explicit Product Owner
+  authorization.
