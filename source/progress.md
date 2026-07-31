@@ -16824,3 +16824,75 @@ applied to any shared database. Same feature branch, new commit. Draft PR #21.**
   1/2/6 remain PENDING — this self-verified remediation does not close them. Next: a **final,
   M-3B-only re-check** by the **original RA-1R independent reviewer** (not a new full review, not
   this implementation session), requiring separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-1FC3 — Final M-3B CLI Contract Closure
+
+**Marker: `STEP66C4_BE3_RA1D_FINAL_M3B_CLOSURE_VERIFY: PASS`. Technical verdict:
+`RA1_TECHNICAL_VERDICT: PASS`. Third and final focused closure by the original RA-1R/RA-1FC/RA-1FC2
+reviewer, over its own isolated worktree and a fresh ephemeral PostgreSQL 16. Review branch only —
+implementation, manifests, migrations, and RA-1D tests untouched.**
+
+- **What.** Independently re-derived the single M-3B residual (missing-configuration CLI output)
+  from scratch by driving the real `scripts/run_platform_migrations.py` as a subprocess, rather than
+  trusting the RA-1D self-verifier. Reviewer-only integration commit `7c6b830` (merge of RA-1D's
+  `97e56d4` into the review branch, NOT FOR MAIN, no PR) and final closure commit `1f3a66f`, both on
+  `review/66c4-be3-ra1-migration-rollback` (prior head `800035b`, preserved and unmodified).
+- **Result.** M-3B CLOSED: missing/empty/whitespace-only configuration (absent, `""`, spaces, tab,
+  mixed whitespace, tested × both `--plan`/`--apply`) consistently produces exit 2, empty stdout, and
+  exactly one JSON object on stderr with no traceback or secret exposure; malformed and unreachable
+  DSNs remain correctly classified as `database_connect_failed` (exit 1), never confused with missing
+  configuration; success and drift paths, and third-party (asyncio DEBUG) logging, unaffected. Diff
+  scope independently confirmed limited to `scripts/run_platform_migrations.py` — `migration_runner.py`,
+  all migration manifests, and migrations 029-035 are byte-identical to `7820b4b`. All original
+  finding/review documents (RA-1R, RA-1FC, RA-1FC2) confirmed untouched.
+- **Tests.** New `tests/test_step66c4_be3_ra1d_final_m3b_closure.py`: **21 passed, 0 skipped** —
+  independently re-run by this session (not just the reviewer's own claim) against a freshly
+  provisioned, separate ephemeral PostgreSQL 16 container, together with the reviewer's own
+  `scripts/verify_step66c4_be3_ra1d_final_m3b_closure.py` (PASS) and 158 directly-affected RA-1/BE1
+  regression tests (0 failed, 0 skipped). ruff/black/mypy/secret-scan clean on the reviewer's new
+  files (independently re-run by this session).
+- **Records.** `be3-ra1d-final-m3b-closure-review.md`, `step66c4-be3-ra1d-final-m3b-closure-evidence.md`,
+  `be3-ra1d-final-m3b-closure-result.md`, `scripts/verify_step66c4_be3_ra1d_final_m3b_closure.py`,
+  `tests/test_step66c4_be3_ra1d_final_m3b_closure.py`, this section.
+- **Scope discipline.** No implementation, manifest, migration, or RA-1D test modified. No shared
+  migration, deployment, feature-gate change, worker/relay/consumer, or runtime action. No merge.
+  `production_executed_true_count: 0`. Review branch `1f3a66f` pushed to origin, preserved, unmerged.
+  PR #21 confirmed Draft/OPEN/unmerged, head `97e56d4`, before and after. Gates 1/2/6 remain PENDING.
+  With this closure, all four original RA-1 findings (H-1, M-1, M-2, M-3) and every focused-closure
+  residual (M-2A, M-2B, M-3A, M-3B) are independently verified closed. Next: a Product-Owner merge
+  decision for Draft PR #21 (see Step 66C.4-BE3-RA-1M below).
+
+## Step 66C.4-BE3-RA-1M — RA-1 Migration Readiness Foundation Merge
+
+**Marker: `STEP66C4_BE3_RA1_MERGE_VERIFY: PASS`. Controlled, low-risk source-control merge of Draft
+PR #21 into canonical main, per explicit Product Owner authorization following the independently
+re-verified RA-1FC3 `RA1_TECHNICAL_VERDICT: PASS`. Source-control action only — no shared migration
+application, no deployment, no feature-gate change, no runtime activation.**
+
+- **What.** After a full preflight (clean working tree, exact-match verification of
+  `origin/main`=`18f11fe`, `origin/feature/66c4-be3-ra1-migration-rehearsal`=`97e56d4`,
+  `origin/review/66c4-be3-ra1-migration-rollback`=`1f3a66f`, and PR #21's head OID re-locked
+  immediately before the merge call), executed `gh pr ready 21` then
+  `gh pr merge 21 --merge --match-head-commit 97e56d4` — non-squash, non-rebase, no admin bypass, no
+  branch-protection bypass, no force push. PR #21 immediately confirmed `MERGED` (not a pending
+  auto-merge) with merge commit `48004e3`, exactly two parents in order (parent 1 = `18f11fe`
+  pre-merge main, parent 2 = `97e56d4` approved feature head) — independently confirmed via
+  `git show --no-patch --format='%H%n%P'`.
+- **Ancestry.** `97e56d4` confirmed a main ancestor post-merge; `review/66c4-be3-ra1-migration-rollback`
+  (head `1f3a66f`) and its reviewer-only integration commits (`19cff82`, `07f839f`, `7c6b830`)
+  confirmed NOT main ancestors, both before and after the merge. All four review evidence commits
+  (`352d546`, `9cd841f`, `800035b`, `1f3a66f`) confirmed to exist and remain reachable only from the
+  review branch, not from main.
+- **Records.** `be3-ra1-merge-source-of-truth.md`, `step66c4-be3-ra1-merge-evidence.md`,
+  `scripts/verify_step66c4_be3_ra1_merge.py`, `tests/test_step66c4_be3_ra1_merge.py`, this section,
+  and `next-executable-stage-sequence.md` updated. No application implementation, migration runner,
+  migration manifest, migration SQL, test-under-review, deployment configuration, feature-gate
+  default, or review evidence file modified by this stage.
+- **Post-merge status (binding).** RA-1 Migration Readiness Foundation: **MERGED**. **NOT APPLIED TO
+  SHARED DB. NOT DEPLOYED. NOT RUNTIME VALIDATED. NOT ACTIVATED.** Migrations 031-035 present on main
+  but with no shared-apply record. All four BE3 feature gates unchanged, default false. No
+  worker/relay/consumer started; no resume/replay/dispatch executed. `production_executed_true_count:
+  0`. Gates 1 / 2 / 6 remain **PENDING RUNTIME/SHARED EXECUTION** — not marked shared-migration-
+  complete, runtime-validated, activated, deployment-ready, or production-ready. RA-2 remains **NOT
+  AUTHORIZED**. Next: any shared migration application, deployment, runtime validation, activation,
+  or RA-2 work requires its own separate, explicit Product Owner authorization.

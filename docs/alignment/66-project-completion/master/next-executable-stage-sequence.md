@@ -207,6 +207,23 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   a **final, M-3B-only re-check** by the **original RA-1R independent reviewer**; each remaining
   RA-stage requires its own separate, explicit Product Owner authorization, and none has been given
   beyond RA-1A/RA-1R/RA-1B/RA-1FC/RA-1C/RA-1FC2/RA-1D themselves.
+  Step 66C.4-BE3-RA-1FC3 (final, M-3B-only closure by the original RA-1R/RA-1FC/RA-1FC2 reviewer) is
+  now COMPLETE (same review branch, reviewer-only integration commit 7c6b830, final closure commit
+  1f3a66f, pushed to origin, unmerged, unmodified by any implementation change -- independently
+  re-verified by a fresh, separately-provisioned ephemeral PostgreSQL 16 re-run of the reviewer's own
+  21-test closure suite and 158 directly-affected RA-1/BE1 regression tests, 0 failed, 0 skipped):
+  STEP66C4_BE3_RA1D_FINAL_M3B_CLOSURE_VERIFY: PASS, RA1_TECHNICAL_VERDICT: PASS. M-3B CLOSED. With
+  this, H-1, M-1, M-2A, M-2B, M-3A, and M-3B are all independently verified CLOSED. Step
+  66C.4-BE3-RA-1M (controlled merge of Draft PR #21 into canonical main) is now COMPLETE: merge
+  commit 48004e3, two parents in order (18f11fe pre-merge main, 97e56d4 approved feature head),
+  confirmed via git show; review branch 1f3a66f confirmed preserved and NOT a main ancestor both
+  before and after. RA-1 Migration Readiness Foundation status: MERGED / NOT APPLIED TO SHARED DB /
+  NOT DEPLOYED / NOT RUNTIME VALIDATED / NOT ACTIVATED. All four feature gates remain default-false;
+  production_executed_true_count remains 0. Gates 1/2/6 remain PENDING RUNTIME/SHARED EXECUTION --
+  this merge does not close them. RA-2 remains NOT AUTHORIZED; each remaining stage (shared migration
+  application, deployment, runtime validation, activation, or RA-2) requires its own separate,
+  explicit Product Owner authorization, and none has been given beyond RA-1A/RA-1R/RA-1B/RA-1FC/
+  RA-1C/RA-1FC2/RA-1D/RA-1FC3/RA-1M themselves.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order
