@@ -224,6 +224,30 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   application, deployment, runtime validation, activation, or RA-2) requires its own separate,
   explicit Product Owner authorization, and none has been given beyond RA-1A/RA-1R/RA-1B/RA-1FC/
   RA-1C/RA-1FC2/RA-1D/RA-1FC3/RA-1M themselves.
+  Step 66C.4-BE3-RA-2 (identity and secret provisioning decision) is now COMPLETE as an
+  inventory/analysis/decision-package stage on branch planning/66c4-be3-ra2-identity-secret-decision
+  (baseline c1db4cc): STEP66C4_BE3_RA2_IDENTITY_SECRET_DECISION_VERIFY: PASS, 79 tests passed / 0
+  skipped / 0 failed, 20 verifier checks. Code-verified findings: no verifiable human operator
+  identity (the BE3 surface takes BOTH actor id and role verbatim from client headers, so a caller
+  may self-declare platform_admin); no Service Identity authenticator (16 test-only call sites, ZERO
+  in apps/shared/scripts, leaving the service-identity policy branch unreachable in production);
+  Policy Authority is a strong, capability-confined, dual-key-rotatable mechanism that is a
+  long-lived bearer secret read directly from os.environ and configured in NO environment; the
+  effective secret backend is environment variables (Vault runs only as `server -dev`, infra/vault/
+  holds only a .gitkeep, no kind:Secret template exists, ServiceAccounts are template-only with
+  automount disabled); OIDC is interface-only with every live operation raising OidcDisabledError;
+  and grant_production_approval / execute_authorized_replay / prepare_execution all still have ZERO
+  production callers. 20 threats registered (3 CRITICAL / 11 HIGH / 6 MEDIUM) with Zero Trust
+  explicitly disclaimed. 12 decisions (RA2-D01..RA2-D12) are recorded with every Product Owner
+  selection PENDING and `Decided by Claude Code: 0` -- no identity provider, secret backend,
+  delivery mechanism, provisioning owner, validation environment, or activation boundary was
+  chosen. All 11 RA-P open decisions carried forward and classified, 0 dropped. 8 implementation
+  stages proposed and dependency-reordered, 0 authorized. This stage created no identity, read or
+  wrote no secret, changed no runtime/infra/migration file (git-verified), left all four BE3 feature
+  gates default false, and kept production_executed_true_count at 0. Gates 1/2/6 remain PENDING
+  RUNTIME/SHARED EXECUTION. RA-3 and every proposed implementation stage remain NOT AUTHORIZED. The
+  next gate is the Product Owner's answers to the 12 decisions, followed by separate explicit
+  authorization for whichever implementation stage runs first.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

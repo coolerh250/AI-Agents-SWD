@@ -16896,3 +16896,80 @@ application, no deployment, no feature-gate change, no runtime activation.**
   complete, runtime-validated, activated, deployment-ready, or production-ready. RA-2 remains **NOT
   AUTHORIZED**. Next: any shared migration application, deployment, runtime validation, activation,
   or RA-2 work requires its own separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-2 — Identity and Secret Provisioning Decision
+
+**Marker: `STEP66C4_BE3_RA2_IDENTITY_SECRET_DECISION_VERIFY: PASS`. Inventory + security analysis +
+Product Owner decision package ONLY. No identity created or modified, no secret read/written/
+rotated, no Vault/Kubernetes/IAM change, no shared migration, no deployment, no feature-gate change,
+no worker/relay/consumer, no activation. Branch
+`planning/66c4-be3-ra2-identity-secret-decision`; baseline canonical main `c1db4cc`.**
+
+- **Method.** Every classification was re-derived from directly inspected code paths and committed
+  configuration, never from a document title or class name. This mattered: `docs/security/` already
+  contains ~40 identity/OIDC/break-glass design documents, and the code shows most of that corpus is
+  *planned design*, not implemented capability.
+- **Central findings (code-evidenced).**
+  - **No verifiable human operator identity.** Two unrelated, test-gated surfaces exist. The BE3/
+    task surface (`task_api._authenticate`) takes BOTH the actor id AND the role verbatim from
+    `X-Task-Actor` / `X-Task-Role` request headers, validating the role only for TASK_ROLES
+    membership — so a caller may self-declare `platform_admin`. The Admin Console surface has a
+    genuine HMAC-signed, HttpOnly, SameSite=strict, 30-minute, revocable session with CSRF, but
+    authenticates a single hardcoded pseudo-identity (`operator-test`) in test_local mode only.
+  - **No Service Identity authenticator.** `is_service_identity=True` appears at 16 call sites, ALL
+    under `tests/`; zero in `apps/`/`shared/`/`scripts/`. The policy branch that governs a service
+    identity is therefore unreachable in production. (RA-P recorded 12 sites; re-count at `c1db4cc`
+    is 16 — the qualitative conclusion is unchanged and independently re-verified.)
+  - **Policy Authority is a well-built mechanism that is configured nowhere.** Constant-time
+    comparison, dedicated-header-only sourcing, no short-circuit, uniform 403, never logged/echoed,
+    dual-key rotation slots, and — the strongest blast-radius control in the system — capability
+    confinement to authorize/reject only. But it is a long-lived bearer secret read directly from
+    `os.environ` (bypassing the platform's own SecretRef redaction), paired with an actor id that
+    arrives in an unverified client header, and `grep BE3_RESUME_POLICY_AUTHORITY infra/` returns
+    zero matches, so it is unconditionally fail-closed in every environment that exists.
+  - **Effective secret backend is environment variables** (`SECRET_PROVIDER` defaults to `"env"`).
+    Vault runs only as `server -dev` (in-memory, auto-unsealed, root token); `infra/vault/` holds
+    only a `.gitkeep`. A real Vault KV v2 client exists but authenticates with a static token and is
+    not the default. No `kind: Secret` template exists; ServiceAccounts are template-only with
+    `automountServiceAccountToken: false` and no RoleBinding, so projected-token workload identity
+    has no substrate. GCP Secret Manager appears once, as a schema string.
+  - **OIDC is interface-only.** Every live operation in `oidc_provider.py` raises `OidcDisabledError`;
+    no request-authentication path imports `shared.sdk.identity` at all.
+  - **Zero production callers** for `grant_production_approval`, `execute_authorized_replay`, and
+    `prepare_execution` — independently re-confirmed at `c1db4cc`.
+- **Threat model.** 20 threats registered (3 CRITICAL: operator impersonation, header-based role
+  escalation, operator/approver collision defeating the two-person replay control; 11 HIGH; 6
+  MEDIUM), each with attack path, current control, control gap, required decision, candidate
+  mitigation, and future validation evidence. Four principal trust gaps named. Zero Trust explicitly
+  disclaimed as NOT achieved, NOT designed, NOT approached.
+- **Decision package.** 12 decisions (RA2-D01 … RA2-D12) covering operator identity source, session/
+  API authN, role/scope source, Service Identity mechanism, Policy Authority authentication, secret
+  backend, secret delivery, provisioning owner, rotation/revocation, break-glass, first validation
+  environment, and initial activation boundary. Each has ≥2 options, explicit unacceptable options,
+  security/operational/on-prem/GCP/cost-lock-in impact, prerequisites, rollback, and a NON-BINDING
+  recommended assessment. **Every `Product Owner selection` is PENDING; `Decided by Claude Code: 0`.**
+  No provider, backend, mechanism, owner, or environment was chosen. All 11 RA-P open decisions
+  carried forward and classified (5 resolved-by-RA-2 decision, 1 requires-RA-2 decision, 2 deferred
+  to RA-6, 3 deferred to RA-7, plus 1 additional cross-cutting BE2 poller/relay item deferred),
+  0 dropped, 0 silently defaulted.
+- **Implementation decomposition.** 8 proposed stages, dependency-reordered from the suggested order
+  with reasons stated (secret backend must precede the authenticators that need somewhere to put a
+  credential; Policy Authority before Service Identity because only the latter makes an execution
+  path reachable; a new decision-independent `RA-2I0` prerequisites stage proposed so three concrete
+  hardening items need not wait on any decision). Each stage records objective, required PO
+  decisions, allowed files, migration/secret/runtime/deployment impact, verification level,
+  independent-review requirement, rollback, and activation boundary. **Authorized stages: 0.**
+- **Tests/verification.** `tests/test_step66c4_be3_ra2_identity_secret_decision.py`: **79 passed, 0
+  skipped, 0 failed** — deliberately offline (starting any runtime container would itself be a scope
+  violation of this stage). Includes an independent re-derivation test that re-runs
+  `git grep is_service_identity=True` rather than trusting the inventory document, and genuine
+  negative-proof tests that fail if any `apps/`/`shared/`/`infra/`/`migrations/` file was touched.
+  Verifier: 20 checks, PASS. ruff/black/mypy/`git diff --check`/secret scan clean.
+- **Safety.** No `.env` read, no `printenv`, no `vault kv get`, no `kubectl get secret`, no base64
+  secret decode, no mounted-secret-file read, no cloud secret API call. No token, password, private
+  key, client secret, real DSN, or account identifier in any deliverable; secret names recorded as
+  references only. Files touched are confined to `docs/`, `source/`, `scripts/`, `tests/`.
+  All four BE3 feature gates remain default false. `production_executed_true_count: 0`. Gates 1/2/6
+  remain PENDING RUNTIME/SHARED EXECUTION — unchanged by this stage. RA-3 and every proposed
+  implementation stage remain **NOT AUTHORIZED**. Next: Product Owner answers to the 12 decisions,
+  then separate explicit authorization for whichever implementation stage runs first.
