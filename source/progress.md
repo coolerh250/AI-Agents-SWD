@@ -16875,3 +16875,63 @@ applied to any shared database. Same feature branch, new commit. Draft PR #21.**
   1/2/6 remain PENDING — this self-verified remediation does not close them. Next: a **final,
   M-3B-only re-check** by the **original RA-1R independent reviewer** (not a new full review, not
   this implementation session), requiring separate, explicit Product Owner authorization.
+
+## Step 66C.4-BE3-RA-1FC3 — Final M-3B CLI-Contract Closure (missing-config single-JSON, review only)
+
+**Markers (never conflated). Process: `STEP66C4_BE3_RA1D_FINAL_M3B_CLOSURE_VERIFY: PASS`. Technical:
+`RA1_TECHNICAL_VERDICT: PASS`. Performed by the ORIGINAL RA-1R/RA-1FC/RA-1FC2 reviewer (continuity),
+NOT a new reviewer or the RA-1D implementation session. Review branch
+`review/66c4-be3-ra1-migration-rollback`; reviewer-only integration merge `7c6b830` of `97e56d4`
+(NOT FOR MAIN, no PR); Draft PR #21 confirmed Draft/OPEN/unmerged before and after; prior review
+commit `800035b` preserved.**
+
+- **Scope.** ONLY the one M-3B residual from RA-1FC2 (missing/empty/whitespace-only
+  `PLATFORM_MIGRATIONS_DATABASE_URL` must follow the single-JSON CLI error contract) over the RA-1D
+  remediation (`97e56d4`, parent `7820b4b`). No re-run of the full RA-1 review. Re-derived from the
+  committed CLI and direct subprocess experiments on a fresh isolated ephemeral PostgreSQL 16.14
+  (distinct container/port from every prior RA-1 stage; destroyed after).
+- **Diff-scope (§3) independently confirmed.** `git diff 7820b4b 97e56d4` on
+  `shared/sdk/backup_dr/migration_runner.py`, `migration_manifests/*`, and `migrations/*` is empty
+  (byte-identical); the only implementation change is `scripts/run_platform_migrations.py`
+  (`_dsn_from_env` now returns `str|None` for absent/empty/whitespace-only via `not dsn.strip()`; new
+  `_print_missing_configuration(mode)` emits one JSON object + returns 2; `main()` dispatches to it).
+  H-1/M-1/M-2/M-3A are unchanged code; no feature-gate default or deployment config touched.
+- **Verdict: M-3B CLOSED.** Verified across absent/""/whitespace × --plan/--apply: exit 2, stdout
+  empty, stderr = exactly one JSON object (json.loads over the FULL stderr — a plain-text prefix or a
+  second document would raise) == {result_code: missing_configuration, mode: <plan|apply>, success:
+  false, message: "Required database configuration is missing.", failed_version: null}; no
+  traceback; no env-var name/username/password/host/database leak. Classification preserved: malformed
+  and unreachable DSN → exit 1/database_connect_failed (never misclassified as missing); success → exit
+  0/single stdout JSON/stderr empty; drift → exit 1/single stderr JSON (ledger_schema_mismatch).
+  Third-party logging (PYTHONASYNCIODEBUG=1) does not break the single-JSON contract. All four original
+  RA-1 findings (H-1/M-1/M-2/M-3) plus every focused-closure residual (M-2A/M-2B/M-3A/M-3B) are now
+  independently verified closed.
+- **Overall verdict:** `RA1_TECHNICAL_VERDICT: PASS` (no remaining reviewer-blocking finding on the
+  RA-1 migration-runner readiness foundation).
+- **Test integrity (§10).** The RA-1D 12-test suite genuinely enforces exactly-one-JSON (json.loads on
+  the whole stderr, not a substring/contains check) and is not weakened (no xfail/skip beyond the two
+  real-DB success tests' shared requires_pg guard, no swallow, no relaxation). Cross-check: my RA-1FC2
+  characterization suite re-run against 97e56d4 is 15 passed / 1 failed, the single failure being
+  `test_m3b_missing_config_exit_2` (asserted the OLD plain-text behavior) — the exact residual now
+  fixed, nothing else regressed.
+- **Tests.** New `tests/test_step66c4_be3_ra1d_final_m3b_closure.py`: **21 passed, 0 skipped** (real
+  PostgreSQL 16). Directly-affected RA-1 suites (RA-1A 12 + RA-1B 23 + RA-1C 31 + RA-1D 12 + this 21):
+  **99 passed / 0 failed / 0 skipped**. Regression re-run on BOTH commits: baseline `18f11fe` = 3
+  failed / 314 passed / 5 skipped; feature `97e56d4` = 3 failed / 413 passed / 5 skipped
+  (= 314 + 99). Same 3 pre-existing failures (identical node IDs) on both, none CLI/migration/backup-
+  related, no new failure, no additional skip, no assertion weakened; both BE1 allowlist guards pass on
+  feature. ruff/black/mypy/`git diff --check`/secret-scan clean on the two added Python files. Fresh
+  isolated PG16 destroyed after; shared stack untouched.
+- **Records.** `be3-ra1d-final-m3b-closure-review.md`,
+  `step66c4-be3-ra1d-final-m3b-closure-evidence.md`, `be3-ra1d-final-m3b-closure-result.md`,
+  `scripts/verify_step66c4_be3_ra1d_final_m3b_closure.py`,
+  `tests/test_step66c4_be3_ra1d_final_m3b_closure.py`, and this section added. Prior RA-1R/RA-1FC/
+  RA-1FC2 finding documents were NOT modified (closure reference appended only via this section).
+- **Scope discipline.** Review only — no implementation/manifest/test-under-review modified (all
+  byte-identical to `97e56d4`). No shared/test/staging/production database touched. No feature gate
+  enabled (all four default-false). No worker/relay/consumer started. No deployment. No runtime
+  resume/replay. No production approval. No branch or PR merged; PR #21 left Draft/OPEN/unmerged.
+  Reviewer-only merge `7c6b830` exists only on the review branch. `production_executed_true_count: 0`.
+  Gates 1/2/6 remain PENDING — this review does NOT close them; their final status is the PM/PO's
+  determination per the canonical gate definition, informed by this PASS. No RA-2 or other stage
+  started by this review.

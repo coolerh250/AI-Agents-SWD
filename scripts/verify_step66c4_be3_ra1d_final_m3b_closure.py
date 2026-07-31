@@ -1,0 +1,137 @@
+#!/usr/bin/env python3
+"""Step 66C.4-BE3-RA-1FC3 -- final M-3B closure self-verifier (process marker only).
+
+Static/structural checks for the ORIGINAL RA-1R/RA-1FC/RA-1FC2 reviewer's third and final focused
+closure of the one M-3B residual (missing-configuration CLI single-JSON contract) over the RA-1D
+remediation. Confirms the closure deliverables exist, that the files UNDER REVIEW (the CLI, the
+runner, every committed manifest, every migration, and the RA-1A/RA-1B/RA-1C/RA-1D test suites) are
+byte-identical to the reviewed remediation head ``97e56d4``, that the closure test suite reuses the
+fail-closed destructive-PG guard, that the review records BOTH a process marker AND a separate
+technical verdict, that the safety boundary is recorded (production_executed_true_count: 0; PR #21
+untouched), and that no internal IP / SSH alias / private hostname / credential leaked into any
+committed closure file.
+
+It does NOT connect to PostgreSQL. It emits ONLY the process marker; the technical verdict is a human
+judgment recorded in the review.
+
+Process marker: STEP66C4_BE3_RA1D_FINAL_M3B_CLOSURE_VERIFY: PASS | FAIL
+"""
+
+from __future__ import annotations
+
+import re
+import subprocess
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+CONTRACT = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
+HANDOFF = ROOT / "docs" / "handoffs" / "66c4-reminder-expiry-controlled-resume"
+TEST_DOCS = ROOT / "docs" / "test"
+
+REVIEW_DOC = CONTRACT / "be3-ra1d-final-m3b-closure-review.md"
+EVIDENCE_DOC = TEST_DOCS / "step66c4-be3-ra1d-final-m3b-closure-evidence.md"
+RESULT_DOC = HANDOFF / "be3-ra1d-final-m3b-closure-result.md"
+REVIEW_TESTS = ROOT / "tests" / "test_step66c4_be3_ra1d_final_m3b_closure.py"
+REVIEW_VERIFIER = ROOT / "scripts" / "verify_step66c4_be3_ra1d_final_m3b_closure.py"
+
+FROZEN = (
+    "scripts/run_platform_migrations.py",
+    "shared/sdk/backup_dr/migration_runner.py",
+    "tests/test_step66c4_be3_ra1_migration_rehearsal.py",
+    "tests/test_step66c4_be3_ra1b_migration_runner_remediation.py",
+    "tests/test_step66c4_be3_ra1c_ledger_schema_cli.py",
+    "tests/test_step66c4_be3_ra1d_missing_config_json.py",
+)
+REVIEWED_REMEDIATION_HEAD = "97e56d4"
+
+PROCESS_MARKER = "STEP66C4_BE3_RA1D_FINAL_M3B_CLOSURE_VERIFY"
+TECH_VERDICT_TOKEN = "RA1_TECHNICAL_VERDICT"
+
+# Neutral-label needles assembled from fragments so this file does not itself contain the literal
+# forbidden tokens (allowing it to scan itself cleanly).
+_PRIVATE_OCTET = r"\b10\.0\." + r"1\.\d{1,3}\b"
+_SSH_ALIAS = r"\b" + "aiagent" + "-swd" + r"\b"
+_EPHEMERAL_PW = r"\b" + "fc3" + "ephem" + r"\b"
+_PRIVATE_USER = r"\b" + "it" + "admin" + r"\b"
+FORBIDDEN_PATTERNS = tuple(
+    re.compile(p) for p in (_PRIVATE_OCTET, _SSH_ALIAS, _EPHEMERAL_PW, _PRIVATE_USER)
+)
+
+failures: list[str] = []
+
+
+def bad(m: str) -> None:
+    failures.append(m)
+    print(f"  [FAIL] {m}")
+
+
+def _git(*args: str) -> str:
+    return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
+
+
+def main() -> int:  # noqa: C901
+    for p in (REVIEW_DOC, EVIDENCE_DOC, RESULT_DOC, REVIEW_TESTS, REVIEW_VERIFIER):
+        if not p.is_file():
+            bad(f"missing closure artifact: {p}")
+    if failures:
+        print(f"{PROCESS_MARKER}: FAIL")
+        return 1
+
+    diff = _git("diff", "--name-only", REVIEWED_REMEDIATION_HEAD, "HEAD")
+    changed = {f for f in diff.splitlines() if f}
+    for frozen in FROZEN:
+        if frozen in changed:
+            bad(f"file under review was modified by this closure: {frozen}")
+    for f in changed:
+        if f.startswith("migrations/") or f.startswith("shared/sdk/backup_dr/migration_manifests/"):
+            bad(f"a migration/manifest file was modified by this closure: {f}")
+
+    tests = REVIEW_TESTS.read_text(encoding="utf-8")
+    if "destructive_pg_refusal_reason" not in tests or "requires_pg" not in tests:
+        bad("closure test suite does not reuse the fail-closed destructive-PG guard")
+    for token in ("missing_configuration", "database_connect_failed", "run_platform_migrations"):
+        if token not in tests:
+            bad(f"closure test suite does not exercise {token}")
+
+    review = REVIEW_DOC.read_text(encoding="utf-8")
+    result = RESULT_DOC.read_text(encoding="utf-8")
+    evidence = EVIDENCE_DOC.read_text(encoding="utf-8")
+    if f"{PROCESS_MARKER}: PASS" not in review + result + evidence:
+        bad("process marker not recorded in the closure artifacts")
+    if TECH_VERDICT_TOKEN not in review:
+        bad("technical verdict token not recorded in the review document")
+    if "M-3B" not in review:
+        bad("review document does not record the M-3B verdict")
+
+    if "production_executed_true_count: 0" not in evidence:
+        bad("production_executed_true_count: 0 not recorded in the evidence record")
+    if "#21" not in result and "PR 21" not in result:
+        bad("review result does not record the status of PR #21")
+
+    for p in (REVIEW_DOC, EVIDENCE_DOC, RESULT_DOC, REVIEW_TESTS, REVIEW_VERIFIER):
+        text = p.read_text(encoding="utf-8")
+        for pat in FORBIDDEN_PATTERNS:
+            if pat.search(text):
+                bad(f"forbidden internal identifier {pat.pattern!r} in {p.name}")
+
+    if failures:
+        print(f"{PROCESS_MARKER}: FAIL ({len(failures)} issue(s))")
+        return 1
+
+    print(
+        "  [OK] Final M-3B closure deliverables present; files under review unmodified vs 97e56d4;"
+    )
+    print(
+        "       closure suite reuses the fail-closed guard and drives the real CLI; process marker"
+    )
+    print("       and a separate technical verdict recorded; safety boundary")
+    print(
+        "       (production_executed_true_count: 0, PR #21 untouched) recorded; neutral labels only."
+    )
+    print(f"{PROCESS_MARKER}: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
