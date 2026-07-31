@@ -47,12 +47,29 @@ RA1_CHAIN: tuple[str, ...] = (
 DSN_ENV = "PLATFORM_MIGRATIONS_DATABASE_URL"
 
 
-def _dsn_from_env() -> str:
+def _dsn_from_env() -> str | None:
+    """Missing, empty, and whitespace-only are all treated as "not configured" -- returns None
+    rather than exiting directly, so the single caller in main() is the only place that ever
+    prints the missing-configuration JSON object (RA-1D: never a plain-text line)."""
     dsn = os.environ.get(DSN_ENV)
-    if not dsn:
-        print(f"{DSN_ENV} is not set; refusing to run.", file=sys.stderr)
-        sys.exit(2)
+    if dsn is None or not dsn.strip():
+        return None
     return dsn
+
+
+def _print_missing_configuration(mode: str) -> int:
+    """RA-1D: missing/empty/whitespace-only configuration must follow the same single-JSON
+    contract as every other CLI failure path -- never a plain-text line, never a value beyond the
+    fixed message below (no DSN, host, port, database, username, or password)."""
+    payload = {
+        "result_code": "missing_configuration",
+        "mode": mode,
+        "success": False,
+        "message": "Required database configuration is missing.",
+        "failed_version": None,
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True), file=sys.stderr)
+    return 2
 
 
 def _print_connect_failure(mode: str) -> int:
@@ -144,8 +161,11 @@ def main() -> int:
         help="Apply the pending chain under the ledger-aware, bounded-timeout, lock-serialized runner.",
     )
     args = parser.parse_args()
+    mode = "plan" if args.plan else "apply"
     dsn = _dsn_from_env()
-    if args.plan:
+    if dsn is None:
+        return _print_missing_configuration(mode)
+    if mode == "plan":
         return asyncio.run(_run_plan(dsn))
     return asyncio.run(_run_apply(dsn))
 

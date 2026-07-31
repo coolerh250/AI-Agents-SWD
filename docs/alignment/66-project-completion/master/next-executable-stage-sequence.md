@@ -186,6 +186,27 @@ BE3-A + BE3-B + BE3-C + the combined independent BE3-R review (BE3_TECHNICAL_VER
   independent reviewer** over M-2A/M-2B/M-3A/M-3B; each remaining RA-stage requires its own
   separate, explicit Product Owner authorization, and none has been given beyond RA-1A/RA-1R/
   RA-1B/RA-1FC/RA-1C themselves.
+  Step 66C.4-BE3-RA-1FC2 (second focused closure by the original RA-1R/RA-1FC reviewer over
+  M-2A/M-2B/M-3A/M-3B) is now COMPLETE (same review branch, reviewer-only integration commit
+  07f839f, second-focused-closure commit 800035b, pushed to origin, unmerged, unmodified by any
+  implementation change -- independently confirmed via zero-diff on every reviewed file):
+  STEP66C4_BE3_RA1C_SECOND_FOCUSED_CLOSURE_VERIFY: PASS, RA1_TECHNICAL_VERDICT:
+  REMEDIATION_REQUIRED. M-2A, M-2B, and M-3A CLOSED. One narrow, Low-severity M-3B residual found:
+  the missing-configuration path printed a plain-text stderr line instead of the required single
+  JSON object (no secret/traceback exposure; exit code itself correct). Step 66C.4-BE3-RA-1D
+  (targeted remediation of the M-3B residual) is now REMEDIATED / SELF-VERIFIED (see
+  be3-ra1d-missing-config-json-remediation-record.md,
+  step66c4-be3-ra1d-missing-config-json-evidence.md): scripts/run_platform_migrations.py's
+  _dsn_from_env() no longer prints or exits directly -- a single new _print_missing_configuration()
+  function, called once from main() where the plan/apply mode is already known, is now the only
+  place a missing/empty/whitespace-only configuration is reported (one JSON object, exit 2, no
+  plain text, no env-var-value leak); a malformed-but-present DSN remains correctly routed to the
+  existing connect-failure path. H-1/M-1/M-2A/M-2B/M-3A unmodified. Migrations 031-035 remain
+  unmodified; all four feature gates remain default-false; no shared migration was applied. Gates
+  1/2/6 remain PENDING -- this self-verified remediation does not close them. The next candidate is
+  a **final, M-3B-only re-check** by the **original RA-1R independent reviewer**; each remaining
+  RA-stage requires its own separate, explicit Product Owner authorization, and none has been given
+  beyond RA-1A/RA-1R/RA-1B/RA-1FC/RA-1C/RA-1FC2/RA-1D themselves.
 ```
 
 This status update only records the two facts above. It does NOT change the M0-M7 milestone order

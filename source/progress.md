@@ -16834,3 +16834,44 @@ commit `9cd841f` preserved.**
   `production_executed_true_count: 0`. Gates 1/2/6 remain PENDING — this review does NOT close them.
   Next: Product-Owner decision (remediate the one M-3B missing-config JSON residual then re-check, or
   explicitly accept it); no RA-2 or other stage started by this review.
+## Step 66C.4-BE3-RA-1D — Missing Configuration JSON Contract Closure
+
+**Marker: `STEP66C4_BE3_RA1D_MISSING_CONFIG_JSON_VERIFY: PASS`. Self-verified only; a final,
+M-3B-only re-check by the ORIGINAL RA-1R independent reviewer is the next required gate. NOT
+applied to any shared database. Same feature branch, new commit. Draft PR #21.**
+
+- **What.** Closed the single M-3B residual from the RA-1FC2 second focused closure: a missing,
+  empty, or whitespace-only `PLATFORM_MIGRATIONS_DATABASE_URL` printed a plain-text stderr line
+  before `sys.exit(2)`, instead of the single redacted JSON object every other CLI failure path
+  already used. H-1, M-1, M-2A, M-2B, and M-3A (all already CLOSED) were not touched — this stage's
+  entire diff is confined to `scripts/run_platform_migrations.py`.
+- **Fix.** `_dsn_from_env()` no longer prints or exits directly — it returns `None` for missing,
+  empty, OR whitespace-only configuration (`dsn is None or not dsn.strip()`). A new
+  `_print_missing_configuration(mode)`, called once from `main()` where the plan/apply mode is
+  already known, is now the ONLY place this output is produced: one JSON object
+  (`result_code: "missing_configuration"`) to stderr, exit 2, nothing else — no plain text, no
+  second output around `SystemExit`, no value beyond a fixed generic message (not even the env var
+  name). A malformed-but-present DSN is still correctly routed to the existing
+  `database_connect_failed` / exit-1 path, never misclassified as missing configuration.
+- **Tests.** New `tests/test_step66c4_be3_ra1d_missing_config_json.py`: **12 passed, 0 skipped**
+  (real PostgreSQL 16 for the two success-path regressions; the rest need no database) — missing/
+  empty/whitespace-only configuration (both modes), malformed/unreachable-DSN regression (no
+  misclassification), and both success-path regressions. No RA-1A/RA-1B/RA-1C test needed
+  modification. Full regression alongside those suites plus BE1 allowlist guards: **137 passed, 0
+  failed, 0 skipped**. Full step66c4-tagged suite: **392 passed / 5 skipped / 3 failed** — the same
+  3 pre-existing baseline failures every prior stage has identified, confirmed unchanged; count
+  reconciles exactly (380 pre-RA-1D + 12 new = 392). ruff/black/mypy/`git diff --check`/secret-scan
+  clean. Isolated ephemeral PostgreSQL 16 (distinct container/port) destroyed after; the shared
+  aiagents-test stack's postgres/redis containers confirmed unchanged (still stopped) throughout.
+- **Records.** `be3-ra1d-missing-config-json-remediation-record.md`,
+  `step66c4-be3-ra1d-missing-config-json-evidence.md`,
+  `be3-ra1d-to-final-m3b-closure-handoff.md`,
+  `scripts/verify_step66c4_be3_ra1d_missing_config_json.py`, this section, and
+  `next-executable-stage-sequence.md` updated.
+- **Scope discipline.** Migrations 029-035, migration manifests, and `migration_runner.py`
+  unmodified. No shared migration application, no deployment, no feature-gate change, no
+  worker/relay/consumer, no runtime validation, no merge. Review branch `800035b` unmodified,
+  unmerged. Draft PR #21 remains Draft/OPEN/untouched. `production_executed_true_count: 0`. Gates
+  1/2/6 remain PENDING — this self-verified remediation does not close them. Next: a **final,
+  M-3B-only re-check** by the **original RA-1R independent reviewer** (not a new full review, not
+  this implementation session), requiring separate, explicit Product Owner authorization.
