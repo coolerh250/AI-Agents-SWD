@@ -16958,3 +16958,50 @@ canonical main `c1db4cc`; `CONTEXT_ID: AIAT-SYNC-20260803-01`.**
   independently asserted by two tests). All four BE3 gates unchanged. `production_executed_true_count:
   0`. Gates 1/2/6 remain PENDING RUNTIME/SHARED EXECUTION. RA-2M, RA-2 implementation, RA-3, and
   POC.0 all remain **NOT AUTHORIZED**.
+
+## Step 66SYNC.1-A1 — Synchronization Taxonomy Correction
+
+**Marker: `STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY: PASS` (alongside the retained
+`STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS`). Classification-logic correction only — no
+repository re-inventory, no runtime/frontend/API/deployment/POC change. Same branch
+`planning/66sync1-claude-code-state-reconciliation`; previous head `1b86182`.**
+
+- **Problem corrected.** Step 66SYNC.1-A filed D-1/D-2/D-3 under a single `OPEN_DISCREPANCIES`
+  heading. That conflated two categorically different things: a partner disagreeing about a
+  source-of-truth value (which must block synchronization) versus an item every partner agrees on
+  that the Product Owner has simply not decided yet (which must not). As written, it could have been
+  misread as evidence that partner context was out of sync, wrongly halting Codex and Claude Design.
+- **Taxonomy established.** Four categories, with only category A blocking synchronization:
+  **A `CANONICAL_CONTEXT_MISMATCH`** (disagreement on canonical main, RA-1 status, RA-2 planning
+  head, feature-gate status, deployment state, shared migration state,
+  `production_executed_true_count`, or authorized/prohibited stages → `RESULT: CONTEXT_MISMATCH`);
+  **B `OPEN_PRODUCT_OWNER_DECISION`** (undecided, must be carried forward, must block scope
+  finalization and implementation, must not be decided by any partner); **C `TECHNICAL_GAP`**
+  (confirmed gap, no partner disagreement); **D `IMPLEMENTATION_GAP`** (later authorized stage).
+- **Reclassification.** D-1 (POC operator entry point — task API does not dispatch), D-2
+  (backend-agent/frontend-agent scope — both empty), and D-3 (delivery realism — real LLM is
+  plan-only, code generation template-bound) all moved from `OPEN_DISCREPANCY` to
+  **`OPEN_PRODUCT_OWNER_DECISION`**, each recorded with observed technical state, decision required,
+  impact on Codex inventory, impact on Claude Design inventory, impact on POC.0,
+  `Implementation authorized: NO`, and `Status: PRODUCT_OWNER_DECISION_REQUIRED`. **No option was
+  selected or pre-answered for any of them.** D-4 unchanged (documentation drift, CLOSED).
+  **No technical finding changed** — only the classification logic.
+- **Resulting state.** `RESULT: CONTEXT_MATCH`; `UNRESOLVED_CANONICAL_MISMATCHES: 0`;
+  `OPEN_PRODUCT_OWNER_DECISIONS: 3`; `OPEN_TECHNICAL_GAPS: documented` (12 items);
+  `CODEX_INVENTORY_MAY_PROCEED: YES`; `CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES`;
+  `POC_SCOPE_FINALIZATION: BLOCKED`; `POC_IMPLEMENTATION: NOT AUTHORIZED`.
+- **Codex/Claude Design handoff rule (binding).** Stop only on a canonical main / Context ID /
+  RA-1 / RA-2 / gate / safety mismatch, or any unresolved `CANONICAL_CONTEXT_MISMATCH`. Do **not**
+  stop solely because an open Product Owner decision, technical gap, or implementation gap exists.
+  Both partners must carry D-1/D-2/D-3 forward and mark affected items `DECISION_DEPENDENT`, without
+  assuming or selecting any option.
+- **Tests/verification.** `tests/test_step66sync1_claude_code_reconciliation.py`: **62 passed, 0
+  failed, 0 skipped** (14 new taxonomy tests, including per-decision checks that D-1/D-2/D-3 each
+  carry `Implementation authorized: NO` and remain `PRODUCT_OWNER_DECISION_REQUIRED`). Verifier now
+  emits both markers; 17 check groups, PASS. ruff/black/mypy/`git diff --check`/secret scan clean.
+- **Safety.** Files changed confined to the four sync documents, the verifier, its tests, and this
+  append-only entry — zero paths under `apps/`, `shared/`, `agents/`, `migrations/`, `infra/`, or any
+  frontend/API schema (git-verified and independently asserted by two tests). Feature gates
+  unchanged. No deployment, no shared migration, no runtime action.
+  `production_executed_true_count: 0`. Codex implementation, Claude Design implementation, POC.0,
+  RA-2M, and RA-3 all remain **NOT AUTHORIZED**.

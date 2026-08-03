@@ -249,27 +249,85 @@ def test_production_executed_true_count_zero(ack: str) -> None:
     assert "production_executed_true_count: 0" in _read(ROOT / "source" / "progress.md")
 
 
-# --- Discrepancy register -------------------------------------------------------
+# --- Step 66SYNC.1-A1 synchronization taxonomy ----------------------------------
 
 
-def test_register_declares_open_count(register: str) -> None:
-    assert re.search(r"OPEN_DISCREPANCIES:\s*\d+", register)
+@pytest.mark.parametrize(
+    "category",
+    [
+        "CANONICAL_CONTEXT_MISMATCH",
+        "OPEN_PRODUCT_OWNER_DECISION",
+        "TECHNICAL_GAP",
+        "IMPLEMENTATION_GAP",
+    ],
+)
+def test_taxonomy_category_defined(register: str, category: str) -> None:
+    assert category in register
 
 
-def test_register_open_count_is_self_consistent(register: str) -> None:
-    declared = re.search(r"OPEN_DISCREPANCIES:\s*(\d+)", register)
-    assert declared is not None
-    n = int(declared.group(1))
-    open_items = len(re.findall(r"Status:\s*OPEN", register))
-    assert n == open_items, f"declared {n} open discrepancies but {open_items} are marked OPEN"
+def test_no_unresolved_canonical_mismatches(register: str) -> None:
+    m = re.search(r"UNRESOLVED_CANONICAL_MISMATCHES:\s*(\d+)", register)
+    assert m is not None, "register does not declare UNRESOLVED_CANONICAL_MISMATCHES"
+    assert int(m.group(1)) == 0
 
 
-def test_register_does_not_self_close_po_decisions(register: str) -> None:
-    """Discrepancies owned by the Product Owner must not be closed by Claude Code."""
-    for did in ("D-1", "D-2", "D-3"):
-        block = register.split(f"Discrepancy ID:     {did}", 1)[-1].split("###", 1)[0]
-        assert "Status:             OPEN" in block, f"{did} must remain OPEN"
-        assert "Product Owner" in block, f"{did} must record Product Owner ownership"
+def test_context_match_still_holds(register: str, ack: str) -> None:
+    assert "RESULT: CONTEXT_MATCH" in register
+    assert re.search(r"RESULT:\s*CONTEXT_MATCH", ack)
+
+
+def test_exactly_three_open_product_owner_decisions(register: str) -> None:
+    m = re.search(r"OPEN_PRODUCT_OWNER_DECISIONS:\s*(\d+)", register)
+    assert m is not None, "register does not declare OPEN_PRODUCT_OWNER_DECISIONS"
+    assert int(m.group(1)) == 3
+    assert len(re.findall(r"Status: PRODUCT_OWNER_DECISION_REQUIRED", register)) == 3
+
+
+@pytest.mark.parametrize("decision_id", ["D-1", "D-2", "D-3"])
+def test_po_decision_classified_and_undecided(register: str, decision_id: str) -> None:
+    """D-1/D-2/D-3 must be OPEN_PRODUCT_OWNER_DECISIONs that no partner has answered."""
+    marker = f"Decision ID:                {decision_id}"
+    assert marker in register, f"{decision_id} not recorded as a Product Owner decision"
+    block = register.split(marker, 1)[-1].split("### ", 1)[0]
+    for field in (
+        "Observed technical state:",
+        "Decision required:",
+        "Impact on Codex inventory:",
+        "Impact on Claude Design",
+        "Impact on POC.0:",
+    ):
+        assert field in block, f"{decision_id} missing field: {field}"
+    assert "Implementation authorized:  NO" in block
+    assert "Status: PRODUCT_OWNER_DECISION_REQUIRED" in block
+
+
+def test_register_asserts_no_partner_decided(register: str) -> None:
+    assert "None of D-1, D-2 or D-3 was decided" in register
+
+
+@pytest.mark.parametrize(
+    "state",
+    [
+        "CODEX_INVENTORY_MAY_PROCEED: YES",
+        "CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES",
+        "POC_SCOPE_FINALIZATION: BLOCKED",
+        "POC_IMPLEMENTATION: NOT AUTHORIZED",
+    ],
+)
+def test_partner_continuation_state(register: str, ack: str, state: str) -> None:
+    assert state in register
+    assert state in ack
+
+
+def test_codex_stop_rule_present(register: str) -> None:
+    assert "MUST STOP only when" in register
+    assert "MUST NOT STOP solely because" in register
+    assert "DECISION_DEPENDENT" in register
+
+
+def test_poc_implementation_still_not_authorized(register: str, ack: str) -> None:
+    assert "POC_IMPLEMENTATION: NOT AUTHORIZED" in register
+    assert "POC_IMPLEMENTATION: NOT AUTHORIZED" in ack
 
 
 def test_verifier_script_passes() -> None:
@@ -277,6 +335,9 @@ def test_verifier_script_passes() -> None:
         [sys.executable, str(VERIFY_SCRIPT)], cwd=ROOT, capture_output=True, text=True
     )
     assert "STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS" in result.stdout, (
+        result.stdout + result.stderr
+    )
+    assert "STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY: PASS" in result.stdout, (
         result.stdout + result.stderr
     )
     assert result.returncode == 0

@@ -1,8 +1,43 @@
-# Step 66SYNC.1-A — Claude Code Acknowledgement
+# Step 66SYNC.1-A / A1 — Claude Code Acknowledgement
 
 > **Read-only acknowledgement. No implementation of any kind was performed. Every value below was
-> verified against source code or live git/container state this session, not carried over from a
-> historical report.**
+> verified against source code or live git/container state, not carried over from a historical
+> report. Corrected at Step 66SYNC.1-A1: D-1/D-2/D-3 are reclassified from generic open
+> discrepancies to `OPEN_PRODUCT_OWNER_DECISION`, which does NOT block partner synchronization.**
+
+## Taxonomy result (Step 66SYNC.1-A1)
+
+```text
+RESULT: CONTEXT_MATCH
+
+UNRESOLVED_CANONICAL_MISMATCHES: 0
+OPEN_PRODUCT_OWNER_DECISIONS: 3        (D-1, D-2, D-3 -- carried forward, none decided by a partner)
+OPEN_TECHNICAL_GAPS: documented        (12 items, category C in the discrepancy register)
+
+CODEX_INVENTORY_MAY_PROCEED: YES
+CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES
+
+POC_SCOPE_FINALIZATION: BLOCKED
+POC_IMPLEMENTATION: NOT AUTHORIZED
+```
+
+## Codex / Claude Design handoff rule (binding)
+
+```text
+STOP only when:
+  - canonical main mismatches
+  - Context ID mismatches
+  - RA-1 / RA-2 / gate / safety state mismatches
+  - any unresolved CANONICAL_CONTEXT_MISMATCH exists
+
+DO NOT stop solely because:
+  - an OPEN_PRODUCT_OWNER_DECISION exists
+  - a known TECHNICAL_GAP exists
+  - an IMPLEMENTATION_GAP exists
+
+Carry D-1, D-2 and D-3 forward and mark every affected inventory item DECISION_DEPENDENT.
+Do not assume any option has been accepted, and do not select one.
+```
 
 ```text
 PARTNER: CLAUDE_CODE
@@ -111,9 +146,13 @@ authenticator; workload/service identity authenticator; secret backend beyond en
 credential provisioning, bounded rotation window, and revocation propagation.
 
 Known blockers:
-G-1  operator task API does not dispatch to the agent pipeline (highest-impact POC blocker)
-G-2  backend-agent and frontend-agent have no implementation
-G-3  real LLM is plan-only; code generation limited to three deterministic template families
+Blocking partner SYNCHRONIZATION: NONE (UNRESOLVED_CANONICAL_MISMATCHES: 0).
+Blocking POC SCOPE FINALIZATION (OPEN_PRODUCT_OWNER_DECISION, category B -- carried forward, not
+decided by any partner):
+D-1  POC operator entry point -- the operator task API does not dispatch to the agent pipeline
+D-2  backend-agent / frontend-agent scope -- both directories are empty
+D-3  delivery realism -- real LLM is plan-only; code generation is template-bound
+Documented TECHNICAL_GAPs (category C -- non-blocking for synchronization and inventory):
 G-4  no DESTINATION_ORCHESTRATOR_COMMAND consumer
 G-5  production approval grant/revoke has no endpoint and zero callers
 G-7  migrations 029-035 not applied to any shared database

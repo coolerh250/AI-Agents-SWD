@@ -11,7 +11,44 @@ Snapshot date:    2026-08-03
 Produced by:      Claude Code (Repository / Backend / Workflow / Integration / Infrastructure /
                   Deployment technical inventory role)
 Result:           CONTEXT_MATCH
+Corrected at:     Step 66SYNC.1-A1 (synchronization taxonomy correction)
 ```
+
+## 0. Synchronization taxonomy and partner continuation state
+
+Discrepancies are classified into four categories. Only category A blocks synchronization.
+
+```text
+A. CANONICAL_CONTEXT_MISMATCH   a partner disagrees with a source-of-truth value
+                                -> BLOCKS synchronization; RESULT = CONTEXT_MISMATCH
+B. OPEN_PRODUCT_OWNER_DECISION  all partners agree on the facts; the item is undecided
+                                -> does NOT block synchronization or inventory
+                                -> MUST be carried forward; MUST block scope finalization and
+                                   implementation; MUST NOT be decided by any partner
+C. TECHNICAL_GAP                a confirmed capability gap nobody disagrees about
+                                -> documented; non-blocking
+D. IMPLEMENTATION_GAP           work for a later authorized stage
+                                -> scheduled; not a synchronization failure
+```
+
+```text
+RESULT: CONTEXT_MATCH
+
+UNRESOLVED_CANONICAL_MISMATCHES: 0
+OPEN_PRODUCT_OWNER_DECISIONS: 3        (D-1, D-2, D-3)
+OPEN_TECHNICAL_GAPS: documented
+
+CODEX_INVENTORY_MAY_PROCEED: YES
+CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES
+
+POC_SCOPE_FINALIZATION: BLOCKED
+POC_IMPLEMENTATION: NOT AUTHORIZED
+```
+
+Full definitions, the per-decision records for D-1/D-2/D-3, and the binding Codex/Claude Design
+handoff rule are in `docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md`.
+Every gap listed in §9 of this snapshot is category C or D — none is a canonical context mismatch,
+and none blocks another partner's inventory.
 
 ## 1. Source-of-truth precedence (binding for all partners)
 
@@ -24,9 +61,11 @@ Result:           CONTEXT_MATCH
 6. historical conversation summary
 ```
 
-Where this snapshot disagrees with any historical summary, precedence rules 2 and 3 govern. Two
-such divergences were found and are recorded in
-`docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md`.
+Where this snapshot disagrees with any historical summary, precedence rules 2 and 3 govern. The
+divergences found are recorded in
+`docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md`; after the Step
+66SYNC.1-A1 taxonomy correction, none of them is a canonical context mismatch — three are open
+Product Owner decisions (category B) and one was documentation drift already corrected upstream.
 
 ## 2. Canonical state (verified this session)
 
@@ -243,12 +282,17 @@ runtime credential provisioning       NONE. No owner, workflow, approval, or aud
 ### 9.1 Backend / runtime gaps
 
 ```text
-G-1  Operator task API does not dispatch to the agent pipeline (§4). Highest-impact POC blocker.
+G-1  Operator task API does not dispatch to the agent pipeline (§4).
+     -> CATEGORY B (OPEN_PRODUCT_OWNER_DECISION D-1). Highest-impact POC-scope decision.
+        Non-blocking for synchronization and partner inventory.
 G-2  backend-agent and frontend-agent directories are EMPTY -- the two roles the POC objective
      names explicitly ("backend development", "frontend development") have no implementation.
+     -> CATEGORY B (OPEN_PRODUCT_OWNER_DECISION D-2).
 G-3  Real LLM cannot generate code or tests by design (plan-only); code generation is limited to
      three deterministic template families.
-G-4  No consumer exists for DESTINATION_ORCHESTRATOR_COMMAND outbox rows.
+     -> CATEGORY B (OPEN_PRODUCT_OWNER_DECISION D-3). Note the plan-only restriction is a
+        deliberate safety control, not an oversight.
+G-4  No consumer exists for DESTINATION_ORCHESTRATOR_COMMAND outbox rows.   -> CATEGORY C
 G-5  production approval grant/revoke has no HTTP endpoint and zero callers.
 G-6  BE2 lifecycle poller and outbox relay have no compose service entry.
 G-7  Migrations 029-035 are not applied to any shared database.

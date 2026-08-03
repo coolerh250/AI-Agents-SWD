@@ -1,12 +1,17 @@
 #!/usr/bin/env python3
-"""Step 66SYNC.1-A -- Claude Code technical state reconciliation self-verifier.
+"""Step 66SYNC.1-A / A1 -- Claude Code reconciliation and context-taxonomy self-verifier.
 
 Deterministic, offline checks over the reconciliation deliverables plus negative proof that this
 read-only stage changed no runtime, frontend, migration, or deployment configuration. Reads only
 committed repository content: it starts no container, opens no database connection, contacts no
 external service, and reads no secret.
 
-Marker: STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS | FAIL
+Step 66SYNC.1-A1 adds the synchronization-taxonomy checks: a canonical context mismatch (which
+blocks partner synchronization) must be distinguished from an open Product Owner decision (which
+does not), and D-1/D-2/D-3 must be classified as the latter without any of them being decided.
+
+Markers: STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS | FAIL
+         STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY: PASS | FAIL
 """
 
 from __future__ import annotations
@@ -56,7 +61,16 @@ FEATURE_GATES = (
     ("BE3_REPLAY_EXECUTION_ENABLED", REPLAY_MODEL),
 )
 
+TAXONOMY_CATEGORIES = (
+    "CANONICAL_CONTEXT_MISMATCH",
+    "OPEN_PRODUCT_OWNER_DECISION",
+    "TECHNICAL_GAP",
+    "IMPLEMENTATION_GAP",
+)
+PO_DECISION_IDS = ("D-1", "D-2", "D-3")
+
 MARKER = "STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY"
+TAXONOMY_MARKER = "STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY"
 failures: list[str] = []
 
 
@@ -199,18 +213,72 @@ def main() -> int:  # noqa: C901
     if "production_executed_true_count:\n0" not in ack:
         bad("check12b: acknowledgement does not record production_executed_true_count 0")
 
-    # 13. Discrepancy register present and self-consistent.
-    if not re.search(r"OPEN_DISCREPANCIES:\s*\d+", register):
-        bad("check13: discrepancy register missing an OPEN_DISCREPANCIES count")
-    declared = re.search(r"OPEN_DISCREPANCIES:\s*(\d+)", register)
-    if declared:
-        n = int(declared.group(1))
-        open_items = len(re.findall(r"Status:\s*OPEN", register))
-        if n != open_items:
-            bad(f"check13b: OPEN_DISCREPANCIES={n} but {open_items} entries are marked OPEN")
+    # 13. Step 66SYNC.1-A1 taxonomy: all four categories defined in the register.
+    for cat in TAXONOMY_CATEGORIES:
+        if cat not in register:
+            bad(f"check13: discrepancy register missing taxonomy category: {cat}")
+
+    # 14. UNRESOLVED_CANONICAL_MISMATCHES == 0 and CONTEXT_MATCH still holds.
+    m = re.search(r"UNRESOLVED_CANONICAL_MISMATCHES:\s*(\d+)", register)
+    if not m:
+        bad("check14: register does not declare UNRESOLVED_CANONICAL_MISMATCHES")
+    elif int(m.group(1)) != 0:
+        bad(f"check14b: UNRESOLVED_CANONICAL_MISMATCHES is {m.group(1)}, expected 0")
+    if "RESULT: CONTEXT_MATCH" not in register:
+        bad("check14c: register does not record RESULT: CONTEXT_MATCH")
+    if not re.search(r"RESULT:\s*CONTEXT_MATCH", ack):
+        bad("check14d: acknowledgement does not record RESULT: CONTEXT_MATCH")
+
+    # 15. OPEN_PRODUCT_OWNER_DECISIONS == 3, and D-1/D-2/D-3 are exactly those three.
+    m = re.search(r"OPEN_PRODUCT_OWNER_DECISIONS:\s*(\d+)", register)
+    if not m:
+        bad("check15: register does not declare OPEN_PRODUCT_OWNER_DECISIONS")
+    elif int(m.group(1)) != 3:
+        bad(f"check15b: OPEN_PRODUCT_OWNER_DECISIONS is {m.group(1)}, expected 3")
+    required_marker = len(re.findall(r"Status: PRODUCT_OWNER_DECISION_REQUIRED", register))
+    if required_marker != 3:
+        bad(f"check15c: {required_marker} PRODUCT_OWNER_DECISION_REQUIRED markers, expected 3")
+
+    # 16. Each of D-1/D-2/D-3 is classified correctly and decided by nobody.
+    for did in PO_DECISION_IDS:
+        if f"Decision ID:                {did}" not in register:
+            bad(f"check16: {did} is not recorded as a Product Owner decision")
+            continue
+        block = register.split(f"Decision ID:                {did}", 1)[-1].split("### ", 1)[0]
+        for field in (
+            "Observed technical state:",
+            "Decision required:",
+            "Impact on Codex inventory:",
+            "Impact on POC.0:",
+        ):
+            if field not in block:
+                bad(f"check16b: {did} missing required field: {field}")
+        if "Implementation authorized:  NO" not in block:
+            bad(f"check16c: {did} does not record 'Implementation authorized: NO'")
+        if "Status: PRODUCT_OWNER_DECISION_REQUIRED" not in block:
+            bad(f"check16d: {did} is not PRODUCT_OWNER_DECISION_REQUIRED")
+    if "None of D-1, D-2 or D-3 was decided" not in register:
+        bad("check16e: register does not assert that no partner decided D-1/D-2/D-3")
+
+    # 17. Partner continuation state and the Codex stop rule.
+    for probe in (
+        "CODEX_INVENTORY_MAY_PROCEED: YES",
+        "CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES",
+        "POC_SCOPE_FINALIZATION: BLOCKED",
+        "POC_IMPLEMENTATION: NOT AUTHORIZED",
+    ):
+        if probe not in register:
+            bad(f"check17: register missing partner continuation state: {probe}")
+        if probe not in ack:
+            bad(f"check17b: acknowledgement missing partner continuation state: {probe}")
+    if "MUST NOT STOP solely because" not in register:
+        bad("check17c: register does not carry the Codex must-not-stop rule")
+    if "DECISION_DEPENDENT" not in register:
+        bad("check17d: register does not require DECISION_DEPENDENT marking")
 
     if failures:
         print(f"{MARKER}: FAIL ({len(failures)} issue(s))")
+        print(f"{TAXONOMY_MARKER}: FAIL ({len(failures)} issue(s))")
         return 1
 
     print("  [OK] Canonical main c1db4cc confirmed; RA-2 planning head efa396d confirmed; context")
@@ -218,9 +286,16 @@ def main() -> int:  # noqa: C901
     print("       present with explicit classifications; four BE3 feature gates remain default")
     print("       false; no runtime, frontend, agent, migration or infra file changed by this")
     print("       stage and every changed path is inside the allowed set; no secret-shaped or")
-    print("       internal-identifier content in any deliverable; open-discrepancy count is")
-    print("       self-consistent; production_executed_true_count is 0.")
+    print("       internal-identifier content in any deliverable; production_executed_true_count")
+    print("       is 0.")
     print(f"{MARKER}: PASS")
+    print("  [OK] Taxonomy: all four categories defined; UNRESOLVED_CANONICAL_MISMATCHES is 0 and")
+    print("       RESULT is CONTEXT_MATCH; OPEN_PRODUCT_OWNER_DECISIONS is 3 with D-1/D-2/D-3 each")
+    print("       carrying the required fields, 'Implementation authorized: NO' and")
+    print("       PRODUCT_OWNER_DECISION_REQUIRED, and none decided by a partner; Codex and Claude")
+    print("       Design inventory may proceed; POC scope finalization is BLOCKED and POC")
+    print("       implementation is NOT AUTHORIZED.")
+    print(f"{TAXONOMY_MARKER}: PASS")
     return 0
 
 

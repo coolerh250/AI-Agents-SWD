@@ -199,22 +199,70 @@ All three are pre-existing and were carried unchanged through every RA-1 stage, 
 None is caused by, or related to, this reconciliation stage.
 ```
 
-## 10. Unresolved discrepancies
+## 10. Unresolved discrepancies (taxonomy corrected at Step 66SYNC.1-A1)
+
+Step 66SYNC.1-A recorded D-1/D-2/D-3 under a single `OPEN_DISCREPANCIES` heading, which conflated
+"a partner disagrees about a source-of-truth value" with "everyone agrees, but the Product Owner
+has not decided yet". Only the former blocks synchronization. The corrected classification:
 
 ```text
-CONTEXT_FIELD_MISMATCHES: 0   (RESULT: CONTEXT_MATCH)
-OPEN_DISCREPANCIES:       3
-
-D-1  operator task API does not dispatch to the agent pipeline   OWNER: Product Owner   OPEN
-D-2  backend-agent and frontend-agent have no implementation      OWNER: Product Owner   OPEN
-D-3  real LLM is plan-only; code generation is template-bound     OWNER: Product Owner   OPEN
-
-D-4  Service Identity call-site count drift (12 -> 16)            OWNER: Claude Code     CLOSED
-     (already corrected upstream in the RA-2 inventory at efa396d)
+A. CANONICAL_CONTEXT_MISMATCH   UNRESOLVED_CANONICAL_MISMATCHES: 0   -> RESULT: CONTEXT_MATCH
+B. OPEN_PRODUCT_OWNER_DECISION  OPEN_PRODUCT_OWNER_DECISIONS: 3
+     D-1  POC operator entry point (task API does not dispatch)      PRODUCT_OWNER_DECISION_REQUIRED
+     D-2  backend-agent / frontend-agent scope (both empty)          PRODUCT_OWNER_DECISION_REQUIRED
+     D-3  delivery realism (real LLM plan-only; template-bound)      PRODUCT_OWNER_DECISION_REQUIRED
+C. TECHNICAL_GAP                OPEN_TECHNICAL_GAPS: documented (12 items: G-4..G-15)
+D. IMPLEMENTATION_GAP           RA-2I0..RA-2I6, RA-2R, RA-2M, POC.0, Gates 1/2/6, RA-3 -- all
+                                NOT AUTHORIZED, each requiring its own PO authorization
 ```
 
-None of D-1, D-2, or D-3 was closed by Claude Code; each requires a Product Owner scope decision
-and a test enforces that they remain OPEN and Product-Owner-owned.
+```text
+Informational, unchanged:
+D-4  Service Identity call-site count drift (12 -> 16)   OWNER: Claude Code   CLOSED
+     (documentation drift, already corrected upstream in the RA-2 inventory at efa396d)
+```
+
+No technical finding changed at A1 — only the classification logic. None of D-1, D-2, or D-3 was
+decided or closed by Claude Code, and automated tests enforce that each remains
+`PRODUCT_OWNER_DECISION_REQUIRED` with Product Owner ownership.
+
+## 11. Partner continuation state
+
+```text
+RESULT: CONTEXT_MATCH
+
+UNRESOLVED_CANONICAL_MISMATCHES: 0
+OPEN_PRODUCT_OWNER_DECISIONS: 3
+OPEN_TECHNICAL_GAPS: documented
+
+CODEX_INVENTORY_MAY_PROCEED: YES
+CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES
+
+POC_SCOPE_FINALIZATION: BLOCKED
+POC_IMPLEMENTATION: NOT AUTHORIZED
+```
+
+Codex and Claude Design must stop only on a canonical/Context-ID/RA-1/RA-2/gate/safety mismatch or
+an unresolved `CANONICAL_CONTEXT_MISMATCH` — never solely because an open Product Owner decision,
+technical gap, or implementation gap exists. Both must carry D-1/D-2/D-3 forward and mark affected
+items `DECISION_DEPENDENT` without assuming or selecting any option.
+
+## 12. Step 66SYNC.1-A1 correction record
+
+```text
+Previous head:   1b86182  (Step 66SYNC.1-A)
+Scope of A1:     classification logic only -- no repository re-inventory, no runtime/frontend/API/
+                 deployment/POC change.
+Files updated:   step66sync1-context-discrepancy-register.md
+                 step66sync1-claude-code-acknowledgement.md
+                 partner-context-snapshot-20260803.md
+                 step66sync1-claude-code-reconciliation-evidence.md (this file)
+                 verify_step66sync1_claude_code_reconciliation.py + its tests (taxonomy checks)
+                 source/progress.md (append-only)
+New marker:      STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY: PASS
+Unchanged:       every technical finding, every capability classification, every gap, the POC
+                 readiness matrix, and all safety state.
+```
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
