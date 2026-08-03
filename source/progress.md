@@ -16896,3 +16896,65 @@ application, no deployment, no feature-gate change, no runtime activation.**
   complete, runtime-validated, activated, deployment-ready, or production-ready. RA-2 remains **NOT
   AUTHORIZED**. Next: any shared migration application, deployment, runtime validation, activation,
   or RA-2 work requires its own separate, explicit Product Owner authorization.
+
+## Step 66SYNC.1-A — Claude Code Technical State Reconciliation
+
+**Marker: `STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS`. Read-only repository/backend/
+workflow/integration/infrastructure/deployment inventory. NO runtime, backend, frontend, deployment,
+identity, secret, or POC implementation. No container started, no database connection, no migration
+applied, no secret read. Branch `planning/66sync1-claude-code-state-reconciliation`; baseline
+canonical main `c1db4cc`; `CONTEXT_ID: AIAT-SYNC-20260803-01`.**
+
+- **Context result: `CONTEXT_MATCH`.** All supplied fields verified against canonical evidence:
+  `HEAD == origin/main == c1db4cc`, RA-2 planning head `efa396d`, clean tree, all four BE3 gates
+  default false, `production_executed_true_count: 0`. **CONTEXT_FIELD_MISMATCHES: 0.**
+- **Method.** Per this stage's own rule, every classification was re-derived from source code and
+  committed configuration rather than cited from historical reports — which is what surfaced the
+  three divergences below.
+- **Central finding — two disconnected task paths.** The operator-facing task API (Step 66B.1
+  `/tasks`, rendered by the TaskNew/TaskList/TaskDetail/TaskGraph/TaskWorkroom console pages)
+  explicitly does **not** dispatch: its docstring states "No workflow dispatch", every response
+  returns `dispatch_enabled: False`, and it never publishes to `stream.tasks`. The working agent
+  pipeline is a separate lineage (`workflow.py::dispatch_node` → `dispatch.py` → `stream.tasks` →
+  ten agents). No code path connects them. This is the highest-impact POC blocker and is recorded
+  as discrepancy **D-1**.
+- **Capability inventory.** 10 implemented agents (5,641 lines: intake, requirement, development,
+  qa, devops, project-planner, design-review, workspace-operator, mini-delivery-pilot,
+  delivery-package); `agents/backend-agent/` and `agents/frontend-agent/` contain **.gitkeep only,
+  0 .py files** (**D-2**). Orchestrator LangGraph workflow, workflow persistence, approval engine,
+  retry-scheduler with bounded retry/DLQ, audit service/worker, communication gateway, and a
+  33-page Admin Console are all IMPLEMENTED_AND_TESTED. BE3 resume/replay/production-approval are
+  IMPLEMENTED_NOT_RUNTIME_VALIDATED with no production callers.
+- **Integration posture.** LLM defaults to a deterministic mock; the real LLM path is **plan-only by
+  design** (`generate_patch_proposal` and `generate_test_plan` raise), and code generation is
+  deterministic template-based with exactly three families — so LLM-driven software generation does
+  not exist (**D-3**, and the restriction is a deliberate safety control, not an oversight). GitHub
+  automation is dry-run by default with a gated real sandbox path; notification is simulated by
+  default under a denylist-beats-allowlist policy; no artifact/document store exists.
+- **Environment.** All 27 `aiagents-test` containers exist but are in state `Exited (255)` (~5 days)
+  — the stack is fully down; their existence confirms the full topology including all ten agents ran
+  historically. Staging decommissioned. Kubernetes/Helm TEMPLATE_ONLY (`infra/helm/` empty, no
+  `kind: Secret`, ServiceAccounts with automount off and no RoleBinding). Vault `server -dev` only.
+  Migrations 029-035 present, none applied to any shared database.
+- **Identity/secret cross-check.** Independently re-derived and **agrees with the RA-2 inventory**:
+  no production operator authenticator; actor id AND role both taken verbatim from client headers;
+  zero production Service Identity call sites; Policy Authority is a long-lived bearer secret read
+  from raw `os.environ` and configured in no environment; effective secret backend is environment
+  variables.
+- **POC readiness matrix (18 capabilities).** READY 9 / READY_WITH_CONSTRAINTS 7 /
+  GAP_REQUIRING_POC0 2 (backend and frontend artifact handoff) / BLOCKED 0.
+- **Discrepancies.** OPEN 3 (D-1 dispatch disconnect, D-2 empty backend/frontend agents, D-3
+  plan-only LLM) — all require Product Owner scope decisions and **none was closed by Claude Code**;
+  a test enforces they remain OPEN and Product-Owner-owned. CLOSED 1 (D-4, Service Identity
+  call-site count drift 12→16, already corrected upstream in the RA-2 inventory).
+- **Tests/verification.** `tests/test_step66sync1_claude_code_reconciliation.py`: **48 passed, 0
+  failed, 0 skipped** — offline by design, and four tests deliberately re-derive the snapshot's
+  central claims from source (including one that fails if anyone later wires the task API to
+  `stream.tasks`, forcing D-1 to be revisited). Verifier: 13 check groups, PASS. ruff/black/mypy/
+  `git diff --check`/secret scan clean.
+- **Safety.** Files changed are confined to `docs/alignment/.../master/`,
+  `docs/handoffs/program-sync/`, `docs/test/`, the two new script/test files, and `source/progress.md`
+  — zero paths under `apps/`, `shared/`, `agents/`, `migrations/`, or `infra/` (git-verified and
+  independently asserted by two tests). All four BE3 gates unchanged. `production_executed_true_count:
+  0`. Gates 1/2/6 remain PENDING RUNTIME/SHARED EXECUTION. RA-2M, RA-2 implementation, RA-3, and
+  POC.0 all remain **NOT AUTHORIZED**.
