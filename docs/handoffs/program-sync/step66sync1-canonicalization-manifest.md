@@ -11,7 +11,7 @@ Branch:                integration/66sync1-canonicalization
 Source commits:        Claude Code 828ea90 | Codex 78aa4ee | Claude Design 65c93a1
                        Final reconciliation 2396c6c
 RA-2 planning head:    efa396d (unchanged, not imported)
-Imported artifacts:    22 unchanged + 5 transformed
+Imported artifacts:    19 unchanged + 5 transformed + 3 annotated (Step 66D-ALIGN1)
 New canonical records: 5
 ```
 
@@ -23,7 +23,7 @@ against the resulting index blob SHA. The local working directory was never used
 All 26 comparisons returned IDENTICAL at import time; mismatches: 0. Five files were then
 transformed for the reasons recorded below, each additively and each re-verified.
 
-## Imported unchanged (22)
+## Imported unchanged (19)
 
 | Repository-relative path | Source partner | Source branch | Source commit | Source blob SHA (16) | Canonical destination | Imported unchanged | Reason if transformed |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -37,9 +37,7 @@ transformed for the reasons recorded below, each additively and each re-verified
 | `docs/test/step66sync1-codex-frontend-reconciliation-evidence.md` | Codex | `planning/66sync1-codex-frontend-reconciliation` | `78aa4ee` | `90dbc4082a847840` | same path | YES | -- |
 | `scripts/verify_step66sync1_codex_frontend_reconciliation.py` | Codex | `planning/66sync1-codex-frontend-reconciliation` | `78aa4ee` | `db0d3ed1c7fbfd4e` | same path | YES | -- |
 | `tests/test_step66sync1_codex_frontend_reconciliation.py` | Codex | `planning/66sync1-codex-frontend-reconciliation` | `78aa4ee` | `ba074cda5bea34c9` | same path | YES | -- |
-| `docs/design/ai-agent-team-functional-poc-control-center-spec.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `266f87f59a78c786` | same path | YES | -- |
 | `docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `64f8d7acb6a4deda` | same path | YES | -- |
-| `docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `0b41fc3d9421fbec` | same path | YES | -- |
 | `docs/test/step66sync1-claude-design-reconciliation-evidence.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `9dc8bfa91cf1df1b` | same path | YES | -- |
 | `scripts/verify_step66sync1_claude_design_reconciliation.py` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `86bc9ef683e17ad1` | same path | YES | -- |
 | `tests/test_step66sync1_claude_design_reconciliation.py` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `af54b07c9808b1f4` | same path | YES | -- |
@@ -47,14 +45,31 @@ transformed for the reasons recorded below, each additively and each re-verified
 | `docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `cfd1919da0093c65` | same path | YES | -- |
 | `docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `3c9fbe9fb25053bd` | same path | YES | -- |
 | `docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `6aad54ec215c308a` | same path | YES | -- |
-| `docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `7652640045d4572c` | same path | YES | -- |
 | `docs/test/step66sync1-final-partner-reconciliation-evidence.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `b241f68e91515edd` | same path | YES | -- |
 
-All 22 are partner historical evidence and are `Imported unchanged: YES`. No sentence, status line,
+All 19 are partner historical evidence and are `Imported unchanged: YES`. No sentence, status line,
 count, or classification in any of them was edited. In particular, every occurrence of
 `OPEN_PRODUCT_OWNER_DECISIONS: 3` is preserved, because it was true when written. Every partner
 acknowledgement, discrepancy register, gap register, decision package, evidence record, design
 specification and program-state snapshot is in this group.
+
+## Annotated after import — append-only supersession notes (3)
+
+Added by **Step 66D-ALIGN1** (2026-08-04), not by Step 66SYNC.1-M1. Each of these three files
+gained an append-only `Supersession note — Step 66D-ALIGN1` section recording binding decisions
+66D-D01..66D-D04. **Nothing above the annotation marker was edited**: the original content remains a
+byte-exact prefix of the current file, and `git diff` reports 0 deleted lines for each.
+
+| Repository-relative path | Source commit | Source blob SHA (16) | Imported unchanged | Reason |
+| --- | --- | --- | --- | --- |
+| `docs/design/ai-agent-team-functional-poc-control-center-spec.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `266f87f59a78c786` | same path | ANNOTATED (append-only) | Step 66D-ALIGN1 supersession note |
+| `docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md` | Claude Design | `planning/66sync1-claude-design-ux-reconciliation` | `65c93a1` | `0b41fc3d9421fbec` | same path | ANNOTATED (append-only) | Step 66D-ALIGN1 supersession note |
+| `docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md` | Claude Code (coordinator) | `planning/66sync1-final-partner-reconciliation` | `2396c6c` | `7652640045d4572c` | same path | ANNOTATED (append-only) | Step 66D-ALIGN1 supersession note |
+
+Verification of these three is stricter than whole-blob identity for the preserved portion: the
+Step 66SYNC.1-M1 verifier (check09) and three dedicated tests assert that the pre-marker content
+matches the source blob exactly, that no line was deleted, and that the pre-marker content still
+does not contain the post-decision `RESOLVED / BINDING` wording.
 
 ## Imported transformed — partner scope-check files (4)
 
@@ -157,7 +172,7 @@ commit tree; neither exists there, so both were excluded as required.
 
 ```text
 Blob-identity comparisons at import:   26 of 26 IDENTICAL, 0 mismatches
-Files still byte-identical:            22
+Files still byte-identical:            19 (+3 annotated append-only, see below)
 Files additively transformed:          5 (4 scope-check files, +6/-0 each; source/progress.md)
 Lines deleted by any transformation:   0
 Branch base:                    integration/66sync1-canonicalization cut from c1db4cc

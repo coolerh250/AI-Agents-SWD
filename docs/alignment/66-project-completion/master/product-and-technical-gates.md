@@ -30,15 +30,23 @@ Pass condition: a human can assign, converse, clarify/answer, and see the 24h/72
 ## Delivery gate (M2 exit)
 
 ```text
-Architecture Direction Gate: the delivery/acceptance data model and 6-action endpoint contract
-  (Step 66D-ARCH) must be reviewed and frozen by Claude Code BEFORE Codex builds any UI against it
-  — this is the single highest-severity gate in the entire Master Plan (unanimous across all three
-  partners).
-Security/Governance Gate: the 6-action gate (Accept/Reject/Request-Changes/Re-run-QA/Escalate/
-  Archive) must enforce server-side RBAC using the existing TASK_ROLES model — no client-side-only
-  gating (non-negotiable, security-governance/SKILL.md item 5).
+Architecture Direction Gate: the delivery/acceptance data model, the 6-action Review Gate Action
+  endpoint contract, AND the separate 3-value Product Owner Final Decision contract (Step 66D-ARCH)
+  must be reviewed and frozen by Claude Code BEFORE Codex builds any UI against them — this is the
+  single highest-severity gate in the entire Master Plan (unanimous across all three partners).
+Security/Governance Gate: the 6-action Review Gate (ACCEPT/REJECT/REQUEST_CHANGES/RERUN_QA/
+  ESCALATE/ARCHIVE) must enforce server-side RBAC using the existing TASK_ROLES model — no
+  client-side-only gating (non-negotiable, security-governance/SKILL.md item 5).
+Product Owner Decision Gate: the Product Owner Final Decision contract (ACCEPTED /
+  ACCEPTED_WITH_FOLLOW_UP / REJECTED) is a SEPARATE contract from the Review Gate Action contract —
+  different enum, schema, API semantics, durable event, audit action and authorization boundary
+  (66D-D01). Only ACCEPT and REJECT carry a final decision; REQUEST_CHANGES, RERUN_QA, ESCALATE and
+  ARCHIVE carry none. The authoritative decision history is an immutable, supersedable
+  ProductOwnerDecision record; delivery review status merely projects the current effective outcome
+  (66D-D02).
 Product Owner Validation Gate: required per new page/flow; must confirm Request-Changes vs.
-  Re-run-QA reads as unambiguously different decisions.
+  Re-run-QA reads as unambiguously different decisions, and that a Review Gate Action is not
+  presented as a Product Owner Final Decision.
 Merge/Deployment Gates: unchanged — Product Owner authorizes each merge and each deployment
   individually; no blanket authorization inherited from M1.
 Pass condition: a reviewer can see, open (without raw JSON), and decide on a real delivery record

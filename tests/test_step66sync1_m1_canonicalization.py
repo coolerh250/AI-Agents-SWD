@@ -46,9 +46,7 @@ CODEX_FILES = (
     "tests/test_step66sync1_codex_frontend_reconciliation.py",
 )
 CLAUDE_DESIGN_FILES = (
-    "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
     "docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md",
-    "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
     "docs/test/step66sync1-claude-design-reconciliation-evidence.md",
     "scripts/verify_step66sync1_claude_design_reconciliation.py",
     "tests/test_step66sync1_claude_design_reconciliation.py",
@@ -58,7 +56,6 @@ FINAL_FILES = (
     "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
     "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
     "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
-    "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
     "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
 )
 IMPORTED = {
@@ -67,6 +64,16 @@ IMPORTED = {
     CLAUDE_DESIGN_HEAD: CLAUDE_DESIGN_FILES,
     FINAL_HEAD: FINAL_FILES,
 }
+
+ANNOTATED = {
+    CLAUDE_DESIGN_HEAD: (
+        "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+        "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    ),
+    FINAL_HEAD: ("docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",),
+}
+
+ANNOTATION_MARKER = "<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->"
 
 TRANSFORMED = {
     CLAUDE_CODE_HEAD: (
@@ -95,6 +102,24 @@ def _git(*args: str) -> str:
 
 def _read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
+
+
+def _norm(text: str) -> str:
+    """Compare content independently of checkout line endings."""
+    return text.replace("\r\n", "\n").strip()
+
+
+def _blob_text(commit: str, rel: str) -> str:
+    """Read a committed blob as UTF-8, independent of the console code page."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{rel}"],
+        cwd=REPO,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    assert result.returncode == 0, f"git show {commit}:{rel} failed"
+    return result.stdout.decode("utf-8")
 
 
 # --- verifier -----------------------------------------------------------------------------
@@ -184,9 +209,42 @@ def test_every_imported_file_is_byte_identical_to_its_source_commit() -> None:
 def test_twenty_six_files_were_imported() -> None:
     unchanged = sum(len(paths) for paths in IMPORTED.values())
     transformed = sum(len(paths) for paths in TRANSFORMED.values())
-    assert unchanged == 22
+    annotated = sum(len(paths) for paths in ANNOTATED.values())
+    assert unchanged == 19
     assert transformed == 4
-    assert unchanged + transformed == 26
+    assert annotated == 3
+    assert unchanged + transformed + annotated == 26
+
+
+def test_annotated_files_keep_their_original_content_as_a_prefix() -> None:
+    """Step 66D-ALIGN1 appended a supersession note; nothing above the marker may change."""
+    for commit, paths in ANNOTATED.items():
+        for rel in paths:
+            original = _blob_text(commit, rel)
+            current = _read(REPO / rel)
+            assert ANNOTATION_MARKER in current, rel
+            head = current.partition(ANNOTATION_MARKER)[0]
+            assert _norm(head) == _norm(original), f"{rel} was modified above the marker"
+
+
+def test_annotated_files_deleted_no_lines() -> None:
+    for commit, paths in ANNOTATED.items():
+        for rel in paths:
+            numstat = _git("diff", "--numstat", commit, "--", rel)
+            assert numstat, rel
+            added, deleted = numstat.split("	")[:2]
+            assert deleted == "0", f"{rel} deleted {deleted} lines"
+            assert int(added) > 0, rel
+
+
+def test_annotated_files_do_not_rewrite_the_original_decision_status() -> None:
+    """The pre-marker content must still read as it did when decisions were open."""
+    for commit, paths in ANNOTATED.items():
+        for rel in paths:
+            if not rel.endswith(".md"):
+                continue
+            head = _read(REPO / rel).partition(ANNOTATION_MARKER)[0]
+            assert "RESOLVED / BINDING" not in head, rel
 
 
 def test_transformed_scope_files_are_additive_only() -> None:
@@ -210,9 +268,9 @@ def test_transformed_scope_files_admit_no_runtime_prefix() -> None:
             for prefix in ("apps/", "agents/", "shared/", "services/", "migrations/", "infra/"):
                 assert f'"{prefix}"' not in allowlist, f"{rel} admitted {prefix}"
             for added in (
-                '"docs/design/"',
-                '"scripts/verify_step66sync1_"',
-                '"tests/test_step66sync1_"',
+                '"docs/"',
+                '"scripts/verify_step66"',
+                '"tests/test_step66"',
             ):
                 assert added in allowlist, f"{rel} missing {added}"
 
@@ -254,7 +312,7 @@ def test_codex_untracked_paths_not_imported() -> None:
 
 def test_manifest_covers_every_imported_file() -> None:
     manifest = _read(MANIFEST)
-    for source in (IMPORTED, TRANSFORMED):
+    for source in (IMPORTED, TRANSFORMED, ANNOTATED):
         for paths in source.values():
             for rel in paths:
                 assert rel in manifest, rel
@@ -279,7 +337,7 @@ def test_manifest_marks_partner_evidence_unchanged() -> None:
     rows += [line for line in manifest.splitlines() if line.startswith("| `scripts/")]
     rows += [line for line in manifest.splitlines() if line.startswith("| `tests/")]
     imported_rows = [line for line in rows if "| YES |" in line]
-    assert len(imported_rows) == 22
+    assert len(imported_rows) == 19
 
 
 def test_manifest_marks_new_records_not_imported() -> None:
@@ -647,7 +705,7 @@ def test_changed_paths_are_within_the_canonicalization_scope() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     }
-    allowed_prefixes = ("docs/", "scripts/verify_step66sync1_", "tests/test_step66sync1_")
+    allowed_prefixes = ("docs/", "scripts/verify_step66", "tests/test_step66")
     stray = [
         p for p in _changed_paths() if p not in allowed_exact and not p.startswith(allowed_prefixes)
     ]

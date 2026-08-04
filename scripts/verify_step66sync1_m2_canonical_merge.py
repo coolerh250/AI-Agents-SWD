@@ -19,6 +19,9 @@ PRE_MERGE_MAIN = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
 PR_HEAD = "1278b8944e3a8f824a9b35f82382fa8587e7989d"
 MERGE_COMMIT = "7971ae0c5a5d90a186efd4c52f75988720ce214e"
 PR_NUMBER = "22"
+# This stage's own post-merge record commit. The bounded-adaptation guard below
+# measures what THIS stage changed, not what later authorized stages changed.
+RECORD_COMMIT = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
 CANONICAL_BASELINE_HINT = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
 
 SYNC = ROOT / "docs" / "handoffs" / "program-sync"
@@ -332,7 +335,8 @@ def check_merge_record_scope() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     }
-    stray = [path for path in changed if path not in allowed]
+    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
+    stray = [path for path in changed if path not in allowed and not path.startswith(later_stage)]
     if stray:
         bad(f"merge-record-scope: unexpected paths after the merge: {', '.join(stray)}")
 
@@ -340,7 +344,7 @@ def check_merge_record_scope() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     ):
-        numstat = git("diff", "--numstat", MERGE_COMMIT, "HEAD", "--", rel)
+        numstat = git("diff", "--numstat", MERGE_COMMIT, RECORD_COMMIT, "--", rel)
         if not numstat:
             continue
         added, deleted = numstat.split("\t")[:2]

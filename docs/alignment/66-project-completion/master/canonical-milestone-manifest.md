@@ -135,7 +135,10 @@ Status: IN_PROGRESS — Step 66C.4 not started, is the immediate next critical-p
 
 ```text
 Purpose: let a reviewer see what the AI team delivered in product language, and take one of four
-  clear, consequence-explicit decisions (Accept / Reject / Request Changes / Re-run QA) —
+  clear, consequence-explicit Review Gate Actions (Accept / Reject / Request Changes / Re-run QA,
+  plus Escalate and Archive in the full six-action contract), and — where the action is Accept or
+  Reject — to record the separate Product Owner Final Decision (ACCEPTED / ACCEPTED_WITH_FOLLOW_UP /
+  REJECTED) —
   completing the "finish a delivery with the AI team" half of the product loop.
 Entry criteria: M1 exit criteria met (a real task can reach a completed/deliverable state through
   the interaction loop).
@@ -145,23 +148,30 @@ In-scope: Delivery Inbox (cross-task acceptance queue); Delivery Detail (accepta
   services).
 Out-of-scope: external delivery notifications (M4); any workflow re-dispatch beyond recording the
   review decision itself (stays gated); anything the 66D contract does not yet return.
-Architecture dependencies: Step 66D-ARCH must freeze the delivery/acceptance data model and the
-  6-action endpoint contract BEFORE any UI is designed against it (unanimous, non-negotiable
-  cross-partner requirement — see cross-partner-resolution-record.md §3).
-API/data contract dependencies: delivery item ID/route shape; delivery states (submitted /
-  under-review / accepted / rejected / changes-requested / qa-rerun-requested / archived /
-  expired); reviewer RBAC scoping reusing the existing TASK_ROLES model
-  (`reviewer_approver`, `pm_engineering_lead`); request-changes payload shape; audit/idempotency
-  response contract; distinct from the legacy read-only `Delivery Package` (Platform Ops evidence
-  record) — the Inbox is the new task-linked human-acceptance surface, not a rename of the existing
-  page.
+Architecture dependencies: Step 66D-ARCH must freeze the delivery/acceptance data model, the
+  6-action Review Gate Action endpoint contract, AND the separate 3-value Product Owner Final
+  Decision contract BEFORE any UI is designed against them (unanimous, non-negotiable cross-partner
+  requirement — see cross-partner-resolution-record.md §3). Required aggregates and entities:
+  `DeliverySubmission`, `DeliveryReviewTask`, `DeliveryReviewAction`, `ProductOwnerDecision`,
+  `AcceptanceFollowUpItem` (66D-D04). The legacy `DeliveryPackage` remains the Step 47/49 Platform
+  Ops evidence object and must not be renamed, reshaped or used as the review aggregate.
+API/data contract dependencies: delivery submission ID/route shape; delivery review status (DRAFT /
+  SUBMITTED / UNDER_REVIEW / CHANGES_REQUESTED / QA_RERUN_REQUESTED / ACCEPTED / REJECTED /
+  ARCHIVED / EXPIRED), whose ACCEPTED and REJECTED values are a projection of the current effective
+  Product Owner Final Decision rather than the authoritative record (66D-D02); a separate immutable,
+  supersedable `ProductOwnerDecision` history; reviewer RBAC scoping reusing the existing TASK_ROLES
+  model (`reviewer_approver`, `pm_engineering_lead`) anchored on `delivery_review_task_id`, while
+  execution and artifact lineage stays anchored on project -> work item -> workflow -> run (66D-D03);
+  request-changes payload shape; audit/idempotency response contract; distinct from the legacy
+  read-only `Delivery Package` (Platform Ops evidence record) — the Inbox is the new task-anchored
+  human-acceptance surface, not a rename of the existing page.
 UX/design dependencies: `delivery-experience-definition.md` (Claude Design) — the Request-Changes-
   vs-Re-run-QA distinction (content vs. verification, different forms, different consequence
   copy), evidence-as-disclosure, consequence preview before every decision.
 Frontend dependencies: new components (`DeliveryInbox`, `DeliveryDetail`,
   `AcceptanceDecisionPanel`, `RequestChangesComposer`); explicit mutation state with confirmation/
   idempotency (Codex: "`AsyncView` alone is insufficient" for M2 mutations).
-Security/governance requirements: the 6-action gate must enforce server-side RBAC using the
+Security/governance requirements: the 6-action Review Gate must enforce server-side RBAC using the
   existing TASK_ROLES model — no client-side-only gating of who may Accept/Reject (non-negotiable,
   security-governance/SKILL.md item 5); no bulk destructive actions.
 Test requirements: contract fixture tests for inbox/detail/decision states; mutation tests for

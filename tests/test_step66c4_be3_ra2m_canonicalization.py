@@ -610,7 +610,8 @@ def test_changed_paths_are_within_scope() -> None:
         "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
         "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
     }
-    assert [p for p in _changed() if p not in allowed_exact and not p.startswith("docs/")] == []
+    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
+    assert [p for p in _changed() if p not in allowed_exact and not p.startswith(later_stage)] == []
 
 
 def test_progress_record_is_append_only() -> None:

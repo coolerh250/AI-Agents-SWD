@@ -685,3 +685,68 @@ secrets — use neutral labels such as "test host", "internal test runtime", "ad
 tunnel", "sandbox repo"._
 
 <!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->
+
+<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->
+
+---
+
+## Supersession note — Step 66D-ALIGN1 (2026-08-04)
+
+> **Append-only annotation. Nothing above this marker was edited.** Everything above records this
+> specification as Claude Design wrote it at Step 66SYNC.1 and remains valid as partner evidence.
+
+Binding decisions `66D-D01`..`66D-D04`
+(`docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md`,
+Product Owner, 2026-08-04) clarify one ambiguity in §12 of this specification.
+
+**"Product Owner decision (only these three)" is correct, but describes only one of two layers.**
+
+```text
+Product Owner Final Decision -- exactly three:
+  ACCEPTED
+  ACCEPTED_WITH_FOLLOW_UP
+  REJECTED
+
+Review Gate Action -- exactly six, a SEPARATE contract:
+  ACCEPT
+  REJECT
+  REQUEST_CHANGES
+  RERUN_QA
+  ESCALATE
+  ARCHIVE
+```
+
+Only `ACCEPT` and `REJECT` carry a Product Owner Final Decision. `REQUEST_CHANGES`, `RERUN_QA`,
+`ESCALATE` and `ARCHIVE` carry none, and must never be added to the three-value decision enum.
+
+Four further clarifications now binding on any design work against this specification:
+
+```text
+REQUEST_CHANGES != RERUN_QA
+  Request Changes is a content revision and always requires a written "what to change".
+  Re-run QA is a verification re-run with no change requested. This specification's §11
+  disambiguation is confirmed and is now a binding contract distinction, not only a UX one.
+
+ACCEPTED_WITH_FOLLOW_UP requires at least one NON-BLOCKING follow-up
+  If any blocking follow-up exists, REQUEST_CHANGES must be used instead. ACCEPTED_WITH_FOLLOW_UP
+  is never unconditional completion.
+
+The Delivery Inbox is task-anchored
+  Queueing, reviewer assignment and TASK_ROLES authorization anchor on `delivery_review_task_id`.
+
+Execution evidence remains project/work-item/workflow/run anchored
+  Agent execution, artifacts and requirement traceability anchor on
+  project_id -> work_item_id -> workflow_id -> run_id. The Task surface is never the Agent
+  execution source of truth.
+```
+
+Entity naming (66D-D04): the new human-acceptance aggregate is `DeliverySubmission`, with
+`DeliveryReviewTask`, `DeliveryReviewAction`, `ProductOwnerDecision` and `AcceptanceFollowUpItem`.
+The legacy `DeliveryPackage` (Step 47/49 Platform Ops evidence object) is preserved unchanged.
+
+**Unchanged by this note:** the Unified POC Control Center and Coordinated Existing Routes remain
+POC.0 design options. Neither is selected, and this note does not select one. Nothing in this
+specification is implemented; Step 66D-ARCH, Step 66D-DESIGN and all Step 66D implementation slices
+remain NOT AUTHORIZED. `production_executed_true_count: 0`.
+
+<!-- SUPERSESSION-NOTE-END: Step 66D-ALIGN1 -->

@@ -141,6 +141,57 @@ this precedence index authorizes any RA-2 implementation stage.
 RA-2I0 through RA-2R and RA-3 are all NOT AUTHORIZED, and each requires its own separate Product
 Owner authorization (RA2-C06).
 
+## Step 66D delivery decision model precedence (Step 66D-ALIGN1)
+
+```text
+Tier 1 -- Product Owner binding decisions
+  docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md
+    66D-D01..66D-D04 RESOLVED / BINDING, 2026-08-04.
+
+Tier 1 supporting registry
+  docs/contracts/66d-delivery-acceptance/step66d-canonical-terminology-registry.md
+  docs/handoffs/66d-delivery-acceptance/step66d-canonical-conflict-supersession-matrix.md
+```
+
+**The 66D-D01..D04 binding decision record supersedes conflicting active terminology without
+rewriting historical evidence.** Active canonical documents were edited to remove the contradiction;
+partner specifications and gap registers were annotated with append-only supersession notes and
+their original text left byte-for-byte intact.
+
+Known precedence resolutions for Step 66D:
+
+```text
+Decision vocabulary
+  The master-plan family described a 6-action gate; the Claude Design specification said
+  "Product Owner decision (only these three)". Both were right about different layers. 66D-D01
+  governs: six Review Gate Actions AND three Product Owner Final Decisions, as separate contracts.
+  Neither prior statement is discarded; each is scoped.
+
+Delivery lifecycle
+  The earlier rule that acceptance must not appear in the delivery lifecycle at all is superseded
+  by 66D-D02: delivery review status MAY project the current effective decision, while the
+  authoritative history is a separate immutable, supersedable ProductOwnerDecision record.
+
+Anchor
+  66D-D03 governs: execution and artifact lineage is project -> work item -> workflow -> run;
+  human review and TASK_ROLES authorization anchor on delivery_review_task_id. Binding decision
+  D-1 is preserved -- the Task surface is still not the Agent execution source of truth.
+
+Entity naming
+  66D-D04 governs: the legacy DeliveryPackage (Step 47/49 Platform Ops evidence object) is
+  preserved unchanged; the new human-acceptance aggregate is DeliverySubmission.
+
+Annotated partner evidence
+  docs/design/ai-agent-team-functional-poc-control-center-spec.md
+  docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md
+  docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md
+    Each carries an append-only "Supersession note -- Step 66D-ALIGN1" section. The content above
+    each note's marker is unchanged from its Step 66SYNC.1 source blob and stays Tier 4 evidence.
+```
+
+Resolving the vocabulary conflict is not a contract freeze. Step 66D-ARCH remains NOT AUTHORIZED,
+as do Step 66D-DESIGN and every Step 66D implementation slice.
+
 ## Current authorization status
 
 ```text

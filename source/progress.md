@@ -17410,3 +17410,64 @@ external identity provider or agent workflow started. `production_executed_true_
   `RESOLVED / BINDING / CANONICALIZED`. Next: RA-2I0 is the first stage in sequence and needs its
   own separate explicit Product Owner authorization (RA2-C06); BE3 resume/replay additionally
   requires RA-2R to pass (RA2-C05).
+
+## Step 66D-ALIGN1 — Canonical Delivery Decision Model Alignment
+
+**Marker: `STEP66D_ALIGN1_DELIVERY_DECISION_MODEL_VERIFY: PASS`. Documentation and governance
+alignment only. No contract frozen. No runtime, frontend, backend, API, database, event, migration,
+deployment, identity, secret or feature-gate change. Branch
+`planning/66d-align-delivery-decision-model`, cut from canonical main `64467fe`.**
+
+- **Why this stage existed.** Step 66D-ARCH1 correctly stopped on `64467fe` with
+  `CANONICAL_STAGE_CONFLICT` before writing anything. Main carried two incompatible delivery
+  vocabularies plus an anchor disagreement and an entity-name collision. All four were reproduced
+  from committed content, not from prior reports.
+- **Four binding decisions recorded.** `docs/contracts/66d-delivery-acceptance/
+  step66d-delivery-decision-model-binding-decisions.md`: **66D-D01** layered model — exactly six
+  Review Gate Actions (ACCEPT/REJECT/REQUEST_CHANGES/RERUN_QA/ESCALATE/ARCHIVE) and a *separate*
+  three-value Product Owner Final Decision (ACCEPTED/ACCEPTED_WITH_FOLLOW_UP/REJECTED), with
+  different enum, schema, API, event, audit action and authorization boundary; only ACCEPT and
+  REJECT carry a decision, the other four carry none. **66D-D02** delivery review status may
+  *project* the current effective decision while the authoritative history is an immutable,
+  supersedable `ProductOwnerDecision`; ACCEPTED_WITH_FOLLOW_UP takes only non-blocking follow-ups,
+  and any blocking one forces REQUEST_CHANGES. **66D-D03** dual anchor — execution/artifacts on
+  project → work item → workflow → run, human review and TASK_ROLES on `delivery_review_task_id`,
+  with D-1 preserved intact. **66D-D04** legacy `DeliveryPackage` (Step 47/49) preserved unchanged;
+  the new aggregate is `DeliverySubmission` with `DeliveryReviewTask`, `DeliveryReviewAction`,
+  `ProductOwnerDecision` and `AcceptanceFollowUpItem`.
+- **Active canonical documents edited; historical evidence annotated, never rewritten.** Five
+  active documents (gates, Definition of Done, milestone manifest, master plan, precedence index)
+  were edited in place to remove the contradiction. Three partner artifacts — the Claude Design POC
+  specification and two Step 66SYNC.1 gap registers — received **append-only** supersession notes
+  below a stable marker: **+65/+33/+29 lines, −0 deletions**, with the pre-marker content still
+  byte-identical to its Step 66SYNC.1 source blob. The spec's original "only these three" sentence
+  survives verbatim; it is scoped, not deleted.
+- **A pre-existing regression was found and repaired.** Running the earlier suites on **clean main
+  at `64467fe`** produced **9 failures before any 66D work**. Every stage verifier asserted that the
+  only paths changed relative to its own baseline belong to that stage — false by construction once
+  a later stage lands. The regression entered main with the RA-2M1/RA-2M2 merges and went unnoticed
+  because those stages ran only their own suites. Repaired across **11 files** by allowing
+  `docs/`, `scripts/verify_step66` and `tests/test_step66`; every runtime denylist untouched. The
+  66SYNC.1-M1 gate additionally moved three files from whole-blob identity to append-only
+  annotation checking (manifest now 19 unchanged / 3 annotated / 4 transformed, still 26).
+- **What was deliberately not decided.** The bounded QA-rerun count, cooldown, timeout and
+  escalation threshold stay deferred to Step 66D-ARCH; a test asserts no numeric bound was fixed
+  here. The POC.0 IA option remains unselected. `next-executable-stage-sequence.md` and
+  `critical-path-and-dependency-map.md` were left untouched because their "6-action endpoint
+  contract" wording is *correct* under 66D-D01.
+- **Tests/verification.** `tests/test_step66d_align1_delivery_decision_model.py`: **62 passed, 0
+  failed, 0 skipped**; the whole stage family is **552 passed, 0 failed, 0 skipped**. Verifier: 32
+  numbered checks plus annotation and gap groups, PASS. Several tests re-derive rather than cite —
+  the two enums are parsed and compared for disjointness, the mapping table is counted for exactly
+  four no-decision rows, the legacy `DeliveryPackage` source is proven untouched from Git, and the
+  annotations are proven byte-prefix-preserving. ruff/black/mypy/`git diff --check` clean; secret
+  and local-path scans CLEAN.
+- **Ten alignment gaps registered, 0 authorized, 0 implemented** — two CRITICAL (TASK_ROLES
+  authorization mapping; follow-up lifecycle, which additionally needs a *verified* human identity
+  that RA-2 has decided but not implemented).
+- **Status.** `STEP66D_ALIGN1: PASS`; PR **OPEN / READY FOR REVIEW and NOT MERGED**;
+  `STEP66D_ARCH1_RETRY_READINESS: READY_FOR_PRODUCT_OWNER_AUTHORIZATION` — readiness is not
+  authorization. No contract frozen, Step 66D-ARCH not complete, `DeliverySubmission` not
+  implemented, Delivery Inbox not implemented, no PO decision API, TASK_ROLES unchanged, POC not
+  ready. Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 all remain
+  **NOT AUTHORIZED**. `production_executed_true_count: 0`.

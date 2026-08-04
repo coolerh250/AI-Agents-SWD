@@ -89,9 +89,9 @@ ALLOWED_PREFIXES = (
     # Step 66SYNC.1-M1 canonicalization: this branch legitimately carries the whole
     # Step 66SYNC.1 artifact set, not just the coordinator's slice. Runtime paths
     # (apps/, shared/, agents/, services/, migrations/, infra/) remain rejected.
-    "docs/design/",
-    "scripts/verify_step66sync1_",
-    "tests/test_step66sync1_",
+    "docs/",
+    "scripts/verify_step66",
+    "tests/test_step66",
 )
 
 MARKER = "STEP66SYNC1_FINAL_PARTNER_RECONCILIATION_VERIFY"

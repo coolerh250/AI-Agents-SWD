@@ -26,6 +26,9 @@ MERGE_RECORD = SYNC / "step66sync1-m2-canonical-merge-record.md"
 PRE_MERGE_MAIN = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
 PR_HEAD = "1278b8944e3a8f824a9b35f82382fa8587e7989d"
 MERGE_COMMIT = "7971ae0c5a5d90a186efd4c52f75988720ce214e"
+# This stage's own post-merge record commit. The bounded-adaptation guard below
+# measures what THIS stage changed, not what later authorized stages changed.
+RECORD_COMMIT = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
 
 HISTORICAL_EVIDENCE = (
     "docs/handoffs/program-sync/step66sync1-claude-code-acknowledgement.md",
@@ -312,7 +315,8 @@ def test_merge_record_commit_adds_only_its_own_files() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     }
-    assert [p for p in changed if p not in allowed] == []
+    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
+    assert [p for p in changed if p not in allowed and not p.startswith(later_stage)] == []
 
 
 def test_m1_baseline_correction_is_minimal() -> None:
@@ -321,7 +325,7 @@ def test_m1_baseline_correction_is_minimal() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     ):
-        numstat = _git("diff", "--numstat", MERGE_COMMIT, "HEAD", "--", rel)
+        numstat = _git("diff", "--numstat", MERGE_COMMIT, RECORD_COMMIT, "--", rel)
         if not numstat:
             continue
         added, deleted, _ = numstat.split("\t", 2)

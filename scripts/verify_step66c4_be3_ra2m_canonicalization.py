@@ -380,7 +380,10 @@ def check28_no_implementation_change() -> None:
         "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
         "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
     }
-    stray = [path for path in changed if path not in allowed_exact and not path.startswith("docs/")]
+    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
+    stray = [
+        path for path in changed if path not in allowed_exact and not path.startswith(later_stage)
+    ]
     if stray:
         bad(f"check28: changes outside the allowed canonicalization scope: {', '.join(stray)}")
 

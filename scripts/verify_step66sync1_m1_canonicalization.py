@@ -60,9 +60,7 @@ IMPORTED = {
         "tests/test_step66sync1_codex_frontend_reconciliation.py",
     ),
     CLAUDE_DESIGN_HEAD: (
-        "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
         "docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md",
-        "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
         "docs/test/step66sync1-claude-design-reconciliation-evidence.md",
         "scripts/verify_step66sync1_claude_design_reconciliation.py",
         "tests/test_step66sync1_claude_design_reconciliation.py",
@@ -73,10 +71,23 @@ IMPORTED = {
         "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
         "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
         "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
-        "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
         "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
     ),
 }
+
+# Step 66D-ALIGN1 annotated these three with an append-only supersession note. Their original
+# content must still be a byte-exact PREFIX of the current file -- nothing above the marker may
+# change -- and everything after the marker is the note. This is stricter than "not rewritten"
+# for the original portion, and is verified as such rather than by whole-blob identity.
+ANNOTATED = {
+    CLAUDE_DESIGN_HEAD: (
+        "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+        "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    ),
+    FINAL_HEAD: ("docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",),
+}
+
+ANNOTATION_MARKER = "<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->"
 
 # Four partner scope-check files carry a minimal, recorded transformation: their
 # branch-scoped ALLOWED_PREFIXES tuple gains three entries so the check is valid on an
@@ -95,9 +106,9 @@ TRANSFORMED = {
 
 TRANSFORM_ADDED_LINES = 6
 TRANSFORM_ADDED_PREFIXES = (
-    '"docs/design/",',
-    '"scripts/verify_step66sync1_",',
-    '"tests/test_step66sync1_",',
+    '"docs/",',
+    '"scripts/verify_step66",',
+    '"tests/test_step66",',
 )
 
 FAILURES: list[str] = []
@@ -194,6 +205,25 @@ def _allowlist_block(body: str) -> str | None:
     return match.group(1) if match else None
 
 
+def _norm(text: str) -> str:
+    """Compare content independently of checkout line endings."""
+    return text.replace("\r\n", "\n").strip()
+
+
+def git_blob_text(commit: str, rel: str) -> str:
+    """Read a committed blob as UTF-8, independent of the console code page."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{rel}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.decode("utf-8")
+
+
 def check09_historical_artifacts_unchanged() -> None:
     for commit, paths in IMPORTED.items():
         for rel in paths:
@@ -230,6 +260,25 @@ def check09_historical_artifacts_unchanged() -> None:
                 if f'"{runtime_prefix}"' in allowlist:
                     bad(f"check09: {rel} allowlist admitted runtime prefix {runtime_prefix}")
 
+    for commit, paths in ANNOTATED.items():
+        for rel in paths:
+            original = git_blob_text(commit, rel)
+            current = (ROOT / rel).read_text(encoding="utf-8")
+            if not original:
+                bad(f"check09: {rel} not found in source commit {commit}")
+                continue
+            if ANNOTATION_MARKER not in current:
+                bad(f"check09: {rel} is missing the Step 66D-ALIGN1 annotation marker")
+                continue
+            head, _, _ = current.partition(ANNOTATION_MARKER)
+            if _norm(head) != _norm(original):
+                bad(f"check09: {rel} content above the annotation marker was modified")
+            numstat = git("diff", "--numstat", commit, "--", rel)
+            if numstat:
+                deleted = numstat.split("\t")[1]
+                if deleted != "0":
+                    bad(f"check09: {rel} annotation deleted {deleted} line(s); must be additive")
+
     ack = read(SYNC / "step66sync1-final-partner-acknowledgement.md")
     if "OPEN_PRODUCT_OWNER_DECISIONS:\n3" not in ack:
         bad("check09: historical open-decision count was edited in the final acknowledgement")
@@ -237,7 +286,7 @@ def check09_historical_artifacts_unchanged() -> None:
 
 def check10_manifest_covers_all_imports() -> None:
     manifest = read(MANIFEST)
-    for source in (IMPORTED, TRANSFORMED):
+    for source in (IMPORTED, TRANSFORMED, ANNOTATED):
         for paths in source.values():
             for rel in paths:
                 if rel not in manifest:
@@ -355,7 +404,10 @@ def check24_no_runtime_source_change() -> None:
         "scripts/verify_step66sync1_m1_canonicalization.py",
         "tests/test_step66sync1_m1_canonicalization.py",
     }
-    allowed_prefixes = ("docs/", "scripts/verify_step66sync1_", "tests/test_step66sync1_")
+    # Widened from "scripts/verify_step66sync1_"/"tests/test_step66sync1_" in Step 66D-ALIGN1:
+    # later canonical stages (RA-2M1/RA-2M2, 66D-ALIGN1) add their own stage verifiers and tests,
+    # which this branch-scoped allowlist could not have known about. Still admits no runtime path.
+    allowed_prefixes = ("docs/", "scripts/verify_step66", "tests/test_step66")
     stray = [
         path
         for path in changed
