@@ -129,8 +129,17 @@ def read(path: Path) -> str:
 
 
 def check01_baseline_main() -> None:
-    if git("rev-parse", "origin/main") != CANONICAL_MAIN:
-        bad("check01: origin/main is not the canonical baseline c1db4cc")
+    # c1db4cc is the canonical *pre-merge* baseline. Before Step 66SYNC.1-M2 it was origin/main
+    # itself; after the merge it is the merge commit's first parent. Ancestry holds in both cases,
+    # equality only in the first, so ancestry is the assertion that stays true and still fails if
+    # this branch is ever cut from an unrelated baseline.
+    baseline_reachable = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", CANONICAL_MAIN, "origin/main"],
+        cwd=ROOT,
+        check=False,
+    )
+    if baseline_reachable.returncode != 0:
+        bad("check01: canonical baseline c1db4cc is not contained in origin/main")
     ancestor = subprocess.run(
         ["git", "merge-base", "--is-ancestor", CANONICAL_MAIN, "HEAD"],
         cwd=ROOT,

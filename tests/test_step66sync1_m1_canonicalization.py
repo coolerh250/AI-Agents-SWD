@@ -121,7 +121,13 @@ def test_verifier_passes() -> None:
 
 
 def test_canonical_main_is_baseline() -> None:
-    assert _git("rev-parse", "origin/main") == CANONICAL_MAIN
+    """c1db4cc is the pre-merge baseline: origin/main before Step 66SYNC.1-M2, its ancestor after."""
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", CANONICAL_MAIN, "origin/main"],
+        cwd=REPO,
+        check=False,
+    )
+    assert result.returncode == 0
 
 
 def test_canonical_main_is_ancestor_of_head() -> None:

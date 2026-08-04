@@ -17136,3 +17136,61 @@ migration, secret, or feature-gate change. No POC started. No PR merged. Branch
   **NOT STARTED / NOT AUTHORIZED**; BE3 resume/replay **DISABLED**;
   `production_executed_true_count: 0`. Next: Product Owner review of the PR, then a separate
   explicit merge authorization.
+
+## Step 66SYNC.1-M2 — Canonical Merge of the Step 66SYNC.1 Package
+
+**Marker: `STEP66SYNC1_M2_CANONICAL_MERGE_VERIFY: PASS`. Authorized non-squash merge of PR #22 plus
+an append-only merge record. No runtime, frontend, backend, API, database, workflow, deployment,
+migration, secret, or feature-gate change. No container started, no database connection opened, no
+secret read. `production_executed_true_count: 0`.**
+
+- **Head-locked merge.** Pre-merge state re-verified twice — once before verification and again
+  immediately before merging: `origin/main` = `c1db4cc`, PR #22 head = `1278b894`, state OPEN,
+  `isDraft: false`, `mergeStateStatus: CLEAN`, exactly **1** commit ahead of main. Merged with
+  `gh pr merge 22 --merge --match-head-commit 1278b894…`. No `--squash`, no `--rebase`, no
+  auto-merge, no admin or branch-protection bypass, no amend, no force push, no additional commit.
+- **Pre-merge verification at the detached PR head (unmodified).**
+  `STEP66SYNC1_M1_CANONICALIZATION_PREP_VERIFY: PASS`; all five Step 66SYNC.1 suites **231 passed,
+  0 failed, 0 skipped**; ruff/black/mypy clean; `git diff --check c1db4cc...1278b89` clean. The
+  secret and local-path scan over the 9,235 added lines produced five hits, each inspected and
+  confirmed benign — four are regex *definitions* inside the partners' own secret-scanner tests and
+  one is the M1 evidence record's own line declaring those patterns absent. Scope scan: 34 paths,
+  zero under `apps/`, `agents/`, `shared/`, `services/`, `migrations/`, `infra/`, and no frontend,
+  compose, Kubernetes, Helm, or feature-gate change.
+- **Merge result.** Merge commit **`7971ae0`** with exactly two parents in order:
+  `c1db4cc` (pre-merge main) and `1278b894` (PR head). Both are ancestors of main; the
+  canonicalization commit is **preserved**, which a squash would have destroyed. PR #22 is `MERGED`
+  with `headRefOid` still `1278b894`.
+- **What became canonical.** D-1 **Dedicated POC Development Goal**, D-2 **Hybrid execution model**
+  and D-3 **Runtime LLM remains plan-only**, all `RESOLVED / BINDING` by Product Owner authority,
+  with requirements D1-R1..R7 / D2-R1..R5 / D3-R1..R6 and binding conditions B-01..B-12.
+  `OPEN_PRODUCT_OWNER_DECISIONS_FROM_STEP66SYNC1: 0`. Alongside them: the 22 byte-identical partner
+  evidence documents, the 2026-08-04 current-state addendum, the six-tier source-of-truth
+  precedence index, and the canonicalization manifest.
+- **Preservation re-verified on main.** The partner acknowledgements, discrepancy registers, gap
+  registers and decision package are present and unrewritten — `OPEN_PRODUCT_OWNER_DECISIONS: 3`
+  still reads 3, because it was true when written, and a test asserts none of them carries the new
+  `RESOLVED / BINDING` wording. Screen count re-derived from the specification headings on main:
+  **15**. Step 66D canonical identifiers retained. IA options still
+  `POC.0 DESIGN OPTION / NON-BINDING / NOT SELECTED`.
+- **One post-merge correction, disclosed.** The M1 verifier and its test asserted
+  `origin/main == c1db4cc`; the merge itself falsified that, since `c1db4cc` is now the merge
+  commit's *first parent* rather than the tip of main. The assertion was narrowed from equality to
+  ancestry (`git merge-base --is-ancestor c1db4cc origin/main`), true both before and after the
+  merge and still failing if the branch is ever cut from an unrelated baseline. Bounds: ≤15 added
+  and ≤5 deleted lines per file, machine-checked; every other M1 check untouched and the M1 verifier
+  still reports PASS. No partner evidence and no runtime file was modified.
+- **Tests/verification.** `tests/test_step66sync1_m2_canonical_merge.py`: **42 passed, 0 failed,
+  0 skipped**; the whole Step 66SYNC.1 family on main is **273 passed, 0 failed, 0 skipped**. The
+  M2 verifier runs 21 numbered checks plus merge-record and merge-record-scope groups, and derives
+  the merge facts from Git objects — the PR head is read as the merge commit's *second parent*
+  rather than trusted from any report.
+- **Merge did not authorize anything.** POC implementation, RA-2M, Step 66D-ARCH, Step 66D-DESIGN,
+  Step 66D implementation slices, Step 67POC.0, RA-2I0..RA-2I6, RA-2R and RA-3 all remain
+  **NOT STARTED / NOT AUTHORIZED**. BE3 resume/replay **DISABLED**, all four gates unchanged at
+  default false. No deployment, no shared migration, no feature-gate activation, no resume/replay
+  execution. `production_executed_true_count: 0`.
+- **Status.** `STEP66SYNC1_M2: PASS`; PR #22 **MERGED** (non-squash); canonicalization commit
+  **preserved**; source-of-truth record pushed to main; `STEP66SYNC1: PASS / CLOSED / CANONICALIZED`.
+  Next: Step 66D-ARCH or Step 67POC.0 scoping, each requiring its own separate explicit Product
+  Owner authorization.
