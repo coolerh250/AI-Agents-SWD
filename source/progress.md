@@ -16896,3 +16896,243 @@ application, no deployment, no feature-gate change, no runtime activation.**
   complete, runtime-validated, activated, deployment-ready, or production-ready. RA-2 remains **NOT
   AUTHORIZED**. Next: any shared migration application, deployment, runtime validation, activation,
   or RA-2 work requires its own separate, explicit Product Owner authorization.
+
+## Step 66SYNC.1-A — Claude Code Technical State Reconciliation
+
+**Marker: `STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS`. Read-only repository/backend/
+workflow/integration/infrastructure/deployment inventory. NO runtime, backend, frontend, deployment,
+identity, secret, or POC implementation. No container started, no database connection, no migration
+applied, no secret read. Branch `planning/66sync1-claude-code-state-reconciliation`; baseline
+canonical main `c1db4cc`; `CONTEXT_ID: AIAT-SYNC-20260803-01`.**
+
+- **Context result: `CONTEXT_MATCH`.** All supplied fields verified against canonical evidence:
+  `HEAD == origin/main == c1db4cc`, RA-2 planning head `efa396d`, clean tree, all four BE3 gates
+  default false, `production_executed_true_count: 0`. **CONTEXT_FIELD_MISMATCHES: 0.**
+- **Method.** Per this stage's own rule, every classification was re-derived from source code and
+  committed configuration rather than cited from historical reports — which is what surfaced the
+  three divergences below.
+- **Central finding — two disconnected task paths.** The operator-facing task API (Step 66B.1
+  `/tasks`, rendered by the TaskNew/TaskList/TaskDetail/TaskGraph/TaskWorkroom console pages)
+  explicitly does **not** dispatch: its docstring states "No workflow dispatch", every response
+  returns `dispatch_enabled: False`, and it never publishes to `stream.tasks`. The working agent
+  pipeline is a separate lineage (`workflow.py::dispatch_node` → `dispatch.py` → `stream.tasks` →
+  ten agents). No code path connects them. This is the highest-impact POC blocker and is recorded
+  as discrepancy **D-1**.
+- **Capability inventory.** 10 implemented agents (5,641 lines: intake, requirement, development,
+  qa, devops, project-planner, design-review, workspace-operator, mini-delivery-pilot,
+  delivery-package); `agents/backend-agent/` and `agents/frontend-agent/` contain **.gitkeep only,
+  0 .py files** (**D-2**). Orchestrator LangGraph workflow, workflow persistence, approval engine,
+  retry-scheduler with bounded retry/DLQ, audit service/worker, communication gateway, and a
+  33-page Admin Console are all IMPLEMENTED_AND_TESTED. BE3 resume/replay/production-approval are
+  IMPLEMENTED_NOT_RUNTIME_VALIDATED with no production callers.
+- **Integration posture.** LLM defaults to a deterministic mock; the real LLM path is **plan-only by
+  design** (`generate_patch_proposal` and `generate_test_plan` raise), and code generation is
+  deterministic template-based with exactly three families — so LLM-driven software generation does
+  not exist (**D-3**, and the restriction is a deliberate safety control, not an oversight). GitHub
+  automation is dry-run by default with a gated real sandbox path; notification is simulated by
+  default under a denylist-beats-allowlist policy; no artifact/document store exists.
+- **Environment.** All 27 `aiagents-test` containers exist but are in state `Exited (255)` (~5 days)
+  — the stack is fully down; their existence confirms the full topology including all ten agents ran
+  historically. Staging decommissioned. Kubernetes/Helm TEMPLATE_ONLY (`infra/helm/` empty, no
+  `kind: Secret`, ServiceAccounts with automount off and no RoleBinding). Vault `server -dev` only.
+  Migrations 029-035 present, none applied to any shared database.
+- **Identity/secret cross-check.** Independently re-derived and **agrees with the RA-2 inventory**:
+  no production operator authenticator; actor id AND role both taken verbatim from client headers;
+  zero production Service Identity call sites; Policy Authority is a long-lived bearer secret read
+  from raw `os.environ` and configured in no environment; effective secret backend is environment
+  variables.
+- **POC readiness matrix (18 capabilities).** READY 9 / READY_WITH_CONSTRAINTS 7 /
+  GAP_REQUIRING_POC0 2 (backend and frontend artifact handoff) / BLOCKED 0.
+- **Discrepancies.** OPEN 3 (D-1 dispatch disconnect, D-2 empty backend/frontend agents, D-3
+  plan-only LLM) — all require Product Owner scope decisions and **none was closed by Claude Code**;
+  a test enforces they remain OPEN and Product-Owner-owned. CLOSED 1 (D-4, Service Identity
+  call-site count drift 12→16, already corrected upstream in the RA-2 inventory).
+- **Tests/verification.** `tests/test_step66sync1_claude_code_reconciliation.py`: **48 passed, 0
+  failed, 0 skipped** — offline by design, and four tests deliberately re-derive the snapshot's
+  central claims from source (including one that fails if anyone later wires the task API to
+  `stream.tasks`, forcing D-1 to be revisited). Verifier: 13 check groups, PASS. ruff/black/mypy/
+  `git diff --check`/secret scan clean.
+- **Safety.** Files changed are confined to `docs/alignment/.../master/`,
+  `docs/handoffs/program-sync/`, `docs/test/`, the two new script/test files, and `source/progress.md`
+  — zero paths under `apps/`, `shared/`, `agents/`, `migrations/`, or `infra/` (git-verified and
+  independently asserted by two tests). All four BE3 gates unchanged. `production_executed_true_count:
+  0`. Gates 1/2/6 remain PENDING RUNTIME/SHARED EXECUTION. RA-2M, RA-2 implementation, RA-3, and
+  POC.0 all remain **NOT AUTHORIZED**.
+
+## Step 66SYNC.1-A1 — Synchronization Taxonomy Correction
+
+**Marker: `STEP66SYNC1_A1_CONTEXT_TAXONOMY_VERIFY: PASS` (alongside the retained
+`STEP66SYNC1_CLAUDE_CODE_RECONCILIATION_VERIFY: PASS`). Classification-logic correction only — no
+repository re-inventory, no runtime/frontend/API/deployment/POC change. Same branch
+`planning/66sync1-claude-code-state-reconciliation`; previous head `1b86182`.**
+
+- **Problem corrected.** Step 66SYNC.1-A filed D-1/D-2/D-3 under a single `OPEN_DISCREPANCIES`
+  heading. That conflated two categorically different things: a partner disagreeing about a
+  source-of-truth value (which must block synchronization) versus an item every partner agrees on
+  that the Product Owner has simply not decided yet (which must not). As written, it could have been
+  misread as evidence that partner context was out of sync, wrongly halting Codex and Claude Design.
+- **Taxonomy established.** Four categories, with only category A blocking synchronization:
+  **A `CANONICAL_CONTEXT_MISMATCH`** (disagreement on canonical main, RA-1 status, RA-2 planning
+  head, feature-gate status, deployment state, shared migration state,
+  `production_executed_true_count`, or authorized/prohibited stages → `RESULT: CONTEXT_MISMATCH`);
+  **B `OPEN_PRODUCT_OWNER_DECISION`** (undecided, must be carried forward, must block scope
+  finalization and implementation, must not be decided by any partner); **C `TECHNICAL_GAP`**
+  (confirmed gap, no partner disagreement); **D `IMPLEMENTATION_GAP`** (later authorized stage).
+- **Reclassification.** D-1 (POC operator entry point — task API does not dispatch), D-2
+  (backend-agent/frontend-agent scope — both empty), and D-3 (delivery realism — real LLM is
+  plan-only, code generation template-bound) all moved from `OPEN_DISCREPANCY` to
+  **`OPEN_PRODUCT_OWNER_DECISION`**, each recorded with observed technical state, decision required,
+  impact on Codex inventory, impact on Claude Design inventory, impact on POC.0,
+  `Implementation authorized: NO`, and `Status: PRODUCT_OWNER_DECISION_REQUIRED`. **No option was
+  selected or pre-answered for any of them.** D-4 unchanged (documentation drift, CLOSED).
+  **No technical finding changed** — only the classification logic.
+- **Resulting state.** `RESULT: CONTEXT_MATCH`; `UNRESOLVED_CANONICAL_MISMATCHES: 0`;
+  `OPEN_PRODUCT_OWNER_DECISIONS: 3`; `OPEN_TECHNICAL_GAPS: documented` (12 items);
+  `CODEX_INVENTORY_MAY_PROCEED: YES`; `CLAUDE_DESIGN_INVENTORY_MAY_PROCEED: YES`;
+  `POC_SCOPE_FINALIZATION: BLOCKED`; `POC_IMPLEMENTATION: NOT AUTHORIZED`.
+- **Codex/Claude Design handoff rule (binding).** Stop only on a canonical main / Context ID /
+  RA-1 / RA-2 / gate / safety mismatch, or any unresolved `CANONICAL_CONTEXT_MISMATCH`. Do **not**
+  stop solely because an open Product Owner decision, technical gap, or implementation gap exists.
+  Both partners must carry D-1/D-2/D-3 forward and mark affected items `DECISION_DEPENDENT`, without
+  assuming or selecting any option.
+- **Tests/verification.** `tests/test_step66sync1_claude_code_reconciliation.py`: **62 passed, 0
+  failed, 0 skipped** (14 new taxonomy tests, including per-decision checks that D-1/D-2/D-3 each
+  carry `Implementation authorized: NO` and remain `PRODUCT_OWNER_DECISION_REQUIRED`). Verifier now
+  emits both markers; 17 check groups, PASS. ruff/black/mypy/`git diff --check`/secret scan clean.
+- **Safety.** Files changed confined to the four sync documents, the verifier, its tests, and this
+  append-only entry — zero paths under `apps/`, `shared/`, `agents/`, `migrations/`, `infra/`, or any
+  frontend/API schema (git-verified and independently asserted by two tests). Feature gates
+  unchanged. No deployment, no shared migration, no runtime action.
+  `production_executed_true_count: 0`. Codex implementation, Claude Design implementation, POC.0,
+  RA-2M, and RA-3 all remain **NOT AUTHORIZED**.
+
+## Step 66SYNC.1-D — Final Partner Reconciliation and Synchronization Gate
+
+**Marker: `STEP66SYNC1_FINAL_PARTNER_RECONCILIATION_VERIFY: PASS`. Read-only coordination of three
+independently produced partner inventories. No runtime, frontend, backend, API, database, workflow,
+deployment, migration, secret, or feature-gate change. No POC started. Branch
+`planning/66sync1-final-partner-reconciliation`, based on canonical main `c1db4cc`;
+`CONTEXT_ID: AIAT-SYNC-20260803-01`. (The 66SYNC.1-A / A1 entries live on the Claude Code partner
+branch `828ea90`, which is not merged to main — this branch is cut from main, so they do not
+appear above.)**
+
+- **Result: `STEP 66SYNC.1 FINAL RESULT: PASS`.** All three partners independently recorded
+  `CONTEXT_MATCH`: Claude Code `828ea90`, Codex `78aa4ee`, Claude Design `65c93a1`. All four partner
+  markers verified PASS by reading their **committed evidence**, not their completion reports.
+  `UNRESOLVED_CANONICAL_MISMATCHES: 0`; `OPEN_PRODUCT_OWNER_DECISIONS: 3`.
+- **Partner consistency matrix.** All 14 source-of-truth fields consistent across the three
+  partners. Three apparent differences were examined and classified as terminology / classification
+  / documentation-inconsistency rather than canonical mismatches; none was an evidence-freshness
+  difference, since all three read the same `c1db4cc` and `efa396d`.
+- **Capability reconciliation (23 capabilities, backend + frontend + UX evidence each).** READY 1,
+  READY_WITH_CONSTRAINTS 7, PARTIAL 8, DECISION_DEPENDENT 4, GAP_REQUIRING_POC0 3,
+  NOT_IMPLEMENTED 0.
+- **Normalization outcomes.** (1) **Screen count `SUMMARY_COUNT_CORRECTED`** — the specification
+  was re-enumerated directly and has exactly 15 screens (§7.1–7.15); the acknowledgement's summary
+  listed 14 names, wrongly included IA Option 1 ("POC Control Center") which is not a screen,
+  omitted Task Graph and Safety Summary, and renamed Delivery Package. Canonical set corrected to
+  the spec's 15; no inconsistent number retained. (2) **"66D" `CANONICAL_IDENTIFIER_CONFIRMED`** —
+  66D is *not* invented terminology: Step 66D-ARCH, Step 66D-DESIGN and Step 66D implementation
+  slices are canonical stages already committed on main (all NOT STARTED), so the term was retained
+  and **not** renamed; `POC0-DELIVERY-G1` is blocked on Step 66D-ARCH, a separate authorization from
+  POC.0 and from D-1/D-2/D-3. (3) **IA options** remain `POC.0 DESIGN OPTION / NON-BINDING /
+  NOT SELECTED` — verified no partner escalated them to a fourth decision. (4) **Fragmented
+  visibility** classified `IMPLEMENTATION_GAP`, explicitly *not* resolved by D-1/D-2/D-3 nor by the
+  66D contract freeze alone, with all three partners assigned as required owners.
+- **Decision package.** D-1 (POC entry point, 2 options), D-2 (backend/frontend execution model,
+  3 options), D-3 (delivery generation mode, 3 options) — each with UX/backend/data-model/
+  traceability/migration/effort/risk analysis and a NON-BINDING recommendation. D-3 Option C
+  (autonomous runtime LLM patch/test generation) is explicitly marked **HIGH-RISK / SEPARATE
+  SECURITY REVIEW REQUIRED / NOT PART OF NORMAL POC.0**, because it would deliberately remove an
+  intentional safety control. **Decisions made by any partner: 0. Options selected: 0.**
+- **POC.0 consolidated gap register.** 23 gaps across the 7 required categories (BACKEND 6,
+  FRONTEND 5, UX 3, ENVIRONMENT 2, INTEGRATION 2, SAFETY 3, DELIVERY 2), each with source partner,
+  severity, decision/backend/frontend/UX/environment dependency, owner, acceptance evidence, and
+  `Authorized: NO`. **Authorized: 0 of 23.**
+- **Tests/verification.** `tests/test_step66sync1_final_partner_reconciliation.py`: **76 passed, 0
+  failed, 0 skipped** — offline by design, and several tests re-derive partner claims from the
+  partner branches themselves (screen count from the spec, the 3-open-decisions count from each
+  partner's own artifacts, 66D's canonical presence on main) rather than trusting this stage's
+  prose. Verifier: 18 check groups, PASS. ruff/black/mypy/`git diff --check`/secret scan clean.
+- **Safety.** Changed paths confined to `docs/alignment/.../master/`, `docs/handoffs/program-sync/`,
+  `docs/test/`, the verifier, its tests, and this entry — zero paths under `apps/`, `shared/`,
+  `agents/`, `migrations/`, or `infra/` (git-verified and asserted by three independent tests,
+  including one that confirms no partner branch was modified). Feature gates unchanged, default
+  false. No container started, no database connection, no secret read, no deployment, no migration.
+  `production_executed_true_count: 0`. **POC scope NOT finalized** (blocked on D-1/D-2/D-3);
+  **POC implementation NOT started**; Step 67POC.0, RA-2M, RA-2I0…RA-2R, RA-3 and Step 66D-ARCH all
+  remain **NOT AUTHORIZED**.
+
+## Step 66SYNC.1-M1 — Canonicalization and POC Binding Decisions
+
+**Marker: `STEP66SYNC1_M1_CANONICALIZATION_PREP_VERIFY: PASS`. Documentation, governance-record and
+verification work only. No runtime, frontend, backend, API, database, workflow, deployment,
+migration, secret, or feature-gate change. No POC started. No PR merged. Branch
+`integration/66sync1-canonicalization`, cut from canonical main `c1db4cc`;
+`CONTEXT_ID: AIAT-SYNC-20260803-01`.**
+
+- **Canonicalization method.** The four Step 66SYNC.1 partner branches were **not** merged. Every
+  artifact was extracted from a committed Git object (`git checkout <commit> -- <path>`) and then
+  byte-verified by comparing the source blob SHA against the resulting index blob SHA: **26 of 26
+  IDENTICAL, 0 mismatches** at import. The working directory was never used as a source. Sources:
+  Claude Code `828ea90`, Codex `78aa4ee`, Claude Design `65c93a1`, final reconciliation `2396c6c`.
+  Nothing was imported from the RA-2 planning branch, whose head remains `efa396d`.
+- **Historical evidence preserved.** All 22 partner *evidence* files — every acknowledgement,
+  discrepancy register, gap register, decision package, evidence record, design specification and
+  program-state snapshot — are `Imported unchanged: YES`. Every occurrence of
+  `OPEN_PRODUCT_OWNER_DECISIONS: 3` is intact, because it was true when written. The status
+  transition is recorded in a **new** record rather than by editing history, and a test asserts no
+  imported document contains the new `RESOLVED / BINDING` wording.
+- **Four partner scope-check files were transformed, additively and on the record.** The Claude
+  Code and final-reconciliation verifiers and their tests each assert that the only paths changed
+  relative to `c1db4cc` belong to that one partner's slice — false by construction on a branch that
+  legitimately carries all four partners' artifacts, and it would keep failing on main after any
+  merge. Three entries were added to each `ALLOWED_PREFIXES` tuple (`docs/design/`,
+  `scripts/verify_step66sync1_`, `tests/test_step66sync1_`): **+6 / -0 lines each**, no runtime
+  prefix admitted (`apps/`, `agents/`, `shared/`, `services/`, `migrations/`, `infra/` still
+  rejected), no substantive check altered. Both bounds are machine-checked by M1 check09 and two
+  dedicated tests. The Codex and Claude Design verifiers needed no change.
+- **`source/progress.md` is the one transformed import.** Both `828ea90` and `2396c6c` append a
+  distinct section to the same file. Each was byte-verified to be a pure append (bytes
+  0..1,111,697 identical to main's blob), so the canonical file is main + the 828ea90 block
+  (66SYNC.1-A/A1) + the 2396c6c block (66SYNC.1-D) + this section. `git diff origin/main` reports
+  **0 deleted lines**.
+- **Product Owner binding decisions recorded.** `docs/handoffs/program-sync/
+  step66sync1-poc-scope-binding-decisions.md` records D-1 **Dedicated POC Development Goal**, D-2
+  **Hybrid execution model**, D-3 **Runtime LLM remains plan-only** — all `RESOLVED / BINDING`,
+  decided by the Product Owner on 2026-08-04, with requirements D1-R1..R7 / D2-R1..R5 / D3-R1..R6
+  and binding conditions B-01..B-12. `OPEN_PRODUCT_OWNER_DECISIONS_FROM_STEP66SYNC1: 0`.
+- **A complete decision set is not a finalized scope.** `POC_SCOPE_DECISION_SET: COMPLETE` but
+  `POC_SCOPE_IMPLEMENTATION_PLAN: NOT YET FINALIZED` and `POC_IMPLEMENTATION_AUTHORIZED: NO`.
+  Finalization still needs Step 66D-ARCH, POC.0 architecture/read-model/environment scope, the POC
+  IA option selection (B-09, still unselected), and per-stage authorization (B-11).
+- **No capability was upgraded by the decisions.** The 23-capability reconciliation carries forward
+  unchanged (READY 1, READY_WITH_CONSTRAINTS 7, PARTIAL 8, DECISION_DEPENDENT 4,
+  GAP_REQUIRING_POC0 3, NOT_IMPLEMENTED 0). The four formerly `DECISION_DEPENDENT` capabilities are
+  now `DECISION_INPUT_RESOLVED / IMPLEMENTATION_GAP` — a decision resolves an input to design work,
+  it does not implement anything. All 23 POC.0 gaps stay open, **Authorized: 0 of 23**; what changed
+  is only which of them still wait on a Product Owner answer (10 decision-unblocked, 6 gated on
+  inputs that are not D-1/D-2/D-3, 7 that never had a decision dependency).
+- **Source-of-truth precedence established.** `canonical-source-of-truth-precedence.md` fixes the
+  six-tier order and records that conversation summaries, design options, partner recommendations
+  and planning proposals are never authoritative and must never be written up as authorized
+  implementation.
+- **Tests/verification.** `tests/test_step66sync1_m1_canonicalization.py`: **77 passed, 0 failed,
+  0 skipped**, and the whole Step 66SYNC.1 suite on this branch (all four imported partner suites
+  plus this one) is **231 passed, 0 failed, 0 skipped** — offline by design, and several tests
+  re-derive their claims rather than trusting
+  prose (blob-identity against each source commit, `agents/*-agent/` really containing no `.py`,
+  `task_api.py` really not publishing to `stream.tasks`, the plan-only control still present in the
+  code, the BE3 gate defaults, and that no superseded `1b86182` blob survived the import). Verifier:
+  25 numbered checks plus precedence and no-merge-claim groups, PASS. ruff/black/mypy/
+  `git diff --check`/secret scan clean.
+- **Boundary.** `git diff --name-only c1db4cc HEAD` touches only `docs/`, the two new
+  `step66sync1_*` Python files, and `source/progress.md` — zero paths under `apps/`, `agents/`,
+  `shared/`, `services/`, `migrations/`, or `infra/`, and no compose/Kubernetes/Helm/feature-gate
+  change (git-verified and asserted by four independent tests).
+- **Status.** `STEP66SYNC1_M1: PASS`; canonicalization branch READY; PR **READY_FOR_PRODUCT_OWNER_
+  REVIEW and NOT MERGED**; `MERGE AUTHORIZATION: NOT GRANTED`. Canonical main is **unchanged** at
+  `c1db4cc`. Step 66D-ARCH, Step 67POC.0, RA-2M and POC implementation all remain
+  **NOT STARTED / NOT AUTHORIZED**; BE3 resume/replay **DISABLED**;
+  `production_executed_true_count: 0`. Next: Product Owner review of the PR, then a separate
+  explicit merge authorization.
