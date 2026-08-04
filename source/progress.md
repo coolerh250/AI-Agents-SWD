@@ -17339,3 +17339,74 @@ Branch `integration/66c4-be3-ra2-decision-canonicalization`, cut from canonical 
   Authority workload identity not active, no shared environment, resume/replay **DISABLED**,
   `production_executed_true_count: 0`. Next: Product Owner review of the PR, then separate explicit
   authorization for the merge and, separately again, for RA-2I0.
+
+## Step 66C.4-BE3-RA-2M2 — Merge Identity and Secret Binding Decisions
+
+**Marker: `STEP66C4_BE3_RA2M2_CANONICAL_MERGE_VERIFY: PASS`. Authorized head-locked non-squash merge
+of PR #23 plus an append-only merge record. No identity created, no secret read or written, no OIDC
+integration, no Vault deployment or configuration, no Kubernetes environment created, no credential
+provisioned, no runtime/backend/frontend change, no migration, no deployment, no feature-gate
+activation, no resume or replay execution. No container, database, Redis, Vault, OIDC provider,
+external identity provider or agent workflow started. `production_executed_true_count: 0`.**
+
+- **Head-locked merge.** Pre-merge state re-verified twice — before verification and again
+  immediately before merging: `origin/main` = `44ab32c`, PR #23 head = `edafc0c`, state OPEN,
+  `isDraft: false`, `mergeStateStatus: CLEAN`, exactly **1** commit ahead, RA-2 planning head still
+  `efa396d`. Merged with `gh pr merge 23 --merge --match-head-commit edafc0c…`. No `--squash`, no
+  `--rebase`, no auto-merge, no admin bypass, no amend, no force push, no additional PR commit.
+- **Pre-merge verification at the detached PR head (unmodified).**
+  `STEP66C4_BE3_RA2M_CANONICALIZATION_PREP_VERIFY: PASS`;
+  `tests/test_step66c4_be3_ra2m_canonicalization.py` **68 passed**,
+  `tests/test_step66c4_be3_ra2_identity_secret_decision.py` **100 passed**, combined **168 passed,
+  0 failed, 0 skipped**; ruff/black/mypy clean; `git diff --check 44ab32c...edafc0c` clean. All
+  twelve decisions independently confirmed `RESOLVED / BINDING` with their expected selections, and
+  all six conditions present. Scope scan: 16 paths, zero under `apps/`, `agents/`, `services/`,
+  `shared/`, `migrations/`, `infra/`, and no frontend, YAML, compose, Kubernetes, Helm, Vault, OIDC,
+  ServiceAccount, NetworkPolicy, feature-gate or secret-configuration change. The secret and
+  local-path scan over 5,369 added lines produced seven hits, each inspected and benign — regex
+  *definitions* inside the RA-2 suite's own secret scanner, threat-model prose about bearer
+  credentials, and the evidence documents' own self-match explanations.
+- **Merge result.** Merge commit **`aa02ad5`** with exactly two parents in order: `44ab32c`
+  (pre-merge main) and `edafc0c` (PR head). Both are ancestors of main; the canonicalization commit
+  is **preserved**, which a squash would have destroyed. PR #23 is `MERGED` with `headRefOid` still
+  `edafc0c`. The RA-2 planning branch `efa396d` was **never merged** and is asserted to remain a
+  non-ancestor of main.
+- **What became canonical.** RA2-D01..RA2-D12 `RESOLVED / BINDING` — enterprise OIDC; Authorization
+  Code + PKCE with a server-side session; platform-owned RBAC as the authorization source of truth;
+  projected ServiceAccount OIDC; Policy Authority workload OIDC with the existing HMAC demoted to
+  local/test only; non-dev Vault on Kubernetes workload identity; read-only SecretRef file delivery;
+  GitOps provisioning with Platform Security, Enterprise IAM and two-person approval;
+  credential-specific lifecycle controls; a dedicated hardware-MFA break-glass identity; an isolated
+  non-production Kubernetes environment; and activation gated on the full identity chain. Conditions
+  RA2-C01..RA2-C06 are canonical alongside them. **Vault Agent versus CSI remains NOT selected**,
+  deferred to RA-2I4P.
+- **Historical evidence re-verified on main.** All eight imported artifacts are still byte-identical
+  to `efa396d`. `PENDING` (26), `PRODUCT_OWNER_DECISION_REQUIRED` (24) and
+  `Decided by Claude Code: 0` (5) all survive; **0** historical documents contain the new
+  `RESOLVED / BINDING` wording. The historical `79 tests passed` figure is deliberately preserved in
+  `next-executable-stage-sequence.md`, with the verified `100 passed` correction living only in the
+  current-state addendum and the precedence index — and a test asserts *both* halves, so the
+  discrepancy cannot be silently closed later.
+- **One bounded post-merge verifier adaptation, disclosed.** The RA-2M1 baseline check already used
+  ancestry rather than tip equality, so it survived the merge untouched — §10's "must not modify"
+  condition applied there. What did break was its *scope allowlist*, which predates the two RA-2M2
+  filenames and could not have contained them. Two entries were added to `allowed_exact` in
+  `scripts/verify_step66c4_be3_ra2m_canonicalization.py` and
+  `tests/test_step66c4_be3_ra2m_canonicalization.py`: **+4 / -0 lines each**, no runtime prefix
+  admitted, no other assertion altered. Bounds and the continued RA-2M1 PASS are machine-checked by
+  the RA-2M2 verifier and three dedicated tests. No historical evidence file was touched.
+- **Tests/verification.** `tests/test_step66c4_be3_ra2m2_canonical_merge.py`: **47 passed, 0 failed,
+  0 skipped**; the full RA-2 family on main is **215 passed, 0 failed, 0 skipped**. The RA-2M2
+  verifier runs 20 numbered checks plus merge-record and scope groups, and derives the merge facts
+  from Git objects — the PR head is read as the merge commit's *second parent* rather than trusted
+  from any report, and the 100-test figure is obtained by executing the suite.
+- **Merge did not authorize anything.** RA-2 implementation, RA-2I0, RA-2I4P, RA-2I4A, RA-2I4B,
+  RA-2I1, RA-2I3, RA-2I2, RA-2I5, RA-2I6, RA-2R and RA-3 all remain **NOT AUTHORIZED**. BE3
+  resume/replay **DISABLED**, all four gates unchanged at default false. No deployment, no shared
+  migration, no secret access, no external identity action, no feature-gate activation.
+  `production_executed_true_count: 0`.
+- **Status.** `STEP66C4_BE3_RA2M2: PASS`; PR #23 **MERGED** (non-squash); canonicalization commit
+  **preserved**; merge record pushed to main; RA-2 decisions
+  `RESOLVED / BINDING / CANONICALIZED`. Next: RA-2I0 is the first stage in sequence and needs its
+  own separate explicit Product Owner authorization (RA2-C06); BE3 resume/replay additionally
+  requires RA-2R to pass (RA2-C05).

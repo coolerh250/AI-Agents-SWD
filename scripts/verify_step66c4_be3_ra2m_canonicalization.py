@@ -375,6 +375,10 @@ def check28_no_implementation_change() -> None:
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
         "scripts/verify_step66c4_be3_ra2_identity_secret_decision.py",
         "tests/test_step66c4_be3_ra2_identity_secret_decision.py",
+        # BOUNDED POST-MERGE VERIFIER ADAPTATION (Step 66C.4-BE3-RA-2M2): the RA-2M2 artifacts
+        # postdate this allowlist and could not have been in the merge. No runtime path admitted.
+        "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
+        "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
     }
     stray = [path for path in changed if path not in allowed_exact and not path.startswith("docs/")]
     if stray:

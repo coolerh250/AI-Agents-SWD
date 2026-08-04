@@ -605,6 +605,10 @@ def test_changed_paths_are_within_scope() -> None:
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
         "scripts/verify_step66c4_be3_ra2_identity_secret_decision.py",
         "tests/test_step66c4_be3_ra2_identity_secret_decision.py",
+        # BOUNDED POST-MERGE VERIFIER ADAPTATION (Step 66C.4-BE3-RA-2M2): the RA-2M2 artifacts
+        # postdate this allowlist and could not have been in the merge. No runtime path admitted.
+        "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
+        "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
     }
     assert [p for p in _changed() if p not in allowed_exact and not p.startswith("docs/")] == []
 
