@@ -85,6 +85,62 @@ A planning proposal or stage decomposition       -- proposal only; confers no au
 None of the above may be written up as authorized implementation. Authorization exists only where a
 Product Owner authorization record says so explicitly.
 
+## RA-2 identity and secret precedence (Step 66C.4-BE3-RA-2M1)
+
+The same six-tier order applies to the RA-2 identity and secret decision set:
+
+```text
+1. Product Owner binding decisions
+   docs/contracts/66c4-reminder-expiry-controlled-resume/step66c4-be3-ra2-binding-decisions.md
+     RA2-D01..RA2-D12 RESOLVED / BINDING; conditions RA2-C01..RA2-C06.
+
+2. Current RA-2 canonical state addendum
+   docs/alignment/66-project-completion/master/step66c4-be3-ra2-current-state-20260804.md
+
+3. RA-2 binding decision record's implementation sequence
+   RA-2M -> RA-2I0 -> RA-2I4P -> RA-2I4A -> RA-2I4B -> RA-2I1 -> RA-2I3 -> RA-2I2
+        -> RA-2I5 -> RA-2I6 -> RA-2R -> RA-3.
+   An APPROVED EXECUTION SEQUENCE, not an implementation authorization.
+
+4. Historical RA-2 planning evidence (planning source efa396d, imported unchanged)
+   docs/security/be3-ra2-current-state-identity-secret-inventory.md
+   docs/security/be3-ra2-identity-secret-threat-and-trust-analysis.md
+   docs/contracts/66c4-.../be3-ra2-identity-secret-provisioning-decision-package.md
+   docs/handoffs/66c4-.../be3-ra2-implementation-stage-decomposition.md
+   docs/test/step66c4-be3-ra2-identity-secret-decision-evidence.md
+   docs/alignment/66-project-completion/master/next-executable-stage-sequence.md
+
+5. Partner recommendations                -- advisory only
+6. Conversation summaries                 -- never authoritative
+```
+
+Known precedence resolutions for RA-2:
+
+```text
+Decision status
+  Tier 4 records every decision as PENDING / PRODUCT_OWNER_DECISION_REQUIRED with
+  "Decided by Claude Code: 0". That was true at analysis time and is preserved unchanged.
+  Tier 1 supersedes: RA2-D01..D12 are RESOLVED / BINDING as of 2026-08-04.
+
+RA-2 test count
+  next-executable-stage-sequence.md (Tier 4) states "79 tests passed". That figure is wrong.
+  The authoritative count is 100 passed / 0 skipped / 0 failed, per the RA-2 evidence record
+  and per re-running the test file. Tier 2 §6 carries the correction.
+
+Implementation sequence
+  The Tier 4 stage decomposition proposes a single RA-2I4. Tier 1 splits it into RA-2I4P,
+  RA-2I4A and RA-2I4B; Tier 1 governs.
+
+Vault Agent versus CSI
+  NOT selected at any tier. Assigned to RA-2I4P. It is an implementation-planning choice,
+  not an open Product Owner decision.
+```
+
+A planning recommendation is never an implementation authorization. Neither the decision record nor
+this precedence index authorizes any RA-2 implementation stage.
+RA-2I0 through RA-2R and RA-3 are all NOT AUTHORIZED, and each requires its own separate Product
+Owner authorization (RA2-C06).
+
 ## Current authorization status
 
 ```text
