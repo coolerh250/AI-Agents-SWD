@@ -1,0 +1,334 @@
+# Step 66D-DESIGN — machine-readable design contract manifest
+# Design specification only. No implementation. No secret. No local path.
+# production_executed_true_count: 0
+
+stage: "STEP66D_DESIGN"
+owner: "Claude Design"
+task_type: "design"
+status: "IA_FROZEN_IN_DESIGN_PR"
+
+canonical_baseline:
+  main: "9c5210d190b82b76575ba8d456b5d2005c2867d2"
+  worktree: "CLEAN"
+  step66d_align1: "PASS / CLOSED / CANONICALIZED"
+  step66d_arch1: "PASS / CLOSED / CANONICALIZED"
+  delivery_acceptance_contracts: "FROZEN / NOT IMPLEMENTED"
+  binding_decisions: ["66D-D01", "66D-D02", "66D-D03", "66D-D04"]
+  adr_66d_09: "BINDING / UNCHANGED"
+  production_executed_true_count: 0
+
+ia_decision:
+  canonical_ia: "Unified Control Center"
+  implementation_principle: "Unified Overview + Existing Route Drill-down"
+  decision_authority: "Product Owner"
+  option_comparison: "CLOSED / NOT REOPENED"
+  previously_recorded_as: "STILL OPEN, owner Step 67POC.0 / Step 66D-DESIGN (ARCH1 section 12)"
+
+router_convention:
+  observed: ":colonCamelCase params, flat kebab-case root paths"
+  source: "apps/admin-console/src/App.tsx"
+
+semantic_routes:
+  - scope: "cross-project"
+    name: "Delivery Inbox"
+    route: "/delivery-inbox"
+    current_state: "PLACEHOLDER"
+  - scope: "project-level"
+    name: "Unified Control Center"
+    route: "/projects/:projectId/control-center"
+    current_state: "PLANNED_NOT_IMPLEMENTED"
+  - scope: "submission-level"
+    name: "Delivery Review"
+    route: "/delivery-submissions/:deliverySubmissionId/review"
+    current_state: "PLANNED_NOT_IMPLEMENTED"
+  - scope: "superseded"
+    name: "Delivery Detail (id-less placeholder)"
+    route: "/delivery-detail"
+    current_state: "PLACEHOLDER_SUPERSEDED_BY_REVIEW_ROUTE"
+
+page_responsibilities:
+  delivery_inbox:
+    is: "cross-project queue of pending DeliveryReviewTask"
+    is_not: ["project dashboard", "artifact browser", "decision-history archive", "specialist evidence surface"]
+    write_actions: "none"
+  unified_control_center:
+    is: "project-level primary product entry point; goal-to-decision context and evidence index"
+    is_not: ["duplicate of specialized routes", "second agent execution viewer", "second task graph", "second audit explorer", "second safety center", "second DLQ console"]
+    write_actions: "none"
+  delivery_review:
+    is: "single DeliverySubmission review workspace; review actions, PO decision, follow-ups"
+    is_not: ["cross-project queue", "project-wide overview"]
+    write_actions: "FE2 only, NOT AUTHORIZED"
+
+canonical_statuses:
+  - DRAFT
+  - SUBMITTED
+  - UNDER_REVIEW
+  - CHANGES_REQUESTED
+  - QA_RERUN_REQUESTED
+  - ACCEPTED
+  - REJECTED
+  - ARCHIVED
+  - EXPIRED
+
+review_gate_actions:
+  - ACCEPT
+  - REJECT
+  - REQUEST_CHANGES
+  - RERUN_QA
+  - ESCALATE
+  - ARCHIVE
+
+product_owner_decisions:
+  - ACCEPTED
+  - ACCEPTED_WITH_FOLLOW_UP
+  - REJECTED
+
+action_decision_separation:
+  separate_enums: true
+  separate_ui_panels: true
+  actions_without_decision: ["REQUEST_CHANGES", "RERUN_QA", "ESCALATE", "ARCHIVE"]
+  atomic_pair: "ACCEPT/REJECT persist action + decision in one transaction (ADR-66D-10) but render as two records"
+
+qa_rerun:
+  limit_per_submission_version: 1
+  counter_source: "backend-authoritative persisted DeliveryReviewAction rows"
+  client_counter_allowed: false
+  second_attempt_error: "409 QA_RERUN_LIMIT_REACHED"
+  then_allowed: ["REQUEST_CHANGES", "ESCALATE", "REJECT"]
+
+follow_up_rules:
+  allowed_only_for: "ACCEPTED_WITH_FOLLOW_UP"
+  blocking_item_allowed: false
+  blocking_item_behavior: "block submit, no auto-conversion, direct user to REQUEST_CHANGES"
+  server_error: "409 BLOCKING_FOLLOW_UP_REQUIRES_CHANGES"
+
+expiry_rules:
+  authority: "database-authoritative review_due_at"
+  client_countdown: "hint only, labelled 'Estimated from server-provided due time'"
+  disabled_when_expired: ["ACCEPT", "REJECT", "RERUN_QA", "REQUEST_CHANGES"]
+  available_when_expired: ["ESCALATE", "ARCHIVE"]
+
+required_states:
+  - loading
+  - empty
+  - partial
+  - stale
+  - inaccessible
+  - error
+  - unknown
+  - permission
+
+evidence_health_states:
+  - COMPLETE
+  - PARTIAL
+  - MISSING
+  - STALE
+  - INACCESSIBLE
+  - UNKNOWN
+unknown_render_rule: "UNKNOWN is never green, never PASS, never zero"
+
+lifecycle_stages:
+  - Goal
+  - Requirements
+  - Work Items
+  - Execution
+  - QA
+  - Delivery Submission
+  - Review
+  - PO Decision
+  - Follow-up
+lifecycle_state_vocabulary:
+  - not started
+  - in progress
+  - blocked
+  - completed
+  - failed
+  - unknown
+  - not applicable
+
+dual_anchor_model:
+  execution_lineage: "project_id -> work_item_id -> workflow_id -> run_id"
+  human_review_anchor: "delivery_review_task_id -> task_id -> TASK_ROLES"
+  control_center_anchor: "project_id"
+  delivery_inbox_anchor: "delivery_review_task_id"
+  delivery_review_anchor: "delivery_submission_id"
+  task_is_agent_execution_source_of_truth: false
+
+actor_types:
+  - runtime_agent
+  - ai_partner
+  - human
+  - system
+ai_partners_are_runtime_agents: false
+
+read_model:
+  read_model_id: "project_delivery_control_center"
+  consistency: "EVENTUALLY_CONSISTENT"
+  required_fields: ["as_of", "is_stale"]
+  missing_source_behavior: "UNKNOWN"
+  authority_rule: "detailed authoritative route wins over Control Center summary"
+  implemented: false
+
+identity:
+  today: "POC sandbox / internal test runtime operator identity"
+  future: "verified shared-runtime identity, decided by RA-2, NOT IMPLEMENTED"
+  request_provided_identity_authoritative: false
+  final_decision_requires_verified_identity: true
+  permission_states: ["authorized", "not authorized", "identity not verified", "capability unavailable", "read-only observer", "future shared-runtime requirement"]
+
+deep_link_parameters:
+  - project_id
+  - primary_work_item_id
+  - workflow_id
+  - run_id
+  - delivery_submission_id
+  - delivery_review_task_id
+  - artifact_id
+  - return_to
+url_forbidden_content: ["secret", "token", "credential", "actor identity", "capability claim", "unredacted sensitive evidence"]
+return_behavior_preserves: ["project", "selected section", "filters", "expanded item where practical"]
+
+deep_link_targets:
+  - "/delivery"
+  - "/agent-executions"
+  - "/task-graph"
+  - "/qa-code"
+  - "/audit-evidence"
+  - "/safety"
+  - "/dlq-retry"
+  - "/approvals"
+  - "/metrics"
+  - "/cost-llm"
+  - "/projects/:projectId"
+  - "/delivery-package"
+  - "/sandbox-github"
+  - "/workspace"
+  - "/incidents"
+
+breakpoints: ["1440", "1280", "1024", "768"]
+mobile_write_behavior: "read-only below 768px with an explicit unsupported-action message"
+never_hidden_at_any_breakpoint: ["status", "blocking reason", "decision history"]
+
+wireframe_inventory:
+  - "WF-01 Delivery Inbox - desktop"
+  - "WF-02 Unified Control Center - desktop"
+  - "WF-03 Unified Control Center - compact/tablet"
+  - "WF-04 Delivery Review - desktop"
+  - "WF-05 ACCEPT decision flow"
+  - "WF-06 REQUEST_CHANGES flow"
+  - "WF-07 RERUN_QA available"
+  - "WF-08 RERUN_QA exhausted"
+  - "WF-09 Expired submission"
+  - "WF-10 Stale/conflict recovery"
+
+component_candidates:
+  - UnifiedControlCenterPage
+  - ProjectContextHeader
+  - AttentionQueue
+  - LifecycleProgress
+  - DeliveryAcceptanceSummary
+  - ExecutionSummary
+  - EvidenceHealthPanel
+  - CostExternalActionSummary
+  - SafetySummary
+  - ActivityTimeline
+  - DeliveryInboxPage
+  - DeliveryInboxTable
+  - DeliveryReviewPage
+  - RequirementTraceabilityPanel
+  - ArtifactEvidencePanel
+  - ReviewGateActionPanel
+  - ProductOwnerDecisionPanel
+  - AcceptanceFollowUpPanel
+  - FreshnessIndicator
+  - DeepLinkCard
+  - ConflictRecoveryDialog
+  - UnsupportedWriteNotice
+
+acceptance_criteria: ["AC-01","AC-02","AC-03","AC-04","AC-05","AC-06","AC-07","AC-08","AC-09","AC-10","AC-11","AC-12","AC-13","AC-14","AC-15","AC-16","AC-17","AC-18"]
+
+measured_counts:
+  routes_declared:
+    value: 44
+    source: "regex '<Route\\s+path=\"([^\"]+)\"' over apps/admin-console/src/App.tsx"
+  routes_placeholder:
+    value: 12
+    source: "per-Route block split over App.tsx matching PlaceholderPage"
+  routes_with_page_component:
+    value: 32
+    source: "44 minus 12, same parser"
+  nav_items:
+    value: 40
+    source: "regex 'to:\\s*\"..\",\\s*label:\\s*\"..\"' over apps/admin-console/src/components/Nav.tsx"
+  nav_groups:
+    value: 7
+    source: "regex 'id:...label:' over Nav.tsx"
+  nav_badge_read_only:
+    value: 14
+    source: "regex 'badge:\\s*\"([\\w-]+)\"' over Nav.tsx"
+  nav_badge_soon:
+    value: 12
+    source: "same regex over Nav.tsx"
+  nav_badge_evidence:
+    value: 8
+    source: "same regex over Nav.tsx"
+  page_files:
+    value: 33
+    source: "glob apps/admin-console/src/pages/*.tsx"
+  component_files:
+    value: 16
+    source: "glob apps/admin-console/src/components/*.tsx"
+  pages_with_mutation_usage:
+    value: 7
+    source: "grep -rlE 'apiPost|POST|taskApi\\.(submit|create)|mutation' over apps/admin-console/src/pages/"
+  wireframes:
+    value: 10
+    source: "wireframe_inventory length in this manifest / WF- headings in step66d-design-wireframes.md"
+  component_candidates:
+    value: 22
+    source: "component_candidates length in this manifest"
+  acceptance_criteria:
+    value: 18
+    source: "acceptance_criteria length in this manifest"
+  open_gaps:
+    value: 15
+    source: "DG- headings in docs/handoffs/66d-delivery-acceptance/step66d-design-gap-and-dependency-register.md"
+
+open_gaps:
+  - {id: "DG-01", title: "Unified Control Center route absent", severity: "CRITICAL"}
+  - {id: "DG-02", title: "Delivery Inbox route is a placeholder", severity: "CRITICAL"}
+  - {id: "DG-03", title: "Delivery Review route absent", severity: "HIGH"}
+  - {id: "DG-04", title: "Unified read model unavailable", severity: "HIGH"}
+  - {id: "DG-05", title: "DeliverySubmission API unavailable", severity: "CRITICAL"}
+  - {id: "DG-06", title: "Review action API unavailable", severity: "HIGH"}
+  - {id: "DG-07", title: "PO decision API unavailable", severity: "HIGH"}
+  - {id: "DG-08", title: "Follow-up API unavailable", severity: "MEDIUM"}
+  - {id: "DG-09", title: "Verified human identity unavailable", severity: "CRITICAL"}
+  - {id: "DG-10", title: "TASK_ROLES capability mapping unavailable", severity: "HIGH"}
+  - {id: "DG-11", title: "Freshness metadata unavailable", severity: "MEDIUM_HIGH"}
+  - {id: "DG-12", title: "Deep-link context gaps", severity: "MEDIUM"}
+  - {id: "DG-13", title: "Responsive component gaps", severity: "MEDIUM"}
+  - {id: "DG-14", title: "Accessibility component gaps", severity: "MEDIUM_HIGH"}
+  - {id: "DG-15", title: "Existing-route inconsistency (/delivery-detail)", severity: "LOW_MEDIUM"}
+
+implementation_slices:
+  step_66d_be1: "NOT AUTHORIZED"
+  step_66d_be2: "NOT AUTHORIZED"
+  step_66d_be3: "NOT AUTHORIZED"
+  step_66d_be4: "NOT AUTHORIZED"
+  step_66d_fe1: "NOT AUTHORIZED"
+  step_66d_fe2: "NOT AUTHORIZED"
+  step_66d_qa: "NOT AUTHORIZED"
+
+implementation_authorization_status:
+  frontend_implementation: "NOT STARTED / NOT AUTHORIZED"
+  backend_implementation: "NOT STARTED / NOT AUTHORIZED"
+  codex_authorized: false
+  merge_authorization: "NOT GRANTED"
+  deployment: "NOT PERFORMED / NOT AUTHORIZED"
+  step_67_poc0: "NOT STARTED / NOT AUTHORIZED"
+  ra_2i0: "NOT STARTED / NOT AUTHORIZED"
+  task_roles_modified: false
+  adr_66d_09_modified: false
+  legacy_delivery_package_repurposed: false
