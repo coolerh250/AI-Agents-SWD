@@ -17578,3 +17578,47 @@ backend, API, database, event, migration, deployment, identity, secret or featur
   remain **NOT AUTHORIZED**. The bounded QA-rerun count is still undecided; ten alignment gaps
   remain 0 authorized, 0 implemented. BE3 resume/replay **DISABLED**, all four gates default false.
   `production_executed_true_count: 0`.
+
+
+## Step 66D-ARCH1 - Delivery and Product Owner Acceptance Contract Freeze
+
+**Marker: `STEP66D_ARCH1_CONTRACT_FREEZE_VERIFY: PASS`. Architecture contract only. Nothing
+implemented. No runtime, frontend, backend, API, database, event, migration, deployment, identity,
+secret or feature-gate change. Branch `planning/66d-arch-delivery-acceptance-contract`, cut from
+canonical main `ccfee8e`.**
+
+- **What was frozen.** Five domain entities (`DeliverySubmission` plus `DeliveryReviewTask`,
+  `DeliveryReviewAction`, `ProductOwnerDecision`, `AcceptanceFollowUpItem`), a nine-status state
+  machine with nine frozen transitions, 18 API endpoints, 19 error codes, 21 durable events, 10
+  distinct audit action names, a unified read model, a security/redaction boundary, a
+  cost/external-action contract, a failure/recovery contract, and 10 ADRs.
+- **The number this stage was authorized to choose.** `ADR-66D-09`: **one bounded QA rerun per
+  DeliverySubmission version**, counted from authoritative persisted actions rather than any client
+  counter, second attempt `409 QA_RERUN_LIMIT_REACHED`, then only REQUEST_CHANGES / ESCALATE /
+  REJECT, allowance reset by a new submission version. Step 66D-ALIGN1 explicitly refused to invent
+  this; this stage was authorized to decide it.
+- **The structural guarantee.** `ADR-66D-10`: ACCEPT/REJECT write the review action, the
+  ProductOwnerDecision, the status projection, follow-ups, events and audit in **one transaction**.
+  No persisted state may hold an ACCEPT action without its final decision. The decision record is
+  append-only and supersedable; delivery review status is a derived projection, never the source of
+  truth.
+- **Inventory re-derived from source, not copied.** 11 capabilities IMPLEMENTED_AND_TESTED, 5
+  IMPLEMENTED_WITH_GAPS, 1 FRONTEND_ONLY, 11 ABSENT. The legacy `DeliveryPackage` family is real and
+  preserved unchanged; its `human_acceptance_status` is a single mutable string, which is why it
+  cannot be the review aggregate. A test re-checks every source path the inventory cites and fails
+  if any does not exist.
+- **No canonical conflict.** 0 conflicts with 66D-D01..D04; the stage did not need to stop.
+- **What stays open.** The POC Control Center IA choice (Unified vs Coordinated) remains
+  **unselected** and owned by Step 67POC.0 / Step 66D-DESIGN. Legacy migration is deferred. Verified
+  human identity (`ARCH1-G08`) belongs to the RA-2 track.
+- **Tests/verification.** Verifier 36 numbered checks, PASS. ARCH1 suite **83 passed**; full
+  regression across the twelve pre-existing stage suites plus this one **947 passed, 0 failed, 0
+  skipped**. ruff/black/mypy/`git diff --check` clean; secret and local-path scans CLEAN.
+  ADV-VERIFIER-01 and ADV-VERIFIER-02 files untouched, test-enforced.
+- **Fourteen gaps registered, 0 authorized, 0 implemented** - three CRITICAL (PO decision API,
+  TASK_ROLES capability mapping, verified human identity). Eight implementation slices planned,
+  **none authorized**.
+- **Status.** `STEP66D_ARCH1: PASS`; PR **OPEN / READY FOR REVIEW and NOT MERGED**. Step 66D-DESIGN,
+  all Step 66D implementation slices, Step 67POC.0 and RA-2I0 remain **NOT AUTHORIZED**. No contract
+  is implemented, no migration written, `TASK_ROLES` unchanged, POC not ready. BE3 resume/replay
+  **DISABLED**. `production_executed_true_count: 0`.
