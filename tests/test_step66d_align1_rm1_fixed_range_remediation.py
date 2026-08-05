@@ -23,6 +23,8 @@ SCRIPTS = REPO / "scripts"
 
 CANONICAL_MAIN = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 ALIGN1_COMMIT = "f25d12baea7a76e1bc5d29bf884765f16c8536ac"
+# BOUNDED POST-MERGE SCOPE FREEZE (Step 66D-ALIGN1-M1).
+RM1_COMMIT = "6a8a7bfa2ae758e944b1126881a69fef2d122dcb"
 
 MANIFEST = (
     REPO
@@ -291,7 +293,7 @@ def test_align1_verifier_has_a_positive_scope_registry() -> None:
 
 def test_align1_scope_equals_what_the_branch_actually_changed() -> None:
     module = _load("verify_step66d_align1_delivery_decision_model")
-    changed = {p for p in _git("diff", "--name-only", CANONICAL_MAIN).splitlines() if p}
+    changed = {p for p in _git("diff", "--name-only", CANONICAL_MAIN, RM1_COMMIT).splitlines() if p}
     assert changed == set(module.ALIGN1_EXPECTED_PATHS)
 
 
@@ -370,9 +372,8 @@ def test_align1_commit_is_still_an_ancestor() -> None:
     assert rc.returncode == 0, "the original ALIGN1 commit was rebased, amended or squashed away"
 
 
-def test_at_most_one_remediation_commit() -> None:
-    count = _git("rev-list", "--count", f"{ALIGN1_COMMIT}..HEAD")
-    assert count.isdigit() and int(count) <= 1, f"expected at most one RM1 commit, found {count}"
+def test_exactly_one_remediation_commit_in_the_frozen_branch_range() -> None:
+    assert _git("rev-list", "--count", f"{ALIGN1_COMMIT}..{RM1_COMMIT}") == "1"
 
 
 # --- historical provenance guard must not have been weakened ------------------------------------
@@ -441,3 +442,45 @@ def test_merge_and_arch1_remain_unauthorized() -> None:
     assert "production_executed_true_count: 0" in evidence
     for claim in ("ready to merge", "R2 passed", "independent review passed"):
         assert claim.lower() not in evidence.lower()
+
+
+# --- Step 66D-ALIGN1-M1 post-merge scope freeze ------------------------------------------------
+
+
+MERGE_COMMIT = "ad2d218186c8cb26af0a2fad6d3fa86a43703db5"
+
+
+def test_align1_positive_scope_is_frozen_not_worktree_relative() -> None:
+    """After the merge the stage scope must be a fixed range, like the six historical stages."""
+    body = _read(REPO / "scripts" / "verify_step66d_align1_delivery_decision_model.py")
+    assert 'ALIGN1_STAGE_HEAD = "6a8a7bfa2ae758e944b1126881a69fef2d122dcb"' in body
+    assert '"--name-only", CANONICAL_MAIN, ALIGN1_STAGE_HEAD' in body
+
+
+def test_align1_frozen_range_still_yields_exactly_the_registered_paths() -> None:
+    module = _load("verify_step66d_align1_delivery_decision_model")
+    actual = {p for p in _git("diff", "--name-only", CANONICAL_MAIN, RM1_COMMIT).splitlines() if p}
+    assert actual == set(module.ALIGN1_EXPECTED_PATHS)
+    assert len(actual) == 34
+
+
+def test_post_merge_boundary_recorded_in_the_manifest() -> None:
+    manifest = _read(MANIFEST)
+    for needle in (RM1_COMMIT, MERGE_COMMIT, "64467fe..6a8a7bf"):
+        assert needle in manifest, needle
+
+
+def test_merge_is_non_squash_with_both_commits_preserved() -> None:
+    parents = _git("show", "--no-patch", "--format=%P", MERGE_COMMIT).split()
+    assert parents == [CANONICAL_MAIN, RM1_COMMIT], parents
+    for commit in (ALIGN1_COMMIT, RM1_COMMIT):
+        rc = subprocess.run(
+            ["git", "merge-base", "--is-ancestor", commit, MERGE_COMMIT], cwd=REPO, check=False
+        )
+        assert rc.returncode == 0, commit
+
+
+def test_align1_runtime_denylist_stays_current_state() -> None:
+    """The scope froze; the denylist must not have frozen with it."""
+    body = _read(REPO / "scripts" / "verify_step66d_align1_delivery_decision_model.py")
+    assert 'git("diff", "--name-only", CANONICAL_MAIN).splitlines()' in body

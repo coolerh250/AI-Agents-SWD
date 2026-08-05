@@ -20,6 +20,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_MAIN = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 ALIGN1_COMMIT = "f25d12baea7a76e1bc5d29bf884765f16c8536ac"
+# BOUNDED POST-MERGE SCOPE FREEZE (Step 66D-ALIGN1-M1): the RM1 commit is now an ancestor of
+# main, so "commits above ALIGN1" must be measured over the frozen branch range, not to HEAD.
+RM1_COMMIT = "6a8a7bfa2ae758e944b1126881a69fef2d122dcb"
 
 MANIFEST = (
     ROOT
@@ -167,9 +170,9 @@ def check02_align1_commit_preserved() -> None:
 
 
 def check03_single_remediation_commit() -> None:
-    count = git("rev-list", "--count", f"{ALIGN1_COMMIT}..HEAD")
-    if not count.isdigit() or int(count) > 1:
-        bad(f"check03: expected at most one RM1 commit above the ALIGN1 commit, found {count}")
+    count = git("rev-list", "--count", f"{ALIGN1_COMMIT}..{RM1_COMMIT}")
+    if count != "1":
+        bad(f"check03: expected exactly one RM1 commit above the ALIGN1 commit, found {count}")
 
 
 def check04_fixed_boundaries_present() -> None:
@@ -289,7 +292,9 @@ def check12_align1_positive_scope() -> None:
         return
     if "check33_positive_exact_scope" not in body:
         bad("check12: the ALIGN1 verifier has no positive exact-scope check")
-    changed = tuple(sorted(x for x in git("diff", "--name-only", CANONICAL_MAIN).splitlines() if x))
+    changed = tuple(
+        sorted(x for x in git("diff", "--name-only", CANONICAL_MAIN, RM1_COMMIT).splitlines() if x)
+    )
     if changed and set(changed) - set(registered):
         bad(f"check12: unregistered ALIGN1 paths: {sorted(set(changed) - set(registered))}")
 

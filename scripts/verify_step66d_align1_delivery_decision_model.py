@@ -18,6 +18,11 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_MAIN = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 
+# BOUNDED POST-MERGE SCOPE FREEZE (Step 66D-ALIGN1-M1). PR #24 is merged, so this stage
+# is no longer an open branch: its positive scope becomes the frozen range below. The
+# runtime denylists in this file stay HEAD-relative on purpose -- they can only reject.
+ALIGN1_STAGE_HEAD = "6a8a7bfa2ae758e944b1126881a69fef2d122dcb"
+
 # Step 66D-ALIGN1-RM1 (fixes R1-F01/F02/F03). Before this, the only scope control here was a
 # runtime denylist, so any unregistered docs/, verify_step66* or test_step66* file passed. The
 # registered set below is compared for EXACT equality against what the branch actually changed:
@@ -532,7 +537,11 @@ def check_gaps_unauthorized() -> None:
 def check33_positive_exact_scope() -> None:
     """Step 66D-ALIGN1-RM1: what the branch changed must equal the registered set exactly."""
     changed = tuple(
-        sorted(line for line in git("diff", "--name-only", CANONICAL_MAIN).splitlines() if line)
+        sorted(
+            line
+            for line in git("diff", "--name-only", CANONICAL_MAIN, ALIGN1_STAGE_HEAD).splitlines()
+            if line
+        )
     )
     unexpected = sorted(set(changed) - set(ALIGN1_EXPECTED_PATHS))
     missing = sorted(set(ALIGN1_EXPECTED_PATHS) - set(changed))

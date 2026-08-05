@@ -17532,3 +17532,49 @@ API, database, migration, deployment, identity, secret or feature-gate change. S
   **OPEN / UPDATED / NOT MERGED**; `PR24_MERGE_READINESS: PENDING INDEPENDENT R2 CLOSURE REVIEW`.
   Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 remain
   **NOT AUTHORIZED**. BE3 resume/replay **DISABLED**. `production_executed_true_count: 0`.
+
+
+## Step 66D-ALIGN1-M1 - Merge Canonical Delivery Decision Model Alignment
+
+**Marker: `STEP66D_ALIGN1_M1_CANONICAL_MERGE_VERIFY: PASS`. PR #24 merged to canonical `main` by
+non-squash two-parent merge. Governance and verification artifacts only. No runtime, frontend,
+backend, API, database, event, migration, deployment, identity, secret or feature-gate change.**
+
+- **Merge.** PR #24 merged head-locked at `6a8a7bf` with `--match-head-commit`. Merge commit
+  **`ad2d218`**, parents `64467fe` and `6a8a7bf`. Both branch commits survive as distinct commits:
+  `f25d12b` (ALIGN1) and `6a8a7bf` (RM1). No squash, no rebase, no amend of a published commit, no
+  force-push, no commit added to the PR branch. Pre-merge: 8 verifier markers PASS, **753 passed,
+  0 failed, 0 skipped** across the eleven R2 suites, all scans CLEAN, remote re-checked immediately
+  before merging.
+- **Decisions canonicalized.** **66D-D01** layered model (six Review Gate Actions, three Product
+  Owner Final Decisions); **66D-D02** projected review status over an immutable, supersedable
+  `ProductOwnerDecision`; **66D-D03** dual anchor (execution on project/work-item/workflow/run,
+  human review on `delivery_review_task_id`); **66D-D04** legacy `DeliveryPackage` preserved with
+  `DeliverySubmission` as the new aggregate. All four now `RESOLVED / BINDING / CANONICALIZED`.
+- **Review closure carried in.** R1-F01..R1-F05 all `CLOSED`; independent `R2: PASS`. The six
+  historical stages keep their frozen positive scopes; the runtime rejection guard remains
+  HEAD-relative in all twelve cross-stage files.
+- **BOUNDED POST-MERGE SCOPE FREEZE.** The merge made the open-PR scope semantics false, as
+  expected. Step 66D-ALIGN1's positive scope is now frozen at **`64467fe..6a8a7bf`, 34 exact
+  paths**, and the RM1 commit-count check at **`f25d12b..6a8a7bf`, exactly 1 commit** (tightened
+  from "at most one"). Three files touched (+10/-1, +9/-4, +5/-4 plus 38 new test lines) and the
+  boundary manifest updated. The runtime denylists were deliberately **not** frozen with the scope
+  - a test asserts the ALIGN1 denylist is still current-state. Exact 34-path equality,
+  generic-prefix prohibitions and the runtime guard all preserved; no broad allowlist added; no
+  product decision touched.
+- **A wrong assertion of mine, corrected during the stage.** A new test asserted the two
+  Step 66SYNC.1 partner reconciliation heads (`828ea90`, `2396c6c`) are ancestors of `main`. They
+  are not, and should not be: Step 66SYNC.1-M1 imported their *content* by committed-object
+  extraction rather than merging their branches. The test now asserts what is actually true - the
+  commits resolve, the ranges are well-formed, and the four endpoints that genuinely are in main
+  history are reachable - plus an explicit test that the two partner heads are *not* ancestors.
+- **Advisories carried forward, deliberately untouched.** `ADV-VERIFIER-01` Claude Design runtime
+  guard uses a moving `origin/main` reference; `ADV-VERIFIER-02` Codex frontend scope check
+  inspects uncommitted changes only. Both `TRACKED / NOT BLOCKING THIS MERGE`; neither file was
+  modified, and a test asserts that.
+- **Status.** `STEP66D_ALIGN1_M1: PASS`; PR #24 **MERGED**; `STEP66D_ALIGN1: PASS / CLOSED /
+  CANONICALIZED`. **Step 66D-ARCH1: READY FOR SEPARATE PRODUCT OWNER AUTHORIZATION** - not started,
+  not authorized. Step 66D-DESIGN, all Step 66D implementation slices, Step 67POC.0 and RA-2I0
+  remain **NOT AUTHORIZED**. The bounded QA-rerun count is still undecided; ten alignment gaps
+  remain 0 authorized, 0 implemented. BE3 resume/replay **DISABLED**, all four gates default false.
+  `production_executed_true_count: 0`.

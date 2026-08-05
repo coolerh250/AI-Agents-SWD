@@ -121,15 +121,23 @@ registered 34-path set — an unregistered path fails, and so does a registered 
 ```text
 stage_id:                   step66d-align1
 baseline_commit:            64467fefc9a9ec303f9ddf4c0ce6d46486504d71
-exact_stage_head:           NOT YET ESTABLISHED -- pull request open
-verification_range:         64467fe..<current branch>  (open-PR mode, exact-set comparison)
+exact_stage_head:           6a8a7bfa2ae758e944b1126881a69fef2d122dcb
+merge_commit:               ad2d218186c8cb26af0a2fad6d3fa86a43703db5
+verification_range:         64467fe..6a8a7bf  (frozen)
 scope_source:               ALIGN1_EXPECTED_PATHS in the Step 66D-ALIGN1 verifier
+expected_paths_source:      git diff --name-only 64467fe 6a8a7bf
 expected_path_count:        34
-post_merge_boundary_owner:  the future authorized Step 66D-ALIGN1 merge-record stage
+boundary_established_by:    Step 66D-ALIGN1-M1 canonical merge
 ```
 
-**The post-merge fixed boundary must be established by that future authorized merge-record stage.**
-Step 66D-ALIGN1-RM1 does not merge, and does not create a post-merge record.
+The open-PR boundary this section originally carried was established by **Step 66D-ALIGN1-M1** when
+PR #24 was merged as `ad2d218` (non-squash, two parents `64467fe` and `6a8a7bf`). The stage's
+positive scope is now frozen exactly like the six historical stages above; only the runtime
+denylists remain HEAD-relative, and they can only reject.
+
+```text
+step66d-align1-rm1     f25d12b..6a8a7bf   exactly 1 commit (frozen)
+```
 
 ## Runtime denylist
 
