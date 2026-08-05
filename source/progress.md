@@ -17622,3 +17622,42 @@ canonical main `ccfee8e`.**
   all Step 66D implementation slices, Step 67POC.0 and RA-2I0 remain **NOT AUTHORIZED**. No contract
   is implemented, no migration written, `TASK_ROLES` unchanged, POC not ready. BE3 resume/replay
   **DISABLED**. `production_executed_true_count: 0`.
+
+
+## Step 66D-ARCH1-M1 - Merge Delivery and Product Owner Acceptance Contract Freeze
+
+**Marker: `STEP66D_ARCH1_M1_CANONICAL_MERGE_VERIFY: PASS`. PR #25 merged to canonical `main` by
+non-squash two-parent merge. Governance and verification artifacts only. No runtime, frontend,
+backend, API, database, event, migration, deployment, identity, secret or feature-gate change.**
+
+- **Merge.** PR #25 merged head-locked at `ab19dad` with `--match-head-commit`. Merge commit
+  **`d411da5`**, parents `ccfee8e` and `ab19dad`. The ARCH1 commit survives as a distinct commit.
+  No squash, no rebase, no amend, no force-push. Pre-merge: 11 exact paths, 0 unexpected, ARCH1
+  marker PASS, 9 other stage verifiers PASS, **947 passed, 0 failed, 0 skipped** across 13 suites,
+  all scans CLEAN, remote re-checked immediately before merging.
+- **Contracts canonicalized.** `66D-D01..D04` all **BINDING / CANONICALIZED**. Five domain entities
+  frozen as contracts; `ProductOwnerDecision` immutable and supersedable; ACCEPT/REJECT atomic with
+  their decision; `ACCEPTED_WITH_FOLLOW_UP` non-blocking only; legacy `DeliveryPackage` preserved
+  and reference-only. **ADR-66D-09 BINDING** - one QA rerun per DeliverySubmission version.
+- **Three count corrections, established not assumed.** Re-deriving the contracts from the merged
+  artifacts gave **17 API endpoints, 20 durable events and 18 error codes**, where the Step
+  66D-ARCH1 completion report, the ARCH1 evidence, the PR #25 body and this merge prompt all said
+  18 / 21 / 19. The merged contracts contain exactly what the ARCH1 prompt enumerated in its
+  sections 14, 15 and 16 - **nothing is missing and nothing unauthorized was added**. Three summary
+  figures were each overstated by one and then propagated. The corrected values are recorded in the
+  merge record, and the new verifier *derives* all three counts from the artifacts rather than
+  trusting any stated number.
+- **BOUNDED POST-MERGE CONTRACT-SCOPE FREEZE.** The ARCH1 verifier had **no positive scope
+  assertion at all** - only denylists - and computed paths as baseline-to-working-tree, which the
+  merge prompt forbids as positive contract scope. Frozen to `ccfee8e..ab19dad` with an exact
+  11-path registry (`+26/-1` verifier, `+32/-0` tests). The denylists were deliberately **not**
+  frozen with it; a test asserts they still scan current state.
+- **Open questions stay open.** POC Control Center IA **UNRESOLVED** (both options named, neither
+  selected). Legacy migration **DEFERRED**. Fourteen gaps, 0 authorized, 0 implemented. Eight
+  implementation slices, **0 of 8 authorized**.
+- **Status.** `STEP66D_ARCH1_M1: PASS`; PR #25 **MERGED**; `STEP66D_ARCH1: PASS / CLOSED /
+  CANONICALIZED`; delivery and acceptance contracts **FROZEN**. **Step 66D-DESIGN: READY FOR
+  SEPARATE PRODUCT OWNER AUTHORIZATION** - not started. Step 66D-BE1..BE4, FE1..FE2, QA, Step
+  67POC.0 and RA-2I0 all remain **NOT AUTHORIZED**. `TASK_ROLES` unchanged, legacy DeliveryPackage
+  unchanged, ADV-VERIFIER-01/02 files unchanged. BE3 resume/replay **DISABLED**.
+  `production_executed_true_count: 0`.

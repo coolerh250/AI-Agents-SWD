@@ -403,3 +403,39 @@ def test_be3_gates_still_default_false() -> None:
 @pytest.mark.parametrize("doc", ALL_DOCS)
 def test_document_records_zero_production_executions(doc: Path) -> None:
     assert "production_executed_true_count" in _read(doc)
+
+
+# --- Step 66D-ARCH1-M1 bounded post-merge contract-scope freeze --------------------------------
+
+
+ARCH1_STAGE_HEAD = "ab19dad7a2e032e421927d71622bb22d6b9e3e36"
+
+
+def test_positive_scope_is_frozen_not_worktree_relative() -> None:
+    body = _read(SCRIPT)
+    assert f'ARCH1_STAGE_HEAD = "{ARCH1_STAGE_HEAD}"' in body
+    assert '"--name-only", CANONICAL_MAIN, ARCH1_STAGE_HEAD' in body
+
+
+def test_frozen_range_holds_exactly_eleven_registered_paths() -> None:
+    actual = {
+        p
+        for p in _git("diff", "--name-only", CANONICAL_MAIN, ARCH1_STAGE_HEAD).splitlines()
+        if p.strip()
+    }
+    assert len(actual) == 11
+    import importlib.util
+    import sys as _sys
+
+    spec = importlib.util.spec_from_file_location("arch1_verifier", SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    _sys.modules["arch1_verifier"] = module
+    spec.loader.exec_module(module)
+    assert set(module.ARCH1_EXPECTED_PATHS) == actual
+
+
+def test_denylists_stay_current_state_after_the_freeze() -> None:
+    """Freezing the scope must not freeze the runtime denylist along with it."""
+    body = _read(SCRIPT)
+    assert 'git("diff", "--name-only", CANONICAL_MAIN).splitlines()' in body

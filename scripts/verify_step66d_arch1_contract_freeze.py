@@ -18,6 +18,25 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_MAIN = "ccfee8ef47f72d5d67ea6bb58845018f306cfa0c"
 
+# BOUNDED POST-MERGE CONTRACT-SCOPE FREEZE (Step 66D-ARCH1-M1). PR #25 is merged, so this
+# stage is no longer an open branch: its positive scope is the frozen range below, and the
+# registered path set is exact. The denylists in check34/check35 stay HEAD-relative on
+# purpose -- they can only reject, never admit.
+ARCH1_STAGE_HEAD = "ab19dad7a2e032e421927d71622bb22d6b9e3e36"
+ARCH1_EXPECTED_PATHS = (
+    "docs/architecture/66d-delivery-acceptance/step66d-arch1-api-event-audit-contracts.md",
+    "docs/architecture/66d-delivery-acceptance/step66d-arch1-contract-freeze.md",
+    "docs/architecture/66d-delivery-acceptance/step66d-arch1-domain-and-state-model.md",
+    "docs/architecture/66d-delivery-acceptance/step66d-arch1-read-model-and-security-boundary.md",
+    "docs/decisions/step66d-arch1-architecture-decisions.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-arch1-existing-capability-inventory.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-arch1-gap-and-implementation-slice-plan.md",
+    "docs/test/step66d-arch1-contract-freeze-evidence.md",
+    "scripts/verify_step66d_arch1_contract_freeze.py",
+    "source/progress.md",
+    "tests/test_step66d_arch1_contract_freeze.py",
+)
+
 ARCH = ROOT / "docs" / "architecture" / "66d-delivery-acceptance"
 HANDOFFS = ROOT / "docs" / "handoffs" / "66d-delivery-acceptance"
 CONTRACTS = ROOT / "docs" / "contracts" / "66d-delivery-acceptance"
@@ -447,6 +466,25 @@ def check35_no_implementation_change() -> None:
         bad(f"check35: frontend/infra/migration paths changed: {', '.join(sorted(infra))}")
 
 
+def check37_positive_scope_frozen() -> None:
+    """The stage scope is the frozen range, compared for exact equality."""
+    actual = tuple(
+        sorted(
+            line
+            for line in git("diff", "--name-only", CANONICAL_MAIN, ARCH1_STAGE_HEAD).splitlines()
+            if line.strip()
+        )
+    )
+    unexpected = sorted(set(actual) - set(ARCH1_EXPECTED_PATHS))
+    missing = sorted(set(ARCH1_EXPECTED_PATHS) - set(actual))
+    if unexpected:
+        bad(f"check37: unregistered path in the frozen ARCH1 range: {', '.join(unexpected)}")
+    if missing:
+        bad(f"check37: registered path missing from the frozen range: {', '.join(missing)}")
+    if len(actual) != 11:
+        bad(f"check37: the frozen ARCH1 range holds {len(actual)} paths, expected 11")
+
+
 def check36_production_count_zero() -> None:
     for path in (FREEZE, DOMAIN, APIDOC, READMODEL, ADRS, INVENTORY, SLICES):
         body = read(path)
@@ -491,6 +529,7 @@ def main() -> int:
     check34_advisory_files_untouched()
     check35_no_implementation_change()
     check36_production_count_zero()
+    check37_positive_scope_frozen()
 
     if FAILURES:
         for failure in dict.fromkeys(FAILURES):
