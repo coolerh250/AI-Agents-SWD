@@ -138,7 +138,7 @@ Root cause:                       branch-scoped allowlists reject later stages' 
 Durable repair:                   allow "docs/", "scripts/verify_step66", "tests/test_step66"
 Runtime denylists:                untouched -- apps/, agents/, shared/, services/, migrations/,
                                   infra/ still rejected by every verifier
-Files repaired:                   11
+Files repaired:                   11   <- WRONG, see the correction below
   scripts/verify_step66sync1_claude_code_reconciliation.py
   tests/test_step66sync1_claude_code_reconciliation.py
   scripts/verify_step66sync1_final_partner_reconciliation.py
@@ -151,6 +151,18 @@ Files repaired:                   11
   tests/test_step66c4_be3_ra2m_canonicalization.py
   scripts/verify_step66c4_be3_ra2m2_canonical_merge.py
 ```
+
+> **CORRECTION (Step 66D-ALIGN1-RM1, R1-F05).** The count above is **wrong**. The correct figure is
+> **12**, not 11: `tests/test_step66c4_be3_ra2m2_canonical_merge.py` was also modified (+8/−2) but
+> was omitted from this list, from the progress entry, from the commit message and from the PR body.
+> The breakdown is **6 verifiers and 6 tests**. The original erroneous value is left visible above
+> rather than overwritten. Step 66D-ALIGN1-R1 found this omission independently; see
+> `step66d-align1-rm1-verifier-remediation-evidence.md`.
+>
+> **The repair described in this section was itself superseded.** Step 66D-ALIGN1-RM1 removed the
+> generic `docs/` / `scripts/verify_step66` / `tests/test_step66` prefixes entirely and replaced
+> each drifting `baseline → HEAD` range with a frozen commit range plus an exact registered path
+> set. See the RM1 evidence and `step66d-align1-rm1-stage-boundary-manifest.md`.
 
 The Step 66SYNC.1-M1 gate additionally moved three files from whole-blob identity to append-only
 annotation checking, and its manifest was updated to 19 unchanged / 3 annotated / 4 transformed
@@ -200,8 +212,14 @@ STEP66D_ALIGN1_DELIVERY_DECISION_MODEL_VERIFY: PASS   (32 numbered checks + 2 gr
 Full stage-family regression across all ten suites:
 
 ```text
-552 passed, 0 failed, 0 skipped
+552 passed, 0 failed, 0 skipped   <- WRONG, see the correction below
 ```
+
+> **CORRECTION (Step 66D-ALIGN1-RM1, R1-F05).** The stage-family figure above is **wrong**. The
+> independently reproduced count at commit `f25d12b` is **553 passed, 0 failed, 0 skipped**. The
+> erroneous 552 also appears in the `f25d12b` commit message, which is **not** rewritten — history
+> stands, and the correction is recorded here, in the progress record, in the RM1 evidence and in
+> the PR body. Step 66D-ALIGN1-R1 reproduced 553 independently.
 
 ## 11. Secret and local-path scan
 

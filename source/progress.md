@@ -17471,3 +17471,64 @@ deployment, identity, secret or feature-gate change. Branch
   implemented, Delivery Inbox not implemented, no PO decision API, TASK_ROLES unchanged, POC not
   ready. Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 all remain
   **NOT AUTHORIZED**. `production_executed_true_count: 0`.
+
+## Step 66D-ALIGN1-RM1 - Fixed-range Verifier Integrity Remediation
+
+**Marker: `STEP66D_ALIGN1_RM1_FIXED_RANGE_REMEDIATION_VERIFY: PASS`. Verification-framework
+remediation only. No product decision changed, no contract frozen, no runtime, frontend, backend,
+API, database, migration, deployment, identity, secret or feature-gate change. Second commit on
+`planning/66d-align-delivery-decision-model`; the original ALIGN1 commit `f25d12b` is preserved.**
+
+- **Why this stage existed.** Independent review Step 66D-ALIGN1-R1 found that the repair shipped
+  in `f25d12b` fixed the symptom rather than the range. Every historical stage verifier still
+  compared its baseline to *current HEAD* - a range that grows with every later commit - and the
+  three prefixes `docs/`, `scripts/verify_step66` and `tests/test_step66` made that growing range
+  passable. Three mutation probes (an unregistered document, an unregistered `verify_step66*`
+  script, an unregistered `test_step66*` test) were **accepted by all seven verifiers**. The
+  Step 66D-ALIGN1 verifier was weaker still: a runtime denylist and no positive scope assertion at
+  all. Verdict was `REMEDIATION_REQUIRED`, findings R1-F01..R1-F05.
+- **What changed.** Every drifting range is now frozen: claude_code `c1db4cc..828ea90`,
+  final_partner `c1db4cc..2396c6c`, M1 `c1db4cc..1278b89`, M2 `7971ae0..44ab32c`, RA-2M
+  `44ab32c..edafc0c`, RA-2M2 `aa02ad5..64467fe`. Acceptance changed from `startswith(prefix)` to
+  **exact set equality** against a registered path set re-derived from the range itself. All three
+  generic prefixes are gone from all twelve files, with tests forbidding equivalent broad globs.
+  The Step 66D-ALIGN1 verifier gained `check33`, an exact 34-path registry. Every SHA was confirmed
+  against committed artifacts and Git ancestry; none was guessed.
+- **Boundary-reset protection (R1-F04).** Boundaries must be literal 40-character SHAs, may not
+  resolve via `HEAD`, `origin/`, `refs/`, `rev-parse` or `ORIG_HEAD`, may not be overridden from
+  the environment, and must also appear in
+  `docs/handoffs/66d-delivery-acceptance/step66d-align1-rm1-stage-boundary-manifest.md`. Moving a
+  boundary requires editing the constant *and* the manifest; either alone fails.
+- **The M1 gate was inverted, deliberately.** It previously *required* the three generic prefixes
+  in the four partner scope files; it now requires a fixed boundary and **refuses** those prefixes,
+  so the defect cannot be reintroduced without failing that gate.
+- **Runtime denylist and historical provenance untouched.** `apps/`, `agents/`, `services/`,
+  `shared/`, `migrations/`, `infra/` are still rejected by all twelve files; the runtime probe is
+  still rejected everywhere. The Step 66SYNC.1-M1 append-only guard - byte-exact preserved prefix,
+  zero deletions, historical wording preserved, legitimate later annotation permitted - is intact
+  and re-tested here.
+- **A regression this stage introduced and then fixed.** Freezing the six ranges initially broke
+  their runtime denylists: the protected-path loops consumed the same list as the scope check, so
+  a runtime file added later became invisible to them. The mandatory post-change mutation recheck
+  caught it - the runtime probe was accepted by all six, where before it had been rejected by all
+  seven. Fixed with a separate `RUNTIME_GUARD_ANCHOR` per file scanning `<stage baseline>..HEAD`,
+  which can only reject and never widen scope; the runtime probe is now rejected by all eight
+  verifiers and the guard covers more than before. The defect never reached a pushed commit.
+- **Accuracy corrections (R1-F05).** Cross-stage files: previously recorded **11**, correct
+  **12** - `tests/test_step66c4_be3_ra2m2_canonical_merge.py` was omitted. Stage-family tests:
+  previously recorded **552**, correct **553**. Both original erroneous values are left visible and
+  labelled in the ALIGN1 evidence rather than overwritten, and the `f25d12b` commit message is
+  **not** rewritten - no rebase, amend, squash or force-push.
+- **Verification.** RM1 verifier: 26 numbered checks, PASS. RM1 suite **169 passed**; the ten
+  pre-existing stage suites **560 passed** (553 at `f25d12b`; the M1 suite gained one net test
+  and each of the six cross-stage test files gained a runtime-guard test); **753 passed, 0
+  failed, 0 skipped**
+  across all eleven suites. ruff/black/mypy/`git diff --check` clean; secret and local-path
+  scans CLEAN. Mutation recheck after the change:
+  unregistered docs/verifier/test paths and the runtime path all **REJECTED**; boundary tampering
+  **REJECTED**; historical modification, deletion and status-rewrite all **REJECTED**; legitimate
+  append-only annotation still **ACCEPTED**.
+- **Status.** `STEP66D_ALIGN1_RM1: PASS`; R1-F01..F05 all `REMEDIATED`; PR #24
+  **OPEN / UPDATED / NOT MERGED**; `PR24_MERGE_READINESS: PENDING INDEPENDENT R2 CLOSURE REVIEW`.
+  Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 remain
+  **NOT AUTHORIZED**. BE3 resume/replay **DISABLED**. `production_executed_true_count: 0`.

@@ -25,6 +25,51 @@ MANIFEST = SYNC / "step66sync1-canonicalization-manifest.md"
 EVIDENCE = TEST_DOCS / "step66sync1-m1-canonicalization-evidence.md"
 
 CANONICAL_MAIN = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+STAGE_HEAD = "1278b8944e3a8f824a9b35f82382fa8587e7989d"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/canonical-source-of-truth-precedence.md",
+    "docs/alignment/66-project-completion/master/partner-context-snapshot-20260803.md",
+    "docs/alignment/66-project-completion/master/partner-synchronized-program-state-20260803.md",
+    "docs/alignment/66-project-completion/master/partner-synchronized-program-state-20260804.md",
+    "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+    "docs/handoffs/program-sync/step66sync1-canonicalization-manifest.md",
+    "docs/handoffs/program-sync/step66sync1-claude-code-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    "docs/handoffs/program-sync/step66sync1-codex-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-codex-frontend-gap-register.md",
+    "docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-poc-backend-readiness-matrix.md",
+    "docs/handoffs/program-sync/step66sync1-poc-scope-binding-decisions.md",
+    "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
+    "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
+    "docs/test/step66sync1-claude-code-reconciliation-evidence.md",
+    "docs/test/step66sync1-claude-design-reconciliation-evidence.md",
+    "docs/test/step66sync1-codex-frontend-reconciliation-evidence.md",
+    "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
+    "docs/test/step66sync1-m1-canonicalization-evidence.md",
+    "scripts/verify_step66sync1_claude_code_reconciliation.py",
+    "scripts/verify_step66sync1_claude_design_reconciliation.py",
+    "scripts/verify_step66sync1_codex_frontend_reconciliation.py",
+    "scripts/verify_step66sync1_final_partner_reconciliation.py",
+    "scripts/verify_step66sync1_m1_canonicalization.py",
+    "source/progress.md",
+    "tests/test_step66sync1_claude_code_reconciliation.py",
+    "tests/test_step66sync1_claude_design_reconciliation.py",
+    "tests/test_step66sync1_codex_frontend_reconciliation.py",
+    "tests/test_step66sync1_final_partner_reconciliation.py",
+    "tests/test_step66sync1_m1_canonicalization.py",
+)
+
 CLAUDE_CODE_HEAD = "828ea90"
 CODEX_HEAD = "78aa4ee"
 CLAUDE_DESIGN_HEAD = "65c93a1"
@@ -247,32 +292,34 @@ def test_annotated_files_do_not_rewrite_the_original_decision_status() -> None:
             assert "RESOLVED / BINDING" not in head, rel
 
 
-def test_transformed_scope_files_are_additive_only() -> None:
-    """The four scope-check files may only gain allowlist entries, never lose a line."""
+def test_transformed_scope_files_carry_a_fixed_stage_boundary() -> None:
+    """Step 66D-ALIGN1-RM1 replaced the prefix widening with a frozen range plus exact paths."""
     for commit, paths in TRANSFORMED.items():
         for rel in paths:
-            numstat = _git("diff", "--numstat", commit, "--", rel)
-            assert numstat, rel
-            added, deleted = numstat.split("\t")[:2]
-            assert deleted == "0", f"{rel} deleted {deleted} lines"
-            assert added == "6", f"{rel} added {added} lines, expected 6"
+            assert _git("diff", "--numstat", commit, "--", rel), rel
+            body = _read(REPO / rel)
+            for marker in ("STAGE_BASELINE = ", "STAGE_HEAD = ", "EXPECTED_STAGE_PATHS = ("):
+                assert marker in body, f"{rel} has no fixed stage boundary: missing {marker!r}"
 
 
 def test_transformed_scope_files_admit_no_runtime_prefix() -> None:
     for paths in TRANSFORMED.values():
         for rel in paths:
             body = _read(REPO / rel)
-            match = re.search(r"(?im)^\s*allowed_prefixes\s*=\s*\((.*?)^\s*\)", body, re.DOTALL)
+            match = re.search(r"(?m)^EXPECTED_STAGE_PATHS\s*=\s*\((.*?)^\)", body, re.DOTALL)
             assert match is not None, rel
-            allowlist = match.group(1)
+            registered = match.group(1)
             for prefix in ("apps/", "agents/", "shared/", "services/", "migrations/", "infra/"):
-                assert f'"{prefix}"' not in allowlist, f"{rel} admitted {prefix}"
-            for added in (
-                '"docs/"',
-                '"scripts/verify_step66"',
-                '"tests/test_step66"',
-            ):
-                assert added in allowlist, f"{rel} missing {added}"
+                assert f'"{prefix}' not in registered, f"{rel} admitted {prefix}"
+
+
+def test_transformed_scope_files_cannot_reintroduce_generic_prefixes() -> None:
+    """The exact defect R1 found must not be reachable again by editing these files back."""
+    for paths in TRANSFORMED.values():
+        for rel in paths:
+            body = _read(REPO / rel)
+            for generic in ('"docs/",', '"scripts/verify_step66",', '"tests/test_step66",'):
+                assert generic not in body, f"{rel} reintroduced the generic allowlist {generic}"
 
 
 def test_all_three_partner_acknowledgements_present() -> None:
@@ -670,8 +717,11 @@ def test_precedence_keeps_ia_options_non_binding() -> None:
 
 
 def _changed_paths() -> list[str]:
+    """Paths this stage changed, over its FIXED range. Never HEAD-relative."""
     return [
-        line for line in _git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines() if line
+        line
+        for line in _git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines()
+        if line.strip()
     ]
 
 
@@ -700,16 +750,13 @@ def test_no_compose_or_kubernetes_manifest_changed() -> None:
 
 
 def test_changed_paths_are_within_the_canonicalization_scope() -> None:
-    allowed_exact = {
-        "source/progress.md",
-        "scripts/verify_step66sync1_m1_canonicalization.py",
-        "tests/test_step66sync1_m1_canonicalization.py",
-    }
-    allowed_prefixes = ("docs/", "scripts/verify_step66", "tests/test_step66")
-    stray = [
-        p for p in _changed_paths() if p not in allowed_exact and not p.startswith(allowed_prefixes)
-    ]
-    assert stray == []
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on
+    # the strength of a directory or filename prefix; an unregistered path fails here.
+    _actual = tuple(sorted(_changed_paths()))
+    _unexpected = sorted(set(_actual) - set(EXPECTED_STAGE_PATHS))
+    _missing = sorted(set(EXPECTED_STAGE_PATHS) - set(_actual))
+    assert not _unexpected, f"unregistered paths in the fixed stage range: {_unexpected}"
+    assert not _missing, f"registered paths missing from the fixed stage range: {_missing}"
 
 
 def test_progress_record_is_append_only() -> None:
@@ -763,3 +810,28 @@ def test_production_executed_true_count_is_zero_everywhere() -> None:
 def test_evidence_document_present_and_records_marker() -> None:
     evidence = _read(EVIDENCE)
     assert "STEP66SYNC1_M1_CANONICALIZATION_PREP_VERIFY: PASS" in evidence
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+
+def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
+    """A runtime path added by any later commit must still be caught."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    assert offenders == [], f"protected paths present after this stage: {offenders}"

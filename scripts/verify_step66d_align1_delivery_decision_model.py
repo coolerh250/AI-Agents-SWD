@@ -18,6 +18,49 @@ ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_MAIN = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 
+# Step 66D-ALIGN1-RM1 (fixes R1-F01/F02/F03). Before this, the only scope control here was a
+# runtime denylist, so any unregistered docs/, verify_step66* or test_step66* file passed. The
+# registered set below is compared for EXACT equality against what the branch actually changed:
+# an unregistered path fails, and a registered path that vanished fails too. While the PR is
+# open the comparison runs against the working branch; the post-merge fixed boundary is the
+# future authorized merge-record stage's responsibility, not this stage's.
+ALIGN1_EXPECTED_PATHS = (
+    "docs/alignment/66-project-completion/master/canonical-milestone-manifest.md",
+    "docs/alignment/66-project-completion/master/canonical-source-of-truth-precedence.md",
+    "docs/alignment/66-project-completion/master/product-and-technical-gates.md",
+    "docs/alignment/66-project-completion/master/project-completion-master-plan.md",
+    "docs/alignment/66-project-completion/master/project-definition-of-done.md",
+    "docs/contracts/66d-delivery-acceptance/step66d-canonical-terminology-registry.md",
+    "docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md",
+    "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-align1-gap-register.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-align1-rm1-stage-boundary-manifest.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-arch1-retry-readiness.md",
+    "docs/handoffs/66d-delivery-acceptance/step66d-canonical-conflict-supersession-matrix.md",
+    "docs/handoffs/program-sync/step66sync1-canonicalization-manifest.md",
+    "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
+    "docs/test/step66d-align1-canonical-alignment-evidence.md",
+    "docs/test/step66d-align1-rm1-verifier-remediation-evidence.md",
+    "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
+    "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
+    "scripts/verify_step66d_align1_delivery_decision_model.py",
+    "scripts/verify_step66d_align1_rm1_fixed_range_remediation.py",
+    "scripts/verify_step66sync1_claude_code_reconciliation.py",
+    "scripts/verify_step66sync1_final_partner_reconciliation.py",
+    "scripts/verify_step66sync1_m1_canonicalization.py",
+    "scripts/verify_step66sync1_m2_canonical_merge.py",
+    "source/progress.md",
+    "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
+    "tests/test_step66c4_be3_ra2m_canonicalization.py",
+    "tests/test_step66d_align1_delivery_decision_model.py",
+    "tests/test_step66d_align1_rm1_fixed_range_remediation.py",
+    "tests/test_step66sync1_claude_code_reconciliation.py",
+    "tests/test_step66sync1_final_partner_reconciliation.py",
+    "tests/test_step66sync1_m1_canonicalization.py",
+    "tests/test_step66sync1_m2_canonical_merge.py",
+)
+
 CONTRACTS = ROOT / "docs" / "contracts" / "66d-delivery-acceptance"
 HANDOFFS = ROOT / "docs" / "handoffs" / "66d-delivery-acceptance"
 MASTER = ROOT / "docs" / "alignment" / "66-project-completion" / "master"
@@ -486,6 +529,19 @@ def check_gaps_unauthorized() -> None:
         bad("gap-register: not every gap is marked NOT IMPLEMENTED / NOT AUTHORIZED")
 
 
+def check33_positive_exact_scope() -> None:
+    """Step 66D-ALIGN1-RM1: what the branch changed must equal the registered set exactly."""
+    changed = tuple(
+        sorted(line for line in git("diff", "--name-only", CANONICAL_MAIN).splitlines() if line)
+    )
+    unexpected = sorted(set(changed) - set(ALIGN1_EXPECTED_PATHS))
+    missing = sorted(set(ALIGN1_EXPECTED_PATHS) - set(changed))
+    if unexpected:
+        bad(f"check33: unregistered path changed by this stage: {', '.join(unexpected)}")
+    if missing:
+        bad(f"check33: registered path not changed by this stage: {', '.join(missing)}")
+
+
 def main() -> int:
     check01_baseline_main()
     check02_all_decisions_present()
@@ -515,6 +571,7 @@ def main() -> int:
     check32_production_count_zero()
     check_annotations_are_append_only()
     check_gaps_unauthorized()
+    check33_positive_exact_scope()
 
     if FAILURES:
         for failure in dict.fromkeys(FAILURES):

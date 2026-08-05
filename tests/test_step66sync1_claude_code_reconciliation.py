@@ -35,19 +35,22 @@ CANONICAL_MAIN = "c1db4cc"
 RA2_PLANNING_HEAD = "efa396d"
 CONTEXT_ID = "AIAT-SYNC-20260803-01"
 
-ALLOWED_PREFIXES = (
-    "docs/alignment/66-project-completion/master/",
-    "docs/handoffs/program-sync/",
-    "docs/test/",
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+STAGE_HEAD = "828ea900d53edab6f8441f50723e52955a1049e1"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/partner-context-snapshot-20260803.md",
+    "docs/handoffs/program-sync/step66sync1-claude-code-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-poc-backend-readiness-matrix.md",
+    "docs/test/step66sync1-claude-code-reconciliation-evidence.md",
     "scripts/verify_step66sync1_claude_code_reconciliation.py",
-    "tests/test_step66sync1_claude_code_reconciliation.py",
     "source/progress.md",
-    # Step 66SYNC.1-M1 canonicalization: this branch legitimately carries the whole
-    # Step 66SYNC.1 artifact set, not just this partner's slice. Runtime paths
-    # (apps/, shared/, agents/, services/, migrations/, infra/) remain rejected.
-    "docs/",
-    "scripts/verify_step66",
-    "tests/test_step66",
+    "tests/test_step66sync1_claude_code_reconciliation.py",
 )
 
 
@@ -218,17 +221,27 @@ def test_feature_gate_defaults_false(var: str, path: Path) -> None:
 
 
 def test_no_runtime_frontend_migration_or_infra_changed() -> None:
-    changed = [f for f in _git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines() if f]
+    changed = _fixed_range_paths()
     offenders = [
         f for f in changed if f.startswith(("apps/", "shared/", "agents/", "migrations/", "infra/"))
     ]
     assert offenders == [], f"read-only stage changed protected paths: {offenders}"
 
 
-def test_all_changed_files_are_in_the_allowed_set() -> None:
-    changed = [f for f in _git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines() if f]
-    offenders = [f for f in changed if not f.startswith(ALLOWED_PREFIXES)]
-    assert offenders == [], f"files outside the allowed set: {offenders}"
+def _fixed_range_paths() -> list[str]:
+    """Paths this stage changed, over its FIXED range. Never HEAD-relative."""
+    out = _git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines()
+    return [f.strip() for f in out if f.strip()]
+
+
+def test_changed_files_match_the_registered_stage_scope_exactly() -> None:
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on
+    # the strength of a directory or filename prefix; an unregistered path fails here.
+    _actual = tuple(sorted(_fixed_range_paths()))
+    _unexpected = sorted(set(_actual) - set(EXPECTED_STAGE_PATHS))
+    _missing = sorted(set(EXPECTED_STAGE_PATHS) - set(_actual))
+    assert not _unexpected, f"unregistered paths in the fixed stage range: {_unexpected}"
+    assert not _missing, f"registered paths missing from the fixed stage range: {_missing}"
 
 
 @pytest.mark.parametrize("doc", [SNAPSHOT, ACK, REGISTER, MATRIX])
@@ -347,3 +360,28 @@ def test_verifier_script_passes() -> None:
         result.stdout + result.stderr
     )
     assert result.returncode == 0
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+
+def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
+    """A runtime path added by any later commit must still be caught."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    assert offenders == [], f"protected paths present after this stage: {offenders}"

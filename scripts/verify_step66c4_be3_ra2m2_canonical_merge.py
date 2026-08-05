@@ -404,7 +404,7 @@ def check_merge_record_scope() -> None:
     """The post-merge record commit must add nothing beyond its own artifacts."""
     changed = [
         line
-        for line in git("diff", "--name-only", MERGE_COMMIT, "HEAD").splitlines()
+        for line in git("diff", "--name-only", MERGE_COMMIT, RECORD_COMMIT).splitlines()
         if line.strip()
     ]
     allowed = {
@@ -418,8 +418,8 @@ def check_merge_record_scope() -> None:
         "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
     }
-    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
-    stray = [path for path in changed if path not in allowed and not path.startswith(later_stage)]
+    # Step 66D-ALIGN1-RM1: the range above is frozen, so the exact set is authoritative.
+    stray = [path for path in changed if path not in allowed]
     if stray:
         bad(f"merge-record-scope: unexpected paths after the merge: {', '.join(stray)}")
 
@@ -439,6 +439,34 @@ def check_merge_record_scope() -> None:
                 bad(
                     f"merge-record-scope: {rel} adaptation admitted runtime prefix {runtime_prefix}"
                 )
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
+
+
+def check_runtime_guard_current_state() -> None:
+    """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
+    changed = [
+        line
+        for line in git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    if offenders:
+        bad(
+            f"runtime-guard: protected path present after this stage: {', '.join(sorted(offenders))}"
+        )
 
 
 def main() -> int:
@@ -463,6 +491,8 @@ def main() -> int:
     check20_production_count_zero()
     check_merge_record()
     check_merge_record_scope()
+
+    check_runtime_guard_current_state()
 
     if FAILURES:
         for failure in dict.fromkeys(FAILURES):

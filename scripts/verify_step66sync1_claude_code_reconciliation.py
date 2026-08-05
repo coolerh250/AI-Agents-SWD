@@ -36,6 +36,25 @@ RESUME_MODEL = ROOT / "shared" / "sdk" / "tasks" / "resume_request_model.py"
 REPLAY_MODEL = ROOT / "shared" / "sdk" / "tasks" / "replay_request_model.py"
 
 CANONICAL_MAIN = "c1db4cc"
+
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+STAGE_HEAD = "828ea900d53edab6f8441f50723e52955a1049e1"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/partner-context-snapshot-20260803.md",
+    "docs/handoffs/program-sync/step66sync1-claude-code-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-poc-backend-readiness-matrix.md",
+    "docs/test/step66sync1-claude-code-reconciliation-evidence.md",
+    "scripts/verify_step66sync1_claude_code_reconciliation.py",
+    "source/progress.md",
+    "tests/test_step66sync1_claude_code_reconciliation.py",
+)
+
 RA2_PLANNING_HEAD = "efa396d"
 RA2_PLANNING_BRANCH = "planning/66c4-be3-ra2-identity-secret-decision"
 CONTEXT_ID = "AIAT-SYNC-20260803-01"
@@ -83,10 +102,40 @@ def _git(*args: str) -> str:
     return subprocess.run(["git", *args], cwd=ROOT, capture_output=True, text=True).stdout.strip()
 
 
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+
+def check_runtime_guard_current_state() -> None:
+    """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    if offenders:
+        bad(
+            f"runtime-guard: protected path present after this stage: {', '.join(sorted(offenders))}"
+        )
+
+
 def main() -> int:  # noqa: C901
     for p in (SNAPSHOT, ACK, REGISTER, MATRIX, EVIDENCE, RESUME_MODEL, REPLAY_MODEL):
         if not p.is_file():
             bad(f"missing required file: {p}")
+    check_runtime_guard_current_state()
+
     if failures:
         print(f"{MARKER}: FAIL")
         return 1
@@ -164,8 +213,11 @@ def main() -> int:  # noqa: C901
         bad("check6b: gates-default-false not recorded in the deliverables")
 
     # 7-10. Negative proof: this stage changed no runtime, frontend, migration, or deployment file.
-    changed = [f.strip() for f in _git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines()]
-    changed = [f for f in changed if f]
+    changed = [
+        f.strip()
+        for f in _git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines()
+        if f.strip()
+    ]
     for f in changed:
         if f.startswith(("apps/", "shared/", "agents/")):
             bad(f"check7: this stage changed runtime/frontend source: {f}")
@@ -174,23 +226,17 @@ def main() -> int:  # noqa: C901
         if f.startswith("infra/"):
             bad(f"check9: this stage changed deployment/infra configuration: {f}")
 
-    allowed_prefixes = (
-        "docs/alignment/66-project-completion/master/",
-        "docs/handoffs/program-sync/",
-        "docs/test/",
-        "scripts/verify_step66sync1_claude_code_reconciliation.py",
-        "tests/test_step66sync1_claude_code_reconciliation.py",
-        "source/progress.md",
-        # Step 66SYNC.1-M1 canonicalization: this branch legitimately carries the whole
-        # Step 66SYNC.1 artifact set, not just this partner's slice. Runtime paths
-        # (apps/, shared/, agents/, services/, migrations/, infra/) remain rejected.
-        "docs/",
-        "scripts/verify_step66",
-        "tests/test_step66",
-    )
-    for f in changed:
-        if not f.startswith(allowed_prefixes):
-            bad(f"check10: file outside the allowed set was changed: {f}")
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on the
+    # strength of a directory or filename prefix; an unregistered path fails here.
+    if tuple(sorted(changed)) != EXPECTED_STAGE_PATHS:
+        unexpected = sorted(set(changed) - set(EXPECTED_STAGE_PATHS))
+        missing = sorted(set(EXPECTED_STAGE_PATHS) - set(changed))
+        if unexpected:
+            bad(f"check10: unregistered path in this stage's fixed range: {', '.join(unexpected)}")
+        if missing:
+            bad(
+                f"check10: registered path missing from this stage's fixed range: {', '.join(missing)}"
+            )
 
     # 11. No secret read/write evidence in the deliverables.
     secret_shaped = re.compile(

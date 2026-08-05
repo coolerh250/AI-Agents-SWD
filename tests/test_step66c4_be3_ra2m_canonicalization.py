@@ -34,6 +34,33 @@ MANIFEST = HANDOFFS / "step66c4-be3-ra2m-canonicalization-manifest.md"
 EVIDENCE = TEST_DOCS / "step66c4-be3-ra2m-canonicalization-evidence.md"
 
 CANONICAL_MAIN = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
+
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
+STAGE_HEAD = "edafc0ca9111bc6dd76bc3ab59b5ea110f2f05d6"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/canonical-source-of-truth-precedence.md",
+    "docs/alignment/66-project-completion/master/next-executable-stage-sequence.md",
+    "docs/alignment/66-project-completion/master/step66c4-be3-ra2-current-state-20260804.md",
+    "docs/contracts/66c4-reminder-expiry-controlled-resume/be3-ra2-identity-secret-provisioning-decision-package.md",
+    "docs/contracts/66c4-reminder-expiry-controlled-resume/step66c4-be3-ra2-binding-decisions.md",
+    "docs/handoffs/66c4-reminder-expiry-controlled-resume/be3-ra2-implementation-stage-decomposition.md",
+    "docs/handoffs/66c4-reminder-expiry-controlled-resume/step66c4-be3-ra2m-canonicalization-manifest.md",
+    "docs/security/be3-ra2-current-state-identity-secret-inventory.md",
+    "docs/security/be3-ra2-identity-secret-threat-and-trust-analysis.md",
+    "docs/test/step66c4-be3-ra2-identity-secret-decision-evidence.md",
+    "docs/test/step66c4-be3-ra2m-canonicalization-evidence.md",
+    "scripts/verify_step66c4_be3_ra2_identity_secret_decision.py",
+    "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
+    "source/progress.md",
+    "tests/test_step66c4_be3_ra2_identity_secret_decision.py",
+    "tests/test_step66c4_be3_ra2m_canonicalization.py",
+)
+
 PLANNING_HEAD = "efa396dee6512d6f15b3fd079df87d2c70ee0c77"
 PLANNING_BASE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
 
@@ -575,7 +602,9 @@ def test_precedence_resolves_the_known_conflicts() -> None:
 
 
 def _changed() -> list[str]:
-    return [line for line in _git("diff", "--name-only", CANONICAL_MAIN).splitlines() if line]
+    """Paths this stage changed, over its FIXED range. Never HEAD-relative."""
+    out = _git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines()
+    return [line.strip() for line in out if line.strip()]
 
 
 def test_no_runtime_backend_or_agent_source_changed() -> None:
@@ -599,19 +628,13 @@ def test_no_manifest_compose_or_chart_changed() -> None:
 
 
 def test_changed_paths_are_within_scope() -> None:
-    allowed_exact = {
-        "source/progress.md",
-        "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
-        "tests/test_step66c4_be3_ra2m_canonicalization.py",
-        "scripts/verify_step66c4_be3_ra2_identity_secret_decision.py",
-        "tests/test_step66c4_be3_ra2_identity_secret_decision.py",
-        # BOUNDED POST-MERGE VERIFIER ADAPTATION (Step 66C.4-BE3-RA-2M2): the RA-2M2 artifacts
-        # postdate this allowlist and could not have been in the merge. No runtime path admitted.
-        "scripts/verify_step66c4_be3_ra2m2_canonical_merge.py",
-        "tests/test_step66c4_be3_ra2m2_canonical_merge.py",
-    }
-    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
-    assert [p for p in _changed() if p not in allowed_exact and not p.startswith(later_stage)] == []
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on the
+    # strength of a directory or filename prefix; an unregistered path fails here.
+    _actual = tuple(sorted(_changed()))
+    _unexpected = sorted(set(_actual) - set(EXPECTED_STAGE_PATHS))
+    _missing = sorted(set(EXPECTED_STAGE_PATHS) - set(_actual))
+    assert not _unexpected, f"unregistered paths in the fixed stage range: {_unexpected}"
+    assert not _missing, f"registered paths missing from the fixed stage range: {_missing}"
 
 
 def test_progress_record_is_append_only() -> None:
@@ -668,3 +691,28 @@ def test_production_executed_true_count_is_zero_everywhere() -> None:
 
 def test_evidence_document_records_the_marker() -> None:
     assert "STEP66C4_BE3_RA2M_CANONICALIZATION_PREP_VERIFY: PASS" in _read(EVIDENCE)
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
+
+
+def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
+    """A runtime path added by any later commit must still be caught."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    assert offenders == [], f"protected paths present after this stage: {offenders}"

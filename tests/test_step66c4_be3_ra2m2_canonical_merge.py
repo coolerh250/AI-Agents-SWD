@@ -424,7 +424,8 @@ def test_merge_changed_sixteen_paths() -> None:
 
 
 def _post_merge_paths() -> list[str]:
-    return [line for line in _git("diff", "--name-only", MERGE_COMMIT, "HEAD").splitlines() if line]
+    out = _git("diff", "--name-only", MERGE_COMMIT, RECORD_COMMIT).splitlines()
+    return [line.strip() for line in out if line.strip()]
 
 
 def test_post_merge_commit_adds_only_its_own_artifacts() -> None:
@@ -437,10 +438,7 @@ def test_post_merge_commit_adds_only_its_own_artifacts() -> None:
         "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
     }
-    later_stage = ("docs/", "scripts/verify_step66", "tests/test_step66")
-    assert [
-        p for p in _post_merge_paths() if p not in allowed and not p.startswith(later_stage)
-    ] == []
+    assert [p for p in _post_merge_paths() if p not in allowed] == []
 
 
 def test_no_historical_evidence_touched_after_the_merge() -> None:
@@ -529,3 +527,28 @@ def test_production_executed_true_count_is_zero_everywhere() -> None:
         text = _read(path)
         for value in re.findall(r"production_executed_true_count[`:\s]*([0-9]+)", text, re.I):
             assert value == "0", path.name
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
+
+
+def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
+    """A runtime path added by any later commit must still be caught."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    assert offenders == [], f"protected paths present after this stage: {offenders}"

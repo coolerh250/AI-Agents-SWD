@@ -79,19 +79,23 @@ GAP_CATEGORIES = (
     "POC0-SAFETY",
     "POC0-DELIVERY",
 )
-ALLOWED_PREFIXES = (
-    "docs/alignment/66-project-completion/master/",
-    "docs/handoffs/program-sync/",
-    "docs/test/",
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+STAGE_HEAD = "2396c6c7002387c886463bd38158b9ddc3bfb9e2"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/partner-synchronized-program-state-20260803.md",
+    "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
+    "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
+    "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
     "scripts/verify_step66sync1_final_partner_reconciliation.py",
-    "tests/test_step66sync1_final_partner_reconciliation.py",
     "source/progress.md",
-    # Step 66SYNC.1-M1 canonicalization: this branch legitimately carries the whole
-    # Step 66SYNC.1 artifact set, not just the coordinator's slice. Runtime paths
-    # (apps/, shared/, agents/, services/, migrations/, infra/) remain rejected.
-    "docs/",
-    "scripts/verify_step66",
-    "tests/test_step66",
+    "tests/test_step66sync1_final_partner_reconciliation.py",
 )
 
 MARKER = "STEP66SYNC1_FINAL_PARTNER_RECONCILIATION_VERIFY"
@@ -113,10 +117,40 @@ def _show(ref: str, path: str) -> str:
     ).stdout
 
 
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+
+def check_runtime_guard_current_state() -> None:
+    """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    if offenders:
+        bad(
+            f"runtime-guard: protected path present after this stage: {', '.join(sorted(offenders))}"
+        )
+
+
 def main() -> int:  # noqa: C901
     for p in (STATE, FINAL_ACK, FINAL_REGISTER, DECISION_PACKAGE, GAP_REGISTER, EVIDENCE):
         if not p.is_file():
             bad(f"missing required artifact: {p}")
+    check_runtime_guard_current_state()
+
     if failures:
         print(f"{MARKER}: FAIL")
         return 1
@@ -244,12 +278,21 @@ def main() -> int:  # noqa: C901
         bad("check13b: gap register does not record that zero gaps are authorized")
 
     # 14/15. No runtime/frontend/backend/migration/deployment change by this stage.
-    changed = [f for f in _git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines() if f]
+    changed = [f for f in _git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines() if f]
     for f in changed:
         if f.startswith(("apps/", "shared/", "agents/", "migrations/", "infra/")):
             bad(f"check14: this stage changed a protected path: {f}")
-        if not f.startswith(ALLOWED_PREFIXES):
-            bad(f"check15: file outside the allowed set was changed: {f}")
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on
+    # the strength of a directory or filename prefix; an unregistered path fails here.
+    _actual = tuple(sorted(changed))
+    _unexpected = sorted(set(_actual) - set(EXPECTED_STAGE_PATHS))
+    _missing = sorted(set(EXPECTED_STAGE_PATHS) - set(_actual))
+    if _unexpected:
+        bad(f"check15: unregistered path in this stage's fixed range: {', '.join(_unexpected)}")
+    if _missing:
+        bad(
+            f"check15: registered path missing from this stage's fixed range: {', '.join(_missing)}"
+        )
 
     # 16. Feature gates remain default false.
     for var, gate_file in (
