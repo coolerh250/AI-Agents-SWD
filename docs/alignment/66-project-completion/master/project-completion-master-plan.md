@@ -134,7 +134,10 @@ next-executable-stage-sequence.md)
 2. Step 66C.4 — Reminder / Expiry implementation lifecycle (Claude Code primary owner —
    backend/scheduler/workflow; Codex limited to an explicitly authorized frontend slice; see
    role-ownership-matrix.md's "Step 66C.4 ownership" section, corrected in Step 66ALIGN.2-R1)
-3. Step 66D-ARCH — Delivery and Acceptance Data Model / API Contract Freeze (Claude Code)
+3. Step 66D-ARCH — Delivery and Acceptance Data Model / API Contract Freeze (Claude Code), against
+   the layered review-and-decision model frozen by 66D-D01..66D-D04 (six Review Gate Actions and a
+   separate three-value Product Owner Final Decision; see
+   docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md)
 4. Step 66D-DESIGN — Delivery Inbox / Detail / Acceptance UX (Claude Design)
 5. Step 66D implementation slices (Codex/Claude Code, one bounded slice at a time)
 ```

@@ -221,3 +221,36 @@ secrets — use neutral labels such as "test host", "internal test runtime", "ad
 tunnel", "sandbox repo"._
 
 <!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->
+
+<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->
+
+---
+
+## Supersession note — Step 66D-ALIGN1 (2026-08-04)
+
+> **Append-only annotation. Nothing above this marker was edited.** The gaps above remain as
+> recorded at Step 66SYNC.1 and are still valid partner evidence.
+
+Binding decisions `66D-D01`..`66D-D04`
+(`docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md`)
+resolve four canonical vocabulary conflicts that these gaps were written against:
+
+```text
+66D-CONFLICT-01  Review Gate Action vs PO Final Decision vocabulary   RESOLVED BY 66D-D01
+66D-CONFLICT-02  Delivery lifecycle vs authoritative decision record  RESOLVED BY 66D-D02
+66D-CONFLICT-03  Task anchor vs project/work-item/workflow/run        RESOLVED BY 66D-D03
+66D-CONFLICT-04  Legacy DeliveryPackage name collision                RESOLVED BY 66D-D04
+```
+
+Where a gap above refers to the acceptance decision as "(ACCEPTED/ACCEPTED_WITH_FOLLOW_UP/
+REJECTED)", that is the **Product Owner Final Decision** layer. A separate six-value **Review Gate
+Action** contract (ACCEPT / REJECT / REQUEST_CHANGES / RERUN_QA / ESCALATE / ARCHIVE) now sits
+alongside it, and any UX design must show the two as distinct.
+
+**What resolving the vocabulary did NOT do.** Every gap above that describes missing design,
+missing backend contract or missing surface remains an `IMPLEMENTATION_GAP` and remains
+`NOT AUTHORIZED`. A vocabulary alignment is not a contract freeze, a design, or an implementation.
+Step 66D-ARCH, Step 66D-DESIGN and every Step 66D slice are still NOT AUTHORIZED, and the POC.0 IA
+option remains unselected. `production_executed_true_count: 0`.
+
+<!-- SUPERSESSION-NOTE-END: Step 66D-ALIGN1 -->

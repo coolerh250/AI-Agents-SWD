@@ -21,6 +21,9 @@ PR_HEAD = "edafc0ca9111bc6dd76bc3ab59b5ea110f2f05d6"
 MERGE_COMMIT = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
 PLANNING_HEAD = "efa396dee6512d6f15b3fd079df87d2c70ee0c77"
 PR_NUMBER = "23"
+# This stage's own post-merge record commit. The bounded-adaptation guard below
+# measures what THIS stage changed, not what later authorized stages changed.
+RECORD_COMMIT = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 
 SECURITY = ROOT / "docs" / "security"
 CONTRACTS = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
@@ -401,7 +404,7 @@ def check_merge_record_scope() -> None:
     """The post-merge record commit must add nothing beyond its own artifacts."""
     changed = [
         line
-        for line in git("diff", "--name-only", MERGE_COMMIT, "HEAD").splitlines()
+        for line in git("diff", "--name-only", MERGE_COMMIT, RECORD_COMMIT).splitlines()
         if line.strip()
     ]
     allowed = {
@@ -415,6 +418,7 @@ def check_merge_record_scope() -> None:
         "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
     }
+    # Step 66D-ALIGN1-RM1: the range above is frozen, so the exact set is authoritative.
     stray = [path for path in changed if path not in allowed]
     if stray:
         bad(f"merge-record-scope: unexpected paths after the merge: {', '.join(stray)}")
@@ -423,7 +427,7 @@ def check_merge_record_scope() -> None:
         "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
     ):
-        numstat = git("diff", "--numstat", MERGE_COMMIT, "HEAD", "--", rel)
+        numstat = git("diff", "--numstat", MERGE_COMMIT, RECORD_COMMIT, "--", rel)
         if not numstat:
             continue
         added, deleted = numstat.split("\t")[:2]
@@ -435,6 +439,34 @@ def check_merge_record_scope() -> None:
                 bad(
                     f"merge-record-scope: {rel} adaptation admitted runtime prefix {runtime_prefix}"
                 )
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
+
+
+def check_runtime_guard_current_state() -> None:
+    """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
+    changed = [
+        line
+        for line in git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    if offenders:
+        bad(
+            f"runtime-guard: protected path present after this stage: {', '.join(sorted(offenders))}"
+        )
 
 
 def main() -> int:
@@ -459,6 +491,8 @@ def main() -> int:
     check20_production_count_zero()
     check_merge_record()
     check_merge_record_scope()
+
+    check_runtime_guard_current_state()
 
     if FAILURES:
         for failure in dict.fromkeys(FAILURES):

@@ -17410,3 +17410,125 @@ external identity provider or agent workflow started. `production_executed_true_
   `RESOLVED / BINDING / CANONICALIZED`. Next: RA-2I0 is the first stage in sequence and needs its
   own separate explicit Product Owner authorization (RA2-C06); BE3 resume/replay additionally
   requires RA-2R to pass (RA2-C05).
+
+## Step 66D-ALIGN1 — Canonical Delivery Decision Model Alignment
+
+**Marker: `STEP66D_ALIGN1_DELIVERY_DECISION_MODEL_VERIFY: PASS`. Documentation and governance
+alignment only. No contract frozen. No runtime, frontend, backend, API, database, event, migration,
+deployment, identity, secret or feature-gate change. Branch
+`planning/66d-align-delivery-decision-model`, cut from canonical main `64467fe`.**
+
+- **Why this stage existed.** Step 66D-ARCH1 correctly stopped on `64467fe` with
+  `CANONICAL_STAGE_CONFLICT` before writing anything. Main carried two incompatible delivery
+  vocabularies plus an anchor disagreement and an entity-name collision. All four were reproduced
+  from committed content, not from prior reports.
+- **Four binding decisions recorded.** `docs/contracts/66d-delivery-acceptance/
+  step66d-delivery-decision-model-binding-decisions.md`: **66D-D01** layered model — exactly six
+  Review Gate Actions (ACCEPT/REJECT/REQUEST_CHANGES/RERUN_QA/ESCALATE/ARCHIVE) and a *separate*
+  three-value Product Owner Final Decision (ACCEPTED/ACCEPTED_WITH_FOLLOW_UP/REJECTED), with
+  different enum, schema, API, event, audit action and authorization boundary; only ACCEPT and
+  REJECT carry a decision, the other four carry none. **66D-D02** delivery review status may
+  *project* the current effective decision while the authoritative history is an immutable,
+  supersedable `ProductOwnerDecision`; ACCEPTED_WITH_FOLLOW_UP takes only non-blocking follow-ups,
+  and any blocking one forces REQUEST_CHANGES. **66D-D03** dual anchor — execution/artifacts on
+  project → work item → workflow → run, human review and TASK_ROLES on `delivery_review_task_id`,
+  with D-1 preserved intact. **66D-D04** legacy `DeliveryPackage` (Step 47/49) preserved unchanged;
+  the new aggregate is `DeliverySubmission` with `DeliveryReviewTask`, `DeliveryReviewAction`,
+  `ProductOwnerDecision` and `AcceptanceFollowUpItem`.
+- **Active canonical documents edited; historical evidence annotated, never rewritten.** Five
+  active documents (gates, Definition of Done, milestone manifest, master plan, precedence index)
+  were edited in place to remove the contradiction. Three partner artifacts — the Claude Design POC
+  specification and two Step 66SYNC.1 gap registers — received **append-only** supersession notes
+  below a stable marker: **+65/+33/+29 lines, −0 deletions**, with the pre-marker content still
+  byte-identical to its Step 66SYNC.1 source blob. The spec's original "only these three" sentence
+  survives verbatim; it is scoped, not deleted.
+- **A pre-existing regression was found and repaired.** Running the earlier suites on **clean main
+  at `64467fe`** produced **9 failures before any 66D work**. Every stage verifier asserted that the
+  only paths changed relative to its own baseline belong to that stage — false by construction once
+  a later stage lands. The regression entered main with the RA-2M1/RA-2M2 merges and went unnoticed
+  because those stages ran only their own suites. Repaired across **11 files** by allowing
+  `docs/`, `scripts/verify_step66` and `tests/test_step66`; every runtime denylist untouched. The
+  66SYNC.1-M1 gate additionally moved three files from whole-blob identity to append-only
+  annotation checking (manifest now 19 unchanged / 3 annotated / 4 transformed, still 26).
+- **What was deliberately not decided.** The bounded QA-rerun count, cooldown, timeout and
+  escalation threshold stay deferred to Step 66D-ARCH; a test asserts no numeric bound was fixed
+  here. The POC.0 IA option remains unselected. `next-executable-stage-sequence.md` and
+  `critical-path-and-dependency-map.md` were left untouched because their "6-action endpoint
+  contract" wording is *correct* under 66D-D01.
+- **Tests/verification.** `tests/test_step66d_align1_delivery_decision_model.py`: **62 passed, 0
+  failed, 0 skipped**; the whole stage family is **552 passed, 0 failed, 0 skipped**. Verifier: 32
+  numbered checks plus annotation and gap groups, PASS. Several tests re-derive rather than cite —
+  the two enums are parsed and compared for disjointness, the mapping table is counted for exactly
+  four no-decision rows, the legacy `DeliveryPackage` source is proven untouched from Git, and the
+  annotations are proven byte-prefix-preserving. ruff/black/mypy/`git diff --check` clean; secret
+  and local-path scans CLEAN.
+- **Ten alignment gaps registered, 0 authorized, 0 implemented** — two CRITICAL (TASK_ROLES
+  authorization mapping; follow-up lifecycle, which additionally needs a *verified* human identity
+  that RA-2 has decided but not implemented).
+- **Status.** `STEP66D_ALIGN1: PASS`; PR **OPEN / READY FOR REVIEW and NOT MERGED**;
+  `STEP66D_ARCH1_RETRY_READINESS: READY_FOR_PRODUCT_OWNER_AUTHORIZATION` — readiness is not
+  authorization. No contract frozen, Step 66D-ARCH not complete, `DeliverySubmission` not
+  implemented, Delivery Inbox not implemented, no PO decision API, TASK_ROLES unchanged, POC not
+  ready. Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 all remain
+  **NOT AUTHORIZED**. `production_executed_true_count: 0`.
+
+## Step 66D-ALIGN1-RM1 - Fixed-range Verifier Integrity Remediation
+
+**Marker: `STEP66D_ALIGN1_RM1_FIXED_RANGE_REMEDIATION_VERIFY: PASS`. Verification-framework
+remediation only. No product decision changed, no contract frozen, no runtime, frontend, backend,
+API, database, migration, deployment, identity, secret or feature-gate change. Second commit on
+`planning/66d-align-delivery-decision-model`; the original ALIGN1 commit `f25d12b` is preserved.**
+
+- **Why this stage existed.** Independent review Step 66D-ALIGN1-R1 found that the repair shipped
+  in `f25d12b` fixed the symptom rather than the range. Every historical stage verifier still
+  compared its baseline to *current HEAD* - a range that grows with every later commit - and the
+  three prefixes `docs/`, `scripts/verify_step66` and `tests/test_step66` made that growing range
+  passable. Three mutation probes (an unregistered document, an unregistered `verify_step66*`
+  script, an unregistered `test_step66*` test) were **accepted by all seven verifiers**. The
+  Step 66D-ALIGN1 verifier was weaker still: a runtime denylist and no positive scope assertion at
+  all. Verdict was `REMEDIATION_REQUIRED`, findings R1-F01..R1-F05.
+- **What changed.** Every drifting range is now frozen: claude_code `c1db4cc..828ea90`,
+  final_partner `c1db4cc..2396c6c`, M1 `c1db4cc..1278b89`, M2 `7971ae0..44ab32c`, RA-2M
+  `44ab32c..edafc0c`, RA-2M2 `aa02ad5..64467fe`. Acceptance changed from `startswith(prefix)` to
+  **exact set equality** against a registered path set re-derived from the range itself. All three
+  generic prefixes are gone from all twelve files, with tests forbidding equivalent broad globs.
+  The Step 66D-ALIGN1 verifier gained `check33`, an exact 34-path registry. Every SHA was confirmed
+  against committed artifacts and Git ancestry; none was guessed.
+- **Boundary-reset protection (R1-F04).** Boundaries must be literal 40-character SHAs, may not
+  resolve via `HEAD`, `origin/`, `refs/`, `rev-parse` or `ORIG_HEAD`, may not be overridden from
+  the environment, and must also appear in
+  `docs/handoffs/66d-delivery-acceptance/step66d-align1-rm1-stage-boundary-manifest.md`. Moving a
+  boundary requires editing the constant *and* the manifest; either alone fails.
+- **The M1 gate was inverted, deliberately.** It previously *required* the three generic prefixes
+  in the four partner scope files; it now requires a fixed boundary and **refuses** those prefixes,
+  so the defect cannot be reintroduced without failing that gate.
+- **Runtime denylist and historical provenance untouched.** `apps/`, `agents/`, `services/`,
+  `shared/`, `migrations/`, `infra/` are still rejected by all twelve files; the runtime probe is
+  still rejected everywhere. The Step 66SYNC.1-M1 append-only guard - byte-exact preserved prefix,
+  zero deletions, historical wording preserved, legitimate later annotation permitted - is intact
+  and re-tested here.
+- **A regression this stage introduced and then fixed.** Freezing the six ranges initially broke
+  their runtime denylists: the protected-path loops consumed the same list as the scope check, so
+  a runtime file added later became invisible to them. The mandatory post-change mutation recheck
+  caught it - the runtime probe was accepted by all six, where before it had been rejected by all
+  seven. Fixed with a separate `RUNTIME_GUARD_ANCHOR` per file scanning `<stage baseline>..HEAD`,
+  which can only reject and never widen scope; the runtime probe is now rejected by all eight
+  verifiers and the guard covers more than before. The defect never reached a pushed commit.
+- **Accuracy corrections (R1-F05).** Cross-stage files: previously recorded **11**, correct
+  **12** - `tests/test_step66c4_be3_ra2m2_canonical_merge.py` was omitted. Stage-family tests:
+  previously recorded **552**, correct **553**. Both original erroneous values are left visible and
+  labelled in the ALIGN1 evidence rather than overwritten, and the `f25d12b` commit message is
+  **not** rewritten - no rebase, amend, squash or force-push.
+- **Verification.** RM1 verifier: 26 numbered checks, PASS. RM1 suite **169 passed**; the ten
+  pre-existing stage suites **560 passed** (553 at `f25d12b`; the M1 suite gained one net test
+  and each of the six cross-stage test files gained a runtime-guard test); **753 passed, 0
+  failed, 0 skipped**
+  across all eleven suites. ruff/black/mypy/`git diff --check` clean; secret and local-path
+  scans CLEAN. Mutation recheck after the change:
+  unregistered docs/verifier/test paths and the runtime path all **REJECTED**; boundary tampering
+  **REJECTED**; historical modification, deletion and status-rewrite all **REJECTED**; legitimate
+  append-only annotation still **ACCEPTED**.
+- **Status.** `STEP66D_ALIGN1_RM1: PASS`; R1-F01..F05 all `REMEDIATED`; PR #24
+  **OPEN / UPDATED / NOT MERGED**; `PR24_MERGE_READINESS: PENDING INDEPENDENT R2 CLOSURE REVIEW`.
+  Step 66D-ARCH1, Step 66D-DESIGN, all Step 66D slices, Step 67POC.0 and RA-2I0 remain
+  **NOT AUTHORIZED**. BE3 resume/replay **DISABLED**. `production_executed_true_count: 0`.

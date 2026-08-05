@@ -16,6 +16,51 @@ MARKER = "STEP66SYNC1_M1_CANONICALIZATION_PREP_VERIFY: PASS"
 ROOT = Path(__file__).resolve().parents[1]
 
 CANONICAL_MAIN = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+# Step 66D-ALIGN1-RM1 fixed stage boundary. This stage's scope is the frozen commit
+# range below -- never "baseline -> current HEAD". Later authorized stages advance
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+# The expected path set is the immutable manifest of that range. Both values are
+# cross-checked against the RM1 stage-boundary manifest.
+STAGE_BASELINE = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+STAGE_HEAD = "1278b8944e3a8f824a9b35f82382fa8587e7989d"
+EXPECTED_STAGE_PATHS = (
+    "docs/alignment/66-project-completion/master/canonical-source-of-truth-precedence.md",
+    "docs/alignment/66-project-completion/master/partner-context-snapshot-20260803.md",
+    "docs/alignment/66-project-completion/master/partner-synchronized-program-state-20260803.md",
+    "docs/alignment/66-project-completion/master/partner-synchronized-program-state-20260804.md",
+    "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+    "docs/handoffs/program-sync/step66sync1-canonicalization-manifest.md",
+    "docs/handoffs/program-sync/step66sync1-claude-code-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    "docs/handoffs/program-sync/step66sync1-codex-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-codex-frontend-gap-register.md",
+    "docs/handoffs/program-sync/step66sync1-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
+    "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
+    "docs/handoffs/program-sync/step66sync1-poc-backend-readiness-matrix.md",
+    "docs/handoffs/program-sync/step66sync1-poc-scope-binding-decisions.md",
+    "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
+    "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
+    "docs/test/step66sync1-claude-code-reconciliation-evidence.md",
+    "docs/test/step66sync1-claude-design-reconciliation-evidence.md",
+    "docs/test/step66sync1-codex-frontend-reconciliation-evidence.md",
+    "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
+    "docs/test/step66sync1-m1-canonicalization-evidence.md",
+    "scripts/verify_step66sync1_claude_code_reconciliation.py",
+    "scripts/verify_step66sync1_claude_design_reconciliation.py",
+    "scripts/verify_step66sync1_codex_frontend_reconciliation.py",
+    "scripts/verify_step66sync1_final_partner_reconciliation.py",
+    "scripts/verify_step66sync1_m1_canonicalization.py",
+    "source/progress.md",
+    "tests/test_step66sync1_claude_code_reconciliation.py",
+    "tests/test_step66sync1_claude_design_reconciliation.py",
+    "tests/test_step66sync1_codex_frontend_reconciliation.py",
+    "tests/test_step66sync1_final_partner_reconciliation.py",
+    "tests/test_step66sync1_m1_canonicalization.py",
+)
+
 CLAUDE_CODE_HEAD = "828ea90"
 CODEX_HEAD = "78aa4ee"
 CLAUDE_DESIGN_HEAD = "65c93a1"
@@ -60,9 +105,7 @@ IMPORTED = {
         "tests/test_step66sync1_codex_frontend_reconciliation.py",
     ),
     CLAUDE_DESIGN_HEAD: (
-        "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
         "docs/handoffs/program-sync/step66sync1-claude-design-acknowledgement.md",
-        "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
         "docs/test/step66sync1-claude-design-reconciliation-evidence.md",
         "scripts/verify_step66sync1_claude_design_reconciliation.py",
         "tests/test_step66sync1_claude_design_reconciliation.py",
@@ -73,15 +116,28 @@ IMPORTED = {
         "docs/handoffs/program-sync/step66sync1-final-partner-acknowledgement.md",
         "docs/handoffs/program-sync/step66sync1-final-context-discrepancy-register.md",
         "docs/handoffs/program-sync/step66sync1-poc-scope-decision-package.md",
-        "docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",
         "docs/test/step66sync1-final-partner-reconciliation-evidence.md",
     ),
 }
 
-# Four partner scope-check files carry a minimal, recorded transformation: their
-# branch-scoped ALLOWED_PREFIXES tuple gains three entries so the check is valid on an
-# integration branch that legitimately carries all four partners' artifacts. Nothing else
-# in them changed, and no runtime prefix was admitted.
+# Step 66D-ALIGN1 annotated these three with an append-only supersession note. Their original
+# content must still be a byte-exact PREFIX of the current file -- nothing above the marker may
+# change -- and everything after the marker is the note. This is stricter than "not rewritten"
+# for the original portion, and is verified as such rather than by whole-blob identity.
+ANNOTATED = {
+    CLAUDE_DESIGN_HEAD: (
+        "docs/design/ai-agent-team-functional-poc-control-center-spec.md",
+        "docs/handoffs/program-sync/step66sync1-claude-design-ux-gap-register.md",
+    ),
+    FINAL_HEAD: ("docs/handoffs/program-sync/step66sync1-poc0-consolidated-gap-register.md",),
+}
+
+ANNOTATION_MARKER = "<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->"
+
+# Four partner scope-check files carry a recorded transformation. Step 66SYNC.1-M1 widened their
+# branch-scoped ALLOWED_PREFIXES tuple; Step 66D-ALIGN1-RM1 removed that tuple entirely and
+# replaced it with a frozen commit range plus an exact registered path set. No runtime prefix was
+# admitted at any point.
 TRANSFORMED = {
     CLAUDE_CODE_HEAD: (
         "scripts/verify_step66sync1_claude_code_reconciliation.py",
@@ -93,11 +149,19 @@ TRANSFORMED = {
     ),
 }
 
-TRANSFORM_ADDED_LINES = 6
-TRANSFORM_ADDED_PREFIXES = (
-    '"docs/design/",',
-    '"scripts/verify_step66sync1_",',
-    '"tests/test_step66sync1_",',
+# Step 66D-ALIGN1-RM1 superseded the earlier prefix-widening transformation. These four partner
+# scope files no longer carry a branch-scoped prefix allowlist at all: their scope is now a frozen
+# commit range plus an exact registered path set. The gate below verifies that stricter shape and
+# refuses the generic prefixes outright, so the widening cannot be reintroduced.
+TRANSFORM_REQUIRED_MARKERS = (
+    "STAGE_BASELINE = ",
+    "STAGE_HEAD = ",
+    "EXPECTED_STAGE_PATHS = (",
+)
+TRANSFORM_FORBIDDEN_PREFIXES = (
+    '"docs/",',
+    '"scripts/verify_step66",',
+    '"tests/test_step66",',
 )
 
 FAILURES: list[str] = []
@@ -188,10 +252,29 @@ def check08_final_artifacts_present() -> None:
             bad(f"check08: missing final reconciliation artifact {path.name}")
 
 
-def _allowlist_block(body: str) -> str | None:
-    """Return the text of the file's allowed-path tuple, or None if it has no such tuple."""
-    match = re.search(r"(?im)^\s*allowed_prefixes\s*=\s*\((.*?)^\s*\)", body, re.DOTALL)
+def _stage_scope_block(body: str) -> str | None:
+    """Return the text of the file's registered stage-scope tuple, or None if absent."""
+    match = re.search(r"(?m)^EXPECTED_STAGE_PATHS\s*=\s*\((.*?)^\)", body, re.DOTALL)
     return match.group(1) if match else None
+
+
+def _norm(text: str) -> str:
+    """Compare content independently of checkout line endings."""
+    return text.replace("\r\n", "\n").strip()
+
+
+def git_blob_text(commit: str, rel: str) -> str:
+    """Read a committed blob as UTF-8, independent of the console code page."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{rel}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+    return result.stdout.decode("utf-8")
 
 
 def check09_historical_artifacts_unchanged() -> None:
@@ -210,25 +293,39 @@ def check09_historical_artifacts_unchanged() -> None:
             if not numstat:
                 bad(f"check09: expected a recorded transformation in {rel}, found none")
                 continue
-            added, deleted = numstat.split("\t")[:2]
-            if deleted != "0":
-                bad(f"check09: {rel} transformation deleted {deleted} line(s); must be additive")
-            if added != str(TRANSFORM_ADDED_LINES):
-                bad(
-                    f"check09: {rel} transformation added {added} lines, "
-                    f"expected exactly {TRANSFORM_ADDED_LINES}"
-                )
             body = (ROOT / rel).read_text(encoding="utf-8")
-            for needle in TRANSFORM_ADDED_PREFIXES:
-                if needle not in body:
-                    bad(f"check09: {rel} is missing the recorded allowlist entry {needle}")
-            allowlist = _allowlist_block(body)
-            if allowlist is None:
-                bad(f"check09: {rel} has no recognisable allowlist tuple")
+            for marker in TRANSFORM_REQUIRED_MARKERS:
+                if marker not in body:
+                    bad(f"check09: {rel} has no fixed stage boundary; missing {marker!r}")
+            for generic in TRANSFORM_FORBIDDEN_PREFIXES:
+                if generic in body:
+                    bad(f"check09: {rel} reintroduced the generic prefix allowlist {generic}")
+            scope_block = _stage_scope_block(body)
+            if scope_block is None:
+                bad(f"check09: {rel} has no recognisable EXPECTED_STAGE_PATHS tuple")
                 continue
             for runtime_prefix in FORBIDDEN_SOURCE_PREFIXES:
-                if f'"{runtime_prefix}"' in allowlist:
-                    bad(f"check09: {rel} allowlist admitted runtime prefix {runtime_prefix}")
+                if f'"{runtime_prefix}' in scope_block:
+                    bad(f"check09: {rel} registered scope admitted runtime prefix {runtime_prefix}")
+
+    for commit, paths in ANNOTATED.items():
+        for rel in paths:
+            original = git_blob_text(commit, rel)
+            current = (ROOT / rel).read_text(encoding="utf-8")
+            if not original:
+                bad(f"check09: {rel} not found in source commit {commit}")
+                continue
+            if ANNOTATION_MARKER not in current:
+                bad(f"check09: {rel} is missing the Step 66D-ALIGN1 annotation marker")
+                continue
+            head, _, _ = current.partition(ANNOTATION_MARKER)
+            if _norm(head) != _norm(original):
+                bad(f"check09: {rel} content above the annotation marker was modified")
+            numstat = git("diff", "--numstat", commit, "--", rel)
+            if numstat:
+                deleted = numstat.split("\t")[1]
+                if deleted != "0":
+                    bad(f"check09: {rel} annotation deleted {deleted} line(s); must be additive")
 
     ack = read(SYNC / "step66sync1-final-partner-acknowledgement.md")
     if "OPEN_PRODUCT_OWNER_DECISIONS:\n3" not in ack:
@@ -237,7 +334,7 @@ def check09_historical_artifacts_unchanged() -> None:
 
 def check10_manifest_covers_all_imports() -> None:
     manifest = read(MANIFEST)
-    for source in (IMPORTED, TRANSFORMED):
+    for source in (IMPORTED, TRANSFORMED, ANNOTATED):
         for paths in source.values():
             for rel in paths:
                 if rel not in manifest:
@@ -343,26 +440,24 @@ def check23_be3_gates_default_false() -> None:
 def check24_no_runtime_source_change() -> None:
     changed = [
         line
-        for line in git("diff", "--name-only", CANONICAL_MAIN, "HEAD").splitlines()
+        for line in git("diff", "--name-only", STAGE_BASELINE, STAGE_HEAD).splitlines()
         if line.strip()
     ]
     offenders = [path for path in changed if path.startswith(FORBIDDEN_SOURCE_PREFIXES)]
     if offenders:
         bad(f"check24: runtime/source paths changed: {', '.join(sorted(offenders))}")
 
-    allowed_exact = {
-        "source/progress.md",
-        "scripts/verify_step66sync1_m1_canonicalization.py",
-        "tests/test_step66sync1_m1_canonicalization.py",
-    }
-    allowed_prefixes = ("docs/", "scripts/verify_step66sync1_", "tests/test_step66sync1_")
-    stray = [
-        path
-        for path in changed
-        if path not in allowed_exact and not path.startswith(allowed_prefixes)
-    ]
-    if stray:
-        bad(f"check24: changes outside the allowed canonicalization scope: {', '.join(stray)}")
+    # Step 66D-ALIGN1-RM1: exact-set comparison over the FIXED range. Nothing passes on
+    # the strength of a directory or filename prefix; an unregistered path fails here.
+    _actual = tuple(sorted(changed))
+    _unexpected = sorted(set(_actual) - set(EXPECTED_STAGE_PATHS))
+    _missing = sorted(set(EXPECTED_STAGE_PATHS) - set(_actual))
+    if _unexpected:
+        bad(f"check24: unregistered path in this stage's fixed range: {', '.join(_unexpected)}")
+    if _missing:
+        bad(
+            f"check24: registered path missing from this stage's fixed range: {', '.join(_missing)}"
+        )
 
     deletions = [
         line
@@ -422,6 +517,34 @@ def check_no_merge_claim() -> None:
                 bad(f"no-merge-claim: {path.name} claims {phrase!r} while the PR is unmerged")
 
 
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "c1db4ccbfd88fa775e4761c932835896b9b980ed"
+
+
+def check_runtime_guard_current_state() -> None:
+    """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
+    changed = [
+        line
+        for line in git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    if offenders:
+        bad(
+            f"runtime-guard: protected path present after this stage: {', '.join(sorted(offenders))}"
+        )
+
+
 def main() -> int:
     check01_baseline_main()
     check02_to_06_partner_heads()
@@ -440,6 +563,8 @@ def main() -> int:
     check25_production_count_zero()
     check_precedence_record()
     check_no_merge_claim()
+
+    check_runtime_guard_current_state()
 
     if FAILURES:
         for failure in dict.fromkeys(FAILURES):

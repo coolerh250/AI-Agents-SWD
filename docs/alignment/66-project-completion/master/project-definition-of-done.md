@@ -36,13 +36,32 @@ definition from `alignment-statement.md`.
    headline — Product Owner UI-validated.
 
 6. Users can accept/reject/request changes.
-   Measured by: the four-action decision gate (Accept/Reject/Request-Changes/Re-run-QA) exercised
-   on a real delivery with server-enforced RBAC and an audited, unambiguous consequence — Product
-   Owner UI-validated, with the Request-Changes-vs-Re-run-QA distinction confirmed unambiguous.
+   Measured by all seven of the following, per the layered model frozen by 66D-D01..66D-D04:
+   (a) Review Gate Action contract complete — exactly six actions (ACCEPT/REJECT/REQUEST_CHANGES/
+       RERUN_QA/ESCALATE/ARCHIVE) exercised on a real delivery with server-enforced RBAC and an
+       audited, unambiguous consequence, with the Request-Changes-vs-Re-run-QA distinction
+       confirmed unambiguous — Product Owner UI-validated.
+   (b) Product Owner Final Decision contract complete — exactly three outcomes (ACCEPTED/
+       ACCEPTED_WITH_FOLLOW_UP/REJECTED), recorded through a separate enum, schema, API, event and
+       audit action from the Review Gate Action contract.
+   (c) Bounded QA rerun rule complete — a real, limited, auditable rerun mechanism (limit frozen
+       during 66D-ARCH), no unbounded rerun loop possible.
+   (d) Blocking versus non-blocking follow-up rule complete — ACCEPTED_WITH_FOLLOW_UP carries only
+       non-blocking items; any blocking follow-up forces REQUEST_CHANGES instead.
+   (e) Immutable decision history complete — ProductOwnerDecision never overwritten in place, never
+       deleted, replaceable only through `supersedes_decision_id`; delivery review status is a
+       projection of the current effective decision.
+   (f) Dual-anchor traceability complete — execution and artifacts anchored on project -> work item
+       -> workflow -> run; human review and RBAC anchored on `delivery_review_task_id`; the Task
+       surface never presented as the Agent execution source of truth.
+   (g) Legacy/new entity separation complete — the legacy `DeliveryPackage` (Step 47/49 Platform Ops
+       evidence object) preserved unchanged, and the new human-acceptance aggregate named
+       `DeliverySubmission`.
 
 7. QA rerun count is limited and auditable.
    Measured by: a real, bounded QA-rerun mechanism (limit defined during 66D-ARCH) with every
-   rerun recorded in audit evidence — no unbounded rerun loop possible.
+   rerun recorded in audit evidence — no unbounded rerun loop possible. RERUN_QA is a Review Gate
+   Action, not a Product Owner Final Decision.
 
 8. Retry/DLQ/replay/recovery are operable.
    Measured by: a real Approvals P0 / DLQ-Retry P0 product UI (M2) reading from the already-running

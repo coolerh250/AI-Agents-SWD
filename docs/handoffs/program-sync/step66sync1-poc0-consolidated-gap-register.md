@@ -527,3 +527,32 @@ secrets — use neutral labels such as "test host", "internal test runtime", "ad
 tunnel", "sandbox repo"._
 
 <!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->
+
+<!-- SUPERSESSION-NOTE-BEGIN: Step 66D-ALIGN1 -->
+
+---
+
+## Supersession note — Step 66D-ALIGN1 (2026-08-04)
+
+> **Append-only annotation. Nothing above this marker was edited.** All 23 gaps above remain as
+> recorded at Step 66SYNC.1, and `Authorized: 0 of 23` is unchanged.
+
+`POC0-DELIVERY-G1` is blocked on Step 66D-ARCH. Before that stage could run, four canonical
+conflicts in the delivery model had to be resolved; binding decisions `66D-D01`..`66D-D04`
+(`docs/contracts/66d-delivery-acceptance/step66d-delivery-decision-model-binding-decisions.md`)
+now do so:
+
+```text
+66D-CONFLICT-01  Review Gate Action vs PO Final Decision vocabulary   RESOLVED BY 66D-D01
+66D-CONFLICT-02  Delivery lifecycle vs authoritative decision record  RESOLVED BY 66D-D02
+66D-CONFLICT-03  Task anchor vs project/work-item/workflow/run        RESOLVED BY 66D-D03
+66D-CONFLICT-04  Legacy DeliveryPackage name collision                RESOLVED BY 66D-D04
+```
+
+**No gap in this register is closed by that resolution.** `POC0-DELIVERY-G1` stays open, stays
+blocked on Step 66D-ARCH, and stays `Authorized: NO`. What changed is only that Step 66D-ARCH now
+has an unambiguous vocabulary to freeze a contract against — it is still NOT AUTHORIZED, as are
+Step 66D-DESIGN, every Step 66D implementation slice, Step 67POC.0 and RA-2I0.
+**Authorized: 0 of 23** remains correct. `production_executed_true_count: 0`.
+
+<!-- SUPERSESSION-NOTE-END: Step 66D-ALIGN1 -->

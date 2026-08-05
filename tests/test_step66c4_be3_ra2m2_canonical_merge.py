@@ -37,6 +37,9 @@ PRE_MERGE_MAIN = "44ab32ceab60d417ef1e0800be6cd00fc730b12e"
 PR_HEAD = "edafc0ca9111bc6dd76bc3ab59b5ea110f2f05d6"
 MERGE_COMMIT = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
 PLANNING_HEAD = "efa396dee6512d6f15b3fd079df87d2c70ee0c77"
+# This stage's own post-merge record commit. The bounded-adaptation guard below
+# measures what THIS stage changed, not what later authorized stages changed.
+RECORD_COMMIT = "64467fefc9a9ec303f9ddf4c0ce6d46486504d71"
 
 HISTORICAL_EVIDENCE = (
     "docs/security/be3-ra2-current-state-identity-secret-inventory.md",
@@ -421,7 +424,8 @@ def test_merge_changed_sixteen_paths() -> None:
 
 
 def _post_merge_paths() -> list[str]:
-    return [line for line in _git("diff", "--name-only", MERGE_COMMIT, "HEAD").splitlines() if line]
+    out = _git("diff", "--name-only", MERGE_COMMIT, RECORD_COMMIT).splitlines()
+    return [line.strip() for line in out if line.strip()]
 
 
 def test_post_merge_commit_adds_only_its_own_artifacts() -> None:
@@ -448,7 +452,7 @@ def test_bounded_adaptation_is_minimal() -> None:
         "scripts/verify_step66c4_be3_ra2m_canonicalization.py",
         "tests/test_step66c4_be3_ra2m_canonicalization.py",
     ):
-        numstat = _git("diff", "--numstat", MERGE_COMMIT, "HEAD", "--", rel)
+        numstat = _git("diff", "--numstat", MERGE_COMMIT, RECORD_COMMIT, "--", rel)
         if not numstat:
             continue
         added, deleted, _ = numstat.split("\t", 2)
@@ -523,3 +527,28 @@ def test_production_executed_true_count_is_zero_everywhere() -> None:
         text = _read(path)
         for value in re.findall(r"production_executed_true_count[`:\s]*([0-9]+)", text, re.I):
             assert value == "0", path.name
+
+
+# Step 66D-ALIGN1-RM1: the stage SCOPE above is frozen, which is what stops it drifting.
+# The runtime denylist must not be frozen with it -- a runtime path added by any later
+# commit still has to be caught. This anchor is deliberately HEAD-relative, and it feeds
+# the denylist only; it never widens or satisfies the stage scope.
+RUNTIME_GUARD_ANCHOR = "aa02ad5b7fa5ed3997d44420c2f2ec8a2c87c798"
+
+
+def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
+    """A runtime path added by any later commit must still be caught."""
+    changed = [
+        line
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        if line.strip()
+    ]
+    offenders = [
+        path
+        for path in changed
+        if path.startswith(("apps/", "agents/", "services/", "shared/", "migrations/", "infra/"))
+        or path.endswith((".tsx", ".jsx", ".vue", ".yaml", ".yml", ".sql"))
+        or "docker-compose" in path
+        or path.startswith(("helm/", "k8s/", "charts/"))
+    ]
+    assert offenders == [], f"protected paths present after this stage: {offenders}"
