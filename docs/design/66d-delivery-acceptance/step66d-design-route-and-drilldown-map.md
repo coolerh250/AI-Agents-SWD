@@ -109,6 +109,72 @@ surface authoritatively reflects. All 66D write actions are NOT IMPLEMENTED.
 **Rule compliance:** every Control Center section above has an explicit source route or a
 `PLANNED / NOT IMPLEMENTED` source; no absent route is described as implemented.
 
+## 4.1 OperatorConsole overlap and duplication-prevention analysis (repository-grounded)
+
+`/operator` already contains a **legacy review surface with accept/reject controls**. This was not
+analysed in the original design package and is corrected here.
+
+Measured from source:
+
+```text
+Route:              /operator
+Page:               apps/admin-console/src/pages/OperatorConsole.tsx
+Review analogue:    apps/admin-console/src/operator/OperatorReviewPanel.tsx
+                    signature: OperatorReviewPanel({ packageId }: { packageId: string })
+Write client:       apps/admin-console/src/operator/actionClient.ts (private POST helper `post`)
+Existing actions:   accept · reject · requestChanges · addNote · rerunVerification
+                    (ActionKind = "accept" | "reject" | "request_changes" | "note")
+Confirmation:       two-step -- issueConfirmation then confirmAndExecute(action_id, nonce)
+Role gate:          role === "operator" || role === "platform_admin"
+```
+
+### Contract differences (why this is not the 66D surface)
+
+| Aspect | `/operator` legacy review | 66D Delivery Review |
+| --- | --- | --- |
+| Addressed by | `packageId` — the **legacy DeliveryPackage** (Step 47/49) | `delivery_submission_id` — `DeliverySubmission` |
+| "accept" means | an operator package-level acceptance recorded as a single mutable `human_acceptance_status` | a **Product Owner Final Decision** persisted as an immutable `ProductOwnerDecision` |
+| Decision history | none — no supersession, no append-only history | append-only, `supersedes_decision_id`, history never deleted |
+| Follow-up | none | `ACCEPTED_WITH_FOLLOW_UP` with non-blocking-only items |
+| Re-verification | `rerunVerification(scriptKey, …)` — script-keyed, no per-version bound | `RERUN_QA` — bounded to **1 per submission version** (ADR-66D-09) |
+| Authorization | `operator` / `platform_admin` | `pm_engineering_lead` (designated PO) for ACCEPT/REJECT; `reviewer_approver` for the non-decision actions |
+| Action set | accept / reject / request_changes / **note** | the exact six Review Gate Actions (**no "note"**) |
+
+`addNote` has **no** equivalent in the six Review Gate Actions and must not be mapped onto
+`ESCALATE` or `ARCHIVE`.
+
+### Reuse decision
+
+```text
+REUSE        two-step confirmation dialog pattern; Idempotency-Key handling; CSRF/session banner;
+             action-history list presentation
+ADAPT        review action panel layout; reason-capture form (must add evidence-reviewed capture)
+DO NOT REUSE legacy DeliveryPackage human_acceptance_status semantics; packageId-addressed review
+             flow; treating an operator "accept" as a Product Owner Final Decision; the `note`
+             action; the script-keyed rerun bound
+```
+
+### Duplication prevention (binding for FE2)
+
+```text
+Delivery Review is the SINGLE canonical Product Owner Decision entry point.
+/operator must never present or record a ProductOwnerDecision.
+Its accept/reject remain legacy package-level operational controls, labelled as such.
+```
+
+### Future disposition of `/operator`
+
+```text
+FE1/FE2:        RETAIN as the legacy operational review view; deep-link from the Control Center
+                Execution/Operator summary; no 66D decision control added to it.
+Deprecate later: a separate, separately-authorized stage decides retire vs. keep, together with
+                the legacy DeliveryPackage migration question (66D-D04 defers migration).
+FE2 coexistence gate: FE2 must not ship a second PO decision entry point. Before any acceptance
+                control could ever appear on /operator, a migration/coexistence review is required.
+```
+
+Tracked as gap **DG-16**.
+
 ## 5. Return behavior (frozen)
 
 Returning from any drill-down to the Control Center must preserve:

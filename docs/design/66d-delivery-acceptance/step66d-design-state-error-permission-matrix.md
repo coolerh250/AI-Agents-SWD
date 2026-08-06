@@ -30,9 +30,21 @@ EXPIRED is never styled as a generic error.
 UNKNOWN is not a canonical status and must never be mapped onto one.
 ```
 
-## 2. Per-section state matrix
+## 2. Per-section DATA-STATE matrix
 
-Every major section defines all seven states.
+This is the **data-state matrix**: 11 sections × 7 data states. Permission is a **separate
+dimension** and is specified in §6 (the permission matrix); the two are never conflated or
+multiplied into a single figure.
+
+```text
+data states (7):        loading · empty · partial · stale · inaccessible · error · unknown
+permission states (6):  authorized · not_authorized · identity_not_verified ·
+                        capability_unavailable · read_only_observer · future_shared_runtime_required
+```
+
+`unknown` is a distinct state with its own behavior and is never carried by the `error` cell:
+`error` means a request or projection failed; `unknown` means the value is genuinely not known
+(absent source) and must render as UNKNOWN — never as healthy, zero, empty or PASS.
 
 | Section | loading | empty | partial | stale | inaccessible | error | unknown |
 | --- | --- | --- | --- | --- | --- | --- | --- |
@@ -44,7 +56,7 @@ Every major section defines all seven states.
 | Evidence Health | skeleton chips | "No evidence expected yet." | per-category PARTIAL | STALE per category | INACCESSIBLE per category | canonical copy | UNKNOWN per category |
 | Cost / External Actions | skeleton | "No cost or external actions recorded." | partial + which counter missing | stale badge | reason | canonical copy | UNKNOWN (never 0) |
 | Safety Summary | skeleton | n/a (always renders) | partial + which field missing | stale badge | reason | canonical copy | UNKNOWN (never "safe") |
-| Activity Timeline | skeleton rows | "No activity yet." | shown + gap notice | stale badge | reason | entry kind UNKNOWN |
+| Activity Timeline | skeleton rows | "No activity yet." | shown + gap notice ("some entries may be missing") | stale badge + `as_of` | "You do not have access to this activity." | canonical copy — timeline failed to load | entry kind UNKNOWN; ordering gap shown as UNKNOWN, never inferred or silently closed |
 | Delivery Inbox | table skeleton | see inbox spec §6 | banner naming sources | `as_of` + Refresh | "No access to this queue." | canonical copy | readiness UNKNOWN |
 | Delivery Review (each panel) | panel skeleton | per-panel empty copy | missing-evidence list | stale + re-fetch before write | not-authorized (no write form) | canonical copy | criterion `NOT_TESTED` / UNKNOWN |
 

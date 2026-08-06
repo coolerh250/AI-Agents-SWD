@@ -26,10 +26,64 @@ SOURCES READ:        apps/admin-console/src/App.tsx
 | Nav badges: `Evidence` | **8** | same |
 | Page component files | **33** | `glob apps/admin-console/src/pages/*.tsx` |
 | Shared component files | **16** | `glob apps/admin-console/src/components/*.tsx` |
-| Pages containing mutation-client usage | **7** | `grep -rlE 'apiPost\|POST\|taskApi\.(submit\|create)\|mutation'` over `pages/` |
+| Semantic mutation surfaces (pages) | **5** | per-method write classification + transitive import/call trace (see §1.1) |
 
-Parser used: a single deterministic Python script over the two source files plus two globs. No count
-in this design package was hand-estimated or taken from conversation.
+Parser used: a single deterministic Python script over the two source files plus two globs, and the
+semantic write-surface tracer in §1.1. No count in this design package was hand-estimated or taken
+from conversation.
+
+### 1.1 Correction — semantic mutation-surface inventory (was 7, is 5)
+
+The original inventory reported **7** using a text grep
+(`grep -rlE 'apiPost|POST|taskApi\.(submit|create)|mutation'`). That grep is not a semantic
+method: it matched read-only pages that merely mention `POST` in prose/comments or call read
+methods on a client module that happens to contain a write helper.
+
+The corrected method (used by the verifier) is deterministic and semantic:
+
+```text
+1. strip comments from every apps/admin-console/src/**/*.ts(x) file
+2. identify PRIVATE WRITE HELPERS -- functions whose body sets method: "POST"|"PATCH"|"PUT"|"DELETE"
+   (including the `const verb = "POST"; ... method: verb` indirection)
+3. identify PUBLIC WRITE METHODS -- exported API-object methods / functions that call a write helper
+4. mark a page as a mutation surface if it calls a public write method directly OR transitively
+   through an imported local component
+```
+
+Measured write clients and their public write methods:
+
+| Write client | Private write helper | Public write methods |
+| --- | --- | --- |
+| `apps/admin-console/src/tasks/taskClient.ts` | `taskPost` | `create`, `submit` |
+| `apps/admin-console/src/tasks/workroomClient.ts` | `workroomPost` | `postMessage`, `createClarification`, `answerClarification` |
+| `apps/admin-console/src/operator/actionClient.ts` | `post` | `accept`, `reject`, `requestChanges`, `addNote`, `rerunVerification`, `runVerification`, `confirmAndExecute`, `issueConfirmation`, `createProject`, `createWorkItem`, `dispatchWorkItem`, `testLogin`, `logout` |
+
+Canonical mutation surfaces — **exactly 5**:
+
+| Source path | Write client | Write methods reached | Target entity | Safety classification |
+| --- | --- | --- | --- | --- |
+| `apps/admin-console/src/pages/TaskNew.tsx` | `taskClient` | `create` | task | test-role header auth; non-dispatching (`dispatch_enabled: false`); no production action |
+| `apps/admin-console/src/pages/TaskDetail.tsx` | `taskClient` | `submit` | task | non-dispatching; stops at `intake_review`; no production action |
+| `apps/admin-console/src/pages/TaskWorkroom.tsx` | `workroomClient` | `postMessage`, `createClarification`, `answerClarification` | workroom message / clarification | no workflow dispatch or resume |
+| `apps/admin-console/src/pages/MultiProjectDelivery.tsx` | `actionClient` | `createProject`, `createWorkItem`, `dispatchWorkItem` | project / work item (Step 57) | operator session + CSRF + reason + audit; `production_effect` routes to `waiting_approval` |
+| `apps/admin-console/src/pages/OperatorConsole.tsx` | `actionClient` (via `OperatorReviewPanel`) | `accept`, `reject`, `requestChanges`, `addNote`, `rerunVerification` (transitive) | legacy `DeliveryPackage` review | operator session + CSRF + two-step confirmation nonce |
+
+Removed false positives (they contain no write-method call; the grep matched prose such as
+"no mutation action" or a read-only client import):
+
+```text
+apps/admin-console/src/pages/BackupDr.tsx
+apps/admin-console/src/pages/IdentityPosture.tsx
+apps/admin-console/src/pages/RuntimeBaseline.tsx
+apps/admin-console/src/pages/SecurityPosture.tsx
+```
+
+False negative recovered: `OperatorConsole.tsx` — missed by the original grep because it delegates
+its writes to the imported `OperatorReviewPanel` component. This is also the source of gap
+**DG-16** (see the duplication analysis in `step66d-design-route-and-drilldown-map.md` §4.1).
+
+Comment text such as `NO mutation`, `no mutation action` or `not production data mutation` cannot
+produce a false positive under the corrected method, because comments are stripped before analysis.
 
 ## 2. Placeholder routes (measured — all 12)
 
@@ -108,6 +162,10 @@ F-4  Router convention is `:colonCamelCase`; the canonical semantic routes are e
 F-5  Existing Task write surfaces are non-dispatching and must not be re-described as the Agent
      execution entry point (66D-D03-R3).
 F-6  `CalmSafetyPosture` already exists and is the reuse candidate for the Safety Summary.
+F-8  /operator already hosts a legacy accept/reject review surface (OperatorReviewPanel, addressed
+     by packageId). Its contract differs from the 66D DeliverySubmission model on every material
+     axis; Delivery Review must remain the single canonical Product Owner Decision entry point.
+     Tracked as DG-16 (analysis in step66d-design-route-and-drilldown-map.md section 4.1).
 F-7  No 66D API client exists in apps/admin-console/src/api or src/tasks; every 66D endpoint is
      NOT IMPLEMENTED.
 ```

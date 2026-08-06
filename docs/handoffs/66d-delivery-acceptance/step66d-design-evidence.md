@@ -64,13 +64,13 @@ from conversation, or eyeballed.
 | Nav badges Read-only / Soon / Evidence | 14 / 12 / 8 | regex `badge:\s*"([\w-]+)"` over `Nav.tsx` |
 | Page files | 33 | `glob apps/admin-console/src/pages/*.tsx` |
 | Component files | 16 | `glob apps/admin-console/src/components/*.tsx` |
-| Pages with mutation-client usage | 7 | `grep -rlE 'apiPost\|POST\|taskApi\.(submit\|create)\|mutation' pages/` |
+| Semantic mutation surfaces | 5 | per-method write classification + transitive import/call trace (RM1; supersedes the earlier grep-based 7) |
 | Wireframes | 10 | `^## WF-\d+` headings in `step66d-design-wireframes.md` |
 | Component candidates | 22 | `component_candidates` length in the design manifest |
 | Acceptance criteria | 18 | `acceptance_criteria` length in the design manifest |
 | Open gaps | 15 | `DG-` headings in the gap register |
-| Verifier checks executed | 135 | `checks_run` printed by `scripts/verify_step66d_design_unified_control_center.py` |
-| Tests passed | 23 | `pytest -q tests/test_step66d_design_unified_control_center.py` result line |
+| CHECK_DEFINITIONS | see RM1 addendum | named check registry size printed by the verifier |
+| ASSERTIONS_EXECUTED / tests | see RM1 addendum | verifier runtime counter / pytest result line |
 
 Manual estimates used: **none**.
 
@@ -97,7 +97,7 @@ local-path scan        no Windows drive-letter user path and no POSIX per-user h
 ```
 
 Python verifier: **CREATED** (`scripts/verify_step66d_design_unified_control_center.py`), plus the
-machine-readable manifest `docs/design/66d-delivery-acceptance/step66d-design-contract-manifest.yaml`.
+machine-readable manifest `docs/design/66d-delivery-acceptance/step66d-design-contract-manifest.json` (JSON since RM1).
 
 ## 5. Scope regression check
 
@@ -116,7 +116,7 @@ A  docs/design/66d-delivery-acceptance/step66d-design-state-error-permission-mat
 A  docs/design/66d-delivery-acceptance/step66d-design-wireframes.md
 A  docs/design/66d-delivery-acceptance/step66d-design-accessibility-responsive-spec.md
 A  docs/design/66d-delivery-acceptance/step66d-design-frontend-handoff.md
-A  docs/design/66d-delivery-acceptance/step66d-design-contract-manifest.yaml
+A  docs/design/66d-delivery-acceptance/step66d-design-contract-manifest.json
 A  docs/handoffs/66d-delivery-acceptance/step66d-design-existing-ui-route-inventory.md
 A  docs/handoffs/66d-delivery-acceptance/step66d-design-gap-and-dependency-register.md
 A  docs/handoffs/66d-delivery-acceptance/step66d-design-evidence.md
@@ -160,5 +160,108 @@ _Non-production only. No production action. No production data. Do not include i
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local
 tunnel", "sandbox repo"._
+
+---
+
+# Step 66D-DESIGN-RM1 — Correction Addendum
+
+> Appended by Step 66D-DESIGN-RM1 (remediation of the Step 66D-DESIGN-R1 findings). The original
+> Step 66D-DESIGN evidence above is corrected in place where a value was wrong, and every
+> superseded figure is named here rather than quietly removed. The original design commit
+> `47dcbe9feda6633e3d0835d16dcaa0866a26c2cf` is preserved and was not amended.
+
+## RM1.1 Corrections to previously reported values
+
+| Item | Originally reported | Corrected value | Why the original was wrong |
+| --- | --- | --- | --- |
+| Mutation/write surfaces | **7** | **5** | The original used a text grep over the pages directory. That is not a semantic method: it matched read-only pages that merely mention a write verb in prose, or that import a client module which happens to contain a write helper. |
+| Mutation surface membership | included `BackupDr.tsx`, `IdentityPosture.tsx`, `RuntimeBaseline.tsx`, `SecurityPosture.tsx`; omitted `OperatorConsole.tsx` | `TaskNew`, `TaskDetail`, `TaskWorkroom`, `MultiProjectDelivery`, `OperatorConsole` | Four false positives removed; one false negative recovered (`OperatorConsole` delegates its writes to the imported `OperatorReviewPanel`). |
+| Verifier metric | "**135 deterministic checks**" | replaced by two separate metrics: `CHECK_DEFINITIONS` (named registry size) and `ASSERTIONS_EXECUTED` (runtime counter) | A single figure conflated a registry size with a runtime count and was unstable under per-path loops. |
+| Manifest format | `step66d-design-contract-manifest.yaml` | `step66d-design-contract-manifest.json` | The YAML documentation manifest was matched by historical stage guards that deny YAML in a design diff, producing regression failures. |
+| Gap count | 15 | **16** | `DG-16` (OperatorConsole overlap) added. The count was re-measured, not held at 15. |
+| Activity Timeline states | 6 populated cells (`error` carried the `unknown` semantics) | 7 populated cells, `unknown` distinct from `error` | The row was missing a data-state cell. |
+| Inbox filters | `review_status` and `submission status` (ambiguous, undefined) | `delivery_review_task_status` and `delivery_submission_status`, each with a full field definition | Two similarly-named filters with no field definitions. |
+| State-matrix figure | described loosely as "11 x 7 plus permission" | an explicit **data-state matrix** (sections x 7 data states) and a separate **permission matrix** (6 permission states) | The two dimensions must not be multiplied into one figure. |
+
+```text
+SUPERSEDED / INCORRECT PRE-COMMIT MEASUREMENT:
+  "135 deterministic checks"            -- superseded by CHECK_DEFINITIONS + ASSERTIONS_EXECUTED
+  "7 pages with mutation-client usage"  -- superseded by 5 semantic mutation surfaces
+```
+
+## RM1.2 R1 findings and their disposition
+
+| Finding | Disposition |
+| --- | --- |
+| F01 YAML manifest triggered historical regression failures | Manifest migrated to JSON; the YAML path is deleted from the branch. No historical denylist, verifier or test was modified. |
+| F02 verifier lacked a positive exact-scope assertion | `DESIGN_BASELINE` + `DESIGN_EXPECTED_PATHS` registry added; the verifier asserts set equality of the changed-path set. |
+| F03 unregistered design document accepted | `artifacts.no_unregistered_design_document` compares the on-disk `step66d-design-*` set against the registry; the probe rejects. |
+| F04 extra Review Action / PO Decision accepted | Exact-set enum assertions parsed from the JSON manifest; `DEFER`, `APPROVED`, `DONE` probes all reject. |
+| F05 count tampering and fake implemented route accepted | All counts re-derived from `App.tsx`, `Nav.tsx`, globs and the semantic write tracer, then compared against the manifest and the documents; route classification is compared per path; probes reject. |
+| F06 mutation write surfaces were 5, not 7 | Corrected to 5 with a semantic method (see RM1.1). |
+| F07 OperatorConsole legacy review controls not analysed | Duplication/coexistence analysis added (route map section 4.1, handoff section 2.1, manifest `operator_console_overlap`, gap `DG-16`). |
+| F08 Activity Timeline missing an `unknown` state cell | The row now has 7 populated data-state cells; the verifier and a probe enforce it. |
+| F09 verifier count 135 incorrect and unstable | Split into `CHECK_DEFINITIONS` and `ASSERTIONS_EXECUTED`, both printed by the verifier and measured from the committed state. |
+| F10 ruff E741 and black formatting failed | Ambiguous single-character names removed; ruff, black and mypy all pass on the Python files this PR touches. |
+| F11 Inbox filter terminology ambiguous | Split into `delivery_review_task_status` / `delivery_submission_status`, each with source field, enum source, display label, missing-data behavior and backend dependency. |
+| F12 IA regression wording bypassable by synonyms | Semantic pattern matching over the design documents plus manifest-driven enums; "The IA decision remains open." and equivalents are rejected unless framed as historical. |
+
+## RM1.3 Regression measurement — method and honest result
+
+The R1 finding stated 13 historical regression failures attributable to the YAML manifest. Measured
+independently for this remediation, with the identical suite selection run twice:
+
+```text
+Suite selection (11 canonical stage suites, run with --noconftest):
+  test_step66c4_be3_ra2m2_canonical_merge      test_step66c4_be3_ra2m_canonicalization
+  test_step66d_align1_delivery_decision_model  test_step66d_align1_m1_canonical_merge
+  test_step66d_align1_rm1_fixed_range_remediation
+  test_step66d_arch1_contract_freeze           test_step66d_arch1_m1_canonical_merge
+  test_step66sync1_claude_code_reconciliation  test_step66sync1_final_partner_reconciliation
+  test_step66sync1_m1_canonicalization         test_step66sync1_m2_canonical_merge
+
+A. BASELINE, unmodified origin/main 9c5210d (design branch absent):   13 failed, 865 passed
+B. PR head 47dcbe9 (YAML manifest present):                           31 failed, 847 passed
+   => branch-attributable failures introduced by the YAML manifest:   18
+   => failures pre-existing on canonical main, unrelated to this PR:  13
+```
+
+The number 13 therefore matches the **pre-existing failure count on canonical main**, not the
+branch-attributable delta, which is 18. This difference from the R1 statement is recorded rather
+than reconciled away, and it did not reduce the scope of the fix: the YAML manifest was removed in
+full.
+
+**Closure criterion used:** branch-attributable regression failures must be **zero** — that is, the
+failure set at the RM1 commit must equal the failure set at unmodified `origin/main`. The 13
+pre-existing failures cannot be addressed by this stage: fixing them would require modifying
+historical stage verifiers or tests, which Step 66D-DESIGN-RM1 is explicitly **not** authorized to
+do. They are reported, not hidden, and they are unchanged by this PR.
+
+## RM1.4 Post-remediation measurements
+
+All values below were produced from the **committed** RM1 state, never from a dirty worktree. The
+exact command output, counts and timestamps for the measurement commit are recorded in the
+completion report and the PR body.
+
+```text
+Measurement source:  the RM1 commit on design/66d-unified-control-center-ux
+Design verifier:     python scripts/verify_step66d_design_unified_control_center.py
+Design tests:        pytest -q tests/test_step66d_design_unified_control_center.py
+Regression suites:   the 11 suites listed in RM1.3
+Lint/format/type:    ruff check / black --check / mypy on the Python files this PR touches
+production_executed_true_count: 0
+```
+
+## RM1.5 Scope
+
+```text
+Changed paths vs canonical baseline:  14 (exact set asserted by the verifier)
+Old YAML manifest path:               ABSENT
+New JSON manifest path:               PRESENT
+Frontend / backend / runtime / migration / infra paths changed: NONE
+Historical stage verifiers or tests modified:                   NONE
+ARCH1 contracts or ADR-66D-09 modified:                         NONE
+```
+
 
 <!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->

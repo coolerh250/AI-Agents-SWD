@@ -7,7 +7,7 @@
 
 ```text
 CANONICAL_BASELINE: main 9c5210d190b82b76575ba8d456b5d2005c2867d2
-WIREFRAME COUNT:    10 (measured: see step66d-design-contract-manifest.yaml wireframe_inventory)
+WIREFRAME COUNT:    10 (measured: see step66d-design-contract-manifest.json "wireframes")
 ```
 
 Annotation legend used on every wireframe:

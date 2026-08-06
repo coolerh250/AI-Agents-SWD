@@ -33,18 +33,29 @@ scope                only review tasks the actor is authorized to see; cross-pro
 empty behavior       see section 6
 ```
 
-## 3. Filters (minimum, frozen)
+## 3. Filters (minimum, frozen — each with an explicit field definition)
 
-```text
-review_status         (nine canonical submission statuses, plus review-task state where distinct)
-assigned_role         (TASK_ROLES: reviewer_approver, pm_engineering_lead, ...)
-assigned_actor
-project
-due state             (overdue / due soon / open / no due date)
-blocking state        (blocked / not blocked)
-evidence readiness    (COMPLETE / PARTIAL / MISSING / STALE / INACCESSIBLE / UNKNOWN)
-submission status
-```
+The previously ambiguous pair `review_status` / `submission status` is **replaced** by two
+explicitly-named, separately-defined filters. There is no filter without a field definition.
+
+| Filter name | Source field | Enum / source contract | Display label | Missing-data behavior | Backend dependency |
+| --- | --- | --- | --- | --- | --- |
+| `delivery_review_task_status` | `DeliveryReviewTask.status` | review-task lifecycle (**NOT IMPLEMENTED**) | "Review task status" | `UNKNOWN` (never treated as open/clear) | review-task queue read model |
+| `delivery_submission_status` | `DeliverySubmission.status` | the nine canonical submission statuses | "Submission status" | `UNKNOWN` | `GET /delivery-submissions` |
+| `assigned_role` | `DeliveryReviewTask.assigned_role` | `TASK_ROLES` (`reviewer_approver`, `pm_engineering_lead`, …) | "Assigned role" | `UNKNOWN` | review-task read model |
+| `assigned_actor` | `DeliveryReviewTask.assigned_actor` | `actor_ref` | "Assignee" | `UNKNOWN` | review-task read model |
+| `project` | `project_id` | project list | "Project" | `UNKNOWN` | project read model |
+| `due_state` | `DeliverySubmission.review_due_at` | derived: `overdue` / `due_soon` / `open` / `no_due_date` | "Due state" | `no_due_date` (never "open") | `review_due_at` (DB-authoritative) |
+| `blocking_state` | derived blocking indicator | `blocked` / `not_blocked` | "Blocking" | `UNKNOWN` (never "not blocked") | unified read model |
+| `evidence_readiness` | evidence-health rollup | `COMPLETE`/`PARTIAL`/`MISSING`/`STALE`/`INACCESSIBLE`/`UNKNOWN` | "Evidence readiness" | `UNKNOWN` | evidence read model |
+
+The two status filters are **not interchangeable**: the review task is the human-review anchor
+(66D-D03) and can be open while its submission is already terminal; the submission status is the
+nine-value canonical lifecycle. A row may therefore legitimately show a closed review task against
+an `EXPIRED` submission, and the Inbox must be able to express that.
+
+No filter introduces a backend capability that is not already named in the ARCH1 contracts; every
+one is marked **NOT IMPLEMENTED** in the gap register.
 
 Filter behavior: filters are additive; the active filter set is URL-encoded (no identity, no
 secrets) so a filtered queue is shareable and restorable; a filter that returns nothing shows the

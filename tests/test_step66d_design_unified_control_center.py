@@ -1,222 +1,486 @@
-"""Step 66D-DESIGN -- tests for the Unified Control Center UX/IA design package.
+"""Step 66D-DESIGN (+ RM1) -- tests for the Unified Control Center UX/IA design package.
 
-Deterministic, read-only. Mirrors scripts/verify_step66d_design_unified_control_center.py.
+Deterministic, read-only positive checks plus RM1 negative mutation probes. Each probe copies the
+repository state into a temporary directory, tampers with exactly one thing, and asserts the
+verifier REJECTS it. No probe is ever committed and no probe touches the working tree.
+
 Must run with 0 failed and 0 skipped. Starts no runtime, container or external provider.
 """
 
 from __future__ import annotations
 
+import json
 import re
+import shutil
 import subprocess
+import sys
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
-BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
-BASELINE_SHORT = "9c5210d"
+DESIGN_BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
 
-D = ROOT / "docs" / "design" / "66d-delivery-acceptance"
-H = ROOT / "docs" / "handoffs" / "66d-delivery-acceptance"
+DESIGN_DIR = ROOT / "docs/design/66d-delivery-acceptance"
+HANDOFF_DIR = ROOT / "docs/handoffs/66d-delivery-acceptance"
+VERIFIER = ROOT / "scripts/verify_step66d_design_unified_control_center.py"
+TEST_FILE = ROOT / "tests/test_step66d_design_unified_control_center.py"
 
-IA = D / "step66d-design-unified-control-center-ia.md"
-ROUTES = D / "step66d-design-route-and-drilldown-map.md"
-INBOX = D / "step66d-design-delivery-inbox-spec.md"
-REVIEW = D / "step66d-design-delivery-review-interactions.md"
-MATRIX = D / "step66d-design-state-error-permission-matrix.md"
-WIRE = D / "step66d-design-wireframes.md"
-A11Y = D / "step66d-design-accessibility-responsive-spec.md"
-HANDOFF = D / "step66d-design-frontend-handoff.md"
-MANIFEST = D / "step66d-design-contract-manifest.yaml"
-INVENTORY = H / "step66d-design-existing-ui-route-inventory.md"
-GAPS = H / "step66d-design-gap-and-dependency-register.md"
-EVIDENCE = H / "step66d-design-evidence.md"
+IA = DESIGN_DIR / "step66d-design-unified-control-center-ia.md"
+ROUTES_DOC = DESIGN_DIR / "step66d-design-route-and-drilldown-map.md"
+INBOX = DESIGN_DIR / "step66d-design-delivery-inbox-spec.md"
+REVIEW = DESIGN_DIR / "step66d-design-delivery-review-interactions.md"
+MATRIX = DESIGN_DIR / "step66d-design-state-error-permission-matrix.md"
+WIRE = DESIGN_DIR / "step66d-design-wireframes.md"
+A11Y = DESIGN_DIR / "step66d-design-accessibility-responsive-spec.md"
+HANDOFF = DESIGN_DIR / "step66d-design-frontend-handoff.md"
+MANIFEST = DESIGN_DIR / "step66d-design-contract-manifest.json"
+INVENTORY = HANDOFF_DIR / "step66d-design-existing-ui-route-inventory.md"
+GAPS = HANDOFF_DIR / "step66d-design-gap-and-dependency-register.md"
+EVIDENCE = HANDOFF_DIR / "step66d-design-evidence.md"
 
-REQUIRED = [IA, ROUTES, INBOX, REVIEW, MATRIX, WIRE, A11Y, HANDOFF, MANIFEST, INVENTORY, GAPS, EVIDENCE]
+ALL_DOCS = [IA, ROUTES_DOC, INBOX, REVIEW, MATRIX, WIRE, A11Y, HANDOFF, INVENTORY, GAPS, EVIDENCE]
 
 REVIEW_ACTIONS = ["ACCEPT", "REJECT", "REQUEST_CHANGES", "RERUN_QA", "ESCALATE", "ARCHIVE"]
 PO_DECISIONS = ["ACCEPTED", "ACCEPTED_WITH_FOLLOW_UP", "REJECTED"]
-STATUSES = ["DRAFT", "SUBMITTED", "UNDER_REVIEW", "CHANGES_REQUESTED", "QA_RERUN_REQUESTED",
-            "ACCEPTED", "REJECTED", "ARCHIVED", "EXPIRED"]
+STATUSES = [
+    "DRAFT",
+    "SUBMITTED",
+    "UNDER_REVIEW",
+    "CHANGES_REQUESTED",
+    "QA_RERUN_REQUESTED",
+    "ACCEPTED",
+    "REJECTED",
+    "ARCHIVED",
+    "EXPIRED",
+]
 
 
-def _read(p: Path) -> str:
-    return p.read_text(encoding="utf-8") if p.is_file() else ""
+def manifest() -> dict:
+    return json.loads(MANIFEST.read_text(encoding="utf-8"))
 
 
-def _all() -> str:
-    return "\n".join(_read(p) for p in REQUIRED)
+# --------------------------------------------------------------------- positive
+def test_manifest_is_valid_json_and_yaml_manifest_is_gone():
+    assert MANIFEST.is_file()
+    data = manifest()
+    assert isinstance(data, dict)
+    assert not (DESIGN_DIR / "step66d-design-contract-manifest.yaml").exists()
+    raw = MANIFEST.read_text(encoding="utf-8")
+    assert "//" not in raw.split('"', 1)[0]
+    assert not re.search(r",\s*[}\]]", raw), "trailing comma in JSON"
 
 
-def test_all_required_artifacts_exist():
-    for p in REQUIRED:
-        assert p.is_file(), f"missing {p.relative_to(ROOT)}"
+def test_all_registered_artifacts_exist():
+    for path in [*ALL_DOCS, MANIFEST, VERIFIER]:
+        assert path.is_file(), f"missing {path.relative_to(ROOT)}"
 
 
-def test_canonical_baseline_recorded():
-    for p in (IA, ROUTES, MANIFEST, EVIDENCE):
-        t = _read(p)
-        assert BASELINE in t or BASELINE_SHORT in t, f"{p.name} missing baseline"
+def test_ia_enums_are_exact():
+    data = manifest()
+    assert data["canonical_ia"] == "UNIFIED_CONTROL_CENTER"
+    assert data["implementation_principle"] == "UNIFIED_OVERVIEW_WITH_EXISTING_ROUTE_DRILL_DOWN"
+    assert data["ia_decision"]["non_selected_alternative"] == "COORDINATED_EXISTING_ROUTES"
 
 
-def test_unified_control_center_is_single_canonical_ia():
-    m = _read(MANIFEST)
-    assert 'canonical_ia: "Unified Control Center"' in m
-    assert 'option_comparison: "CLOSED / NOT REOPENED"' in m
-    assert "unified overview + existing route drill-down" in _all().lower()
+def test_exact_enum_sets():
+    data = manifest()
+    assert data["review_gate_actions"] == REVIEW_ACTIONS
+    assert data["product_owner_decisions"] == PO_DECISIONS
+    assert sorted(data["canonical_statuses"]) == sorted(STATUSES)
+    assert "ACCEPTED_WITH_FOLLOW_UP" not in data["review_gate_actions"]
+    for forbidden in ("REQUEST_CHANGES", "RERUN_QA", "ESCALATE", "ARCHIVE"):
+        assert forbidden not in data["product_owner_decisions"]
 
 
-def test_ia_not_remarked_unresolved():
-    low = _all().lower()
-    for bad in ("ia is unresolved", "ia remains open", "ia still open", "ia undecided"):
-        assert bad not in low
+def test_data_states_and_permission_states_are_separate():
+    data = manifest()
+    assert set(data["required_data_states"]) == {
+        "loading",
+        "empty",
+        "partial",
+        "stale",
+        "inaccessible",
+        "error",
+        "unknown",
+    }
+    assert set(data["permission_states"]) == {
+        "authorized",
+        "not_authorized",
+        "identity_not_verified",
+        "capability_unavailable",
+        "read_only_observer",
+        "future_shared_runtime_required",
+    }
+    assert data["state_matrix"]["activity_timeline_has_unknown_state"] is True
+    assert data["state_matrix"]["unknown_is_distinct_from_error"] is True
 
 
-def test_three_surface_separation():
-    low = _read(IA).lower()
-    for term in ("delivery inbox", "unified control center", "delivery review"):
-        assert term in low
-    assert "duplication-prevention rule" in low
+def test_activity_timeline_row_has_seven_populated_state_cells():
+    row = next(
+        line
+        for line in MATRIX.read_text(encoding="utf-8").splitlines()
+        if line.lower().startswith("| activity timeline")
+    )
+    cells = [c.strip() for c in row.strip().strip("|").split("|")]
+    assert len(cells) == 8, f"expected section + 7 states, got {len(cells)}"
+    assert all(cells), "empty state cell in the Activity Timeline row"
+    assert "unknown" in cells[7].lower()
 
 
-def test_six_review_actions_and_three_decisions_separated():
-    r = _read(REVIEW)
-    for a in REVIEW_ACTIONS:
-        assert a in r
-    for d in PO_DECISIONS:
-        assert d in r
-    low = r.lower()
-    assert "exactly six" in low
-    assert "exactly three" in low
-    assert "visually and semantically separated" in low
+def test_mutation_surface_inventory_is_five_and_semantic():
+    data = manifest()
+    surfaces = {m["source_path"] for m in data["frontend_inventory"]["mutation_surfaces"]}
+    assert surfaces == {
+        "apps/admin-console/src/pages/TaskNew.tsx",
+        "apps/admin-console/src/pages/TaskDetail.tsx",
+        "apps/admin-console/src/pages/TaskWorkroom.tsx",
+        "apps/admin-console/src/pages/MultiProjectDelivery.tsx",
+        "apps/admin-console/src/pages/OperatorConsole.tsx",
+    }
+    assert data["frontend_inventory"]["mutation_surface_count"] == 5
+    for excluded in (
+        "BackupDr.tsx",
+        "IdentityPosture.tsx",
+        "RuntimeBaseline.tsx",
+        "SecurityPosture.tsx",
+    ):
+        assert not any(excluded in s for s in surfaces)
 
 
-def test_nine_canonical_statuses():
-    t = _read(MATRIX)
-    for s in STATUSES:
-        assert s in t, f"status missing: {s}"
+def test_operator_console_duplication_analysis_present():
+    data = manifest()
+    overlap = data["operator_console_overlap"]
+    assert overlap["existing_route"] == "/operator"
+    assert "OperatorReviewPanel" in overlap["existing_analogue_component"]
+    assert "Delivery Review" in overlap["canonical_po_decision_entry_point"]
+    assert overlap["fe2_coexistence_gate"]
+    assert "OperatorReviewPanel" in ROUTES_DOC.read_text(encoding="utf-8")
 
 
-def test_qa_rerun_limit_one_backend_authoritative():
-    m = _read(MANIFEST)
-    assert "limit_per_submission_version: 1" in m
-    assert "client_counter_allowed: false" in m
-    assert "1 of 1" in _read(REVIEW)
-    assert "qa_rerun_limit_reached" in _all().lower()
+def test_inbox_filter_terminology_disambiguated():
+    data = manifest()
+    names = {f["name"] for f in data["inbox_filters"]}
+    assert {"delivery_review_task_status", "delivery_submission_status"} <= names
+    text = INBOX.read_text(encoding="utf-8")
+    assert "delivery_review_task_status" in text
+    assert "delivery_submission_status" in text
+    for entry in data["inbox_filters"]:
+        for field in (
+            "source_field",
+            "enum_source",
+            "display_label",
+            "missing_data_behavior",
+            "backend_dependency",
+        ):
+            assert entry.get(field), f"{entry['name']} missing {field}"
 
 
-def test_expired_blocks_accept_and_reject():
-    m = _read(MANIFEST)
-    assert "disabled_when_expired" in m
-    seg = m.split("disabled_when_expired:")[1].split("available_when_expired:")[0]
-    assert "ACCEPT" in seg and "REJECT" in seg
+def test_planned_routes_absent_and_placeholders_not_functional():
+    data = manifest()
+    by_path = {r["path"]: r for r in data["route_inventory"]["routes"]}
+    for path in (
+        "/projects/:projectId/control-center",
+        "/delivery-submissions/:deliverySubmissionId/review",
+    ):
+        assert path not in by_path
+    for path in ("/delivery-inbox", "/delivery-detail"):
+        assert by_path[path]["classification"] == "PLACEHOLDER"
 
 
-def test_blocking_follow_up_rule():
-    m = _read(MANIFEST)
-    low = _all().lower()
-    assert "blocking_item_allowed: false" in m
-    assert "blocking_follow_up_requires_changes" in low
-    assert ("no auto-conversion" in low) or ("not auto-convert" in low)
+def test_no_implementation_authorized():
+    auth = manifest()["implementation_authorizations"]
+    assert auth["codex_authorized"] is False
+    assert "NOT GRANTED" in auth["merge_authorization"].upper()
+    assert auth["task_roles_modified"] is False
+    assert auth["adr_66d_09_modified"] is False
+    assert manifest()["production_executed_true_count"] == 0
 
 
-def test_all_required_states_present():
-    low = _read(MATRIX).lower()
-    for st in ("loading", "empty", "partial", "stale", "inaccessible", "error", "unknown"):
-        assert st in low
-    for es in ("COMPLETE", "PARTIAL", "MISSING", "STALE", "INACCESSIBLE", "UNKNOWN"):
-        assert es in _read(MATRIX) or es in _read(IA)
-    assert "never green" in (_read(MATRIX) + _read(IA)).lower()
+def test_verifier_passes_on_current_state():
+    result = subprocess.run(
+        [sys.executable, str(VERIFIER)], cwd=ROOT, capture_output=True, text=True, check=False
+    )
+    assert "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: PASS" in result.stdout, result.stdout
+    assert result.returncode == 0
 
 
-def test_identity_gate_blocks_final_decision():
-    assert "identity not verified" in _read(MATRIX).lower()
-    assert "final_decision_requires_verified_identity: true" in _read(MANIFEST)
+def test_verifier_reports_split_stable_metrics():
+    result = subprocess.run(
+        [sys.executable, str(VERIFIER)], cwd=ROOT, capture_output=True, text=True, check=False
+    )
+    assert re.search(r"CHECK_DEFINITIONS=\d+", result.stdout)
+    assert re.search(r"ASSERTIONS_EXECUTED=\d+", result.stdout)
+    definitions = int(re.search(r"CHECK_DEFINITIONS=(\d+)", result.stdout).group(1))
+    executed = int(re.search(r"ASSERTIONS_EXECUTED=(\d+)", result.stdout).group(1))
+    assert definitions > 0 and executed >= definitions
 
 
-def test_read_model_freshness_present():
-    t = _all()
-    assert "as_of" in t and "is_stale" in t
-    assert "eventually consistent" in t.lower()
-    assert "authority_rule" in _read(MANIFEST)
+def test_verifier_emits_rm1_closure_sections():
+    result = subprocess.run(
+        [sys.executable, str(VERIFIER)], cwd=ROOT, capture_output=True, text=True, check=False
+    )
+    for marker in (
+        "DESIGN_RM1_SCOPE_EXACT",
+        "DESIGN_RM1_SOURCE_COUNTS",
+        "DESIGN_RM1_ENUM_INTEGRITY",
+        "DESIGN_RM1_ROUTE_TRUTHFULNESS",
+        "DESIGN_RM1_REGRESSION_CLOSURE",
+    ):
+        assert f"{marker}: PASS" in result.stdout, result.stdout
 
 
-def test_existing_routes_not_faked_as_implemented():
-    assert ("planned / not implemented" in _read(ROUTES).lower()
-            or "planned_not_implemented" in _read(MANIFEST).lower())
-    assert "placeholder" in _read(INVENTORY).lower()
-    assert "44" in _read(INVENTORY)
+# --------------------------------------------------------------------- probes
+def _probe_copy(tmp: Path) -> Path:
+    """Copy the design package + verifier into a disposable tree with a git history.
+
+    The probe tree is a real git repo whose baseline commit contains the frontend source, so the
+    verifier's exact-scope diff behaves the same way it does in the real repository.
+    """
+    work = tmp / "repo"
+    (work / "scripts").mkdir(parents=True)
+    (work / "docs/design/66d-delivery-acceptance").mkdir(parents=True)
+    (work / "docs/handoffs/66d-delivery-acceptance").mkdir(parents=True)
+    shutil.copytree(ROOT / "apps/admin-console/src", work / "apps/admin-console/src")
+    subprocess.run(["git", "init", "-q"], cwd=work, check=True)
+    subprocess.run(["git", "config", "user.email", "probe@example.invalid"], cwd=work, check=True)
+    subprocess.run(["git", "config", "user.name", "probe"], cwd=work, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
+    subprocess.run(["git", "commit", "-qm", "baseline"], cwd=work, check=True)
+    base = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True
+    ).stdout.strip()
+    (work / "tests").mkdir(parents=True, exist_ok=True)
+    for path in [*ALL_DOCS, MANIFEST, TEST_FILE]:
+        shutil.copy2(path, work / path.relative_to(ROOT))
+    verifier = work / "scripts/verify_step66d_design_unified_control_center.py"
+    shutil.copy2(VERIFIER, verifier)
+    # Re-point ONLY the scope diff base at the probe's synthetic baseline commit. DESIGN_BASELINE
+    # itself is left untouched so the baseline.recorded string checks still exercise the real value.
+    verifier.write_text(
+        verifier.read_text(encoding="utf-8").replace(
+            '["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"]',
+            f'["git", "diff", "--name-only", "{base}...HEAD"]',
+        ),
+        encoding="utf-8",
+    )
+    return work
 
 
-def test_deep_link_contract_present():
-    r = _read(ROUTES)
-    for prm in ("project_id", "delivery_submission_id", "delivery_review_task_id", "return_to"):
-        assert prm in r
-    assert "return behavior" in r.lower()
+def _run_probe(work: Path) -> subprocess.CompletedProcess:
+    subprocess.run(["git", "add", "-A"], cwd=work, check=True)
+    subprocess.run(["git", "commit", "-qm", "probe"], cwd=work, check=True)
+    return subprocess.run(
+        [sys.executable, "scripts/verify_step66d_design_unified_control_center.py"],
+        cwd=work,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
 
 
-def test_responsive_and_accessibility_specified():
-    a = _read(A11Y)
-    for bp in ("1440", "1280", "1024", "768"):
-        assert bp in a
-    low = a.lower()
-    for req in ("keyboard", "focus", "screen-reader", "reduced motion", "focus trap"):
-        assert req in low
+def _assert_rejected(result: subprocess.CompletedProcess, label: str) -> None:
+    assert result.returncode != 0, f"{label}: verifier did NOT reject\n{result.stdout}"
+    assert "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: FAIL" in result.stdout, result.stdout
 
 
-def test_no_implementation_claims():
-    low = _all().lower()
-    m = _read(MANIFEST)
-    assert "no frontend implementation" in low
-    assert "not authorized" in low
-    assert "codex_authorized: false" in m
-    assert 'merge_authorization: "NOT GRANTED"' in m
+def test_probe_baseline_copy_passes(tmp_path):
+    """The untampered probe copy must PASS, so every rejection below is attributable."""
+    work = _probe_copy(tmp_path)
+    result = _run_probe(work)
+    assert "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: PASS" in result.stdout, result.stdout
 
 
-def test_legacy_delivery_package_boundary_preserved():
-    m = _read(MANIFEST)
-    t = _all()
-    assert "legacy_delivery_package_repurposed: false" in m
-    assert "legacy_delivery_package_refs" in t
-    assert "deliverysubmission" in t.lower()
+@pytest.mark.parametrize(
+    "label,relpath,content",
+    [
+        (
+            "unregistered design document",
+            "docs/design/66d-delivery-acceptance/unregistered-probe.md",
+            "# probe\n",
+        ),
+        (
+            "frontend implementation",
+            "apps/admin-console/src/pages/UnifiedControlCenterProbe.tsx",
+            "export function UnifiedControlCenterProbe() { return null; }\n",
+        ),
+    ],
+)
+def test_probe_unregistered_or_frontend_path_is_rejected(tmp_path, label, relpath, content):
+    work = _probe_copy(tmp_path)
+    target = work / relpath
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(content, encoding="utf-8")
+    _assert_rejected(_run_probe(work), label)
 
 
-def test_dual_anchor_and_task_boundary():
-    low = _all().lower()
-    assert "dual" in low
-    assert "delivery_review_task_id" in _all()
-    assert ("task is not the agent execution source of truth" in low) or ("non-dispatching" in low)
+@pytest.mark.parametrize(
+    "label,key,value",
+    [
+        (
+            "extra review action",
+            "review_gate_actions",
+            ["ACCEPT", "REJECT", "REQUEST_CHANGES", "RERUN_QA", "ESCALATE", "ARCHIVE", "DEFER"],
+        ),
+        (
+            "extra PO decision",
+            "product_owner_decisions",
+            ["ACCEPTED", "ACCEPTED_WITH_FOLLOW_UP", "REJECTED", "APPROVED"],
+        ),
+        ("extra canonical status", "canonical_statuses", STATUSES + ["DONE"]),
+        ("IA set to the non-selected alternative", "canonical_ia", "COORDINATED_EXISTING_ROUTES"),
+        ("IA set to unresolved", "canonical_ia", "UNRESOLVED"),
+    ],
+)
+def test_probe_manifest_enum_tampering_is_rejected(tmp_path, label, key, value):
+    work = _probe_copy(tmp_path)
+    path = work / MANIFEST.relative_to(ROOT)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data[key] = value
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _assert_rejected(_run_probe(work), label)
 
 
-def test_production_count_zero_and_contracts_unmodified():
-    t = _all()
-    m = _read(MANIFEST)
-    assert ("production_executed_true_count: 0" in t) or ("production_executed_true_count = 0" in t)
-    assert "production_executed_true_count: 0" in m
-    assert "adr_66d_09_modified: false" in m
-    assert "task_roles_modified: false" in m
+def test_probe_semantic_open_decision_wording_is_rejected(tmp_path):
+    work = _probe_copy(tmp_path)
+    path = work / IA.relative_to(ROOT)
+    path.write_text(
+        path.read_text(encoding="utf-8") + "\n\nThe IA decision remains open.\n", encoding="utf-8"
+    )
+    _assert_rejected(_run_probe(work), "semantic open-decision wording")
 
 
-def test_ten_wireframes():
-    assert len(re.findall(r"^## WF-\d+", _read(WIRE), flags=re.M)) == 10
+@pytest.mark.parametrize(
+    "label,mutate",
+    [
+        (
+            "route count tampering",
+            lambda d: d["route_inventory"].__setitem__(
+                "total_routes", d["route_inventory"]["total_routes"] + 1
+            ),
+        ),
+        (
+            "nav count tampering",
+            lambda d: d["navigation_inventory"].__setitem__(
+                "nav_items", d["navigation_inventory"]["nav_items"] + 1
+            ),
+        ),
+        (
+            "badge count tampering",
+            lambda d: d["navigation_inventory"]["badges"].__setitem__("soon", 99),
+        ),
+        (
+            "mutation count tampering",
+            lambda d: d["frontend_inventory"].__setitem__("mutation_surface_count", 7),
+        ),
+        (
+            "gap count tampering",
+            lambda d: d["open_gaps"].append({"id": "DG-99", "title": "phantom", "severity": "LOW"}),
+        ),
+    ],
+)
+def test_probe_count_tampering_is_rejected(tmp_path, label, mutate):
+    work = _probe_copy(tmp_path)
+    path = work / MANIFEST.relative_to(ROOT)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mutate(data)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _assert_rejected(_run_probe(work), label)
+
+
+def test_probe_fake_implemented_route_is_rejected(tmp_path):
+    work = _probe_copy(tmp_path)
+    path = work / MANIFEST.relative_to(ROOT)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for entry in data["route_inventory"]["planned_absent_routes"]:
+        if entry["path"] == "/projects/:projectId/control-center":
+            entry["classification"] = "IMPLEMENTED"
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _assert_rejected(_run_probe(work), "fake implemented control-center route")
+
+
+def test_probe_placeholder_marked_functional_is_rejected(tmp_path):
+    work = _probe_copy(tmp_path)
+    path = work / MANIFEST.relative_to(ROOT)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for entry in data["route_inventory"]["routes"]:
+        if entry["path"] == "/delivery-inbox":
+            entry["classification"] = "REAL_PAGE"
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+    _assert_rejected(_run_probe(work), "placeholder marked functional")
+
+
+def test_probe_missing_activity_timeline_unknown_state_is_rejected(tmp_path):
+    work = _probe_copy(tmp_path)
+    path = work / MATRIX.relative_to(ROOT)
+    text = path.read_text(encoding="utf-8")
+    row = next(line for line in text.splitlines() if line.lower().startswith("| activity timeline"))
+    cells = row.strip().strip("|").split("|")
+    stripped = "|" + "|".join(cells[:-1]) + "|"
+    path.write_text(text.replace(row, stripped), encoding="utf-8")
+    _assert_rejected(_run_probe(work), "missing Activity Timeline unknown cell")
+
+
+def test_probe_yaml_manifest_reintroduction_is_rejected(tmp_path):
+    work = _probe_copy(tmp_path)
+    (work / "docs/design/66d-delivery-acceptance/step66d-design-contract-manifest.yaml").write_text(
+        "stage: probe\n", encoding="utf-8"
+    )
+    _assert_rejected(_run_probe(work), "reintroduced YAML manifest")
+
+
+# --------------------------------------------------------------------- scope
+def test_scope_no_runtime_or_backend_paths_changed():
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail("could not compute the diff against the design baseline")
+    forbidden = (
+        "apps/",
+        "agents/",
+        "services/",
+        "shared/",
+        "migrations/",
+        "infra/",
+        "helm/",
+        "k8s/",
+        ".github/workflows/",
+    )
+    for line in result.stdout.splitlines():
+        path = line.strip().replace("\\", "/")
+        if path:
+            assert not path.startswith(forbidden), f"forbidden path changed: {path}"
+
+
+def test_scope_changed_paths_are_exactly_fourteen():
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail("could not compute the diff against the design baseline")
+    changed = [
+        line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()
+    ]
+    assert len(changed) == 14, f"expected exactly 14 changed paths, got {len(changed)}: {changed}"
+    assert not any(p.endswith((".yaml", ".yml")) for p in changed), "YAML file in the design diff"
 
 
 def test_no_secrets_or_local_paths():
-    secret = re.compile(r"(-----BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|sk-ant-[A-Za-z0-9_-]{20,})")
-    localp = re.compile(r"(C:\\Users|C:/Users|/home/[A-Za-z0-9._-]+/)")
-    for p in REQUIRED:
-        t = _read(p)
-        assert not secret.search(t), f"secret shape in {p.name}"
-        assert not localp.search(t), f"local path in {p.name}"
-
-
-def test_scope_no_runtime_or_backend_paths_changed():
-    r = subprocess.run(["git", "diff", "--name-only", f"{BASELINE}...HEAD"],
-                       cwd=ROOT, capture_output=True, text=True, check=False)
-    if r.returncode != 0:
-        return
-    forbidden = ("apps/", "agents/", "services/", "shared/", "migrations/", "infra/",
-                 "helm/", "k8s/", ".github/workflows/")
-    for line in r.stdout.splitlines():
-        path = line.strip().replace("\\", "/")
-        if not path:
-            continue
-        assert not any(path.startswith(p) for p in forbidden), f"forbidden path changed: {path}"
+    secret = re.compile(
+        r"(-----BEGIN [A-Z ]*PRIVATE KEY|ghp_[A-Za-z0-9]{20,}|AKIA[0-9A-Z]{16}|"
+        r"sk-ant-[A-Za-z0-9_-]{20,})"
+    )
+    local = re.compile(r"(C:\\Users|C:/Users|/home/[A-Za-z0-9._-]+/)")
+    for path in [*ALL_DOCS, MANIFEST]:
+        text = path.read_text(encoding="utf-8")
+        assert not secret.search(text), f"secret shape in {path.name}"
+        assert not local.search(text), f"local path in {path.name}"

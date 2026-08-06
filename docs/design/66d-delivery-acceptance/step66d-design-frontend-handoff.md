@@ -5,8 +5,8 @@
 
 ```text
 CANONICAL_BASELINE: main 9c5210d190b82b76575ba8d456b5d2005c2867d2
-COMPONENT CANDIDATES: 22 (measured: manifest component_candidates length)
-ACCEPTANCE CRITERIA:  18 (measured: manifest acceptance_criteria length)
+COMPONENT CANDIDATES: 22 (measured: JSON manifest "component_candidates" length)
+ACCEPTANCE CRITERIA:  18 (measured: JSON manifest "acceptance_criteria" length)
 ```
 
 ## 1. Canonical UI terminology (frozen)
@@ -74,6 +74,25 @@ Existing components confirmed present for reuse (measured: 16 files in
 `apps/admin-console/src/components/`): `AsyncView`, `DataCard`, `EmptyState`, `ErrorState`,
 `EvidenceTable`, `JsonPanel`, `KeyValueTable`, `Layout`, `LoadingState`, `Nav`, `NavGroup`,
 `PlaceholderPanel`, `SafetyBadge`, `SafetyStatusBar`, `StatusBadge`, `CalmSafetyPosture`.
+
+### 2.1 OperatorConsole coexistence (binding for FE2)
+
+`/operator` already ships a legacy review surface (`OperatorReviewPanel({ packageId })` with
+accept / reject / requestChanges / addNote / rerunVerification). Full analysis:
+`step66d-design-route-and-drilldown-map.md` §4.1; gap **DG-16**.
+
+```text
+REUSE        two-step confirmation dialog pattern; Idempotency-Key handling; CSRF/session banner;
+             action-history list presentation
+ADAPT        review action panel layout; reason-capture form (add evidence-reviewed capture)
+DO NOT REUSE legacy DeliveryPackage human_acceptance_status semantics; packageId-addressed review;
+             operator "accept" as a Product Owner Final Decision; the `note` action; the
+             script-keyed rerun bound (66D uses 1 RERUN_QA per submission version)
+
+FE2 GATE     Delivery Review is the single canonical Product Owner Decision entry point.
+             FE2 must not ship a second PO decision entry point, and must not add any 66D
+             acceptance control to /operator without a separate migration/coexistence review.
+```
 
 ## 3. Implementation slice mapping (canonical ARCH1 slices; none authorized)
 

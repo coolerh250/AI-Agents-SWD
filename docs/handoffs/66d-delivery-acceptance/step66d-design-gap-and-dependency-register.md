@@ -182,17 +182,45 @@ Blocking design impl:    NO
 Authorization status:    NOT IMPLEMENTED / NOT AUTHORIZED
 ```
 
+### DG-16 — OperatorConsole legacy review controls overlap the new Delivery Review
+```text
+Observed current state:  /operator (OperatorConsole.tsx) already renders OperatorReviewPanel
+                         ({ packageId }) with accept / reject / requestChanges / addNote /
+                         rerunVerification via actionClient's private POST helper, gated to
+                         role operator|platform_admin, using a two-step confirmation nonce.
+                         It is addressed by the LEGACY DeliveryPackage id, records a single
+                         mutable human_acceptance_status, has no decision history, no
+                         supersession, no ACCEPTED_WITH_FOLLOW_UP, and no per-submission-version
+                         QA rerun bound. It was not analysed in the original design package.
+Required UX behavior:    Delivery Review must be the SINGLE canonical Product Owner Decision entry
+                         point. /operator must never present or record a ProductOwnerDecision;
+                         its accept/reject stay legacy package-level operational controls and must
+                         be labelled as such. Reuse only the confirmation/idempotency/session
+                         patterns; never the legacy acceptance semantics or the `note` action.
+Dependency:              FE2 coexistence gate + the deferred legacy DeliveryPackage migration
+                         question (66D-D04 defers migration to a separate authorization)
+Recommended slice:       Step 66D-FE2 (coexistence gate), with retire-vs-keep deferred to its own
+                         authorized stage
+Risk:                    MEDIUM_HIGH - two surfaces could otherwise both look like the acceptance
+                         entry point, and an operator "accept" could be mistaken for a PO decision
+Blocking design impl:    NO for FE1; YES as a gate before any FE2 acceptance control
+Authorization status:    NOT IMPLEMENTED / NOT AUTHORIZED
+```
+
 ## Summary
 
 ```text
-Total gaps:                 15
+Total gaps:                 16
 Critical:                   4    (DG-01, DG-02, DG-05, DG-09)
 Backend-dependent:          9    (DG-01, DG-02, DG-03, DG-04, DG-05, DG-06, DG-07, DG-08, DG-11)
 Identity-dependent:         2    (DG-09, DG-10)
-Existing-route-dependent:   3    (DG-02, DG-12, DG-15)
+Existing-route-dependent:   4    (DG-02, DG-12, DG-15, DG-16)
 Frontend-only once authorized: 3 (DG-12, DG-13, DG-14)
 Authorized for implementation: 0
 ```
+
+Gap count is machine-measured (`DG-` headings in this file / `open_gaps` length in the JSON
+manifest); it was **not** held at 15 to preserve the earlier figure.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
