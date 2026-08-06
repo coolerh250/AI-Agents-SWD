@@ -429,6 +429,119 @@ def test_probe_yaml_manifest_reintroduction_is_rejected(tmp_path):
     _assert_rejected(_run_probe(work), "reintroduced YAML manifest")
 
 
+# ------------------------------------------------- RM2 route-truthfulness probes (K1-K5)
+# R2-F01: a placeholder route must not be describable as implemented in ANY of the three
+# representations (manifest semantic_routes, manifest route_inventory, route-map document), and the
+# three must agree with each other and with the parsed frontend source.
+
+
+def _edit_manifest(work: Path, mutate) -> None:
+    path = work / MANIFEST.relative_to(ROOT)
+    data = json.loads(path.read_text(encoding="utf-8"))
+    mutate(data)
+    path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+
+
+@pytest.mark.parametrize(
+    "label,state",
+    [
+        ("K1a semantic_routes IMPLEMENTED", "IMPLEMENTED"),
+        ("K1b semantic_routes FUNCTIONAL", "FUNCTIONAL"),
+        ("K1c semantic_routes AVAILABLE", "AVAILABLE"),
+        ("K1d semantic_routes PRODUCTION_READY", "PRODUCTION_READY"),
+    ],
+)
+def test_probe_k1_semantic_route_claimed_implemented_is_rejected(tmp_path, label, state):
+    """K1 -- the placeholder /delivery-inbox declared implemented in semantic_routes."""
+    work = _probe_copy(tmp_path)
+
+    def mutate(data):
+        for entry in data["semantic_routes"]:
+            if entry.get("route") == "/delivery-inbox":
+                entry["current_state"] = state
+
+    _edit_manifest(work, mutate)
+    _assert_rejected(_run_probe(work), label)
+
+
+def test_probe_k2_route_inventory_entry_claimed_implemented_is_rejected(tmp_path):
+    """K2 -- the placeholder /delivery-inbox declared implemented in route_inventory.routes."""
+    work = _probe_copy(tmp_path)
+
+    def mutate(data):
+        for entry in data["route_inventory"]["routes"]:
+            if entry["path"] == "/delivery-inbox":
+                entry["classification"] = "IMPLEMENTED"
+
+    _edit_manifest(work, mutate)
+    _assert_rejected(_run_probe(work), "K2 route_inventory IMPLEMENTED")
+
+
+@pytest.mark.parametrize("state", ["IMPLEMENTED", "FUNCTIONAL", "WRITE_ENABLED"])
+def test_probe_k3_route_map_document_claimed_implemented_is_rejected(tmp_path, state):
+    """K3 -- the route-map document's responsibility matrix declares a placeholder implemented."""
+    work = _probe_copy(tmp_path)
+    path = work / ROUTES_DOC.relative_to(ROOT)
+    text = path.read_text(encoding="utf-8")
+    original = "| Delivery Inbox | `/delivery-inbox` | PLACEHOLDER |"
+    assert original in text, "route-map row anchor missing; probe would be vacuous"
+    path.write_text(
+        text.replace(original, f"| Delivery Inbox | `/delivery-inbox` | {state} |"),
+        encoding="utf-8",
+    )
+    _assert_rejected(_run_probe(work), f"K3 route-map document {state}")
+
+
+def test_probe_k4_cross_representation_disagreement_is_rejected(tmp_path):
+    """K4 -- source and route_inventory both say PLACEHOLDER, semantic_routes says AVAILABLE.
+
+    No single representation is internally implausible here; only cross-representation comparison
+    catches it. This is the case R2-F01 reported as undetected.
+    """
+    work = _probe_copy(tmp_path)
+
+    def mutate(data):
+        for entry in data["semantic_routes"]:
+            if entry.get("route") == "/delivery-inbox":
+                entry["current_state"] = "AVAILABLE"
+
+    _edit_manifest(work, mutate)
+    result = _run_probe(work)
+    _assert_rejected(result, "K4 cross-representation disagreement")
+    assert "routes.cross_representation_equality" in result.stdout or "AVAILABLE" in result.stdout
+
+
+@pytest.mark.parametrize(
+    "label,state",
+    [
+        ("K5a absent route -> PLACEHOLDER", "PLACEHOLDER"),
+        ("K5b absent route -> IMPLEMENTED", "IMPLEMENTED"),
+    ],
+)
+def test_probe_k5_absent_route_reclassified_is_rejected(tmp_path, label, state):
+    """K5 -- a route that does not exist in the source declared present in any form."""
+    work = _probe_copy(tmp_path)
+
+    def mutate(data):
+        for entry in data["semantic_routes"]:
+            if entry.get("route") == "/delivery-submissions/:deliverySubmissionId/review":
+                entry["current_state"] = state
+
+    _edit_manifest(work, mutate)
+    _assert_rejected(_run_probe(work), label)
+
+
+def test_probe_k_series_control_tree_is_restored_exactly(tmp_path):
+    """Control for K1-K5: an untampered probe tree is byte-identical to the repository files."""
+    work = _probe_copy(tmp_path)
+    for path in [*ALL_DOCS, MANIFEST, VERIFIER]:
+        copied = work / path.relative_to(ROOT)
+        if path is VERIFIER:
+            continue  # intentionally re-pointed at the probe's synthetic diff base
+        assert copied.read_bytes() == path.read_bytes(), f"probe tree diverged at {path.name}"
+    assert "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: PASS" in _run_probe(work).stdout
+
+
 # --------------------------------------------------------------------- scope
 def test_scope_no_runtime_or_backend_paths_changed():
     result = subprocess.run(

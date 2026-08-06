@@ -171,6 +171,58 @@ LOCAL_PATH_SHAPES = re.compile(
 WRITE_VERB_RE = re.compile(r"""method:\s*["'](?:POST|PATCH|PUT|DELETE)["']""")
 VERB_CONST_RE = re.compile(r"""(\w+)\s*=\s*["'](?:POST|PATCH|PUT|DELETE)["']""")
 
+# --- RM2: route truthfulness across the three design representations -------------------
+# Canonical classes a route may hold. Source (App.tsx) is authoritative.
+CLASS_REAL_PAGE = "REAL_PAGE"
+CLASS_PLACEHOLDER = "PLACEHOLDER"
+CLASS_ABSENT = "ABSENT"
+
+# Terms that assert a route is built/usable. A source PLACEHOLDER or ABSENT route may never be
+# described with one of these unless the term is explicitly negated (e.g. "NOT IMPLEMENTED").
+IMPLEMENTED_TERMS = (
+    "IMPLEMENTED",
+    "FUNCTIONAL",
+    "AVAILABLE",
+    "ACTIVE",
+    "READY",
+    "PRODUCTION_READY",
+    "PRODUCTION READY",
+    "WRITE_ENABLED",
+    "WRITE ENABLED",
+    "REAL_PAGE",
+)
+PLACEHOLDER_TERMS = ("PLACEHOLDER",)
+ABSENT_TERMS = ("ABSENT", "PLANNED")
+# A negation immediately preceding an implemented term neutralises it.
+NEGATION_PREFIX = re.compile(r"(NOT|NEVER|NO)\s*[/_-]?\s*$", re.IGNORECASE)
+
+
+def classify_state_text(text: str) -> str | None:
+    """Normalise a design-representation state string into a canonical route class.
+
+    Negation-aware: "PLANNED / NOT IMPLEMENTED" classifies as ABSENT, not REAL_PAGE. This is a
+    structural classification, not a naked substring blacklist.
+    """
+    upper = (text or "").upper()
+    positive_implemented = False
+    for term in IMPLEMENTED_TERMS:
+        for match in re.finditer(re.escape(term), upper):
+            if not NEGATION_PREFIX.search(upper[: match.start()]):
+                positive_implemented = True
+                break
+        if positive_implemented:
+            break
+    has_placeholder = any(term in upper for term in PLACEHOLDER_TERMS)
+    has_absent = any(term in upper for term in ABSENT_TERMS)
+    if has_placeholder:
+        return CLASS_PLACEHOLDER
+    if has_absent:
+        return CLASS_ABSENT
+    if positive_implemented:
+        return CLASS_REAL_PAGE
+    return None
+
+
 # --- check registry: stable named definitions (RM1 metric F09) ---
 CHECK_IDS = (
     "scope.exact_path_set",
@@ -206,6 +258,9 @@ CHECK_IDS = (
     "routes.no_duplicate_paths",
     "routes.absent_not_marked_implemented",
     "routes.placeholder_not_marked_functional",
+    "routes.semantic_routes_classification",
+    "routes.document_classification",
+    "routes.cross_representation_equality",
     "qa_rerun.limit_one_backend_authoritative",
     "expiry.blocks_accept_and_reject",
     "follow_up.blocking_rule",
@@ -879,6 +934,147 @@ def check_route_truthfulness(manifest: dict) -> None:
         )
 
 
+def parse_route_map_document() -> dict[str, str]:
+    """Extract {route path -> raw state cell} from the route responsibility matrix.
+
+    Structural, not document-wide: locate the table whose header declares an implemented-state
+    column, then read only that table's body rows. Other tables in the document (for example the
+    OperatorConsole contract-difference comparison) are deliberately not route classifications and
+    must not be parsed as such.
+    """
+    entries: dict[str, str] = {}
+    lines = read(ROUTES_DOC).splitlines()
+    in_table = False
+    route_col = state_col = -1
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            in_table = False
+            continue
+        cells = [c.strip() for c in stripped.strip("|").split("|")]
+        lowered = [c.lower() for c in cells]
+        if "implemented state" in lowered:
+            in_table = True
+            state_col = lowered.index("implemented state")
+            route_col = lowered.index("actual route") if "actual route" in lowered else 1
+            continue
+        if not in_table or stripped.startswith("| ---"):
+            continue
+        if len(cells) <= max(route_col, state_col):
+            continue
+        for route in re.findall(r"`(/[^`]*)`", cells[route_col]):
+            entries[route] = cells[state_col]
+    return entries
+
+
+def check_route_truthfulness_across_representations(manifest: dict) -> None:
+    """RM2 / R2-F01: source is authoritative; all three design representations must agree.
+
+    Representations: (A) manifest route_inventory.routes, (B) manifest semantic_routes,
+    (C) the route-and-drilldown-map Markdown table. A route the source says is a PLACEHOLDER or
+    ABSENT may never be described as implemented/functional/available in any of them.
+    """
+    source: dict[str, str] = {}
+    for route in parse_routes():
+        source[route["path"]] = (
+            CLASS_PLACEHOLDER if route["classification"] == "PLACEHOLDER" else CLASS_REAL_PAGE
+        )
+    for path in PLANNED_ABSENT_ROUTES:
+        if path not in source:
+            source[path] = CLASS_ABSENT
+
+    def compare(representation: str, check_id: str, entries: dict[str, str]) -> None:
+        for path, raw in entries.items():
+            expected = source.get(path)
+            if expected is None:
+                expect(
+                    classify_state_text(raw) != CLASS_REAL_PAGE,
+                    check_id,
+                    f"{representation}: {path} is not present in App.tsx yet is described as "
+                    f"implemented ({raw!r})",
+                )
+                continue
+            actual = classify_state_text(raw)
+            expect(
+                actual is not None,
+                check_id,
+                f"{representation}: {path} has an unclassifiable state {raw!r}",
+            )
+            if actual is None:
+                continue
+            expect(
+                actual == expected,
+                check_id,
+                f"{representation}: {path} is described as {actual} but App.tsx says {expected} "
+                f"(cell {raw!r})",
+            )
+            if expected in (CLASS_PLACEHOLDER, CLASS_ABSENT):
+                expect(
+                    actual != CLASS_REAL_PAGE,
+                    "routes.placeholder_not_marked_functional",
+                    f"{representation}: {expected} route {path} is described as functional "
+                    f"({raw!r})",
+                )
+
+    # (A) route_inventory.routes
+    compare(
+        "route_inventory.routes",
+        "routes.classification_matches_source",
+        {
+            r["path"]: r.get("classification", "")
+            for r in manifest.get("route_inventory", {}).get("routes", [])
+        },
+    )
+    # (A2) planned_absent_routes
+    compare(
+        "route_inventory.planned_absent_routes",
+        "routes.absent_not_marked_implemented",
+        {
+            r["path"]: r.get("classification", "")
+            for r in manifest.get("route_inventory", {}).get("planned_absent_routes", [])
+        },
+    )
+    # (B) semantic_routes
+    compare(
+        "semantic_routes",
+        "routes.semantic_routes_classification",
+        {
+            r["route"]: r.get("current_state", "")
+            for r in manifest.get("semantic_routes", [])
+            if r.get("route")
+        },
+    )
+    # (C) route-map Markdown table
+    document_entries = parse_route_map_document()
+    expect(
+        len(document_entries) > 0,
+        "routes.document_classification",
+        "route-map document: no route responsibility rows parsed",
+    )
+    compare("route-map document", "routes.document_classification", document_entries)
+
+    # Cross-representation equality on the intersection of registered routes.
+    inventory = {
+        r["path"]: classify_state_text(r.get("classification", ""))
+        for r in manifest.get("route_inventory", {}).get("routes", [])
+    }
+    semantic = {
+        r["route"]: classify_state_text(r.get("current_state", ""))
+        for r in manifest.get("semantic_routes", [])
+        if r.get("route")
+    }
+    document = {path: classify_state_text(raw) for path, raw in document_entries.items()}
+    for path in set(semantic) | set(document):
+        for name, mapping in (("semantic_routes", semantic), ("route-map document", document)):
+            if path in mapping and path in inventory:
+                expect(
+                    mapping[path] == inventory[path],
+                    "routes.cross_representation_equality",
+                    f"{name} says {mapping[path]} for {path} but route_inventory says "
+                    f"{inventory[path]}",
+                )
+
+
 def check_contracts(manifest: dict) -> None:
     review = read(REVIEW)
     qa = manifest.get("qa_rerun", {})
@@ -1156,6 +1352,7 @@ def main() -> int:
     check_states(manifest)
     check_counts(manifest)
     check_route_truthfulness(manifest)
+    check_route_truthfulness_across_representations(manifest)
     check_contracts(manifest)
     check_no_implementation(manifest)
     check_security()

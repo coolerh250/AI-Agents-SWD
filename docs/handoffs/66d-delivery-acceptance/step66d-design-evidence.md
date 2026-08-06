@@ -76,13 +76,20 @@ Manual estimates used: **none**.
 
 ## 4. Verification results
 
+> **SUPERSEDED / NOT CURRENT (corrected by Step 66D-DESIGN-RM2, finding R2-F03).** The two figures
+> in the block below — `checks_run=135` and `23 passed` — are **not** current values and must not be
+> quoted. They are retained so the superseded claim stays visible rather than being deleted. The
+> current machine-measured values are in **RM2.3**, which records the RM1 values and the freshly
+> measured RM2 values as separate rows rather than merging them.
+
 ```text
+SUPERSEDED / NOT CURRENT -- see RM2.3 for the current measured values
 python scripts/verify_step66d_design_unified_control_center.py
-  checks_run=135
+  checks_run=135                            <-- SUPERSEDED (metric withdrawn entirely by RM1 F09)
   STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: PASS
 
 pytest -q tests/test_step66d_design_unified_control_center.py
-  23 passed, 0 failed, 0 skipped
+  23 passed, 0 failed, 0 skipped            <-- SUPERSEDED (stale test count)
 
 git diff --check
   (clean, no output)
@@ -208,10 +215,18 @@ SUPERSEDED / INCORRECT PRE-COMMIT MEASUREMENT:
 
 ## RM1.3 Regression measurement — method and honest result
 
+> **SUPERSEDED / INCORRECT MEASUREMENT (corrected by Step 66D-DESIGN-RM2, finding R2-F02).**
+> Every figure in this section that asserts a non-zero failure count on canonical main is **wrong**.
+> The claim "13 pre-existing failures on canonical main" is withdrawn; the claim
+> `PRE_EXISTING_CANONICAL_BASELINE_GAP` is withdrawn. Canonical main `9c5210d` has **0 failures**.
+> The section is retained unaltered below so the superseded claim is visible rather than deleted.
+> **The corrected, re-measured result is in RM2.2, which supersedes this section in full.**
+
 The R1 finding stated 13 historical regression failures attributable to the YAML manifest. Measured
 independently for this remediation, with the identical suite selection run twice:
 
 ```text
+SUPERSEDED -- see RM2.2
 Suite selection (11 canonical stage suites, run with --noconftest):
   test_step66c4_be3_ra2m2_canonical_merge      test_step66c4_be3_ra2m_canonicalization
   test_step66d_align1_delivery_decision_model  test_step66d_align1_m1_canonical_merge
@@ -261,6 +276,190 @@ New JSON manifest path:               PRESENT
 Frontend / backend / runtime / migration / infra paths changed: NONE
 Historical stage verifiers or tests modified:                   NONE
 ARCH1 contracts or ADR-66D-09 modified:                         NONE
+```
+
+---
+
+# Step 66D-DESIGN-RM2 — Correction Addendum
+
+> Appended by Step 66D-DESIGN-RM2 (remediation of the Step 66D-DESIGN-R2 findings R2-F01, R2-F02,
+> R2-F03). Commits `47dcbe9` (original design) and `c9ee13b` (RM1) are preserved and were not
+> amended, rebased or squashed. Where an earlier figure was wrong it is marked SUPERSEDED in place
+> and corrected here; nothing is deleted.
+
+## RM2.1 R2 findings and their disposition
+
+| Finding | Disposition |
+| --- | --- |
+| R2-F01 placeholder-route truthfulness not enforced across all representations | Verifier extended with negation-aware state classification and cross-representation equality; three new checks; twelve new negative probes (K1–K5 + control). |
+| R2-F02 RM1 evidence falsely claimed 13 pre-existing failures on canonical main | Withdrawn and corrected in RM2.2. Canonical main has **0** failures. Root cause proven, not speculated. |
+| R2-F03 stale `checks_run=135` and `23 passed` still quoted as current | Both marked SUPERSEDED / NOT CURRENT at their source in section 4; RM1 and RM2 metrics recorded as separate rows in RM2.3. |
+
+### R2-F01 — what the verifier now enforces
+
+A route is classified into exactly one of `REAL_PAGE`, `PLACEHOLDER`, `ABSENT`. The classifier is
+**negation-aware**: `PLANNED / NOT IMPLEMENTED` classifies as `ABSENT`, not as `REAL_PAGE`, because
+the token `IMPLEMENTED` is only counted when it is not preceded by `NOT` / `NEVER` / `NO`.
+
+The same route is then classified independently from four sources and the four must be equal:
+
+```text
+1. apps/admin-console/src/App.tsx                      (parsed Route blocks -- ground truth)
+2. manifest route_inventory.routes[] / planned_absent_routes[]
+3. manifest semantic_routes[].current_state
+4. step66d-design-route-and-drilldown-map.md           (the responsibility-matrix table only)
+```
+
+Source 4 is located **structurally** — the parser selects the one table whose header declares an
+"implemented state" column and reads only that table's rows. An earlier RM2 draft parsed every
+table in the document and mis-read the section 4.1 OperatorConsole comparison table; that defect was
+found and fixed before commit.
+
+```text
+New checks:  routes.semantic_routes_classification
+             routes.document_classification
+             routes.cross_representation_equality
+```
+
+### R2-F01 — negative probes added (all must be REJECTED)
+
+Each probe copies the design package into a disposable git repository, tampers with exactly one
+thing, and asserts the verifier rejects it. No probe is committed and none touches the working tree.
+
+```text
+K1  semantic_routes /delivery-inbox -> IMPLEMENTED / FUNCTIONAL / AVAILABLE / PRODUCTION_READY  REJECTED (4)
+K2  route_inventory /delivery-inbox -> IMPLEMENTED                                              REJECTED
+K3  route-map document row          -> IMPLEMENTED / FUNCTIONAL / WRITE_ENABLED                 REJECTED (3)
+K4  cross-representation mismatch: source + inventory PLACEHOLDER, semantic AVAILABLE            REJECTED
+K5  absent route /delivery-submissions/:deliverySubmissionId/review -> PLACEHOLDER / IMPLEMENTED REJECTED (2)
+K   control: untampered tree, byte-identical to the repository files                             PASSES
+```
+
+K4 is the case R2-F01 reported as undetected: no single representation is implausible on its own,
+and only the cross-representation comparison catches it.
+
+## RM2.2 Regression measurement — corrected (supersedes RM1.3)
+
+```text
+CORRECTION: The earlier baseline result was not reproducible from a clean canonical-main worktree.
+SUPERSEDED CLAIM:          Canonical main has 13 pre-existing failures.
+SUPERSEDED CLAIM:          PRE_EXISTING_CANONICAL_BASELINE_GAP
+CANONICAL MEASURED RESULT: Canonical main has 0 failures on both suite selections.
+```
+
+### Why the earlier number was wrong — proven, not inferred
+
+The RM1 figure was an artifact of the **measuring workstation**, not of the repository. This was
+demonstrated by isolating one variable at a time on a pristine `origin/main` worktree:
+
+| Step | Environment change | Result on canonical main |
+| --- | --- | --- |
+| 1 | as-measured during RM1 | 13 failed, 865 passed |
+| 2 | `PYTHONUTF8=1` only | **2** failed, 876 passed |
+| 3 | step 2 + project `requirements.txt` installed | **0** failed, **878** passed |
+
+```text
+11 failures  UnicodeDecodeError: 'cp950' codec can't decode byte 0xe2 in position 16
+             The workstation console codepage is CP950 (Traditional Chinese). The affected tests
+             read UTF-8 design documents without an explicit encoding argument, so they inherit the
+             locale codec and fail on the first non-ASCII character. Eliminated by PYTHONUTF8=1.
+             ATTRIBUTABLE TO: the measuring workstation.
+
+ 2 failures  ModuleNotFoundError: No module named 'redis'  -> then 'asyncpg'
+             test_verified_test_count_is_one_hundred / test_authoritative_test_count_is_one_hundred
+             spawn a pytest subprocess that loads the backend conftest. Backend runtime
+             dependencies were absent from the design workstation. Eliminated by installing
+             requirements.txt. ATTRIBUTABLE TO: the measuring workstation.
+
+ 0 failures  attributable to the repository at canonical main.
+```
+
+This is a **measured** root cause: each group was eliminated by a single named environment change
+and the elimination was re-observed. It is not recorded as possible contamination, because the
+mechanism was reproduced end to end.
+
+### Suite sets
+
+The Step 66D-DESIGN-R2 evidence document is **not committed to this repository** (no committed file
+under `docs/` defines `SUITE_SET_A` or `SUITE_SET_B`), so R2's literal selection command could not
+be re-executed verbatim. Both sets are therefore defined here reproducibly, and the substitution is
+declared rather than glossed over.
+
+```text
+SUITE_SET_A -- the selection used by the Step 66D-DESIGN-R1 review, which reported 13
+               branch-attributable failures. The selection itself is not committed anywhere in the
+               repository and is NOT re-derivable here. The figure 13 is preserved as R1-reported
+               provenance only. It is NOT re-asserted as a current measurement.
+
+SUITE_SET_B -- expanded selection, fully specified and re-measured for RM2:
+               test_step66c4_be3_ra2m2_canonical_merge      test_step66c4_be3_ra2m_canonicalization
+               test_step66d_align1_delivery_decision_model  test_step66d_align1_m1_canonical_merge
+               test_step66d_align1_rm1_fixed_range_remediation
+               test_step66d_arch1_contract_freeze           test_step66d_arch1_m1_canonical_merge
+               test_step66sync1_claude_code_reconciliation  test_step66sync1_final_partner_reconciliation
+               test_step66sync1_m1_canonicalization         test_step66sync1_m2_canonical_merge
+               878 tests collected.
+```
+
+### SUITE_SET_B — measured, corrected environment (`PYTHONUTF8=1`, requirements installed)
+
+| State | Commit | Failed | Passed | Skipped |
+| --- | --- | --- | --- | --- |
+| Canonical main | `9c5210d` | **0** | 878 | 0 |
+| Original design commit (YAML manifest present) | `47dcbe9` | **19** | 859 | 0 |
+| RM2 commit (JSON manifest) | this commit | **0** | 878 | 0 |
+
+```text
+Branch-attributable failures, original  : 19   (19 at 47dcbe9 minus 0 at canonical main)
+Branch-attributable failures, closed by RM1 : 19
+Branch-attributable failures, remaining : 0
+Pre-existing failures on canonical main : 0
+```
+
+### Failure provenance — preserved, not reconciled away
+
+```text
+13  reported by SUITE_SET_A (the R1 review selection)     -- subset, R1-reported provenance
+19  measured on SUITE_SET_B (expanded selection)          -- superset, re-measured by RM2
+    The two figures are consistent: the expanded selection exercises more guards, so it observes
+    more failures of the same single cause. 13 is not a second, different defect.
+
+CAUSE   the YAML documentation manifest step66d-design-contract-manifest.yaml matched historical
+        stage guards that scan the current state for YAML in a design diff
+STATUS  CLOSED BY RM1 JSON MIGRATION
+        The manifest was migrated to JSON and the YAML path deleted. No historical stage verifier,
+        test or denylist was modified, weakened or relaxed at any point.
+```
+
+## RM2.3 Metrics — RM1 and RM2 recorded separately
+
+Superseded and current values are kept as distinct rows. No RM1 value is presented as an RM2 value.
+
+| Metric | Original (Step 66D-DESIGN) | RM1 (`c9ee13b`) | RM2 (this commit, freshly measured) |
+| --- | --- | --- | --- |
+| Verifier check metric | `checks_run=135` **SUPERSEDED** | `CHECK_DEFINITIONS=49` | `CHECK_DEFINITIONS=52` |
+| Verifier assertion counter | not measured | `ASSERTIONS_EXECUTED=256` | `ASSERTIONS_EXECUTED=437` |
+| Design tests | `23 passed` **SUPERSEDED** | 35 passed, 0 failed, 0 skipped | 47 passed, 0 failed, 0 skipped |
+| Probe tests | 15 rejection + 1 control | 15 rejection + 1 control | **26 rejection + 2 controls** |
+
+```text
+NOT CURRENT / DO NOT QUOTE:  checks_run=135     23 passed
+NOT CURRENT / DO NOT QUOTE:  CHECK_DEFINITIONS=49   ASSERTIONS_EXECUTED=256   35 passed
+CURRENT (measured from the committed RM2 state): see the RM2 column above.
+```
+
+## RM2.4 Scope
+
+```text
+Changed paths vs canonical baseline:  14 (unchanged by RM2; exact set asserted by the verifier)
+New paths added by RM2:               0
+Frontend / backend / runtime / migration / infra paths changed: NONE
+Historical stage verifiers or tests modified:                   NONE
+ARCH1 contracts or ADR-66D-09 modified:                         NONE
+TASK_ROLES modified:                                            NONE
+Runtime / infra denylist relaxed:                               NONE
+Commits 47dcbe9 and c9ee13b:                                    PRESERVED (no amend/rebase/squash)
+production_executed_true_count:                                 0
 ```
 
 
