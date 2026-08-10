@@ -39,8 +39,32 @@ MARKER = "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY"
 DESIGN_BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
 DESIGN_BASELINE_SHORT = "9c5210d"
 
+# Step 66D-DESIGN-M1 post-merge scope freeze.
+#
+# While PR #26 was open the positive scope was computed as DESIGN_BASELINE...HEAD, which was safe
+# because HEAD was the PR head and was bounded by DESIGN_EXPECTED_PATHS. Now that the PR is merged,
+# HEAD is main and advances with every later authorised stage, so it must never again be the
+# positive endpoint: this stage's scope is the immutable range below. Later stages may add paths to
+# main; they cannot widen, narrow or drift what THIS stage is proven to have changed.
+DESIGN_STAGE_HEAD = "bb8eab70ee7fb252329fe05c4b7039c2ed0f694b"
+DESIGN_POSITIVE_RANGE = f"{DESIGN_BASELINE}...{DESIGN_STAGE_HEAD}"
+
+# The positive scope above is frozen, which is what stops it drifting. The current-state rejection
+# guard must NOT be frozen with it -- a runtime or frontend path added by any later commit still has
+# to be caught. This anchor is deliberately HEAD-relative, it feeds the denylist only, and it can
+# never widen or satisfy the positive scope.
+RUNTIME_GUARD_ANCHOR = DESIGN_BASELINE
+
 DESIGN_DIR = "docs/design/66d-delivery-acceptance"
 HANDOFF_DIR = "docs/handoffs/66d-delivery-acceptance"
+
+# Step 66D-DESIGN-M1: artifacts that share the step66d-design-* filename prefix but belong to the
+# MERGE stage, not to the design package. Listed by exact literal path -- this excludes exactly one
+# known governance file, never a prefix or pattern, so any OTHER unregistered step66d-design-*
+# document is still rejected (the Probe A / F03 guarantee is preserved).
+MERGE_GOVERNANCE_ARTIFACTS = frozenset(
+    {f"{HANDOFF_DIR}/step66d-design-m1-canonical-merge-record.md"}
+)
 
 # --- exact scope registry: the complete, closed set of paths this design stage may change ---
 DESIGN_EXPECTED_PATHS = frozenset(
@@ -426,13 +450,14 @@ def parse_mutation_surfaces() -> set[str]:
     }
 
 
-def changed_paths() -> list[str] | None:
+def _git_changed(rev_range: str) -> list[str] | None:
     try:
         result = subprocess.run(
-            ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"],
+            ["git", "diff", "--name-only", rev_range],
             cwd=ROOT,
             capture_output=True,
             text=True,
+            encoding="utf-8",
             check=False,
         )
     except FileNotFoundError:
@@ -440,6 +465,16 @@ def changed_paths() -> list[str] | None:
     if result.returncode != 0:
         return None
     return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
+
+
+def changed_paths() -> list[str] | None:
+    """Positive scope: the frozen DESIGN_BASELINE...DESIGN_STAGE_HEAD range, never current HEAD."""
+    return _git_changed(DESIGN_POSITIVE_RANGE)
+
+
+def current_state_paths() -> list[str] | None:
+    """Rejection-only guard input: deliberately HEAD-relative so later commits stay scanned."""
+    return _git_changed(f"{RUNTIME_GUARD_ANCHOR}...HEAD")
 
 
 # ---------------------------------------------------------------- checks
@@ -471,7 +506,12 @@ def check_scope() -> None:
         "k8s/",
         ".github/workflows/",
     )
-    offenders = [p for p in actual if p.startswith(forbidden)]
+    # Rejection-only, and deliberately evaluated against CURRENT state rather than the frozen
+    # positive range, so a runtime path introduced by any later commit is still caught. This never
+    # admits a path into the positive scope asserted above.
+    current = current_state_paths()
+    scanned = set(current) if current is not None else actual
+    offenders = sorted(p for p in scanned if p.startswith(forbidden))
     expect(
         not offenders,
         "scope.no_frontend_or_runtime_path",
@@ -490,7 +530,7 @@ def check_artifacts() -> None:
         for directory in (ROOT / DESIGN_DIR, ROOT / HANDOFF_DIR)
         for p in directory.glob("*")
         if p.is_file() and p.name.startswith("step66d-design-")
-    }
+    } - MERGE_GOVERNANCE_ARTIFACTS
     expect(
         on_disk == registered_docs,
         "artifacts.no_unregistered_design_document",

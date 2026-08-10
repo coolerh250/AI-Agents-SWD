@@ -17661,3 +17661,42 @@ backend, API, database, event, migration, deployment, identity, secret or featur
   67POC.0 and RA-2I0 all remain **NOT AUTHORIZED**. `TASK_ROLES` unchanged, legacy DeliveryPackage
   unchanged, ADV-VERIFIER-01/02 files unchanged. BE3 resume/replay **DISABLED**.
   `production_executed_true_count: 0`.
+
+## Step 66D-DESIGN-M1 - Canonical Merge of the Unified Control Center UX/IA (PASS)
+
+- **Merged.** PR #26 merged into `main` as a **non-squash two-parent merge**, head-locked to
+  `bb8eab70ee7fb252329fe05c4b7039c2ed0f694b`. Merge commit
+  `e4efb88bad01f72ccc73bdd0d13ff9b8e29fbda2`, parents `9c5210d` and `bb8eab7`. All **three** design
+  commits are preserved as ancestors of main - `47dcbe9` (design), `c9ee13b` (RM1), `bb8eab7`
+  (RM2). No rebase, squash, amend or force-push.
+- **Canonical IA is now binding.** `UNIFIED_CONTROL_CENTER` with the implementation principle
+  `UNIFIED_OVERVIEW_WITH_EXISTING_ROUTE_DRILL_DOWN`. The option comparison is CLOSED and not
+  reopened; `COORDINATED_EXISTING_ROUTES` survives only as a historical, superseded alternative.
+- **Design contract frozen.** 6 Review Gate Actions, 3 Product Owner Decisions, 9 canonical
+  statuses, 7 data states plus 6 separate permission states, 16 gaps (0 authorized), 5 semantic
+  mutation surfaces, 10 wireframes, 22 component candidates, 18 acceptance criteria. Delivery
+  Review is the **sole canonical ProductOwnerDecision entry surface**; `/operator` remains the
+  legacy operational review surface with a documented coexistence rule and gap `DG-16`.
+- **Three review rounds closed.** R1 raised F01-F12 (remediated by RM1); R2 raised R2-F01 route
+  truthfulness, R2-F02 regression evidence and R2-F03 stale metrics (remediated by RM2); R3
+  returned **PASS_WITH_ADVISORY**. Canonical main was independently confirmed to have **0**
+  pre-existing failures - the earlier "13 pre-existing failures" claim is withdrawn.
+- **BOUNDED POST-MERGE SCOPE FREEZE.** While the PR was open the design verifier computed its
+  positive scope as `DESIGN_BASELINE...HEAD`, safe only because HEAD was the PR head. Merged, HEAD
+  is main and advances, so the positive scope is now frozen to `9c5210d...bb8eab7` with the exact
+  14-path registry. The rejection guard was deliberately **not** frozen with it: `RUNTIME_GUARD_ANCHOR`
+  stays HEAD-relative and feeds the denylist only, and two new tests assert both halves.
+- **Verification.** `STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY: PASS`
+  (CHECK_DEFINITIONS=52, ASSERTIONS_EXECUTED=437) and
+  `STEP66D_DESIGN_M1_CANONICAL_MERGE_VERIFY: PASS`. Suite Set A and Suite Set B both **0 failed,
+  0 skipped**. ruff / black / mypy clean; secret, credential and local-path scans clean.
+- **Advisories tracked, not remediated.** `ADV-UTF8-01` - a historical locale-portability exposure
+  in `subprocess.run(..., text=True)` called without `encoding=` (not, as first hypothesised, bare
+  `read_text()`); `ADV-SUITE-01` - Suite Set A is not a committed regression-selection artifact.
+  No historical verifier or test was modified and no suite manifest was created.
+- **Status.** `STEP66D_DESIGN_M1: PASS`; PR #26 **MERGED**; `STEP66D_DESIGN: PASS / CLOSED /
+  CANONICALIZED`; `UNIFIED_CONTROL_CENTER_IA: BINDING / CANONICAL`; design contract **FROZEN**.
+  Frontend and backend implementation **NOT STARTED**. **Step 66D-FE1 and Step 66D-BE1: READY FOR
+  SEPARATE AUTHORIZATION.** Step 66D-FE2, BE2..BE4, QA, Step 67POC.0 and RA-2I0 remain **NOT
+  AUTHORIZED**. No deployment, no shared database, no secret access, no external action, no
+  resume/replay. `production_executed_true_count: 0`.

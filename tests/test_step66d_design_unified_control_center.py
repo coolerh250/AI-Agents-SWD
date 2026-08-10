@@ -20,6 +20,9 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
+# Step 66D-DESIGN-M1: the merged design stage head. The positive scope is this frozen range, never
+# current HEAD, so later authorised stages cannot widen or narrow what this stage changed.
+DESIGN_STAGE_HEAD = "bb8eab70ee7fb252329fe05c4b7039c2ed0f694b"
 
 DESIGN_DIR = ROOT / "docs/design/66d-delivery-acceptance"
 HANDOFF_DIR = ROOT / "docs/handoffs/66d-delivery-acceptance"
@@ -255,15 +258,20 @@ def _probe_copy(tmp: Path) -> Path:
         shutil.copy2(path, work / path.relative_to(ROOT))
     verifier = work / "scripts/verify_step66d_design_unified_control_center.py"
     shutil.copy2(VERIFIER, verifier)
-    # Re-point ONLY the scope diff base at the probe's synthetic baseline commit. DESIGN_BASELINE
-    # itself is left untouched so the baseline.recorded string checks still exercise the real value.
-    verifier.write_text(
-        verifier.read_text(encoding="utf-8").replace(
-            '["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"]',
-            f'["git", "diff", "--name-only", "{base}...HEAD"]',
-        ),
-        encoding="utf-8",
+    # Re-point ONLY the scope diff endpoints at the probe's synthetic baseline commit.
+    # DESIGN_BASELINE and DESIGN_STAGE_HEAD are left untouched so the baseline.recorded string
+    # checks still exercise the real values. Both the frozen positive range and the HEAD-relative
+    # rejection anchor are redirected, so the probe repository exercises both behaviours.
+    source = verifier.read_text(encoding="utf-8")
+    source = source.replace(
+        'DESIGN_POSITIVE_RANGE = f"{DESIGN_BASELINE}...{DESIGN_STAGE_HEAD}"',
+        f'DESIGN_POSITIVE_RANGE = "{base}...HEAD"',
     )
+    source = source.replace(
+        "RUNTIME_GUARD_ANCHOR = DESIGN_BASELINE",
+        f'RUNTIME_GUARD_ANCHOR = "{base}"',
+    )
+    verifier.write_text(source, encoding="utf-8")
     return work
 
 
@@ -572,7 +580,7 @@ def test_scope_no_runtime_or_backend_paths_changed():
 
 def test_scope_changed_paths_are_exactly_fourteen():
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"],
+        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...{DESIGN_STAGE_HEAD}"],
         cwd=ROOT,
         capture_output=True,
         text=True,
@@ -597,3 +605,59 @@ def test_no_secrets_or_local_paths():
         text = path.read_text(encoding="utf-8")
         assert not secret.search(text), f"secret shape in {path.name}"
         assert not local.search(text), f"local path in {path.name}"
+
+
+# ------------------------------------------- Step 66D-DESIGN-M1 post-merge scope freeze
+def test_positive_scope_endpoint_is_frozen_not_current_head():
+    """The positive scope must be pinned to DESIGN_STAGE_HEAD, never to current HEAD.
+
+    Merged into main, HEAD advances with every later authorised stage. If the positive endpoint
+    followed HEAD, this stage's proven scope would silently drift.
+    """
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert (
+        f'DESIGN_STAGE_HEAD = "{DESIGN_STAGE_HEAD}"' in source
+    ), "the verifier does not pin DESIGN_STAGE_HEAD to the merged design head"
+    assert (
+        'DESIGN_POSITIVE_RANGE = f"{DESIGN_BASELINE}...{DESIGN_STAGE_HEAD}"' in source
+    ), "the positive range is not the frozen DESIGN_BASELINE...DESIGN_STAGE_HEAD range"
+    assert (
+        'f"{DESIGN_BASELINE}...HEAD"' not in source
+    ), "the verifier still computes its positive scope against current HEAD"
+    # And the frozen range still resolves to exactly the registered 14 paths.
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...{DESIGN_STAGE_HEAD}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode != 0:
+        pytest.fail("could not compute the frozen design range")
+    changed = {
+        line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()
+    }
+    assert len(changed) == 14, f"frozen range resolves to {len(changed)} paths, expected 14"
+
+
+def test_current_state_rejection_guard_still_scans_current_head():
+    """Freezing the positive scope must not freeze the denylist.
+
+    A runtime/frontend path added by any later commit must still be caught, so the rejection guard
+    stays HEAD-relative. A denylist that cannot see current state is not a denylist.
+    """
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "RUNTIME_GUARD_ANCHOR" in source, "no current-state rejection anchor is defined"
+    assert (
+        'f"{RUNTIME_GUARD_ANCHOR}...HEAD"' in source
+    ), "the rejection guard no longer scans current HEAD"
+    assert "def current_state_paths(" in source, "current_state_paths() helper is missing"
+    # The guard must feed the denylist, not the positive assertion.
+    scope_fn = source.split("def check_scope(")[1].split("\ndef ")[0]
+    assert (
+        "current_state_paths()" in scope_fn
+    ), "check_scope does not evaluate the denylist against current state"
+    assert (
+        "actual == DESIGN_EXPECTED_PATHS" in scope_fn
+    ), "check_scope no longer asserts exact positive-set equality"
