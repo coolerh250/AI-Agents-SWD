@@ -209,12 +209,19 @@ def _probe_copy(tmp: Path) -> Path:
     # Re-point only the scope diff base at the probe's synthetic baseline. CR1_BASELINE itself is
     # left in place so the recorded-baseline string checks still exercise the real value.
     source = verifier.read_text(encoding="utf-8")
-    source = source.replace(
-        'f"{CR1_BASELINE}...HEAD"',
-        f'"{base}...HEAD"',
-    ).replace(
-        '["git", "merge-base", "--is-ancestor", CR1_BASELINE, "HEAD"]',
-        f'["git", "merge-base", "--is-ancestor", "{base}", "HEAD"]',
+    source = (
+        source.replace(
+            'CR1_POSITIVE_RANGE = f"{CR1_BASELINE}...{CR1_STAGE_HEAD}"',
+            f'CR1_POSITIVE_RANGE = "{base}...HEAD"',
+        )
+        .replace(
+            "CR1_RUNTIME_GUARD_ANCHOR = CR1_BASELINE",
+            f'CR1_RUNTIME_GUARD_ANCHOR = "{base}"',
+        )
+        .replace(
+            '["git", "merge-base", "--is-ancestor", CR1_BASELINE, "HEAD"]',
+            f'["git", "merge-base", "--is-ancestor", "{base}", "HEAD"]',
+        )
     )
     verifier.write_text(source, encoding="utf-8")
     return work
@@ -378,3 +385,37 @@ def test_probe_reintroduced_drifting_head_range_is_rejected(tmp_path):
         encoding="utf-8",
     )
     _assert_rejected(_run_probe(work), "reintroduced drifting HEAD range")
+
+
+# ------------------------------------------- Step 66D-BE1-CR1-M1 post-merge scope freeze
+CR1_STAGE_HEAD = "4fe5204e74774d2087c69bea7358f4739122880e"
+
+
+def test_positive_scope_endpoint_is_frozen_not_current_head():
+    """Merged into main, HEAD advances. The positive endpoint must be the frozen stage head."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert f'CR1_STAGE_HEAD = "{CR1_STAGE_HEAD}"' in source
+    assert 'CR1_POSITIVE_RANGE = f"{CR1_BASELINE}...{CR1_STAGE_HEAD}"' in source
+    assert 'f"{CR1_BASELINE}...HEAD"' not in source, "the positive scope still follows current HEAD"
+    result = subprocess.run(
+        ["git", "diff", "--name-only", f"{CR1_BASELINE}...{CR1_STAGE_HEAD}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    changed = {ln.strip().replace("\\", "/") for ln in result.stdout.splitlines() if ln.strip()}
+    assert changed == EXPECTED_PATHS
+    assert len(changed) == 11
+
+
+def test_current_state_rejection_guard_still_scans_head():
+    """Freezing the positive scope must not freeze the denylist."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "CR1_RUNTIME_GUARD_ANCHOR" in source
+    assert 'f"{CR1_RUNTIME_GUARD_ANCHOR}...HEAD"' in source
+    assert "current_state" in source
+    body = source.split("def main(")[1]
+    assert "scanned = current_state or changed" in body
+    assert "changed == CR1_EXPECTED_PATHS" in body

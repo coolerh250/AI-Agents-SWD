@@ -28,6 +28,20 @@ MARKER = "STEP66D_BE1_CR1_ACTIVE_STATE_CONTRACT_VERIFY"
 CR1_BASELINE = "af40b3bf9792fe8182e9620fb9d134af67cf4a12"
 CR1_BASELINE_SHORT = "af40b3b"
 
+# Step 66D-BE1-CR1-M1 post-merge scope freeze.
+#
+# While PR #27 was open the positive scope was CR1_BASELINE...HEAD, safe because HEAD was the PR
+# head and was bounded by CR1_EXPECTED_PATHS. Merged, HEAD is main and advances with every later
+# authorized stage, so it must never again be the positive endpoint: this stage's scope is the
+# immutable range below.
+CR1_STAGE_HEAD = "4fe5204e74774d2087c69bea7358f4739122880e"
+CR1_POSITIVE_RANGE = f"{CR1_BASELINE}...{CR1_STAGE_HEAD}"
+
+# The positive scope above is frozen. The current-state rejection guard must NOT be frozen with it:
+# an implementation or runtime path added by any later commit still has to be caught. This anchor is
+# deliberately HEAD-relative, feeds the denylist only, and can never widen the positive scope.
+CR1_RUNTIME_GUARD_ANCHOR = CR1_BASELINE
+
 CONTRACTS = "docs/contracts/66d-delivery-acceptance"
 ARCH = "docs/architecture/66d-delivery-acceptance"
 DESIGN = "docs/design/66d-delivery-acceptance"
@@ -152,7 +166,12 @@ def main() -> int:
     )
     changed = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{CR1_BASELINE}...HEAD").splitlines()
+        for line in git("diff", "--name-only", CR1_POSITIVE_RANGE).splitlines()
+        if line.strip()
+    }
+    current_state = {
+        line.strip().replace("\\", "/")
+        for line in git("diff", "--name-only", f"{CR1_RUNTIME_GUARD_ANCHOR}...HEAD").splitlines()
         if line.strip()
     }
     expect(
@@ -196,7 +215,11 @@ def main() -> int:
         "check03e",
         "the DESIGN-M1 historical test does not pin the frozen e4efb88..af40b3b record range",
     )
-    offenders = sorted(p for p in changed if p.startswith(FORBIDDEN_SCOPE_PREFIXES))
+    # Rejection-only, evaluated against CURRENT state rather than the frozen positive range, so an
+    # implementation path introduced by any later commit is still caught. This never admits a path
+    # into the positive scope asserted above.
+    scanned = current_state or changed
+    offenders = sorted(p for p in scanned if p.startswith(FORBIDDEN_SCOPE_PREFIXES))
     expect(not offenders, "check04", f"implementation/runtime paths changed: {offenders}")
     expect(
         "source/progress.md" not in changed,
