@@ -212,6 +212,117 @@ PRODUCTION_EXECUTED_TRUE_COUNT:  0
 Step 66D-BE1 resumes only after this amendment is independently reviewed and canonically merged.
 
 ---
+
+# Step 66D-BE1-CR1-RM1 — Correction Addendum
+
+> Appended by Step 66D-BE1-CR1-RM1 under explicit Product Owner authorization to repair one
+> historical test file. This is a **verification-range repair, not a contract change**. 66D-D05 is
+> untouched. The original CR1 commit `c820dfb` is preserved and was not amended.
+
+## RM1.1 Finding
+
+```text
+Finding:                Two Step 66D-DESIGN-M1 tests asserted what the DESIGN-M1 record commit
+                        changed using an OPEN-ENDED range, git diff e4efb88..HEAD:
+                          test_no_historical_verifier_or_test_was_modified_by_this_stage
+                          test_merge_record_commit_touched_no_product_design_content
+                        Because the endpoint followed HEAD, they attributed every later stage's
+                        commits to Step 66D-DESIGN-M1 and failed for ANY subsequent commit.
+Introduced by:          the Step 66D-DESIGN-M1 historical test implementation
+Relationship to 66D-D05: NONE. No D05 statement conflicts with any DESIGN-M1 assertion.
+Discovered by:          Step 66D-BE1-CR1, which reported it rather than silently fixing it
+```
+
+## RM1.2 Measured ranges
+
+```text
+Moving range   e4efb88...HEAD          at PR #27 head   16 paths
+                                       (DESIGN-M1 record scope + the CR1 paths)
+Frozen range   e4efb88...af40b3b                         6 paths
+                                       reproduces the DESIGN-M1 canonical record commit exactly
+```
+
+## RM1.3 Authorized repair
+
+```text
+Historical file:            tests/test_step66d_design_m1_canonical_merge.py   (the only one)
+MERGE_COMMIT:               e4efb88bad01f72ccc73bdd0d13ff9b8e29fbda2
+RECORD_COMMIT:              af40b3bf9792fe8182e9620fb9d134af67cf4a12   (new constant)
+Old range:                  f"{MERGE_COMMIT}..HEAD"
+Canonical frozen range:     f"{MERGE_COMMIT}..{RECORD_COMMIT}"
+Open-ended HEAD ranges removed: 2
+Assertions removed:         0     (61 before, 61 after)
+Assertions weakened:        0     (no subset/contains/allowlist relaxation)
+Tests removed or added:     0     (26 before, 26 after)
+skip / xfail introduced:    0
+Other semantic edits:       0     (diff is one constant + comment, and two endpoints)
+Historical verifier changed: NO   scripts/verify_step66d_design_m1_canonical_merge.py untouched
+Other historical tests changed: NO
+Historical product semantics changed: NO
+```
+
+## RM1.4 Scope expansion
+
+```text
+CR1 original scope:      10 paths
+CR1 RM1 scope:           11 paths
+Additional authorized path: tests/test_step66d_design_m1_canonical_merge.py
+```
+
+The verifier records the exception as `AUTHORIZED_HISTORICAL_PATHS`, a frozenset holding exactly
+one **literal** path. It is never a prefix, wildcard, glob or historical-test category, and new
+checks `check03b..check03e` assert the exception stays a single literal, reject any other
+historical verifier or test, and require the frozen `e4efb88..af40b3b` range to remain pinned.
+
+## RM1.5 Verification
+
+```text
+DESIGN-M1 tests before repair:  24 passed, 2 failed, 0 skipped   (26 collected)
+DESIGN-M1 tests after repair:   26 passed, 0 failed, 0 skipped
+DESIGN-M1 historical verifier:  PASS (unmodified)
+
+Negative regression probe   endpoint reverted to ..HEAD -> 2 failed, 24 passed
+                            endpoint restored           -> 26 passed; tree byte-identical
+Future-commit stability     an unrelated local-only commit on top -> DESIGN-M1 26 passed
+New CR1 probes              unauthorized historical test path            REJECTED
+                            reintroduced drifting ..HEAD range           REJECTED
+```
+
+## RM1.6 66D-D05 integrity — unchanged
+
+```text
+active := closed_at IS NULL                      UNCHANGED
+closed := closed_at IS NOT NULL                  UNCHANGED
+DeliveryReviewTask lifecycle enum                DEFERRED / UNCHANGED
+DeliverySubmission.status mirroring              FORBIDDEN / UNCHANGED
+delivery_review_task_status                      PLANNED / NOT IMPLEMENTED / UNCHANGED
+at-most-one active per delivery_submission_id    UNCHANGED
+required existence                               DEFERRED / UNCHANGED
+reopen / transition semantics                    DEFERRED / UNCHANGED
+```
+
+No 66D-D05 document was edited by RM1 beyond this evidence addendum. There is no `D05_SCOPE_DRIFT`.
+
+## RM1.7 Additional drift scan — reported, not fixed
+
+Scan of `tests/test_step66d_*canonical_merge*.py` for the same drifting-range pattern is recorded
+in the completion report. Any further findings are future governance items; RM1 changed only the
+one authorized file.
+
+## RM1.8 Status
+
+```text
+STEP66D_BE1_CR1_RM1:             PASS
+DESIGN_M1_DRIFTING_HEAD:         CLOSED
+66D_D05:                         UNCHANGED / READY FOR INDEPENDENT REVIEW
+BE1_IMPLEMENTATION:              NOT STARTED / PAUSED
+SHARED_MIGRATION:                NOT APPLIED
+PR27:                            OPEN / UPDATED / NOT MERGED
+CR1_R1:                          REQUIRED / NOT STARTED
+PRODUCTION_EXECUTED_TRUE_COUNT:  0
+```
+
+---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local

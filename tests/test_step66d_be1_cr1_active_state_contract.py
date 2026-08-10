@@ -37,6 +37,8 @@ EVIDENCE = HANDOFF / "step66d-be1-cr1-active-state-contract-evidence.md"
 VERIFIER = ROOT / "scripts/verify_step66d_be1_cr1_active_state_contract.py"
 
 COPIED = [D05, BINDING, REGISTRY, DOMAIN, INBOX, MANIFEST, MATRIX, EVIDENCE]
+# The verifier reads the authorized historical repair file, so probes must carry it too.
+COPIED_HISTORICAL = [ROOT / "tests/test_step66d_design_m1_canonical_merge.py"]
 
 EXPECTED_PATHS = {
     "docs/contracts/66d-delivery-acceptance/step66d-d05-review-task-active-state-amendment.md",
@@ -49,7 +51,12 @@ EXPECTED_PATHS = {
     "docs/handoffs/66d-delivery-acceptance/step66d-be1-cr1-active-state-contract-evidence.md",
     "scripts/verify_step66d_be1_cr1_active_state_contract.py",
     "tests/test_step66d_be1_cr1_active_state_contract.py",
+    # Step 66D-BE1-CR1-RM1: the single authorized historical repair path.
+    "tests/test_step66d_design_m1_canonical_merge.py",
 }
+
+AUTHORIZED_HISTORICAL = {"tests/test_step66d_design_m1_canonical_merge.py"}
+DESIGN_M1_TEST = ROOT / "tests/test_step66d_design_m1_canonical_merge.py"
 
 
 def manifest() -> dict:
@@ -135,11 +142,38 @@ def test_verifier_passes_on_the_committed_tree():
     assert "STEP66D_BE1_CR1_ACTIVE_STATE_CONTRACT_VERIFY: PASS" in result.stdout, result.stdout
 
 
-def test_scope_registry_is_exactly_ten_paths():
+def test_scope_registry_is_exactly_eleven_paths():
     source = VERIFIER.read_text(encoding="utf-8")
     assert "CR1_EXPECTED_PATHS" in source
     assert f'CR1_BASELINE = "{CR1_BASELINE}"' in source
-    assert len(EXPECTED_PATHS) == 10
+    assert len(EXPECTED_PATHS) == 11
+
+
+def test_exactly_one_historical_path_is_authorized_by_literal():
+    """The RM1 exception must stay one named file, never a historical-test category."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "AUTHORIZED_HISTORICAL_PATHS" in source
+    block = source.split("AUTHORIZED_HISTORICAL_PATHS = frozenset(")[1].split(")")[0]
+    literals = re.findall(r'"([^"]+)"', block)
+    assert literals == ["tests/test_step66d_design_m1_canonical_merge.py"], literals
+    for pattern in ("*", "startswith", "glob", "fnmatch", "re.compile"):
+        assert pattern not in block, f"the historical exception uses a pattern ({pattern})"
+    assert len(AUTHORIZED_HISTORICAL) == 1
+
+
+def test_design_m1_range_is_frozen_not_drifting():
+    source = DESIGN_M1_TEST.read_text(encoding="utf-8")
+    assert 'RECORD_COMMIT = "af40b3bf9792fe8182e9620fb9d134af67cf4a12"' in source
+    assert 'f"{MERGE_COMMIT}..{RECORD_COMMIT}"' in source
+    assert 'f"{MERGE_COMMIT}..HEAD"' not in source, "a drifting HEAD range survived"
+
+
+def test_design_m1_repair_changed_only_the_range_endpoints():
+    """The authorized repair must not remove or weaken any DESIGN-M1 assertion."""
+    source = DESIGN_M1_TEST.read_text(encoding="utf-8")
+    assert source.count("assert ") == 61, "the DESIGN-M1 assertion count changed"
+    assert len(re.findall(r"(?m)^def test_", source)) == 26, "a DESIGN-M1 test was added or removed"
+    assert not re.search(r"pytest\.(skip|xfail)|@pytest\.mark\.(skip|xfail)", source)
 
 
 # --------------------------------------------------------------------- probe harness
@@ -164,6 +198,9 @@ def _probe_copy(tmp: Path) -> Path:
         ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True, check=True
     ).stdout.strip()
     for path in COPIED:
+        shutil.copy2(path, work / path.relative_to(ROOT))
+    (work / "tests").mkdir(parents=True, exist_ok=True)
+    for path in COPIED_HISTORICAL:
         shutil.copy2(path, work / path.relative_to(ROOT))
     verifier = work / "scripts/verify_step66d_be1_cr1_active_state_contract.py"
     shutil.copy2(VERIFIER, verifier)
@@ -319,3 +356,25 @@ def test_probe_lifecycle_values_are_rejected(tmp_path, label, forbidden):
         encoding="utf-8",
     )
     _assert_rejected(_run_probe(work), label)
+
+
+def test_probe_another_historical_test_path_is_rejected(tmp_path):
+    """The authorized exception must not become a historical-test category allowlist."""
+    work = _probe_copy(tmp_path)
+    intruder = work / "tests/test_step66d_arch1_m1_canonical_merge.py"
+    intruder.parent.mkdir(parents=True, exist_ok=True)
+    intruder.write_text("# unauthorized historical test edit\n", encoding="utf-8")
+    _assert_rejected(_run_probe(work), "unauthorized historical test path")
+
+
+def test_probe_reintroduced_drifting_head_range_is_rejected(tmp_path):
+    """Guard the repair: restoring MERGE_COMMIT..HEAD must be rejected again."""
+    work = _probe_copy(tmp_path)
+    target = work / "tests/test_step66d_design_m1_canonical_merge.py"
+    text = target.read_text(encoding="utf-8")
+    assert 'f"{MERGE_COMMIT}..{RECORD_COMMIT}"' in text
+    target.write_text(
+        text.replace('f"{MERGE_COMMIT}..{RECORD_COMMIT}"', 'f"{MERGE_COMMIT}..HEAD"'),
+        encoding="utf-8",
+    )
+    _assert_rejected(_run_probe(work), "reintroduced drifting HEAD range")

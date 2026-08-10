@@ -44,8 +44,14 @@ EVIDENCE = f"{HANDOFF}/step66d-be1-cr1-active-state-contract-evidence.md"
 VERIFIER = "scripts/verify_step66d_be1_cr1_active_state_contract.py"
 TESTS = "tests/test_step66d_be1_cr1_active_state_contract.py"
 
-CR1_EXPECTED_PATHS = frozenset(
-    {D05, BINDING, REGISTRY, DOMAIN, INBOX, MANIFEST, MATRIX, EVIDENCE, VERIFIER, TESTS}
+# Step 66D-BE1-CR1-RM1: exactly one historical test path is authorized, by literal, to repair the
+# DESIGN-M1 drifting-HEAD diff range. This is a single named file, never a prefix, wildcard or
+# historical-test category, so any OTHER historical verifier or test is still rejected.
+AUTHORIZED_HISTORICAL_PATHS = frozenset({"tests/test_step66d_design_m1_canonical_merge.py"})
+
+CR1_EXPECTED_PATHS = (
+    frozenset({D05, BINDING, REGISTRY, DOMAIN, INBOX, MANIFEST, MATRIX, EVIDENCE, VERIFIER, TESTS})
+    | AUTHORIZED_HISTORICAL_PATHS
 )
 
 # Values that must never be introduced as a DeliveryReviewTask lifecycle enum.
@@ -156,7 +162,39 @@ def main() -> int:
         f"unexpected={sorted(changed - CR1_EXPECTED_PATHS)}",
     )
     expect(
-        len(CR1_EXPECTED_PATHS) == 10, "check03", "the CR1 path registry is not exactly 10 paths"
+        len(CR1_EXPECTED_PATHS) == 11,
+        "check03",
+        f"the CR1 path registry is {len(CR1_EXPECTED_PATHS)} paths, expected exactly 11",
+    )
+    expect(
+        AUTHORIZED_HISTORICAL_PATHS == {"tests/test_step66d_design_m1_canonical_merge.py"},
+        "check03b",
+        f"exactly one literal historical path may be authorized, got "
+        f"{sorted(AUTHORIZED_HISTORICAL_PATHS)}",
+    )
+    unauthorized_historical = sorted(
+        p
+        for p in changed
+        if re.search(r"(verify|test)_step66", p)
+        and "be1_cr1_active_state_contract" not in p
+        and p not in AUTHORIZED_HISTORICAL_PATHS
+    )
+    expect(
+        not unauthorized_historical,
+        "check03c",
+        f"unauthorized historical verifier/test paths changed: {unauthorized_historical}",
+    )
+    m1_test = read("tests/test_step66d_design_m1_canonical_merge.py")
+    expect(
+        'f"{MERGE_COMMIT}..HEAD"' not in m1_test,
+        "check03d",
+        "the DESIGN-M1 historical test still uses a drifting MERGE_COMMIT..HEAD range",
+    )
+    expect(
+        'RECORD_COMMIT = "af40b3bf9792fe8182e9620fb9d134af67cf4a12"' in m1_test
+        and 'f"{MERGE_COMMIT}..{RECORD_COMMIT}"' in m1_test,
+        "check03e",
+        "the DESIGN-M1 historical test does not pin the frozen e4efb88..af40b3b record range",
     )
     offenders = sorted(p for p in changed if p.startswith(FORBIDDEN_SCOPE_PREFIXES))
     expect(not offenders, "check04", f"implementation/runtime paths changed: {offenders}")
