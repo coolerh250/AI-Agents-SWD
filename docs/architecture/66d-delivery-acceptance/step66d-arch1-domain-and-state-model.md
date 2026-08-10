@@ -75,9 +75,10 @@ task_id                     required -- the existing Task this review hangs off
 assigned_roles              subset of TASK_ROLES
 assigned_actor_refs         list, may be empty until assignment
 review_status               mirrors submission review state for the assignee's view
+                            ** SUPERSEDED BY 66D-D05 -- NOT AUTHORITATIVE FOR BE1 PERSISTENCE **
 review_due_at               timestamp
 created_at                  timestamp
-closed_at                   nullable
+closed_at                   nullable -- ACTIVE-STATE AUTHORITY (66D-D05)
 row_version                 integer
 ```
 
@@ -86,6 +87,30 @@ Authoritative source:  DeliveryReviewTask row (NOT IMPLEMENTED)
 Relationship:          exactly one active review task per submission version
 Immutability:          assignment history is audited; the row itself is mutable under CAS
 ```
+
+> **Amended by 66D-D05 (BINDING).** The `review_status` line above is retained as the original
+> ARCH1 text and is **superseded as lifecycle and storage authority**. Step 66D-BE1 must not persist
+> an independent `DeliveryReviewTask` status enum and must not mirror `DeliverySubmission.status`
+> into the review task. Active state is structural:
+
+```text
+DeliveryReviewTask.active  :=  closed_at IS NULL
+DeliveryReviewTask.closed  :=  closed_at IS NOT NULL
+
+Persistence invariant:  AT MOST ONE structurally active DeliveryReviewTask per
+                        delivery_submission_id (partial unique index WHERE closed_at IS NULL).
+                        delivery_submission_id is the submission-version boundary, because each
+                        version is a distinct row linked by supersedes_submission_id.
+Required existence:     WHEN an active task must exist is DEFERRED, not enforced by BE1.
+Lifecycle enum:         NOT DEFINED. OPEN / IN_PROGRESS / CLOSED / CANCELLED belongs to
+                        AcceptanceFollowUpItem (section 5) and must not be reused here.
+closed_at meaning:      structural only -- never ACCEPTED, REJECTED, EXPIRED, ARCHIVED, a recorded
+                        ProductOwnerDecision, completed QA, or a terminal submission status.
+Transitions:            reopen, close-action, automatic closure, closure by decision and closure
+                        by expiry are all DEFERRED.
+```
+
+> Full text: `docs/contracts/66d-delivery-acceptance/step66d-d05-review-task-active-state-amendment.md`
 
 ## 3. DeliveryReviewAction
 

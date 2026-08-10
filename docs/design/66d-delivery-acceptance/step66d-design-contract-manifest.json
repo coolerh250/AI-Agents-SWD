@@ -232,6 +232,24 @@
     "delivery_review_anchor": "delivery_submission_id",
     "task_is_agent_execution_source_of_truth": false
   },
+  "review_task_active_state": {
+    "decision_id": "66D-D05",
+    "status": "BINDING",
+    "decision_authority": "Product Owner",
+    "source_document": "docs/contracts/66d-delivery-acceptance/step66d-d05-review-task-active-state-amendment.md",
+    "review_task_active_predicate": "closed_at_is_null",
+    "review_task_closed_predicate": "closed_at_is_not_null",
+    "review_task_lifecycle_enum": "deferred",
+    "submission_status_mirroring": "forbidden",
+    "delivery_review_task_status": "planned_not_implemented",
+    "persistence_invariant": "at_most_one_active_per_delivery_submission_id",
+    "required_existence_semantics": "deferred",
+    "partial_unique_boundary": "delivery_submission_id",
+    "closed_at_implies_decision": false,
+    "transition_semantics": "deferred",
+    "supersedes": "ARCH1 DeliveryReviewTask.review_status mirrors submission review state",
+    "preserves": "DESIGN review task status is not interchangeable with submission status"
+  },
   "actor_types": [
     "runtime_agent",
     "ai_partner",
@@ -376,11 +394,16 @@
   "inbox_filters": [
     {
       "name": "delivery_review_task_status",
-      "source_field": "DeliveryReviewTask.status",
-      "enum_source": "review task lifecycle (NOT IMPLEMENTED)",
+      "source_field": "planned / deferred - no backend field exists (66D-D05)",
+      "enum_source": "review task lifecycle (NOT DEFINED)",
       "display_label": "Review task status",
       "missing_data_behavior": "UNKNOWN",
-      "backend_dependency": "review task queue read model"
+      "backend_dependency": "future authorized lifecycle-contract stage, then a review task queue read model",
+      "status": "PLANNED_NOT_IMPLEMENTED",
+      "derivation_forbidden": [
+        "DeliverySubmission.status",
+        "closed_at"
+      ]
     },
     {
       "name": "delivery_submission_status",

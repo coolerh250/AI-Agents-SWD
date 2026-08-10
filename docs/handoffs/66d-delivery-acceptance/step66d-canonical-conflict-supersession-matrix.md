@@ -180,6 +180,57 @@ NOT edited (deliberately):
   Any file under apps/, agents/, services/, shared/, migrations/, infra/.
 ```
 
+## Step 66D-BE1-CR1 addendum — 66D-D05 DeliveryReviewTask active state
+
+> Appended by Step 66D-BE1-CR1. It records one further canonical resolution and does not alter any
+> conflict, resolution or annotation above.
+
+```text
+Conflict:
+  ARCH1 step66d-arch1-domain-and-state-model.md section 2 stated
+    "review_status mirrors submission review state for the assignee's view"
+    -- quoted as the SUPERSEDED prior statement; WITHDRAWN as authority by 66D-D05 and NOT
+       AUTHORITATIVE for BE1 persistence --
+  while DESIGN step66d-design-delivery-inbox-spec.md section 3 stated that
+    DeliveryReviewTask.status is an independent review-task lifecycle whose enum is NOT
+    IMPLEMENTED, that it is NOT interchangeable with DeliverySubmission.status, and that a closed
+    review task against an EXPIRED submission must remain expressible.
+
+Discovered by:
+  Step 66D-BE1, which stopped at its canonical contract gate before creating a branch, because
+  "exactly one active review task per submission version" could not be implemented deterministically
+  without inventing a lifecycle enum.
+
+Resolution:
+  66D-D05 (BINDING, Product Owner)
+  docs/contracts/66d-delivery-acceptance/step66d-d05-review-task-active-state-amendment.md
+
+Winner:
+  neither literal prior representation
+
+Canonical replacement:
+  a structural active predicate that needs no enum
+    active  :=  closed_at IS NULL
+    closed  :=  closed_at IS NOT NULL
+  persistence invariant: AT MOST ONE structurally active DeliveryReviewTask per
+  delivery_submission_id (partial unique index WHERE closed_at IS NULL)
+
+Superseded:
+  the ARCH1 mirroring sentence, as lifecycle and storage authority for BE1 persistence.
+  The original sentence is annotated in place and is not deleted.
+
+Preserved:
+  the DESIGN requirement that review-task status and submission status are NOT interchangeable.
+
+Lifecycle enum:
+  deferred -- NOT DEFINED. DESIGN did not define review-task lifecycle values and this addendum
+  does not claim otherwise. delivery_review_task_status remains PLANNED / NOT IMPLEMENTED.
+
+Deferred by this resolution:
+  when an active review task must exist; reopen; close action; reopen-after-close; automatic
+  closure; closure caused by a Product Owner decision; closure caused by expiry.
+```
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
