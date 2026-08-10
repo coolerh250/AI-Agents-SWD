@@ -91,11 +91,59 @@ Not to be confused with:
   workflow -> run, never on a task.
 
 Authoritative source:
-  66D-D03
+  66D-D03, and 66D-D05 for structural active state
 
 Future implementation owner:
   Step 66D-ARCH -- NOT AUTHORIZED
 ```
+
+### DeliveryReviewTask structural active state (66D-D05)
+
+```text
+Canonical definition:
+  A purely structural predicate on the review task row.
+    active  :=  closed_at IS NULL
+    closed  :=  closed_at IS NOT NULL
+
+Not to be confused with:
+  DeliverySubmission.status   -- the nine-value canonical submission lifecycle. The review-task
+                                 structural state is NOT a mirror of it and never derives from it.
+  ProductOwnerDecision        -- the immutable, supersedable acceptance record. closed_at is NOT
+                                 an acceptance decision and implies no outcome.
+  A lifecycle enum            -- "active" is NOT the value OPEN, and "closed" is NOT the value
+                                 CLOSED. No DeliveryReviewTask lifecycle enum exists.
+
+Authoritative source:
+  66D-D05
+```
+
+### future DeliveryReviewTask lifecycle status
+
+```text
+Canonical definition:
+  A reserved product / read-model concept surfaced in the Delivery Inbox as the filter
+  delivery_review_task_status.
+
+Current state:
+  PLANNED / NOT IMPLEMENTED. The lifecycle enum is NOT DEFINED. There is no BE1 persistence
+  source. It must not be derived from DeliverySubmission.status, and it must not be derived as an
+  OPEN/CLOSED value from closed_at.
+
+Future implementation owner:
+  a separate authorized lifecycle-contract stage -- NOT AUTHORIZED
+```
+
+### Forbidden synonymisations (66D-D05)
+
+```text
+submission status  ==  review-task status      FORBIDDEN
+closed_at          ==  acceptance decision     FORBIDDEN
+active             ==  OPEN enum value         FORBIDDEN
+closed             ==  CLOSED enum value       FORBIDDEN
+```
+
+`OPEN / IN_PROGRESS / CLOSED / CANCELLED` is the `AcceptanceFollowUpItem` status set and must not
+be reused as a DeliveryReviewTask lifecycle.
 
 ## DeliveryReviewAction
 

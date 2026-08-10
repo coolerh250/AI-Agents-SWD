@@ -40,7 +40,7 @@ explicitly-named, separately-defined filters. There is no filter without a field
 
 | Filter name | Source field | Enum / source contract | Display label | Missing-data behavior | Backend dependency |
 | --- | --- | --- | --- | --- | --- |
-| `delivery_review_task_status` | `DeliveryReviewTask.status` | review-task lifecycle (**NOT IMPLEMENTED**) | "Review task status" | `UNKNOWN` (never treated as open/clear) | review-task queue read model |
+| `delivery_review_task_status` | **planned / deferred — no backend field exists (66D-D05)** | review-task lifecycle (**NOT DEFINED**) | "Review task status" | `UNKNOWN` (never treated as open/clear) | future authorized lifecycle-contract stage, then a review-task queue read model |
 | `delivery_submission_status` | `DeliverySubmission.status` | the nine canonical submission statuses | "Submission status" | `UNKNOWN` | `GET /delivery-submissions` |
 | `assigned_role` | `DeliveryReviewTask.assigned_role` | `TASK_ROLES` (`reviewer_approver`, `pm_engineering_lead`, …) | "Assigned role" | `UNKNOWN` | review-task read model |
 | `assigned_actor` | `DeliveryReviewTask.assigned_actor` | `actor_ref` | "Assignee" | `UNKNOWN` | review-task read model |
@@ -53,6 +53,27 @@ The two status filters are **not interchangeable**: the review task is the human
 (66D-D03) and can be open while its submission is already terminal; the submission status is the
 nine-value canonical lifecycle. A row may therefore legitimately show a closed review task against
 an `EXPIRED` submission, and the Inbox must be able to express that.
+
+**Amended by 66D-D05 (BINDING).** That separation is preserved and is exactly why the review-task
+filter cannot be satisfied from the submission status. Its current state:
+
+```text
+delivery_review_task_status:  RESERVED PRODUCT / READ-MODEL CONCEPT
+                              PLANNED / NOT IMPLEMENTED
+                              backend lifecycle enum: NOT DEFINED
+                              BE1 persistence source: none
+```
+
+```text
+MUST NOT map DeliverySubmission.status onto this filter.
+MUST NOT derive an OPEN/CLOSED value directly from closed_at and present it as the lifecycle.
+MUST NOT describe DeliveryReviewTask.status as an existing backend field.
+```
+
+Step 66D-BE1 persists only the structural predicate `closed_at IS NULL` (active) /
+`closed_at IS NOT NULL` (closed), which carries no outcome meaning. Implementing this filter for
+real requires a separate authorized lifecycle-contract stage that first defines the enum. Until
+then the Inbox renders it as `UNKNOWN`, never as open or clear.
 
 No filter introduces a backend capability that is not already named in the ARCH1 contracts; every
 one is marked **NOT IMPLEMENTED** in the gap register.

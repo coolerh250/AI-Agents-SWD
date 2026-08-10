@@ -21,6 +21,10 @@ ORIGINAL_DESIGN_COMMIT = "47dcbe9feda6633e3d0835d16dcaa0866a26c2cf"
 RM1_COMMIT = "c9ee13b7389f0b4977cab835337c828675a4a67d"
 DESIGN_STAGE_HEAD = "bb8eab70ee7fb252329fe05c4b7039c2ed0f694b"
 MERGE_COMMIT = "e4efb88bad01f72ccc73bdd0d13ff9b8e29fbda2"
+# Step 66D-BE1-CR1-RM1: the DESIGN-M1 merge-record commit. What that stage changed is the
+# frozen range MERGE_COMMIT..RECORD_COMMIT. Using ..HEAD here made these assertions attribute
+# every later stage's commits to Step 66D-DESIGN-M1, so they failed for any subsequent commit.
+RECORD_COMMIT = "af40b3bf9792fe8182e9620fb9d134af67cf4a12"
 
 DESIGN_DIR = ROOT / "docs/design/66d-delivery-acceptance"
 HANDOFF_DIR = ROOT / "docs/handoffs/66d-delivery-acceptance"
@@ -286,7 +290,7 @@ def test_advisories_are_tracked_and_not_remediated():
 def test_no_historical_verifier_or_test_was_modified_by_this_stage():
     changed = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{MERGE_COMMIT}..HEAD").splitlines()
+        for line in git("diff", "--name-only", f"{MERGE_COMMIT}..{RECORD_COMMIT}").splitlines()
         if line.strip()
     }
     historical = [
@@ -315,7 +319,7 @@ def test_no_implementation_slice_is_authorized():
 def test_merge_record_commit_touched_no_product_design_content():
     changed = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{MERGE_COMMIT}..HEAD").splitlines()
+        for line in git("diff", "--name-only", f"{MERGE_COMMIT}..{RECORD_COMMIT}").splitlines()
         if line.strip()
     }
     # An empty diff (running exactly at the merge commit) trivially satisfies this; never skip.

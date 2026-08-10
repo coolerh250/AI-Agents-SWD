@@ -34,6 +34,9 @@ RESOLVED / BINDING
 66D-D04:
 RESOLVED / BINDING
 
+66D-D05:
+RESOLVED / BINDING (added 2026-08-10 by Step 66D-BE1-CR1)
+
 STEP66D_ARCH1:
 NOT RESTARTED / NOT AUTHORIZED BY THIS STAGE
 
@@ -284,6 +287,62 @@ D04-R6  The legacy DeliveryPackage must not be used as the human review aggregat
 ```
 
 ---
+
+## 66D-D05 — DeliveryReviewTask structural active state
+
+```text
+STATUS:    RESOLVED / BINDING
+ADDED:     2026-08-10, recorded by Step 66D-BE1-CR1
+SELECTION: Active state is structural, derived from closed_at. No DeliveryReviewTask lifecycle
+           enum is defined, and DeliverySubmission.status is never mirrored as task lifecycle
+           authority.
+FULL TEXT: docs/contracts/66d-delivery-acceptance/step66d-d05-review-task-active-state-amendment.md
+```
+
+### Predicates
+
+```text
+DeliveryReviewTask.active  :=  closed_at IS NULL
+DeliveryReviewTask.closed  :=  closed_at IS NOT NULL
+```
+
+### Binding requirements
+
+```text
+D05-R1   Active state is structural: closed_at IS NULL. Closed state is closed_at IS NOT NULL.
+D05-R2   Step 66D-BE1 must not persist an independent DeliveryReviewTask status or review_status
+         lifecycle enum.
+D05-R3   Step 66D-BE1 must not mirror DeliverySubmission.status into DeliveryReviewTask as
+         lifecycle authority.
+D05-R4   The persistence invariant is AT MOST ONE structurally active DeliveryReviewTask per
+         delivery_submission_id, enforced by a partial unique index where closed_at IS NULL.
+D05-R5   delivery_submission_id is the submission-version boundary, because each submission
+         version is a distinct row linked by supersedes_submission_id.
+D05-R6   When an active review task MUST exist is deferred to a future lifecycle stage. BE1 must
+         not force every submission to always have one.
+D05-R7   closed_at never implies ACCEPTED, REJECTED, EXPIRED, ARCHIVED, a recorded
+         ProductOwnerDecision, completed QA, or a terminal submission status.
+D05-R8   The DeliveryReviewTask lifecycle enum is NOT DEFINED. OPEN, IN_PROGRESS, CLOSED,
+         CANCELLED, PENDING and ACTIVE must not be introduced as review-task lifecycle values.
+         OPEN / IN_PROGRESS / CLOSED / CANCELLED belongs to AcceptanceFollowUpItem.
+D05-R9   The Delivery Inbox filter delivery_review_task_status stays a reserved product concept:
+         PLANNED / NOT IMPLEMENTED, lifecycle enum not yet defined, BE1 persistence source none.
+         It must not be derived from DeliverySubmission.status.
+D05-R10  Reopen, close-action, reopen-after-close, automatic closure, closure caused by a Product
+         Owner decision and closure caused by expiry are all deferred and unimplemented.
+```
+
+### Supersession
+
+```text
+SUPERSEDED  ARCH1 domain-and-state-model section 2, "review_status mirrors submission review
+            state for the assignee's view" -- withdrawn as lifecycle and storage authority for
+            BE1 persistence. The original sentence is annotated in place, never deleted.
+PRESERVED   DESIGN delivery-inbox-spec section 3 -- review-task status and submission status stay
+            NOT interchangeable, and a closed review task against an EXPIRED submission stays
+            expressible.
+UNCHANGED   66D-D01, 66D-D02, 66D-D03, 66D-D04 and ADR-66D-09 keep their existing semantics.
+```
 
 ## Deferred implementation
 
