@@ -166,8 +166,16 @@ M06  unregistered stage family accepted             REJECTED
 M07  historical frozen endpoint changed to HEAD     REJECTED
 M08  historical equality weakened to subset         REJECTED
 M09  shared/ and runtime/ admitted                  REJECTED
+X2   `if missing:` enforcement deleted only         REJECTED   (RM1; check11a)
+X3   `if unexpected:` enforcement deleted only      REJECTED   (RM1; check11b)
      untampered control                             PASS
 ```
+
+X2/X3 are the AT-M1-GOV1-R1 escapes (finding D-01): each keeps both set-difference
+computations and deletes only one enforcement branch. Both ESCAPED on the pre-RM1 head
+(reproduced before the fix) and are now REJECTED by the behavioral checks check11a-c, which
+perturb the imported ALIGN1 registry in each direction and observe the real
+`check33_positive_exact_scope()` record — or fail to record — a failure.
 
 ## 8. AT-M1 compatibility probe
 
@@ -267,6 +275,12 @@ REAL_SECRET 0 · REAL_CREDENTIAL 0 · NEW_INTERNAL_IP 0 · NEW_SSH_ALIAS 0
 NEW_USERNAME 0 · REAL_LOCAL_ABSOLUTE_PATH 0 · UNKNOWN 0
 ```
 
+**Correction (RM1).** The original "mypy PASS" above was measured over a subset that omitted
+`tests/test_at_m1_gov1_stage_family_compatibility.py` and was **incorrect**: AT-M1-GOV1-R1
+found 3 errors in that file (finding D-02, nullable `spec_from_file_location` result). Closed in
+RM1 with an explicit type-narrowing assertion. The gate is now the full four changed Python
+files — ALIGN1 verifier, ALIGN1 test, GOV1 verifier, GOV1 test — and passes with 0 errors.
+
 ## 12. Safety
 
 ```text
@@ -295,6 +309,59 @@ AT_M1_RM1:                         NOT STARTED
 AT_M2:                             NOT AUTHORIZED
 PRODUCTION_EXECUTED_TRUE_COUNT:    0
 ```
+
+## 14. AT-M1-GOV1-R1 verdict and RM1 closure
+
+Independent review AT-M1-GOV1-R1 (fresh session, own worktrees and probes) returned
+**PASS_WITH_ADVISORY**. Product Owner adjudication: **RM1 REQUIRED BEFORE MERGE**.
+
+```text
+D-01  check11 guard textual, not behavioral        CLOSED by behavioral verification
+      (X2/X3 enforcement-deletion escapes)          check11a-c + mirrored tests + X2/X3 probes
+D-02  3 mypy errors in the GOV1 test module        CLOSED; full four-file mypy gate PASS
+A-01  AT-M1 baseline re-pin after GOV1 merge       TRACKED FOR AT-M1-RM1
+A-02  regression selection not recorded in-repo    TRACKED / NON-BLOCKING
+A-03  bare family names admitted by design         INFORMATIONAL
+```
+
+RM1 changed only the GOV1 verifier and the GOV1 test (plus this evidence document). The ALIGN1
+verifier and test are **byte-identical** to the pre-RM1 PR #30 head: both frozen endpoints, the
+34-path registry and check33's semantics are untouched. D-01 fixes the GOV1 verifier's ability
+to verify ALIGN1, not ALIGN1 itself.
+
+### RM1 regression (reviewer-established 33-module selection)
+
+The selection is the R1 reviewer's reproducible superset: every test module matching
+`grep -rl "name-only" tests/` on canonical main, unioned with the full `test_step66d_*`,
+`test_step66sync1_*`, `test_step66align2_*`, `test_step66m0_*` and `test_step66c4_be3_ra2m*`
+families — 33 modules, run sequentially with `-p no:randomly`, identical list on every tree.
+The earlier 30-module figures in section 9 stand as originally measured; this selection
+supersedes them for RM1 and later stages (A-02).
+
+```text
+canonical main 2d4da80                       1345 passed,  9 failed, 0 skipped
+PR #30 RM1 code head (fix commits applied)   1347 passed,  9 failed, 0 skipped
+PR #29 head + RM1 changes (LOCAL commit)     1347 passed,  9 failed, 0 skipped
+
+Failure identity sets:                       IDENTICAL on all three trees (9 IDs, incl. F1/F2)
+New failures:                                0
+```
+
+The +2 on both RM1 trees is the two ALIGN1 registration tests this stage adds. The RM1 code
+head was measured at the second fix commit; the only later commit on the branch is this
+documentation file, which no selected test reads.
+
+**Measurement correction against R1's counts (22 baseline failures).** 13 of the 22 were a
+Windows long-path artifact, not repository truth: review modules that read a design branch via
+`git show <ref>:<path>` fail with exit 128 "Filename too long" when the disposable worktree
+lives under a deep temp prefix. Diagnosed from the actual error, confirmed deterministic
+per-tree, and eliminated by enabling the Git for Windows `core.longpaths` setting in the local
+(machine-only, uncommitted) repository configuration — after which deep worktrees and the
+short-path primary checkout agree exactly. The reviewer's identity-equality conclusion was
+valid within their uniform protocol; the corrected per-tree truth is the 9-failure set above.
+
+The local-only simulation commit was created on a detached HEAD in a disposable worktree,
+contained by no branch, never pushed, and destroyed with the worktree. PR #29 remote unchanged.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
