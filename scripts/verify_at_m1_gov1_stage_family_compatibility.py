@@ -20,6 +20,7 @@ import pathlib
 import re
 import subprocess
 import sys
+from typing import Any
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "AT_M1_GOV1_STAGE_FAMILY_COMPATIBILITY_VERIFY"
@@ -149,6 +150,27 @@ def align1_module():
     return module
 
 
+def check33_records_failure(module: Any, registry: tuple[str, ...]) -> bool:
+    """Run the REAL check33 against a perturbed registry and observe whether it records a failure.
+
+    This is a behavioral probe, not a source-text assertion: a check33 that still COMPUTES both
+    set differences but no longer ENFORCES one of them passes any substring test yet returns
+    False here for the disabled direction. Only the imported module instance is perturbed --
+    no canonical file is edited -- and its registry and failure list are restored afterwards.
+    """
+    saved_registry = module.ALIGN1_EXPECTED_PATHS
+    saved_failures = list(module.FAILURES)
+    module.ALIGN1_EXPECTED_PATHS = tuple(registry)
+    module.FAILURES.clear()
+    try:
+        module.check33_positive_exact_scope()
+        return any(message.startswith("check33") for message in module.FAILURES)
+    finally:
+        module.FAILURES.clear()
+        module.FAILURES.extend(saved_failures)
+        module.ALIGN1_EXPECTED_PATHS = saved_registry
+
+
 def main() -> int:  # noqa: PLR0915
     align1_src = read(ALIGN1_VERIFIER)
     align1_test_src = read(ALIGN1_TEST)
@@ -225,6 +247,28 @@ def main() -> int:  # noqa: PLR0915
         "check11",
         "check33 no longer computes exact set equality in BOTH directions "
         "(unexpected = changed - expected, missing = expected - changed)",
+    )
+    # check11 proves both differences are COMPUTED; check11a-c prove both are ENFORCED, by
+    # perturbing the imported registry in each direction and observing the real check33 fail
+    # (AT-M1-GOV1-R1 finding D-01: X2/X3 enforcement-deletion escapes).
+    registry = tuple(module.ALIGN1_EXPECTED_PATHS)
+    phantom = "docs/handoffs/gov1-rm1-behavioral-probe-phantom.md"
+    expect(
+        phantom not in registry and check33_records_failure(module, registry + (phantom,)),
+        "check11a",
+        "check33 does not ENFORCE the missing direction: a registered-but-unchanged path "
+        "was not recorded as a failure",
+    )
+    expect(
+        len(registry) > 0 and check33_records_failure(module, registry[:-1]),
+        "check11b",
+        "check33 does not ENFORCE the unexpected direction: a changed-but-unregistered path "
+        "was not recorded as a failure",
+    )
+    expect(
+        not check33_records_failure(module, registry),
+        "check11c",
+        "behavioral probe control failed: check33 records a failure on the untampered registry",
     )
     expect(
         len(getattr(module, "ALIGN1_EXPECTED_PATHS", ())) == ALIGN1_EXPECTED_PATH_COUNT,

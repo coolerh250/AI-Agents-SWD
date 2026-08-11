@@ -5,8 +5,9 @@ Three layers:
   1. Structural tests    inspect the repaired admission rule and the historical frozen boundary
                          directly, independently of the GOV1 verifier's own reporting
   2. Registration tests  prove exactly which artifacts are admitted and which are rejected
-  3. Mutation probes     M01..M09 each apply ONE forbidden change inside a DISPOSABLE GIT WORKTREE
-                         and run the REAL GOV1 verifier as a subprocess, asserting it fails
+  3. Mutation probes     M01..M09 and X2/X3 each apply ONE forbidden change inside a DISPOSABLE
+                         GIT WORKTREE and run the REAL GOV1 verifier as a subprocess, asserting
+                         it fails
 
 The probes deliberately exercise the real verifier rather than an in-memory copy of its conditions:
 a probe that only re-evaluates a predicate cannot prove the shipped verifier would have caught the
@@ -133,6 +134,44 @@ def test_historical_scope_still_matches_its_registry_exactly():
     )
     assert len(align1.ALIGN1_EXPECTED_PATHS) == 34
     assert set(historical) == set(align1.ALIGN1_EXPECTED_PATHS)
+
+
+def test_check33_enforces_missing_direction_behaviorally():
+    """R1 finding D-01, case A: a registered-but-unchanged path must make the REAL check33 fail.
+
+    Behavioral, not textual: this passes only if the `missing` difference is ENFORCED, so
+    deleting the `if missing:` block (escape X2) is caught even though both set-difference
+    expressions remain in the source.
+    """
+    gov1 = gov1_module()
+    align1 = align1_module()
+    registry = tuple(align1.ALIGN1_EXPECTED_PATHS)
+    phantom = "docs/handoffs/gov1-rm1-behavioral-probe-phantom.md"
+    assert phantom not in registry
+    assert gov1.check33_records_failure(align1, registry + (phantom,))
+
+
+def test_check33_enforces_unexpected_direction_behaviorally():
+    """R1 finding D-01, case B: a changed-but-unregistered path must make the REAL check33 fail.
+
+    Catches escape X3 (deleting the `if unexpected:` block) for the same reason as case A.
+    """
+    gov1 = gov1_module()
+    align1 = align1_module()
+    registry = tuple(align1.ALIGN1_EXPECTED_PATHS)
+    assert gov1.check33_records_failure(align1, registry[:-1])
+
+
+def test_check33_behavioral_control_and_state_restore():
+    """The untampered registry records no failure, and probing restores the module's state."""
+    gov1 = gov1_module()
+    align1 = align1_module()
+    registry = tuple(align1.ALIGN1_EXPECTED_PATHS)
+    align1.FAILURES.append("sentinel-preexisting-failure")
+    assert gov1.check33_records_failure(align1, registry[:-1])
+    assert not gov1.check33_records_failure(align1, registry)
+    assert tuple(align1.ALIGN1_EXPECTED_PATHS) == registry
+    assert align1.FAILURES == ["sentinel-preexisting-failure"]
 
 
 def test_no_governance_bypass_was_introduced():
@@ -348,6 +387,34 @@ def test_probe_m08_historical_equality_weakened_to_subset(probe_worktree):
         "    missing = []",
     )
     assert_rejected(probe_worktree, "M08")
+
+
+def test_probe_x2_missing_enforcement_deleted(probe_worktree):
+    """R1 escape X2: keep both set-difference computations, delete only `if missing: bad(...)`."""
+    restore(probe_worktree)
+    apply_mutation(
+        probe_worktree,
+        ALIGN1_VERIFIER_REL,
+        "    if missing:\n"
+        '        bad(f"check33: registered path not changed by this stage: '
+        "{', '.join(missing)}\")\n",
+        "",
+    )
+    assert_rejected(probe_worktree, "X2")
+
+
+def test_probe_x3_unexpected_enforcement_deleted(probe_worktree):
+    """R1 escape X3: keep both set-difference computations, delete only `if unexpected: bad(...)`."""
+    restore(probe_worktree)
+    apply_mutation(
+        probe_worktree,
+        ALIGN1_VERIFIER_REL,
+        "    if unexpected:\n"
+        '        bad(f"check33: unregistered path changed by this stage: '
+        "{', '.join(unexpected)}\")\n",
+        "",
+    )
+    assert_rejected(probe_worktree, "X3")
 
 
 def test_probe_m09_shared_runtime_path_admitted(probe_worktree):
