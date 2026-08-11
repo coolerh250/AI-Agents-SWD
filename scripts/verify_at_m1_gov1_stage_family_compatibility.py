@@ -217,10 +217,14 @@ def main() -> int:  # noqa: PLR0915
         "the historical check appears to have been switched to a HEAD endpoint",
     )
     check33 = align1_src.split("def check33_positive_exact_scope")[1].split("\ndef ")[0]
+    # Assert the two SET DIFFERENCE EXPRESSIONS, not merely the variable names: `missing = []`
+    # keeps the word "missing" while silently turning exact equality into a subset check.
     expect(
-        "unexpected" in check33 and "missing" in check33,
+        "sorted(set(changed) - set(ALIGN1_EXPECTED_PATHS))" in check33
+        and "sorted(set(ALIGN1_EXPECTED_PATHS) - set(changed))" in check33,
         "check11",
-        "check33 no longer enforces exact set equality in both directions",
+        "check33 no longer computes exact set equality in BOTH directions "
+        "(unexpected = changed - expected, missing = expected - changed)",
     )
     expect(
         len(getattr(module, "ALIGN1_EXPECTED_PATHS", ())) == ALIGN1_EXPECTED_PATH_COUNT,
