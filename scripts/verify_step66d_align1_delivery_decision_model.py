@@ -100,6 +100,70 @@ FORBIDDEN_SOURCE_PREFIXES = (
     "infra/",
 )
 
+# GOV-STAGE-FAMILY-ALLOWLIST-01 (Step AT-M1-GOV1).
+#
+# check30's `stray` rule is the ONE admission rule in this file; every other guard here is a
+# denylist that can only reject. Until this remediation `stray` admitted a governance artifact only
+# when its path began with "scripts/verify_step66" or "tests/test_step66", so admission depended on
+# the STAGE FAMILY NAME rather than on the file being a registered governance verifier or test.
+#
+# Every stage merged up to this point happened to be named step66*, so the coupling stayed latent.
+# The first stage family with a different name -- AT, the autonomous-team series -- is rejected
+# purely for being called something else, even though it contributes exactly the same two artifact
+# categories this rule exists to permit.
+#
+# The repair keeps admission EXPLICIT and CLOSED. A path is admitted only when its stage family is
+# registered below AND its filename matches that family's exact convention. Living under scripts/
+# or tests/ is deliberately NOT sufficient, and an unregistered family is still rejected.
+#
+# This is a CURRENT-STATE governance rule (check30 diffs against live HEAD). It is intentionally
+# separate from check33_positive_exact_scope, which validates this stage's own HISTORICAL scope
+# over the frozen range CANONICAL_MAIN..ALIGN1_STAGE_HEAD and is not touched by this remediation.
+REGISTERED_GOVERNANCE_FAMILIES: tuple[tuple[str, str, str], ...] = (
+    # family id,          verifier filename pattern,            test filename pattern
+    ("step66", r"^scripts/verify_step66[a-z0-9_]*\.py$", r"^tests/test_step66[a-z0-9_]*\.py$"),
+    (
+        "autonomous-team",
+        r"^scripts/verify_at_m\d+[a-z0-9_]*\.py$",
+        r"^tests/test_at_m\d+[a-z0-9_]*\.py$",
+    ),
+)
+
+_GOVERNANCE_ARTIFACT_PATTERNS = tuple(
+    re.compile(pattern)
+    for _family, verifier_pattern, test_pattern in REGISTERED_GOVERNANCE_FAMILIES
+    for pattern in (verifier_pattern, test_pattern)
+)
+
+# Directories whose contents are admitted wholesale, plus the single admitted non-docs file.
+# Unchanged by this remediation -- recorded here so every admission rule sits in one place.
+ADMITTED_PATH_PREFIXES = ("docs/",)
+ADMITTED_EXACT_PATHS = ("source/progress.md",)
+
+
+def is_registered_governance_artifact(path: str) -> bool:
+    """Whether PATH is a governance verifier/test belonging to a REGISTERED stage family.
+
+    Being located under scripts/ or tests/ is deliberately not sufficient: the filename must match
+    a registered family's convention exactly. `scripts/at_runtime_patch.py`,
+    `tests/random_test_helper.py` and `scripts/verify_unregistered_family.py` are all rejected.
+    """
+    return any(pattern.match(path) for pattern in _GOVERNANCE_ARTIFACT_PATTERNS)
+
+
+def is_admitted_current_state_path(path: str) -> bool:
+    """The single source of truth for check30's admission rule.
+
+    `tests/test_step66d_align1_delivery_decision_model.py` imports this rather than restating the
+    rule, so the verifier and its mirrored test cannot drift apart.
+    """
+    return (
+        path.startswith(ADMITTED_PATH_PREFIXES)
+        or path in ADMITTED_EXACT_PATHS
+        or is_registered_governance_artifact(path)
+    )
+
+
 REVIEW_ACTIONS = ("ACCEPT", "REJECT", "REQUEST_CHANGES", "RERUN_QA", "ESCALATE", "ARCHIVE")
 FINAL_DECISIONS = ("ACCEPTED", "ACCEPTED_WITH_FOLLOW_UP", "REJECTED")
 DECISIONS = ("66D-D01", "66D-D02", "66D-D03", "66D-D04")
@@ -472,12 +536,7 @@ def check30_no_implementation_change() -> None:
     ]
     if infra:
         bad(f"check30: infra/manifest paths changed: {', '.join(infra)}")
-    stray = [
-        p
-        for p in changed
-        if not p.startswith(("docs/", "scripts/verify_step66", "tests/test_step66"))
-        and p != "source/progress.md"
-    ]
+    stray = [p for p in changed if not is_admitted_current_state_path(p)]
     if stray:
         bad(f"check30: changes outside the allowed alignment scope: {', '.join(stray)}")
 
