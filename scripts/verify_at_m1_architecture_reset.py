@@ -285,6 +285,46 @@ def line_with(doc: str, needle: str) -> str:
     return ""
 
 
+def section_text(doc: str, heading_prefix: str) -> str:
+    """The body of one '## ...' section, so a check cannot be satisfied from another section."""
+    lines = doc.splitlines()
+    for index, line in enumerate(lines):
+        if line.startswith(heading_prefix):
+            body: list[str] = []
+            for following in lines[index + 1 :]:
+                if following.startswith("## "):
+                    break
+                body.append(following)
+            return "\n".join(body)
+    return ""
+
+
+def indented_value(block: str, label: str) -> str:
+    """The indented value under a 'Label:' line, e.g. 'Decision:' followed by '    DEFERRED'."""
+    lines = block.splitlines()
+    for index, line in enumerate(lines):
+        if line.strip() == label:
+            for following in lines[index + 1 :]:
+                if following.strip():
+                    return following.strip()
+            return ""
+    return ""
+
+
+# AT-D09 must stay an OPEN QUESTION. Any of these on an authoritative AT-D09 surface is a closure.
+AT_D09_CLOSURE_CLAIMS = ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED", "DECIDED")
+
+
+def claims_at_d09_closed(text: str) -> bool:
+    """True if an authoritative AT-D09 surface asserts the question is answered.
+
+    'NOT decided' and 'not a decision' are the required non-decision wording, so DECIDED is only
+    counted once those denials are removed.
+    """
+    upper = text.upper().replace("NOT DECIDED", "").replace("NOT A DECISION", "")
+    return any(claim in upper for claim in AT_D09_CLOSURE_CLAIMS)
+
+
 def capability_registry() -> dict:
     try:
         return json.loads(read(REGISTRY))
@@ -639,15 +679,63 @@ def main() -> int:  # noqa: PLR0915
     )
 
     # --- 12. AT-D09 remains OPEN --------------------------------------------------------------
+    # AT-M1-RM2 (DEF-R2-02). These were whole-document substring tests: the binding contract holds
+    # several unrelated OPEN and DEFERRED tokens, so any single AUTHORITATIVE AT-D09 surface could
+    # be flipped to RESOLVED/CLOSED while both checks stayed green. Each authoritative surface is
+    # now targeted structurally and tested for closure claims on that surface alone.
+    d09_section = section_text(binding, "## 6. AT-D09")
+    d09_summary = labelled_line(binding, "AT-D09:")
+    d09_status = labelled_line(d09_section, "STATUS:")
+    d09_decision = indented_value(d09_section, "Decision:")
+
     expect(
-        "AT-D09" in binding and "OPEN" in binding,
+        d09_section != "",
         "check92",
-        "AT-D09 is not recorded",
+        "the AT-D09 section (## 6.) is missing from the binding decisions contract",
     )
     expect(
-        "DEFERRED" in binding and "must not canonicalize permissive continuation" in flat(binding),
+        d09_summary != "" and "OPEN" in d09_summary.upper(),
+        "check92a",
+        f"the AT-D09 summary statement does not record it as OPEN: {d09_summary!r}",
+    )
+    expect(
+        not claims_at_d09_closed(d09_summary),
+        "check92b",
+        f"the AT-D09 summary statement claims the question is answered: {d09_summary!r}",
+    )
+    expect(
+        d09_status != ""
+        and "OPEN" in d09_status.upper()
+        and "DEFERRED" in d09_status.upper(),
+        "check92c",
+        f"the AT-D09 section-6 STATUS line is not OPEN / DEFERRED: {d09_status!r}",
+    )
+    expect(
+        not claims_at_d09_closed(d09_status),
+        "check92d",
+        f"the AT-D09 section-6 STATUS line claims closure: {d09_status!r}",
+    )
+    expect(
+        d09_decision.upper() == "DEFERRED",
+        "check92e",
+        f"the AT-D09 section-6 Decision value is not DEFERRED: {d09_decision!r}",
+    )
+    expect(
+        "must not canonicalize permissive continuation" in flat(d09_section),
         "check93",
-        "AT-D09 does not remain deferred, or permissive continuation was canonicalized",
+        "the AT-D09 section no longer declares that AT-M1 must not canonicalize permissive "
+        "continuation",
+    )
+    expect(
+        "(Step 66C.4) REMAINS AUTHORITATIVE" in flat(d09_section),
+        "check93a",
+        "the AT-D09 section no longer preserves the Step 66C.4 clarification expiry contract as "
+        "authoritative",
+    )
+    expect(
+        "SUPERSEDED" not in d09_section.upper() and "SUPERSEDES" not in d09_section.upper(),
+        "check93b",
+        "the AT-D09 section claims the Step 66C.4 clarification contract is superseded",
     )
     expect(
         "AT-D09" not in adrs.split("## Open decisions")[0],
@@ -931,6 +1019,64 @@ def main() -> int:  # noqa: PLR0915
         registry.get("canonical_baseline") == AT_M1_BASELINE,
         "check128",
         "the capability registry does not pin the canonical baseline",
+    )
+
+    # AT-M1-RM2 (DEF-R2-01). The canonical registry carried two measurably false evidence
+    # strings -- "principal_id: 0 occurrences" and "Only 2 matches for handoff" -- while the
+    # capability STATES were correct. AT-M2 is scoped by this registry, so a reader would have
+    # treated both names as free. These checks read the structured entries, not the whole file.
+    by_name = {c.get("capability"): c for c in caps}
+    principal_entry = by_name.get("AgentPrincipal", {})
+    handoff_entry = by_name.get("Handoff", {})
+    principal_evidence = str(principal_entry.get("evidence", ""))
+    handoff_evidence = str(handoff_entry.get("evidence", ""))
+
+    expect(
+        principal_entry.get("state") == "CONTRACT_ONLY",
+        "check128a",
+        f"AgentPrincipal is no longer CONTRACT_ONLY: {principal_entry.get('state')!r}",
+    )
+    expect(
+        "principal_id: 0 occurrences" not in principal_evidence
+        and "principal_id: 0" not in principal_evidence,
+        "check128b",
+        "the AgentPrincipal evidence still asserts principal_id has 0 occurrences, which is "
+        "measurably false and would tell AT-M2 the name is free",
+    )
+    expect(
+        "ActorPrincipal: 0" in principal_evidence,
+        "check128c",
+        "the AgentPrincipal evidence no longer records that ActorPrincipal itself is absent",
+    )
+    expect(
+        "authorization" in principal_evidence.lower()
+        and "Actor.principal_id" in principal_evidence,
+        "check128d",
+        "the AgentPrincipal evidence does not distinguish the existing task/authorization "
+        "Actor.principal_id from the absent ActorPrincipal abstraction",
+    )
+    expect(
+        handoff_entry.get("state") == "NOT_IMPLEMENTED",
+        "check128e",
+        f"Handoff is no longer NOT_IMPLEMENTED: {handoff_entry.get('state')!r}",
+    )
+    expect(
+        "Only 2 matches" not in handoff_evidence,
+        "check128f",
+        "the Handoff evidence still asserts only 2 handoff matches, which is measurably false "
+        "and would tell AT-M2 the name is free",
+    )
+    expect(
+        "HandoffSummary" in handoff_evidence and "delivery_package" in handoff_evidence,
+        "check128g",
+        "the Handoff evidence does not identify the legacy delivery-package symbols that "
+        "already occupy the name",
+    )
+    expect(
+        "work-transfer" in handoff_evidence and "absent" in handoff_evidence.lower(),
+        "check128h",
+        "the Handoff evidence does not distinguish legacy delivery handoff from the absent "
+        "autonomous agent work-transfer primitive",
     )
 
     # --- 18. human intervention boundary ------------------------------------------------------
