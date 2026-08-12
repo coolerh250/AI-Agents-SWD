@@ -880,62 +880,133 @@ def test_rm3_every_at_d09_status_surface_records_it_open(surface):
     assert expected in live.upper(), f"the {surface} surface is not {expected}: {live!r}"
 
 
-def test_rm4_no_at_d09_assertion_in_the_whole_scope_claims_closure():
-    """AT-M1-RM4: the guard is over every assertion in the markdown domain, not one file.
-
-    Replaces the RM3 form, which read one nominated file line by line and so could not see a
-    value continuing on the next line, a subject supplied by the enclosing section, a lowercase
-    identifier, or any assertion in another artifact.
-    """
+def test_rm5_no_at_d09_assertion_in_the_whole_scope_is_unauthorized():
+    """The guard is over every assertion in the markdown domain, evaluated semantically."""
     module = verifier_module()
-    claiming = [
-        (artifact, line, kind, value)
-        for artifact, line, kind, value in module.at_d09_domain_assertions()
-        if module.claims_at_d09_closed(value)
-    ]
-    assert claiming == [], f"AT-D09 is claimed closed on: {claiming!r}"
+    assert module.unauthorized_assertions("at-d09") == []
 
 
-def test_rm4_every_at_d09_assertion_that_states_a_state_states_open():
+def test_rm5_no_at_m2_assertion_in_the_whole_scope_is_unauthorized():
+    assert verifier_module().unauthorized_assertions("at-m2") == []
+
+
+def test_rm5_discovery_spans_the_scope_not_one_nominated_file():
     module = verifier_module()
-    contradicting = [
-        (artifact, line, kind, value)
-        for artifact, line, kind, value in module.at_d09_domain_assertions()
-        if module.tokens_in(value, module.AT_D09_STATE_TOKENS)
-        and not module.tokens_in(value, module.AT_D09_OPEN_CLAIMS)
-    ]
-    assert contradicting == [], f"AT-D09 stated as something other than OPEN: {contradicting!r}"
-
-
-def test_rm4_discovery_spans_every_in_scope_markdown_artifact():
-    """The domain is the scope, not the file a reviewer happened to name."""
-    module = verifier_module()
-    rows = module.at_d09_domain_assertions()
-    artifacts = {artifact for artifact, _, _, _ in rows}
+    rows = module.domain_assertions("at-d09")
+    artifacts = {artifact for artifact, *_ in rows}
     assert len(rows) >= module.AT_D09_MINIMUM_KNOWN_SURFACES
-    # DEF-R4-02: assertions live outside the binding contract and must be discovered there too.
     assert BINDING_PATH in artifacts
     assert len(artifacts) >= 7, f"discovery collapsed to {sorted(artifacts)!r}"
+    assert all(kind for _, _, _, kind, _, _ in rows), "an assertion was left without a kind"
 
 
-def test_rm4_at_m2_authorization_registers_state_not_authorized():
-    """ADV-R3-01, same defect class. Guarding the surface decides nothing about AT-M2."""
+# ---------------------------------------------------------------------------------------------
+# Semantic behaviour, exercised on constructed inputs rather than by re-asserting the verifier's
+# own output over the live corpus. AT-M1-RM5 test-independence requirement.
+# ---------------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value,kind,allowed",
+    [
+        # negation is preserved, not deleted (DEF-R5-02)
+        ("OPEN / DEFERRED", "status", True),
+        ("NO LONGER OPEN", "status", False),
+        ("NOT OPEN", "status", False),
+        ("OPEN / NO LONGER DEFERRED", "status", False),
+        # unknown vocabulary fails closed without being enumerated (DEF-R5-03)
+        ("SETTLED", "status", False),
+        ("CONCLUDED", "status", False),
+        ("ADJUDICATED", "status", False),
+        ("RESOLVED / BINDING", "status", False),
+        # current state wins over a historical parenthetical (DEF-R5-06)
+        ("AUTHORIZED (previously NOT AUTHORIZED)", "at-m2-authorization", False),
+        ("NOT AUTHORIZED", "at-m2-authorization", True),
+        ("NOT AUTHORIZED (previously AUTHORIZED)", "at-m2-authorization", True),
+        # kind-specific acceptance
+        ("DEFERRED", "decision", True),
+        ("RESOLVED", "decision", False),
+        ("Step 66C.4 REMAINS AUTHORITATIVE", "authority", True),
+        ("Step 66C.4 is SUPERSEDED", "authority", False),
+        # a valid non-decision must not be rejected for containing a closure token (DEF-R5-07)
+        ("is NOT DECIDED by AT-M1", "non-decision", True),
+        ("is NOT BINDING on any stage", "non-decision", True),
+        ("is BINDING on every stage", "non-decision", False),
+    ],
+)
+def test_rm5_semantic_acceptance(value, kind, allowed):
     module = verifier_module()
-    registers = [
-        (artifact, index + 1, line.strip())
-        for artifact in sorted(p for p in module.AT_M1_EXPECTED_PATHS if p.endswith(".md"))
-        for index, line in enumerate(read(artifact).splitlines())
-        if re.match(r"^\s*AT[-_]M2\b\s*:", line, re.IGNORECASE)
-    ]
-    assert len(registers) >= module.AT_M2_KNOWN_REGISTERS
-    for artifact, line, text in registers:
-        assert "NOT AUTHORIZED" in text.upper(), f"{artifact}:{line} {text!r}"
+    verdict = module.state_verdict(kind, module.propositions(module.current_value(value)))
+    assert (verdict == "") is allowed, f"{value!r} as {kind}: {verdict!r}"
 
 
-def test_rm3_at_d09_gate_rejects_closure_on_each_surface_alone():
-    """Closing one surface while every other stays OPEN must still be a closure claim."""
+@pytest.mark.parametrize(
+    "line,expect_rejected",
+    [
+        # nonstandard assertive verb, no colon and no copula (DEF-R5-01)
+        ("AT-D09 hereby stands RESOLVED and BINDING.", True),
+        ("AT-D09 now carries the final status CLOSED.", True),
+        # qualified register key (DEF-R5-04)
+        ("AT_D09_STATUS:  RESOLVED / BINDING", True),
+        ("AT_D09_FINAL:  RESOLVED / BINDING", True),
+        # case variation
+        ("at-d09: resolved / binding", True),
+        ("At-D09 authorization state: SETTLED", True),
+        # descriptive and hypothetical must survive
+        ("AT-D09 is recorded in section 6 of this contract.", False),
+        ("A future Product Owner decision may resolve AT-D09.", False),
+        ("AT-D09 could be resolved by a later Product Owner decision.", False),
+        ("AT-D09 owner: Product Owner", False),
+        ("AT-D09 is OPEN.", False),
+    ],
+)
+def test_rm5_assertion_shapes(line, expect_rejected):
+    """Drive the extractor over a constructed document, independent of the live corpus."""
     module = verifier_module()
-    surfaces = at_d09_status_surfaces(module, read(BINDING_PATH))
-    for surface, live in surfaces.items():
-        closed = live.replace("OPEN", "RESOLVED").replace("DEFERRED", "BINDING")
-        assert module.claims_at_d09_closed(closed), f"closing {surface} is not detected: {closed!r}"
+    doc = "# Doc\n\nsome prose\n\n" + line + "\n"
+    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
+    rejected = any(verdict for *_, verdict in rows)
+    assert rejected is expect_rejected, f"{line!r} -> {rows!r}"
+
+
+def test_rm5_blank_line_between_label_and_value_is_still_the_value():
+    """DEF-R5-05: the continuation lookahead must cross a blank line."""
+    module = verifier_module()
+    doc = "# Doc\n\nAT-D09 authorization state:\n\n    RESOLVED / BINDING\n"
+    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
+    assert any(verdict for *_, verdict in rows), f"blank-line continuation escaped: {rows!r}"
+
+
+def test_rm5_section_context_supplies_the_subject():
+    module = verifier_module()
+    doc = "## 6. AT-D09 - clarification expiry (OPEN)\n\nAUTHORIZATION STATE:\n    RESOLVED\n"
+    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
+    assert any(verdict for *_, verdict in rows), f"section-context closure escaped: {rows!r}"
+
+
+def test_rm5_at_m2_prose_and_qualified_keys_are_discovered():
+    """DEF-R5-06: substring containment, qualified keys and prose all had to be covered."""
+    module = verifier_module()
+    for line in (
+        "AT_M2: AUTHORIZED (previously NOT AUTHORIZED)",
+        "AT_M2 implementation authorization: AUTHORIZED",
+        "AT-M2 is AUTHORIZED to begin implementation.",
+    ):
+        doc = "# Doc\n\n" + line + "\n"
+        rows = module.authoritative_assertions("probe.md", doc, "at-m2")
+        assert any(verdict for *_, verdict in rows), f"{line!r} escaped: {rows!r}"
+
+
+def test_rm5_at_m2_not_authorized_forms_are_accepted():
+    module = verifier_module()
+    doc = "# Doc\n\nAT_M2:                           NOT AUTHORIZED\n"
+    rows = module.authoritative_assertions("probe.md", doc, "at-m2")
+    assert rows, "the AT-M2 register was not discovered at all"
+    assert not any(verdict for *_, verdict in rows), f"NOT AUTHORIZED rejected: {rows!r}"
+
+
+def test_rm5_false_qualifier_is_a_predicate_not_a_footnote():
+    """'AT-M2 is authorized -- FALSE' asserts the opposite of what its head says."""
+    module = verifier_module()
+    assert module.asserted_false("AT-M2 is authorized                     -- FALSE")
+    assert not module.asserted_false("OPEN / DEFERRED -- not a decision")

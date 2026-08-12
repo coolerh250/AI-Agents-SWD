@@ -417,7 +417,7 @@ M01 revert baseline to pre-GOV1        REJECTED     M07 contract raw_reasoning  
 M02 omit an original AT-M1 path        REJECTED     M08 PR #28 declared canonical      REJECTED
 M03 admit a GOV1 path                  REJECTED     M09 PR #28 merge dependency        REJECTED
 M04 remove a registration path         REJECTED     M10 remove AT precedence           REJECTED
-M05 add an arbitrary 20th path         REJECTED     M11 AT-M2 marked authorized        REJECTED
+M05 add an arbitrary 20th path         REJECTED     M11 AT-M2 authorization flip       REJECTED
 M06 contract private_chain_of_thought  REJECTED     M12 close AT-D09                   REJECTED
                                     untampered control  PASS before and after
 ```
@@ -752,7 +752,7 @@ alternate vocabulary (ANSWERED)   P-VOCAB     REJECT   check92j
 semantic supersession of 66C.4    P-VOCAB2    REJECT   check92j
 new authoritative surface         P-NEW       REJECT   check92j
 extractor disabled                P-EXTRACT   REJECT   check92l
-AT-M2 register -> AUTHORIZED      P-M2        REJECT   check92n
+AT-M2 register authorization flip P-M2        REJECT   check92n
 
 descriptive prose                 C-PROSE     PASS
 historical / finding title        C-HIST      PASS

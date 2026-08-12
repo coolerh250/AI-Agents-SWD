@@ -311,10 +311,22 @@ def indented_value(block: str, label: str) -> str:
     return ""
 
 
-# AT-D09 must stay an OPEN QUESTION. Any of these, predicated of AT-D09, is a closure claim.
-# AUTHORITATIVE is deliberately absent: "Step 66C.4 REMAINS AUTHORITATIVE" is a preservation
-# statement, not a closure of AT-D09.
-AT_D09_CLOSURE_CLAIMS = (
+# =================================================================================================
+# Authoritative state semantics (AT-M1-RM5)
+#
+# RM4 asked "does this text contain a forbidden word?". That is unclosable: every new synonym is a
+# new escape (DEF-R5-03), deleting negators to avoid false positives makes "NO LONGER OPEN" read as
+# OPEN (DEF-R5-02), and a token test cannot tell "NOT BINDING" from "BINDING" (DEF-R5-07).
+#
+# RM5 asks instead: what does this assertion CURRENTLY claim, and is that claim one of the states
+# this kind of assertion is ALLOWED to hold? Unknown or unparseable authoritative values fail
+# closed, so an unseen synonym is rejected without ever being enumerated.
+# =================================================================================================
+
+AT_D09_OPEN_TERMS = ("OPEN", "DEFERRED", "UNDECIDED", "PENDING")
+# Not the basis of correctness -- acceptance is affirmative. These only let the parser recognise a
+# word as a STATE word, so that negation can be attributed to it, and sharpen prose detection.
+AT_D09_CLOSURE_TERMS = (
     "RESOLVED",
     "CLOSED",
     "BINDING",
@@ -326,42 +338,48 @@ AT_D09_CLOSURE_CLAIMS = (
     "COMPLETED",
     "SUPERSEDED",
     "SUPERSEDES",
+    "SETTLED",
+    "FINALIZED",
+    "FINALISED",
+    "RATIFIED",
+    "APPROVED",
+    "FINAL",
 )
-AT_D09_OPEN_CLAIMS = ("OPEN", "DEFERRED")
-AT_D09_STATE_TOKENS = (*AT_D09_OPEN_CLAIMS, *AT_D09_CLOSURE_CLAIMS)
+AT_AUTHORITY_TERMS = ("AUTHORITATIVE",)
+AT_STATE_TERMS = (*AT_D09_OPEN_TERMS, *AT_D09_CLOSURE_TERMS, *AT_AUTHORITY_TERMS)
 
-# Required non-decision wording. Stripped before closure detection so the denial of a closure is
-# never itself read as one.
-AT_D09_DENIALS = (
-    "NOT DECIDED",
-    "NOT A DECISION",
-    "NOT BE DECIDED",
-    "NOT DECIDE",
-    "MUST NOT",
-    "NO LONGER",
-    "NOT AN ADR",
-)
+# Retained names for the nominated-surface checks 92a-92i.
+AT_D09_CLOSURE_CLAIMS = AT_D09_CLOSURE_TERMS
+AT_D09_OPEN_CLAIMS = AT_D09_OPEN_TERMS
+AT_D09_STATE_TOKENS = AT_STATE_TERMS
 
-# Anti-vacuity floors, NOT completeness by count. check92j is what proves no surface claims
-# closure; these exist so that breaking the extractor (making it discover nothing) fails loudly
-# instead of making the real guard vacuously true.
-AT_D09_MINIMUM_KNOWN_SURFACES = 37
+NEGATORS = ("NO LONGER", "NOT", "NEVER", "NO")
+MODALS = ("MAY", "MIGHT", "COULD", "WOULD", "SHOULD", "WILL", "CAN", "SHALL")
+HISTORICAL = ("PREVIOUSLY", "FORMERLY", "HISTORICALLY", "ONCE", "EARLIER")
+
+# Anti-vacuity floors. NOT a completeness proof -- the semantic verdict is. These exist so that a
+# disabled extractor fails loudly instead of making the real guard vacuously true.
+AT_D09_MINIMUM_KNOWN_SURFACES = 24
 AT_M2_KNOWN_REGISTERS = 2
 
-AT_D09_IDENT = re.compile(r"\bAT[-_]D09\b", re.IGNORECASE)
-# AT-D09 used as a register/label key: "AT-D09:", "AT_D09:", "AT-D09 (qualifier):",
-# "AT-D09 authorization state:". The qualifier window is bounded so that a prose sentence which
-# merely happens to contain a colon later on is not read as a label. An empty value continues on
-# the next line -- probe P-MULTI escaped an earlier form of this pattern that stopped at the
-# end of the identifier's own line.
-AT_D09_LABEL = re.compile(r"\bAT[-_]D09\b[^:\n]{0,40}:\s*(.*)$", re.IGNORECASE)
+# A qualified key is part of the identifier: AT_D09_STATUS is an AT-D09 surface. A plain \b cannot
+# see it, because the trailing underscore is itself a word character (DEF-R5-04).
+AT_D09_IDENT = re.compile(r"\bAT[-_]D09(?:[_-][A-Za-z0-9]+)*\b", re.IGNORECASE)
+AT_M2_IDENT = re.compile(r"\bAT[-_]M2(?:[_-][A-Za-z0-9]+)*\b", re.IGNORECASE)
+# A register key may be qualified: AT_D09_STATUS, AT-D09 authorization state, AT_M2 authorization.
+AT_D09_REGISTER = re.compile(
+    r"(AT[-_]D09(?:[_-][A-Za-z0-9]+)*)((?:\s*\([^)]*\))?[^:\n]{0,48}?):\s*(.*)$", re.IGNORECASE
+)
+AT_M2_REGISTER = re.compile(
+    r"(AT[-_]M2(?:[_-][A-Za-z0-9]+)*)((?:\s*\([^)]*\))?[^:\n]{0,48}?):\s*(.*)$", re.IGNORECASE
+)
 LABEL_LINE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /_'-]*):\s*(.*)$")
-# Prose predication requires a copula; "AT-D09 binding status could still be closed" is a title,
-# not an assertion that AT-D09 is BINDING.
-PROSE_PREDICATION = re.compile(
-    r"\bAT[-_]D09\b[^.;]{0,60}?\b(?:is|are|was|were|remains?|stays?|"
-    r"(?:may|must|shall|will)\s+remain)\b(.{0,80})",
-    re.IGNORECASE,
+
+KIND_KEYWORDS = (
+    ("decision", ("DECISION",)),
+    ("authority", ("AUTHORITY", "GOVERNING")),
+    ("authorization", ("AUTHORIZATION", "AUTHORIZED")),
+    ("status", ("STATUS", "STATE", "FINAL")),
 )
 
 
@@ -370,90 +388,253 @@ def tokens_in(value: str, vocabulary: tuple[str, ...]) -> list[str]:
     return sorted({t for t in vocabulary if re.search(rf"\b{t}\b", upper)})
 
 
-def claims_at_d09_closed(text: str) -> bool:
-    """True if an AT-D09 surface asserts the question is answered."""
-    upper = text.upper()
-    for denial in AT_D09_DENIALS:
-        upper = upper.replace(denial, " ")
-    return bool(tokens_in(upper, AT_D09_CLOSURE_CLAIMS))
+def current_value(value: str) -> str:
+    """The CURRENTLY asserted part of an authoritative field.
 
-
-def at_d09_assertions(artifact: str, doc: str) -> list[tuple[str, int, str, str]]:
-    """Every assertion in one artifact that predicates a state OF AT-D09.
-
-    AT-M1-RM4. The unit is the ASSERTION, not the line: a value is attributed to AT-D09 only when
-    AT-D09 is its subject. That is what lets 'AT-D01 .. AT-D05 (RESOLVED / BINDING), AT-D09 (OPEN)'
-    yield OPEN rather than a false closure, and what lets a section-6 'Decision:' label be
-    attributed to AT-D09 even though the line never names it.
-
-    Returns (artifact, line number, kind, value) for each assertion found.
+    A trailing '--' or ';' clause qualifies; a parenthetical qualifies UNLESS it is the only
+    content. 'AUTHORIZED (previously NOT AUTHORIZED)' therefore reads as AUTHORIZED, while
+    'AT-D09 (OPEN)' reads as OPEN.
     """
-    found: list[tuple[str, int, str, str]] = []
+    head = re.split(r"\s+--\s+|\s*;\s*", value.strip(), maxsplit=1)[0].strip()
+    outside = re.sub(r"\([^)]*\)", " ", head).strip(" \t.,:")
+    inside = " ".join(re.findall(r"\(([^)]*)\)", head)).strip()
+    if tokens_in(outside, AT_STATE_TERMS):
+        return outside
+    # The state may be carried by the parenthetical itself: "AT-D09 (OPEN)", "... semantics (OPEN)".
+    if tokens_in(inside, AT_STATE_TERMS):
+        return inside
+    return outside or inside
+
+
+def propositions(value: str) -> list[tuple[bool, str]]:
+    """(affirmed, TERM) for each state term, with negation PRESERVED rather than deleted.
+
+    'NO LONGER OPEN' yields (False, OPEN) -- a closure of an open state. The RM4 form deleted
+    'NO LONGER' and read the residue as OPEN (DEF-R5-02).
+    """
+    found: list[tuple[bool, str]] = []
+    for clause in re.split(r"\s*/\s*|\s*,\s*|\s+AND\s+", value.upper()):
+        clause = clause.strip()
+        if not clause:
+            continue
+        negated = any(re.search(rf"\b{negator}\b", clause) for negator in NEGATORS)
+        for term in AT_STATE_TERMS:
+            if re.search(rf"\b{term}\b", clause):
+                found.append((not negated, term))
+    return found
+
+
+def is_hypothetical(text: str) -> bool:
+    """Modal or historical framing discusses a state; it does not assert one."""
+    upper = text.upper()
+    return any(re.search(rf"\b{word}\b", upper) for word in (*MODALS, *HISTORICAL))
+
+
+def asserted_false(value: str) -> bool:
+    """A trailing '-- FALSE' is the predicate, not a qualifier.
+
+    The prohibited-implications block states claims in the form '<claim> -- FALSE'. Dropping that
+    clause as a qualifier would read 'AT-M2 is authorized -- FALSE' as an affirmation.
+    """
+    tail = re.split(r"\s+--\s+|\s*;\s*", value.strip(), maxsplit=1)
+    return len(tail) > 1 and bool(re.search(r"\bFALSE\b", tail[1], re.IGNORECASE))
+
+
+def without_code_spans(text: str) -> str:
+    """Backticked text is a quotation of a literal, not an assertion about the subject."""
+    return re.sub(r"`[^`]*`", " ", text)
+
+
+def normalized_key(key: str) -> str:
+    """Separators become spaces so AT_D09_STATUS exposes STATUS to word-boundary matching."""
+    return re.sub(r"[_-]+", " ", key).upper()
+
+
+def key_is_stateful(key: str) -> bool:
+    upper = normalized_key(key)
+    return any(re.search(rf"\b{w}\b", upper) for _, words in KIND_KEYWORDS for w in words)
+
+
+def assertion_kind(key: str, form: str, props: list[tuple[bool, str]], subject: str) -> str:
+    if subject == "at-m2":
+        return "at-m2-authorization"
+    upper = normalized_key(key)
+    for kind, words in KIND_KEYWORDS:
+        if any(re.search(rf"\b{w}\b", upper) for w in words):
+            return kind
+    affirmed = {term for affirm, term in props if affirm}
+    # A value whose only affirmation is AUTHORITATIVE is a governing-authority statement, whatever
+    # its label: "Current canonical implementation: ... REMAINS AUTHORITATIVE".
+    if affirmed & set(AT_AUTHORITY_TERMS) and not affirmed & set(AT_D09_OPEN_TERMS):
+        return "authority"
+    if form in ("prose", "block-entry", "table-cell") and props and not affirmed:
+        return "non-decision"
+    return "status"
+
+
+def state_verdict(kind: str, props: list[tuple[bool, str]]) -> str:
+    """'' when the current value is an ALLOWED state for this kind, else why it is not.
+
+    Acceptance is affirmative and fails closed: an authoritative value that does not affirm a
+    canonical allowed state is rejected without the offending term being pre-enumerated.
+    """
+    affirmed = {term for affirm, term in props if affirm}
+    negated = {term for affirm, term in props if not affirm}
+    closure = set(AT_D09_CLOSURE_TERMS)
+    openish = set(AT_D09_OPEN_TERMS)
+
+    if kind == "at-m2-authorization":
+        if "AUTHORIZED" in affirmed:
+            return "current state is AUTHORIZED"
+        if "AUTHORIZED" in negated:
+            return ""
+        return "AT-M2 authorization is not affirmatively NOT AUTHORIZED"
+    if kind == "authority":
+        if affirmed & {"SUPERSEDED", "SUPERSEDES"}:
+            return "governing authority claimed superseded"
+        if "AUTHORITATIVE" in affirmed:
+            return ""
+        if affirmed & closure:
+            return f"affirms closure state {sorted(affirmed & closure)}"
+        return "governing authority is not affirmed AUTHORITATIVE"
+    if kind == "non-decision":
+        if affirmed & closure:
+            return f"affirms closure state {sorted(affirmed & closure)}"
+        return ""
+    if kind == "decision":
+        if affirmed & closure:
+            return f"affirms closure state {sorted(affirmed & closure)}"
+        if "DEFERRED" in affirmed or negated & {"DECIDED"}:
+            return ""
+        return "decision value is neither DEFERRED nor an explicit non-decision"
+    if affirmed & closure:
+        return f"affirms closure state {sorted(affirmed & closure)}"
+    if negated & openish:
+        return f"negates the open state {sorted(negated & openish)}"
+    if affirmed & openish:
+        return ""
+    return "no canonical open state is affirmed (unknown authoritative value)"
+
+
+def authoritative_assertions(
+    artifact: str, doc: str, subject: str
+) -> list[tuple[str, int, str, str, str, str]]:
+    """(artifact, line, form, kind, value, verdict) per authoritative assertion about `subject`.
+
+    Every branch is attempted. No branch may skip the others merely because its own pattern
+    failed -- that premature exit is what let a nonstandard assertive verb escape (DEF-R5-01).
+    """
+    ident = AT_D09_IDENT if subject == "at-d09" else AT_M2_IDENT
+    register = AT_D09_REGISTER if subject == "at-d09" else AT_M2_REGISTER
+    found: list[tuple[str, int, str, str, str, str]] = []
     lines = doc.splitlines()
     fenced = False
     subject_section = False
 
     def value_after(index: int, inline: str) -> str:
-        """An empty label value continues on the next non-empty line (indented value form)."""
+        """A label's value may sit on the next line, or past a blank line if indented."""
         if inline.strip():
             return inline.strip()
+        blanks = 0
         for following in lines[index + 1 :]:
-            if following.strip():
+            if not following.strip():
+                blanks += 1
+                if blanks > 2:
+                    break
+                continue
+            if blanks == 0 or following.startswith((" ", "\t")):
                 return following.strip()
             break
         return ""
+
+    def record(index: int, form: str, key: str, raw: str) -> bool:
+        text = without_code_spans(raw) if form == "prose" else raw
+        head = current_value(text)
+        props = propositions(head)
+        if asserted_false(text):
+            props = [(not affirm, term) for affirm, term in props]
+        stateful = key_is_stateful(key)
+        if not props and not stateful:
+            return False
+        # Judge modality on the CURRENT value: a historical parenthetical such as
+        # 'AUTHORIZED (previously NOT AUTHORIZED)' must not make the assertion hypothetical.
+        if is_hypothetical(head) and not stateful:
+            return False
+        kind = assertion_kind(key, form, props, subject)
+        found.append(
+            (artifact, index + 1, form, kind, head or text.strip(), state_verdict(kind, props))
+        )
+        return True
 
     for index, line in enumerate(lines):
         if line.strip().startswith("```"):
             fenced = not fenced
             continue
         if line.startswith("#"):
-            subject_section = bool(AT_D09_IDENT.search(line))
+            subject_section = bool(ident.search(line))
             marker = " ".join(re.findall(r"\(([^)]*)\)", line))
-            if subject_section and tokens_in(marker, AT_D09_STATE_TOKENS):
-                found.append((artifact, index + 1, "heading-marker", marker))
+            if subject_section and marker:
+                record(index, "heading-marker", "status", marker)
             continue
 
-        named = AT_D09_IDENT.search(line)
+        named = ident.search(line)
+        recorded = False
         if named:
-            label = AT_D09_LABEL.search(line)
-            if label:
-                found.append((artifact, index + 1, "register", value_after(index, label.group(1))))
-                continue
-            if line.lstrip().startswith("|"):
-                cell = next(
-                    (c for c in line.split("|") if AT_D09_IDENT.search(c)),
-                    "",
-                )
-                found.append((artifact, index + 1, "table-cell", cell.strip()))
-                continue
-            if fenced:
-                found.append((artifact, index + 1, "block-entry", line[named.end() :].strip()))
-                continue
-            prose = PROSE_PREDICATION.search(line)
-            if prose and tokens_in(prose.group(1), AT_D09_STATE_TOKENS):
-                found.append((artifact, index + 1, "prose", prose.group(1).strip()))
+            key_match = register.search(line)
+            if key_match:
+                key = f"{key_match.group(1)}{key_match.group(2)}"
+                recorded = record(index, "register", key, value_after(index, key_match.group(3)))
+            if not recorded and line.lstrip().startswith("|"):
+                cell = next((c for c in line.split("|") if ident.search(c)), "")
+                recorded = record(index, "table-cell", "", cell)
+            if not recorded and fenced:
+                recorded = record(index, "block-entry", "", line[named.end() :])
+            if not recorded:
+                # An identifier inside a code span is a quotation of a literal, not a subject.
+                clean = without_code_spans(line)
+                quoted = ident.search(clean)
+                if quoted:
+                    sentence = re.split(r"(?<=[.;])\s", clean[quoted.end() :], maxsplit=1)[0]
+                    recorded = record(index, "prose", "", sentence)
+        if recorded or not subject_section or subject != "at-d09":
             continue
 
-        # The enclosing section supplies the subject: a labelled value inside the AT-D09 section
-        # asserts AT-D09's state without naming it. This is the form DEF-R4-01 escaped through.
-        if subject_section:
-            labelled = LABEL_LINE.match(line)
-            if labelled:
-                value = value_after(index, labelled.group(2))
-                if tokens_in(value, AT_D09_STATE_TOKENS):
-                    found.append(
-                        (artifact, index + 1, f"section-label:{labelled.group(1).strip()}", value)
-                    )
+        labelled = LABEL_LINE.match(line)
+        if labelled:
+            record(
+                index,
+                "section-label",
+                labelled.group(1).strip(),
+                value_after(index, labelled.group(2)),
+            )
     return found
 
 
-def at_d09_domain_assertions() -> list[tuple[str, int, str, str]]:
-    """Every AT-D09 assertion across the whole AT-M1 markdown scope, not one nominated file."""
-    found: list[tuple[str, int, str, str]] = []
+def domain_assertions(subject: str) -> list[tuple[str, int, str, str, str, str]]:
+    """Every authoritative assertion about `subject` across the whole AT-M1 markdown scope."""
+    found: list[tuple[str, int, str, str, str, str]] = []
     for artifact in sorted(p for p in AT_M1_EXPECTED_PATHS if p.endswith(".md")):
-        found.extend(at_d09_assertions(artifact, read(artifact)))
+        found.extend(authoritative_assertions(artifact, read(artifact), subject))
     return found
+
+
+def unauthorized_assertions(subject: str) -> list[str]:
+    """Every discovered assertion whose CURRENT value is not an allowed state for its kind."""
+    return [
+        f"{artifact}:{line} [{form}/{kind}] {value!r} -- {verdict}"
+        for artifact, line, form, kind, value, verdict in domain_assertions(subject)
+        if verdict
+    ]
+
+
+def claims_at_d09_closed(text: str) -> bool:
+    """True if the text, read as a current proposition, closes AT-D09."""
+    props = propositions(current_value(text))
+    closure = set(AT_D09_CLOSURE_TERMS)
+    openish = set(AT_D09_OPEN_TERMS)
+    if any(affirm and term in closure for affirm, term in props):
+        return True
+    return any(not affirm and term in openish for affirm, term in props)
 
 
 def capability_registry() -> dict:
@@ -875,61 +1056,43 @@ def main() -> int:  # noqa: PLR0915
         "check92i",
         f"the AT-D09 section-6 heading claims the question is answered: {d09_heading!r}",
     )
-    # AT-M1-RM4 (DEF-R4-01, DEF-R4-02). The previous completeness guard read one nominated file,
-    # line by line, requiring the identifier and a state token on the same physical line. It could
-    # therefore not see a label whose value continued on the next line, a value whose subject came
-    # from the enclosing section, a lowercase identifier, or any assertion in another artifact.
-    # These run over every assertion in the whole markdown scope, attributed by subject.
-    domain_assertions = at_d09_domain_assertions()
-    closure_surfaces = [
-        f"{artifact}:{line} [{kind}] {value!r}"
-        for artifact, line, kind, value in domain_assertions
-        if claims_at_d09_closed(value)
-    ]
+    # AT-M1-RM5. Acceptance is now semantic and affirmative: each discovered assertion is assigned
+    # a KIND, its CURRENT value is parsed with negation preserved, and the value is accepted only
+    # if it affirms a canonical allowed state for that kind. An unknown value fails closed, so a
+    # synonym nobody enumerated (SETTLED, RATIFIED) is rejected without being on any list.
+    d09_assertions = domain_assertions("at-d09")
+    d09_unauthorized = unauthorized_assertions("at-d09")
     expect(
-        closure_surfaces == [],
+        d09_unauthorized == [],
         "check92j",
-        "AT-D09 is claimed resolved, closed, authorized or superseded on an authoritative "
-        f"surface: {closure_surfaces!r}",
+        f"an authoritative AT-D09 assertion is not in an allowed state: {d09_unauthorized!r}",
     )
-    contradicting_surfaces = [
-        f"{artifact}:{line} [{kind}] {value!r}"
-        for artifact, line, kind, value in domain_assertions
-        if tokens_in(value, AT_D09_STATE_TOKENS) and not tokens_in(value, AT_D09_OPEN_CLAIMS)
-    ]
+    d09_kinds = {kind for _, _, _, kind, _, _ in d09_assertions}
     expect(
-        contradicting_surfaces == [],
+        d09_kinds <= {"status", "decision", "authorization", "authority", "non-decision"},
         "check92k",
-        f"an AT-D09 assertion states a state that is not OPEN / DEFERRED: {contradicting_surfaces!r}",
+        f"an AT-D09 assertion was assigned an unknown kind: {sorted(d09_kinds)!r}",
     )
     expect(
-        len(domain_assertions) >= AT_D09_MINIMUM_KNOWN_SURFACES,
+        len(d09_assertions) >= AT_D09_MINIMUM_KNOWN_SURFACES,
         "check92l",
-        f"AT-D09 assertion discovery collapsed to {len(domain_assertions)} surfaces; the extractor "
+        f"AT-D09 assertion discovery collapsed to {len(d09_assertions)} surfaces; the extractor "
         "is no longer finding the assertions it is meant to guard",
     )
-    # Same defect class as DEF-R4-02 (ADV-R3-01): an authorization register asserting AT-M2's state
-    # with nothing reading that surface. Guarding it decides nothing; AT-M2 stays NOT AUTHORIZED.
-    at_m2_registers = [
-        (artifact, index + 1, line.strip())
-        for artifact in sorted(p for p in AT_M1_EXPECTED_PATHS if p.endswith(".md"))
-        for index, line in enumerate(read(artifact).splitlines())
-        if re.match(r"^\s*AT[-_]M2\b\s*:", line, re.IGNORECASE)
-    ]
+    # Same defect class (ADV-R3-01, DEF-R5-06), evaluated by the same semantics: a historical
+    # parenthetical must not neutralise an unauthorized CURRENT state. Guarding the surface
+    # decides nothing; AT-M2 stays NOT AUTHORIZED.
+    m2_assertions = domain_assertions("at-m2")
     expect(
-        len(at_m2_registers) >= AT_M2_KNOWN_REGISTERS,
+        len(m2_assertions) >= AT_M2_KNOWN_REGISTERS,
         "check92m",
-        f"the AT-M2 authorization registers are no longer discoverable: {at_m2_registers!r}",
+        f"the AT-M2 authorization surfaces are no longer discoverable: {len(m2_assertions)}",
     )
-    authorized_m2 = [
-        f"{artifact}:{line} {text!r}"
-        for artifact, line, text in at_m2_registers
-        if "NOT AUTHORIZED" not in text.upper()
-    ]
+    m2_unauthorized = unauthorized_assertions("at-m2")
     expect(
-        authorized_m2 == [],
+        m2_unauthorized == [],
         "check92n",
-        f"an AT-M2 authorization register no longer states NOT AUTHORIZED: {authorized_m2!r}",
+        f"an AT-M2 authorization surface no longer states NOT AUTHORIZED: {m2_unauthorized!r}",
     )
     expect(
         "must not canonicalize permissive continuation" in flat(d09_section),
