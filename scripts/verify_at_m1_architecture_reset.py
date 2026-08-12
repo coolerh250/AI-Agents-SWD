@@ -349,8 +349,12 @@ AT_D09_MINIMUM_KNOWN_SURFACES = 37
 AT_M2_KNOWN_REGISTERS = 2
 
 AT_D09_IDENT = re.compile(r"\bAT[-_]D09\b", re.IGNORECASE)
-# AT-D09 used as a register/label key: "AT-D09:", "AT_D09:", "AT-D09 (qualifier):".
-AT_D09_LABEL = re.compile(r"\bAT[-_]D09\b\s*(?:\([^)]*\))?\s*:\s*(.*)$", re.IGNORECASE)
+# AT-D09 used as a register/label key: "AT-D09:", "AT_D09:", "AT-D09 (qualifier):",
+# "AT-D09 authorization state:". The qualifier window is bounded so that a prose sentence which
+# merely happens to contain a colon later on is not read as a label. An empty value continues on
+# the next line -- probe P-MULTI escaped an earlier form of this pattern that stopped at the
+# end of the identifier's own line.
+AT_D09_LABEL = re.compile(r"\bAT[-_]D09\b[^:\n]{0,40}:\s*(.*)$", re.IGNORECASE)
 LABEL_LINE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /_'-]*):\s*(.*)$")
 # Prose predication requires a copula; "AT-D09 binding status could still be closed" is a title,
 # not an assertion that AT-D09 is BINDING.
