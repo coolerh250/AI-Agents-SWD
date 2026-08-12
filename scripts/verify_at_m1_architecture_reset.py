@@ -704,9 +704,7 @@ def main() -> int:  # noqa: PLR0915
         f"the AT-D09 summary statement claims the question is answered: {d09_summary!r}",
     )
     expect(
-        d09_status != ""
-        and "OPEN" in d09_status.upper()
-        and "DEFERRED" in d09_status.upper(),
+        d09_status != "" and "OPEN" in d09_status.upper() and "DEFERRED" in d09_status.upper(),
         "check92c",
         f"the AT-D09 section-6 STATUS line is not OPEN / DEFERRED: {d09_status!r}",
     )

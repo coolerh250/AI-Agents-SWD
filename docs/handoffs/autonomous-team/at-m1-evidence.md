@@ -462,6 +462,137 @@ Deliberately NOT done here: RM1 is not authorized to change canonicalization sem
 frozen stage head is not knowable until PR #29 merges.
 ```
 
+## 17. AT-M1-RM2 — R2 blocking defect closure
+
+```text
+AT-M1-R2 verdict:  REMEDIATION_REQUIRED  (2 blocking defects, both inside the 19-path scope)
+RM2 scope:         DEF-R2-01 and DEF-R2-02 only. No 20th path. No architecture change.
+```
+
+### DEF-R2-01 — canonical capability registry carried two false evidence strings
+
+Reproduced verbatim on the pre-RM2 head before any edit:
+
+```text
+AgentPrincipal.evidence  "ActorPrincipal / principal_id: 0 occurrences on main. ..."
+Handoff.evidence         "Only 2 matches for handoff on main, both legacy delivery-package
+                          handoff_summaries (migration 021) ..."
+```
+
+RM1 diagnosed both in section 4a of this document and corrected them **here**, but never in the
+registry — whose only RM1 change was the `canonical_baseline` re-pin. The registry is
+`"status": "CANONICAL"` and a Tier-1 supporting registry in the precedence record, and AT-M2 is
+scoped by it, so the false strings were the ones that would actually be read.
+
+Machine-measured afresh at `fa5e5c4`, scope `apps/ shared/ agents/ services/ migrations/`:
+
+```text
+git grep -o  "principal_id"                          25 occurrences,  7 files
+git grep -oi "ActorPrincipal|actor_principal"          0
+git grep -o  "principal_type"                          0
+git grep -oi "ProjectTeamMembership"                   0
+
+git grep -oi "handoff"                               77 occurrences, 14 files
+git grep -o  "HandoffSummary"                        11
+git grep -o  "handoff_summar[a-z]*"                  24
+git grep -o  "handoff_id"                             2
+recipient_principal_id · assigned_to_agent · reassign · work_transfer ·
+ownership_transfer · owner_principal_id · transfer_ownership          0 each
+```
+
+Both corrected strings now state the measured truth and, critically, say **the names are not
+free**. `Actor.principal_id` is the task/authorization subject that drives two-person control in
+`authorization_policy.py`; it carries no `principal_type`, no agent functional role and no
+`ProjectTeamMembership`, so it does not establish AT-D02. The 14 handoff files are
+delivery-package **document sections** with no from/to principal, no ownership field and no
+acceptance state.
+
+```text
+AgentPrincipal state:  CONTRACT_ONLY   UNCHANGED
+Handoff state:         NOT_IMPLEMENTED UNCHANGED
+Capability states changed by RM2:      0
+Totals changed by RM2:                 0   (30 · 7/10/2/5/5/1 · poc_blocking 18 · prod_exec 0)
+Guarded by:                            check128a-h, read from the structured entries
+```
+
+### DEF-R2-02 — AT-D09 binding status could still be closed
+
+`check92`/`check93` tested `"OPEN"` and `"DEFERRED"` against the **whole** binding document, which
+holds several unrelated tokens of each. Reproduced on the pre-RM2 head, one authoritative surface
+at a time:
+
+```text
+section-6 STATUS  -> RESOLVED / CLOSED    verifier 210/0 PASS · tests 72 passed   ESCAPED
+line-20 summary   -> RESOLVED / BINDING   verifier 210/0 PASS · tests 72 passed   ESCAPED
+section-6 Decision -> RESOLVED            verifier 210/0 PASS · tests 1 failed    verifier escaped
+remove non-decision declaration           verifier 210/1 FAIL                     rejected
+Step 66C.4 -> SUPERSEDED                  verifier 210/1 FAIL                     rejected
+```
+
+This is the **third** instance of the same whole-file-substring defect class in this workstream,
+after INV-08 and the AT-D09 precedence guard. All five authoritative surfaces are now targeted
+structurally: `section_text()` isolates the AT-D09 section, `labelled_line()` reads the summary and
+STATUS lines, `indented_value()` reads the Decision value, and `claims_at_d09_closed()` discounts
+the required "NOT decided" wording before testing for RESOLVED / CLOSED / BINDING / ACCEPTED /
+DECIDED.
+
+```text
+check92    AT-D09 section present            check92a/b  summary OPEN, no closure claim
+check92c/d STATUS OPEN / DEFERRED, no closure check92e    Decision value == DEFERRED
+check93    non-decision declaration present  check93a/b  Step 66C.4 authority, not superseded
+```
+
+The binding document itself is **unchanged** — its content was correct; this was a verifier defect.
+The RM1 precedence hardening (`check104g1-g3`) is untouched.
+
+### Mutation suite
+
+```text
+M01 old baseline            REJECT check03c      M10 remove AT precedence   REJECT check104a
+M02 omit original path      REJECT check02/03/03a M11 authorize AT-M2       REJECT check104j
+M03 admit GOV1 path         REJECT check02/03/03a M12a close AT-D09 (prec)  REJECT check104g1/g2/g3
+M04 remove registration     REJECT check02/03a/03b M12b close AT-D09 (bind) REJECT check92c/92d
+M05 arbitrary 20th path     REJECT check02/03    M13 false AgentPrincipal   REJECT check128b/128c
+M06 private_chain_of_thought REJECT check45c     M14 false Handoff evidence REJECT check128f
+M07 raw_reasoning           REJECT check45c      M15 binding STATUS closed  REJECT check92c/92d
+M08 PR #28 canonical        REJECT check102/102a M16 binding Decision       REJECT check92e
+M09 PR #28 dependency       REJECT check102b     M17 binding summary        REJECT check92a/92b
+                                                 M18 remove 66C.4 authority REJECT check93a/93b
+                            untampered control   PASS before and after
+```
+
+Every mutation is rejected by its intended semantic check. M02–M05 are registry-manipulation
+mutations, so exact-set-equality and the cardinality/registration checks **are** their correct
+semantic guards, not accidental bystanders.
+
+### AT-D09 remains undecided
+
+```text
+Summary line:   AT-D09:  OPEN / DEFERRED -- not a decision, an open question (section 6)
+Section 6:      STATUS:  OPEN / DEFERRED -- deliberately NOT decided by AT-M1
+Decision:       DEFERRED
+Step 66C.4 clarification expiry contract:  REMAINS AUTHORITATIVE
+```
+
+RM2 decides nothing. No clarification-expiry semantics were introduced or changed. Answering
+AT-D09 still requires its own Product Owner decision.
+
+### Advisory disposition
+
+```text
+ADV-R2-01  evidence section 12 free text        DEFERRED / NON-BLOCKING -- the authoritative
+                                                treatment line and registry row are guarded
+ADV-R2-02  AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED  CARRIED (section 16). R2 added a constraint:
+                                                check04/05/06 derive from the same changed set,
+                                                so AT-M1-M1 must separate positive stage scope
+                                                from HEAD-relative rejection scope rather than
+                                                freezing both
+ADV-R2-03  INV-04 historical nuance             RECORDED, not rewritten: private_chain_of_thought
+                                                escaped the old verifier but was caught by the old
+                                                tests; raw_reasoning escaped BOTH. The forward
+                                                behaviour was already correct.
+```
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
