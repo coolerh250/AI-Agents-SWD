@@ -290,9 +290,13 @@ def test_inv10_no_runtime_implementation():
 
 
 def test_at_d09_remains_open_and_not_an_adr():
-    binding = read(BINDING)
-    assert "AT-D09" in binding and "OPEN" in binding and "DEFERRED" in binding
-    assert "REMAINS AUTHORITATIVE" in binding
+    """AT-M1-RM3 (ADV-R3-02): the whole-document form this replaces passed with AT-D09 closed.
+
+    Unrelated OPEN and DEFERRED tokens elsewhere in the contract satisfied it. AT-D09's status is
+    now asserted per surface by test_rm3_every_at_d09_status_surface_records_it_open; what remains
+    here is the ADR claim, which is a different document.
+    """
+    assert "REMAINS AUTHORITATIVE" in read(BINDING)
     adrs = read(ADRS)
     closed_section = adrs.split("## Open decisions")[0]
     assert "AT-D09" not in closed_section
@@ -835,3 +839,66 @@ def test_rm2_at_d09_remains_open_and_undecided():
     assert "OPEN" in module.labelled_line(section, "STATUS:").upper()
     assert module.indented_value(section, "Decision:").upper() == "DEFERRED"
     assert "AT-D09" in read(PRECEDENCE)
+
+
+def at_d09_status_surfaces(module, binding: str) -> dict[str, str]:
+    """Every surface of the binding contract that states AT-D09's status.
+
+    AT-M1-RM3 (DEF-R3-01): RM2 covered the first four. The section-8 authorization register and
+    the section-6 heading marker also state the status, and a closure claim on either passed the
+    verifier and the whole test module.
+    """
+    section = module.section_text(binding, "## 6. AT-D09")
+    return {
+        "summary": module.labelled_line(binding, "AT-D09:"),
+        "status": module.labelled_line(section, "STATUS:"),
+        "decision": module.indented_value(section, "Decision:"),
+        "heading": module.line_with(binding, "## 6. AT-D09"),
+        "register": module.labelled_line(
+            module.section_text(binding, "## 8. Authorization status"), "AT_D09:"
+        ),
+    }
+
+
+def test_rm3_section_8_authorization_register_records_at_d09_open():
+    """DEF-R3-01: mutating this line to RESOLVED / BINDING left both gates green."""
+    module = verifier_module()
+    register = at_d09_status_surfaces(module, read(BINDING_PATH))["register"]
+    assert register, "the section-8 authorization register has no AT_D09 line"
+    assert "OPEN" in register.upper(), f"the register does not record AT-D09 as OPEN: {register!r}"
+    assert not module.claims_at_d09_closed(register)
+    assert module.claims_at_d09_closed("AT_D09:  RESOLVED / BINDING")
+
+
+@pytest.mark.parametrize("surface", ["summary", "status", "decision", "heading", "register"])
+def test_rm3_every_at_d09_status_surface_records_it_open(surface):
+    module = verifier_module()
+    live = at_d09_status_surfaces(module, read(BINDING_PATH))[surface]
+    assert live, f"the authoritative {surface} surface was not found"
+    assert not module.claims_at_d09_closed(live), f"the {surface} surface claims closure: {live!r}"
+    expected = "DEFERRED" if surface == "decision" else "OPEN"
+    assert expected in live.upper(), f"the {surface} surface is not {expected}: {live!r}"
+
+
+def test_rm3_at_d09_status_surfaces_are_completely_enumerated():
+    """Prevent the next remediation from covering only a reviewer-named subset.
+
+    Any line that names AT-D09 and states a state must be one of the surfaces a named check
+    reads. Prose that names the question without stating a state is descriptive and is not gated.
+    """
+    module = verifier_module()
+    binding = read(BINDING_PATH)
+    stated = {line.strip() for line in binding.splitlines() if module.states_at_d09_status(line)}
+    covered = set(at_d09_status_surfaces(module, binding).values())
+    assert (
+        stated <= covered
+    ), f"AT-D09 status is stated on unguarded surfaces: {sorted(stated - covered)!r}"
+
+
+def test_rm3_at_d09_gate_rejects_closure_on_each_surface_alone():
+    """Closing one surface while every other stays OPEN must still be a closure claim."""
+    module = verifier_module()
+    surfaces = at_d09_status_surfaces(module, read(BINDING_PATH))
+    for surface, live in surfaces.items():
+        closed = live.replace("OPEN", "RESOLVED").replace("DEFERRED", "BINDING")
+        assert module.claims_at_d09_closed(closed), f"closing {surface} is not detected: {closed!r}"

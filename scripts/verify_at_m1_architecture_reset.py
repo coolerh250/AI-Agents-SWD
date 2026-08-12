@@ -312,7 +312,10 @@ def indented_value(block: str, label: str) -> str:
 
 
 # AT-D09 must stay an OPEN QUESTION. Any of these on an authoritative AT-D09 surface is a closure.
-AT_D09_CLOSURE_CLAIMS = ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED", "DECIDED")
+AT_D09_CLOSURE_CLAIMS = ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED", "DECIDED", "AUTHORIZED")
+
+# A line that names AT-D09 and carries any of these is stating its status, not describing it.
+AT_D09_STATE_TOKENS = ("OPEN", "DEFERRED", *AT_D09_CLOSURE_CLAIMS)
 
 
 def claims_at_d09_closed(text: str) -> bool:
@@ -323,6 +326,17 @@ def claims_at_d09_closed(text: str) -> bool:
     """
     upper = text.upper().replace("NOT DECIDED", "").replace("NOT A DECISION", "")
     return any(claim in upper for claim in AT_D09_CLOSURE_CLAIMS)
+
+
+def states_at_d09_status(line: str) -> bool:
+    """True if a line asserts AT-D09's status, as opposed to merely mentioning the question.
+
+    Descriptive prose that names AT-D09 without a state token is not a status surface and is not
+    gated; a line that names it AND states a state must be one of the surfaces a check reads.
+    """
+    if "AT-D09" not in line and "AT_D09" not in line:
+        return False
+    return any(token in line.upper() for token in AT_D09_STATE_TOKENS)
 
 
 def capability_registry() -> dict:
@@ -683,10 +697,16 @@ def main() -> int:  # noqa: PLR0915
     # several unrelated OPEN and DEFERRED tokens, so any single AUTHORITATIVE AT-D09 surface could
     # be flipped to RESOLVED/CLOSED while both checks stayed green. Each authoritative surface is
     # now targeted structurally and tested for closure claims on that surface alone.
+    # AT-M1-RM3 (DEF-R3-01). RM2 enumerated the surfaces a reviewer named. Two more state AT-D09's
+    # status: the section-8 authorization register and the section-6 heading marker. A closure
+    # claim on either passed every check and every test, so both are now read structurally, and
+    # check92j rejects any future AT-D09 status surface that no named check reads.
     d09_section = section_text(binding, "## 6. AT-D09")
     d09_summary = labelled_line(binding, "AT-D09:")
     d09_status = labelled_line(d09_section, "STATUS:")
     d09_decision = indented_value(d09_section, "Decision:")
+    d09_register = labelled_line(section_text(binding, "## 8. Authorization status"), "AT_D09:")
+    d09_heading = line_with(binding, "## 6. AT-D09")
 
     expect(
         d09_section != "",
@@ -717,6 +737,36 @@ def main() -> int:  # noqa: PLR0915
         d09_decision.upper() == "DEFERRED",
         "check92e",
         f"the AT-D09 section-6 Decision value is not DEFERRED: {d09_decision!r}",
+    )
+    expect(
+        d09_register != "" and "OPEN" in d09_register.upper(),
+        "check92f",
+        f"the section-8 authorization register does not record AT-D09 as OPEN: {d09_register!r}",
+    )
+    expect(
+        not claims_at_d09_closed(d09_register),
+        "check92g",
+        f"the section-8 authorization register claims AT-D09 is answered: {d09_register!r}",
+    )
+    expect(
+        d09_heading != "" and "(OPEN)" in d09_heading.upper(),
+        "check92h",
+        f"the AT-D09 section-6 heading does not mark the question OPEN: {d09_heading!r}",
+    )
+    expect(
+        not claims_at_d09_closed(d09_heading),
+        "check92i",
+        f"the AT-D09 section-6 heading claims the question is answered: {d09_heading!r}",
+    )
+    unguarded_d09 = sorted(
+        {line.strip() for line in binding.splitlines() if states_at_d09_status(line)}
+        - {d09_summary, d09_register, d09_heading}
+    )
+    expect(
+        unguarded_d09 == [],
+        "check92j",
+        "the binding contract states AT-D09 status on a surface no named check reads: "
+        f"{unguarded_d09!r}",
     )
     expect(
         "must not canonicalize permissive continuation" in flat(d09_section),
