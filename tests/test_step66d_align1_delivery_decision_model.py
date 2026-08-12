@@ -7,6 +7,7 @@ with itself.
 
 from __future__ import annotations
 
+import importlib.util
 import re
 import subprocess
 import sys
@@ -519,9 +520,55 @@ def test_no_manifest_compose_or_chart_changed() -> None:
     ] == []
 
 
+def _verifier_module():
+    """The verifier loaded as a module, so this test uses ITS admission rule, not a copy.
+
+    GOV-STAGE-FAMILY-ALLOWLIST-01 (Step AT-M1-GOV1): this test previously restated the allowlist
+    inline, giving two independent rules that could drift apart. There is now exactly one.
+    """
+    spec = importlib.util.spec_from_file_location("step66d_align1_verifier", SCRIPT)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 def test_changed_paths_are_within_scope() -> None:
-    allowed = ("docs/", "scripts/verify_step66", "tests/test_step66")
-    assert [p for p in _changed() if not p.startswith(allowed) and p != "source/progress.md"] == []
+    is_admitted = _verifier_module().is_admitted_current_state_path
+    assert [p for p in _changed() if not is_admitted(p)] == []
+
+
+def test_current_state_admission_is_not_a_broad_path_allowlist() -> None:
+    """A file being under scripts/ or tests/ must never be sufficient on its own."""
+    is_admitted = _verifier_module().is_admitted_current_state_path
+    for rejected in (
+        "scripts/at_runtime_patch.py",
+        "scripts/random_helper.py",
+        "tests/at_random_helper.py",
+        "tests/random_test_helper.py",
+        "scripts/verify_unregistered_family.py",
+        "tests/test_unregistered_family.py",
+        "shared/sdk/tasks/rbac.py",
+        "apps/orchestrator/src/main.py",
+        "migrations/037_example.sql",
+        "infra/docker-compose/docker-compose.yml",
+    ):
+        assert not is_admitted(rejected), rejected
+
+
+def test_registered_governance_families_are_admitted() -> None:
+    """Both registered stage families are admitted, for verifiers and tests alike."""
+    is_admitted = _verifier_module().is_admitted_current_state_path
+    for accepted in (
+        "scripts/verify_step66d_align1_delivery_decision_model.py",
+        "tests/test_step66d_align1_delivery_decision_model.py",
+        "scripts/verify_at_m1_architecture_reset.py",
+        "tests/test_at_m1_architecture_reset.py",
+        "scripts/verify_at_m2_team_identity_collaboration.py",
+        "tests/test_at_m2_team_identity_collaboration.py",
+        "docs/anything/at/all.md",
+        "source/progress.md",
+    ):
+        assert is_admitted(accepted), accepted
 
 
 def test_production_executed_true_count_is_zero_everywhere() -> None:
