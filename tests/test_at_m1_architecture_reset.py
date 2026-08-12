@@ -880,19 +880,56 @@ def test_rm3_every_at_d09_status_surface_records_it_open(surface):
     assert expected in live.upper(), f"the {surface} surface is not {expected}: {live!r}"
 
 
-def test_rm3_at_d09_status_surfaces_are_completely_enumerated():
-    """Prevent the next remediation from covering only a reviewer-named subset.
+def test_rm4_no_at_d09_assertion_in_the_whole_scope_claims_closure():
+    """AT-M1-RM4: the guard is over every assertion in the markdown domain, not one file.
 
-    Any line that names AT-D09 and states a state must be one of the surfaces a named check
-    reads. Prose that names the question without stating a state is descriptive and is not gated.
+    Replaces the RM3 form, which read one nominated file line by line and so could not see a
+    value continuing on the next line, a subject supplied by the enclosing section, a lowercase
+    identifier, or any assertion in another artifact.
     """
     module = verifier_module()
-    binding = read(BINDING_PATH)
-    stated = {line.strip() for line in binding.splitlines() if module.states_at_d09_status(line)}
-    covered = set(at_d09_status_surfaces(module, binding).values())
-    assert (
-        stated <= covered
-    ), f"AT-D09 status is stated on unguarded surfaces: {sorted(stated - covered)!r}"
+    claiming = [
+        (artifact, line, kind, value)
+        for artifact, line, kind, value in module.at_d09_domain_assertions()
+        if module.claims_at_d09_closed(value)
+    ]
+    assert claiming == [], f"AT-D09 is claimed closed on: {claiming!r}"
+
+
+def test_rm4_every_at_d09_assertion_that_states_a_state_states_open():
+    module = verifier_module()
+    contradicting = [
+        (artifact, line, kind, value)
+        for artifact, line, kind, value in module.at_d09_domain_assertions()
+        if module.tokens_in(value, module.AT_D09_STATE_TOKENS)
+        and not module.tokens_in(value, module.AT_D09_OPEN_CLAIMS)
+    ]
+    assert contradicting == [], f"AT-D09 stated as something other than OPEN: {contradicting!r}"
+
+
+def test_rm4_discovery_spans_every_in_scope_markdown_artifact():
+    """The domain is the scope, not the file a reviewer happened to name."""
+    module = verifier_module()
+    rows = module.at_d09_domain_assertions()
+    artifacts = {artifact for artifact, _, _, _ in rows}
+    assert len(rows) >= module.AT_D09_MINIMUM_KNOWN_SURFACES
+    # DEF-R4-02: assertions live outside the binding contract and must be discovered there too.
+    assert BINDING_PATH in artifacts
+    assert len(artifacts) >= 7, f"discovery collapsed to {sorted(artifacts)!r}"
+
+
+def test_rm4_at_m2_authorization_registers_state_not_authorized():
+    """ADV-R3-01, same defect class. Guarding the surface decides nothing about AT-M2."""
+    module = verifier_module()
+    registers = [
+        (artifact, index + 1, line.strip())
+        for artifact in sorted(p for p in module.AT_M1_EXPECTED_PATHS if p.endswith(".md"))
+        for index, line in enumerate(read(artifact).splitlines())
+        if re.match(r"^\s*AT[-_]M2\b\s*:", line, re.IGNORECASE)
+    ]
+    assert len(registers) >= module.AT_M2_KNOWN_REGISTERS
+    for artifact, line, text in registers:
+        assert "NOT AUTHORIZED" in text.upper(), f"{artifact}:{line} {text!r}"
 
 
 def test_rm3_at_d09_gate_rejects_closure_on_each_surface_alone():

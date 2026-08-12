@@ -603,9 +603,10 @@ AT-M1-R3 confirmed both R2 defects closed and found one blocking defect in the R
 
 At `47d0246`, sole edit to the binding contract section 8:
 
-```text
-AT_D09:  OPEN  ->  AT_D09:  RESOLVED / BINDING
+The section-8 register value was changed from OPEN to a closure claim (the probe wording is not
+reproduced here as a register line, so that this record cannot itself read as a canonical status):
 
+```text
 verifier:  checks=225 failures=0  PASS      <- complete escape
 tests:     82 passed                        <- complete escape
 ```

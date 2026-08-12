@@ -311,32 +311,145 @@ def indented_value(block: str, label: str) -> str:
     return ""
 
 
-# AT-D09 must stay an OPEN QUESTION. Any of these on an authoritative AT-D09 surface is a closure.
-AT_D09_CLOSURE_CLAIMS = ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED", "DECIDED", "AUTHORIZED")
+# AT-D09 must stay an OPEN QUESTION. Any of these, predicated of AT-D09, is a closure claim.
+# AUTHORITATIVE is deliberately absent: "Step 66C.4 REMAINS AUTHORITATIVE" is a preservation
+# statement, not a closure of AT-D09.
+AT_D09_CLOSURE_CLAIMS = (
+    "RESOLVED",
+    "CLOSED",
+    "BINDING",
+    "ACCEPTED",
+    "ANSWERED",
+    "AUTHORIZED",
+    "DECIDED",
+    "COMPLETE",
+    "COMPLETED",
+    "SUPERSEDED",
+    "SUPERSEDES",
+)
+AT_D09_OPEN_CLAIMS = ("OPEN", "DEFERRED")
+AT_D09_STATE_TOKENS = (*AT_D09_OPEN_CLAIMS, *AT_D09_CLOSURE_CLAIMS)
 
-# A line that names AT-D09 and carries any of these is stating its status, not describing it.
-AT_D09_STATE_TOKENS = ("OPEN", "DEFERRED", *AT_D09_CLOSURE_CLAIMS)
+# Required non-decision wording. Stripped before closure detection so the denial of a closure is
+# never itself read as one.
+AT_D09_DENIALS = (
+    "NOT DECIDED",
+    "NOT A DECISION",
+    "NOT BE DECIDED",
+    "NOT DECIDE",
+    "MUST NOT",
+    "NO LONGER",
+    "NOT AN ADR",
+)
+
+# Anti-vacuity floors, NOT completeness by count. check92j is what proves no surface claims
+# closure; these exist so that breaking the extractor (making it discover nothing) fails loudly
+# instead of making the real guard vacuously true.
+AT_D09_MINIMUM_KNOWN_SURFACES = 37
+AT_M2_KNOWN_REGISTERS = 2
+
+AT_D09_IDENT = re.compile(r"\bAT[-_]D09\b", re.IGNORECASE)
+# AT-D09 used as a register/label key: "AT-D09:", "AT_D09:", "AT-D09 (qualifier):".
+AT_D09_LABEL = re.compile(r"\bAT[-_]D09\b\s*(?:\([^)]*\))?\s*:\s*(.*)$", re.IGNORECASE)
+LABEL_LINE = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /_'-]*):\s*(.*)$")
+# Prose predication requires a copula; "AT-D09 binding status could still be closed" is a title,
+# not an assertion that AT-D09 is BINDING.
+PROSE_PREDICATION = re.compile(
+    r"\bAT[-_]D09\b[^.;]{0,60}?\b(?:is|are|was|were|remains?|stays?|"
+    r"(?:may|must|shall|will)\s+remain)\b(.{0,80})",
+    re.IGNORECASE,
+)
+
+
+def tokens_in(value: str, vocabulary: tuple[str, ...]) -> list[str]:
+    upper = value.upper()
+    return sorted({t for t in vocabulary if re.search(rf"\b{t}\b", upper)})
 
 
 def claims_at_d09_closed(text: str) -> bool:
-    """True if an authoritative AT-D09 surface asserts the question is answered.
+    """True if an AT-D09 surface asserts the question is answered."""
+    upper = text.upper()
+    for denial in AT_D09_DENIALS:
+        upper = upper.replace(denial, " ")
+    return bool(tokens_in(upper, AT_D09_CLOSURE_CLAIMS))
 
-    'NOT decided' and 'not a decision' are the required non-decision wording, so DECIDED is only
-    counted once those denials are removed.
+
+def at_d09_assertions(artifact: str, doc: str) -> list[tuple[str, int, str, str]]:
+    """Every assertion in one artifact that predicates a state OF AT-D09.
+
+    AT-M1-RM4. The unit is the ASSERTION, not the line: a value is attributed to AT-D09 only when
+    AT-D09 is its subject. That is what lets 'AT-D01 .. AT-D05 (RESOLVED / BINDING), AT-D09 (OPEN)'
+    yield OPEN rather than a false closure, and what lets a section-6 'Decision:' label be
+    attributed to AT-D09 even though the line never names it.
+
+    Returns (artifact, line number, kind, value) for each assertion found.
     """
-    upper = text.upper().replace("NOT DECIDED", "").replace("NOT A DECISION", "")
-    return any(claim in upper for claim in AT_D09_CLOSURE_CLAIMS)
+    found: list[tuple[str, int, str, str]] = []
+    lines = doc.splitlines()
+    fenced = False
+    subject_section = False
+
+    def value_after(index: int, inline: str) -> str:
+        """An empty label value continues on the next non-empty line (indented value form)."""
+        if inline.strip():
+            return inline.strip()
+        for following in lines[index + 1 :]:
+            if following.strip():
+                return following.strip()
+            break
+        return ""
+
+    for index, line in enumerate(lines):
+        if line.strip().startswith("```"):
+            fenced = not fenced
+            continue
+        if line.startswith("#"):
+            subject_section = bool(AT_D09_IDENT.search(line))
+            marker = " ".join(re.findall(r"\(([^)]*)\)", line))
+            if subject_section and tokens_in(marker, AT_D09_STATE_TOKENS):
+                found.append((artifact, index + 1, "heading-marker", marker))
+            continue
+
+        named = AT_D09_IDENT.search(line)
+        if named:
+            label = AT_D09_LABEL.search(line)
+            if label:
+                found.append((artifact, index + 1, "register", value_after(index, label.group(1))))
+                continue
+            if line.lstrip().startswith("|"):
+                cell = next(
+                    (c for c in line.split("|") if AT_D09_IDENT.search(c)),
+                    "",
+                )
+                found.append((artifact, index + 1, "table-cell", cell.strip()))
+                continue
+            if fenced:
+                found.append((artifact, index + 1, "block-entry", line[named.end() :].strip()))
+                continue
+            prose = PROSE_PREDICATION.search(line)
+            if prose and tokens_in(prose.group(1), AT_D09_STATE_TOKENS):
+                found.append((artifact, index + 1, "prose", prose.group(1).strip()))
+            continue
+
+        # The enclosing section supplies the subject: a labelled value inside the AT-D09 section
+        # asserts AT-D09's state without naming it. This is the form DEF-R4-01 escaped through.
+        if subject_section:
+            labelled = LABEL_LINE.match(line)
+            if labelled:
+                value = value_after(index, labelled.group(2))
+                if tokens_in(value, AT_D09_STATE_TOKENS):
+                    found.append(
+                        (artifact, index + 1, f"section-label:{labelled.group(1).strip()}", value)
+                    )
+    return found
 
 
-def states_at_d09_status(line: str) -> bool:
-    """True if a line asserts AT-D09's status, as opposed to merely mentioning the question.
-
-    Descriptive prose that names AT-D09 without a state token is not a status surface and is not
-    gated; a line that names it AND states a state must be one of the surfaces a check reads.
-    """
-    if "AT-D09" not in line and "AT_D09" not in line:
-        return False
-    return any(token in line.upper() for token in AT_D09_STATE_TOKENS)
+def at_d09_domain_assertions() -> list[tuple[str, int, str, str]]:
+    """Every AT-D09 assertion across the whole AT-M1 markdown scope, not one nominated file."""
+    found: list[tuple[str, int, str, str]] = []
+    for artifact in sorted(p for p in AT_M1_EXPECTED_PATHS if p.endswith(".md")):
+        found.extend(at_d09_assertions(artifact, read(artifact)))
+    return found
 
 
 def capability_registry() -> dict:
@@ -758,15 +871,61 @@ def main() -> int:  # noqa: PLR0915
         "check92i",
         f"the AT-D09 section-6 heading claims the question is answered: {d09_heading!r}",
     )
-    unguarded_d09 = sorted(
-        {line.strip() for line in binding.splitlines() if states_at_d09_status(line)}
-        - {d09_summary, d09_register, d09_heading}
+    # AT-M1-RM4 (DEF-R4-01, DEF-R4-02). The previous completeness guard read one nominated file,
+    # line by line, requiring the identifier and a state token on the same physical line. It could
+    # therefore not see a label whose value continued on the next line, a value whose subject came
+    # from the enclosing section, a lowercase identifier, or any assertion in another artifact.
+    # These run over every assertion in the whole markdown scope, attributed by subject.
+    domain_assertions = at_d09_domain_assertions()
+    closure_surfaces = [
+        f"{artifact}:{line} [{kind}] {value!r}"
+        for artifact, line, kind, value in domain_assertions
+        if claims_at_d09_closed(value)
+    ]
+    expect(
+        closure_surfaces == [],
+        "check92j",
+        "AT-D09 is claimed resolved, closed, authorized or superseded on an authoritative "
+        f"surface: {closure_surfaces!r}",
+    )
+    contradicting_surfaces = [
+        f"{artifact}:{line} [{kind}] {value!r}"
+        for artifact, line, kind, value in domain_assertions
+        if tokens_in(value, AT_D09_STATE_TOKENS) and not tokens_in(value, AT_D09_OPEN_CLAIMS)
+    ]
+    expect(
+        contradicting_surfaces == [],
+        "check92k",
+        f"an AT-D09 assertion states a state that is not OPEN / DEFERRED: {contradicting_surfaces!r}",
     )
     expect(
-        unguarded_d09 == [],
-        "check92j",
-        "the binding contract states AT-D09 status on a surface no named check reads: "
-        f"{unguarded_d09!r}",
+        len(domain_assertions) >= AT_D09_MINIMUM_KNOWN_SURFACES,
+        "check92l",
+        f"AT-D09 assertion discovery collapsed to {len(domain_assertions)} surfaces; the extractor "
+        "is no longer finding the assertions it is meant to guard",
+    )
+    # Same defect class as DEF-R4-02 (ADV-R3-01): an authorization register asserting AT-M2's state
+    # with nothing reading that surface. Guarding it decides nothing; AT-M2 stays NOT AUTHORIZED.
+    at_m2_registers = [
+        (artifact, index + 1, line.strip())
+        for artifact in sorted(p for p in AT_M1_EXPECTED_PATHS if p.endswith(".md"))
+        for index, line in enumerate(read(artifact).splitlines())
+        if re.match(r"^\s*AT[-_]M2\b\s*:", line, re.IGNORECASE)
+    ]
+    expect(
+        len(at_m2_registers) >= AT_M2_KNOWN_REGISTERS,
+        "check92m",
+        f"the AT-M2 authorization registers are no longer discoverable: {at_m2_registers!r}",
+    )
+    authorized_m2 = [
+        f"{artifact}:{line} {text!r}"
+        for artifact, line, text in at_m2_registers
+        if "NOT AUTHORIZED" not in text.upper()
+    ]
+    expect(
+        authorized_m2 == [],
+        "check92n",
+        f"an AT-M2 authorization register no longer states NOT AUTHORIZED: {authorized_m2!r}",
     )
     expect(
         "must not canonicalize permissive continuation" in flat(d09_section),
