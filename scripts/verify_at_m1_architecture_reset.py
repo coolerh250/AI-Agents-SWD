@@ -507,6 +507,15 @@ def state_verdict(kind: str, props: list[tuple[bool, str]]) -> str:
         if "DEFERRED" in affirmed or negated & {"DECIDED"}:
             return ""
         return "decision value is neither DEFERRED nor an explicit non-decision"
+    if kind == "authorization":
+        # Allowed: no decision and no authorization to close.
+        if affirmed & closure:
+            return f"affirms closure state {sorted(affirmed & closure)}"
+        if negated & {"AUTHORIZED", "DECIDED"} or affirmed & openish:
+            return ""
+        if negated & openish:
+            return f"negates the open state {sorted(negated & openish)}"
+        return "no canonical open state is affirmed (unknown authoritative value)"
     if affirmed & closure:
         return f"affirms closure state {sorted(affirmed & closure)}"
     if negated & openish:
@@ -601,6 +610,12 @@ def authoritative_assertions(
 
         labelled = LABEL_LINE.match(line)
         if labelled:
+            # A label naming a DIFFERENT AT-family subject is not an AT-D09 assertion, even when
+            # it sits inside the AT-D09 section.
+            if re.search(r"AT[-_][MD]\d+", labelled.group(1), re.IGNORECASE) and not (
+                AT_D09_IDENT.search(labelled.group(1))
+            ):
+                continue
             record(
                 index,
                 "section-label",
