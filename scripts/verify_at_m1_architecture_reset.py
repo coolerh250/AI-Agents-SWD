@@ -525,23 +525,109 @@ def state_verdict(kind: str, props: list[tuple[bool, str]]) -> str:
     return "no canonical open state is affirmed (unknown authoritative value)"
 
 
-def authoritative_assertions(
-    artifact: str, doc: str, subject: str
-) -> list[tuple[str, int, str, str, str, str]]:
-    """(artifact, line, form, kind, value, verdict) per authoritative assertion about `subject`.
+# =================================================================================================
+# Canonical state carrier protocol (AT-D10, implemented at AT-M1-RM6)
+#
+# AT-D10 makes STRUCTURED CARRIERS the sole canonical authority for governance state. Free prose
+# explains, quotes, criticises and speculates, but never creates, closes or authorizes state.
+#
+# The ordering matters and is the whole point of this stage:
+#
+#     DISCOVERY (structural)  ->  KIND (from the carrier's key)  ->  VALUE  ->  VALIDATION
+#
+# RM5 discovered a carrier only if its value or its key already contained an enumerated word, so a
+# register with an unforeseen key AND an unforeseen value was never judged at all (R6-B1). Here a
+# subject-keyed field in a canonical artifact IS a carrier, whatever it is called and whatever it
+# says, and an uninterpretable value FAILS CLOSED.
+# =================================================================================================
 
-    Every branch is attempted. No branch may skip the others merely because its own pattern
-    failed -- that premature exit is what let a nonstandard assertive verb escape (DEF-R5-01).
+# Canonical state artifacts. Derived from the precedence contract, which makes the binding
+# decisions contract Tier 1 and lists no handoff or evidence record as an authority. The evidence
+# and slice handoffs are stage records and forward inputs: they may quote, tabulate and narrate
+# canonical state -- including reproducing register syntax -- without ever binding it.
+NON_CANONICAL_STATE_ARTIFACTS = (EVIDENCE, SLICES)
+
+SUBJECT_PATTERNS = {
+    "at-d09": re.compile(r"AT[-_]D09[A-Za-z0-9_.-]*", re.IGNORECASE),
+    "at-m2": re.compile(r"AT[-_]M2[A-Za-z0-9_.-]*", re.IGNORECASE),
+}
+
+# A carrier key: the subject identifier, optionally qualified by a trailing noun or parenthetical,
+# terminated by a colon. Discovery never inspects the VALUE.
+CARRIER_KEY = {
+    subject: re.compile(
+        rf"^\s*({pattern.pattern}(?:\s*\([^)]*\))?[A-Za-z0-9 _'-]{{0,48}}?)\s*:\s*(.*)$",
+        re.IGNORECASE,
+    )
+    for subject, pattern in SUBJECT_PATTERNS.items()
+}
+LABEL_FIELD = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /_'-]*?)\s*:\s*(.*)$")
+
+# Section fields inside a subject-declaring section. A label outside both declared sets is treated
+# as a state carrier and fails closed; declaring a new narrative field is a deliberate change.
+SECTION_STATE_LABELS = {
+    "STATUS": "status",
+    "STATE": "status",
+    "DECISION": "decision",
+    "AUTHORIZATION": "authorization",
+    "AUTHORITY": "authority",
+    "GOVERNING AUTHORITY": "authority",
+    "CURRENT CANONICAL IMPLEMENTATION": "authority",
+}
+SECTION_NARRATIVE_LABELS = {"UX SUGGESTION UNDER CONSIDERATION"}
+
+# Kind, decided from the carrier KEY only. An unrecognised qualifier is a status carrier, not an
+# ignored one -- that polarity is what closes R6-B1.
+KEY_KIND_WORDS = (
+    ("decision", ("DECISION",)),
+    ("authority", ("AUTHORITY", "GOVERNING", "IMPLEMENTATION", "CONTRACT")),
+    ("authorization", ("AUTHORIZATION", "AUTHORIZED")),
+)
+
+# Canonical carriers that must exist. Anti-vacuity by required COVERAGE, not by token counts:
+# deleting or reshaping one of these (for example replacing the parenthesised heading marker with
+# a dash-delimited title) removes a required carrier and fails.
+REQUIRED_CARRIERS = (
+    (BINDING, "at-d09", "status"),
+    (BINDING, "at-d09", "decision"),
+    (BINDING, "at-d09", "authority"),
+    (BINDING, "at-m2", "at-m2-authorization"),
+    (RESET, "at-d09", "status"),
+    (RESET, "at-m2", "at-m2-authorization"),
+    (MANIFEST, "at-d09", "status"),
+    (PRECEDENCE, "at-m2", "at-m2-authorization"),
+)
+
+
+def carrier_kind(subject: str, key: str, declared: str = "") -> str:
+    if subject == "at-m2":
+        return "at-m2-authorization"
+    if declared:
+        return declared
+    upper = normalized_key(key)
+    for kind, words in KEY_KIND_WORDS:
+        if any(re.search(rf"\b{word}\b", upper) for word in words):
+            return kind
+    return "status"
+
+
+def canonical_carriers(
+    artifact: str, doc: str, subject: str
+) -> list[tuple[str, int, str, str, str]]:
+    """(artifact, line, form, kind, value) for every CANONICAL carrier of `subject`.
+
+    Structural discovery only. No state vocabulary participates in deciding what is a carrier.
     """
-    ident = AT_D09_IDENT if subject == "at-d09" else AT_M2_IDENT
-    register = AT_D09_REGISTER if subject == "at-d09" else AT_M2_REGISTER
-    found: list[tuple[str, int, str, str, str, str]] = []
+    if artifact in NON_CANONICAL_STATE_ARTIFACTS:
+        return []
+    ident = SUBJECT_PATTERNS[subject]
+    key_pattern = CARRIER_KEY[subject]
+    found: list[tuple[str, int, str, str, str]] = []
     lines = doc.splitlines()
     fenced = False
-    subject_section = False
+    in_subject_section = False
 
-    def value_after(index: int, inline: str) -> str:
-        """A label's value may sit on the next line, or past a blank line if indented."""
+    def value_from(index: int, inline: str) -> str:
         if inline.strip():
             return inline.strip()
         blanks = 0
@@ -556,90 +642,132 @@ def authoritative_assertions(
             break
         return ""
 
-    def record(index: int, form: str, key: str, raw: str) -> bool:
-        text = without_code_spans(raw) if form == "prose" else raw
-        head = current_value(text)
-        props = propositions(head)
-        if asserted_false(text):
-            props = [(not affirm, term) for affirm, term in props]
-        stateful = key_is_stateful(key)
-        if not props and not stateful:
-            return False
-        # Judge modality on the CURRENT value: a historical parenthetical such as
-        # 'AUTHORIZED (previously NOT AUTHORIZED)' must not make the assertion hypothetical.
-        if is_hypothetical(head) and not stateful:
-            return False
-        kind = assertion_kind(key, form, props, subject)
-        found.append(
-            (artifact, index + 1, form, kind, head or text.strip(), state_verdict(kind, props))
-        )
-        return True
-
     for index, line in enumerate(lines):
         if line.strip().startswith("```"):
             fenced = not fenced
             continue
         if line.startswith("#"):
-            subject_section = bool(ident.search(line))
+            in_subject_section = bool(ident.search(line))
             marker = " ".join(re.findall(r"\(([^)]*)\)", line))
-            if subject_section and marker:
-                record(index, "heading-marker", "status", marker)
+            # Only the parenthesised marker is a declared heading carrier. A heading without one
+            # states no canonical status; it is a title. Removing the marker from a required
+            # heading carrier is caught by REQUIRED_CARRIERS, not by guessing at prose.
+            if in_subject_section and marker.strip():
+                found.append(
+                    (artifact, index + 1, "heading-status", carrier_kind(subject, ""), marker)
+                )
             continue
 
-        named = ident.search(line)
-        recorded = False
-        if named:
-            key_match = register.search(line)
-            if key_match:
-                key = f"{key_match.group(1)}{key_match.group(2)}"
-                recorded = record(index, "register", key, value_after(index, key_match.group(3)))
-            if not recorded and line.lstrip().startswith("|"):
-                cell = next((c for c in line.split("|") if ident.search(c)), "")
-                recorded = record(index, "table-cell", "", cell)
-            if not recorded and fenced:
-                recorded = record(index, "block-entry", "", line[named.end() :])
-            if not recorded:
-                # An identifier inside a code span is a quotation of a literal, not a subject.
-                clean = without_code_spans(line)
-                quoted = ident.search(clean)
-                if quoted:
-                    sentence = re.split(r"(?<=[.;])\s", clean[quoted.end() :], maxsplit=1)[0]
-                    recorded = record(index, "prose", "", sentence)
-        if recorded or not subject_section or subject != "at-d09":
+        keyed = key_pattern.match(line)
+        if keyed:
+            found.append(
+                (
+                    artifact,
+                    index + 1,
+                    "register" if fenced else "field",
+                    carrier_kind(subject, keyed.group(1)),
+                    value_from(index, keyed.group(2)),
+                )
+            )
             continue
 
-        labelled = LABEL_LINE.match(line)
-        if labelled:
-            # A label naming a DIFFERENT AT-family subject is not an AT-D09 assertion, even when
-            # it sits inside the AT-D09 section.
-            if re.search(r"AT[-_][MD]\d+", labelled.group(1), re.IGNORECASE) and not (
-                AT_D09_IDENT.search(labelled.group(1))
-            ):
+        if line.lstrip().startswith("|"):
+            cells = [c.strip() for c in line.strip().strip("|").split("|")]
+            if cells and ident.search(cells[0]):
+                found.append(
+                    (
+                        artifact,
+                        index + 1,
+                        "table-state",
+                        carrier_kind(subject, cells[0]),
+                        " / ".join(cells[1:]),
+                    )
+                )
+            continue
+
+        if in_subject_section and subject == "at-d09":
+            labelled = LABEL_FIELD.match(line)
+            if not labelled:
                 continue
-            record(
-                index,
-                "section-label",
-                labelled.group(1).strip(),
-                value_after(index, labelled.group(2)),
+            label = normalized_key(labelled.group(1))
+            if label in SECTION_NARRATIVE_LABELS:
+                continue
+            found.append(
+                (
+                    artifact,
+                    index + 1,
+                    "section-field",
+                    carrier_kind(subject, label, SECTION_STATE_LABELS.get(label, "")),
+                    value_from(index, labelled.group(2)),
+                )
             )
     return found
 
 
-def domain_assertions(subject: str) -> list[tuple[str, int, str, str, str, str]]:
-    """Every authoritative assertion about `subject` across the whole AT-M1 markdown scope."""
-    found: list[tuple[str, int, str, str, str, str]] = []
+def domain_carriers(subject: str) -> list[tuple[str, int, str, str, str]]:
+    found: list[tuple[str, int, str, str, str]] = []
     for artifact in sorted(p for p in AT_M1_EXPECTED_PATHS if p.endswith(".md")):
-        found.extend(authoritative_assertions(artifact, read(artifact), subject))
+        found.extend(canonical_carriers(artifact, read(artifact), subject))
     return found
 
 
-def unauthorized_assertions(subject: str) -> list[str]:
-    """Every discovered assertion whose CURRENT value is not an allowed state for its kind."""
+def unauthorized_carriers(subject: str) -> list[str]:
+    """Every canonical carrier whose CURRENT value is not an allowed state for its kind."""
+    failures = []
+    for artifact, line, form, kind, value in domain_carriers(subject):
+        verdict = state_verdict(kind, propositions(current_value(value)))
+        if verdict:
+            failures.append(f"{artifact}:{line} [{form}/{kind}] {value!r} -- {verdict}")
+    return failures
+
+
+def missing_required_carriers() -> list[str]:
+    missing = []
+    for artifact, subject, kind in REQUIRED_CARRIERS:
+        present = any(
+            found_kind == kind
+            for found_artifact, _, _, found_kind, _ in domain_carriers(subject)
+            if found_artifact == artifact
+        )
+        if not present:
+            missing.append(f"{artifact} [{subject}/{kind}]")
+    return missing
+
+
+def contradicting_carriers(subject: str) -> list[str]:
+    """Two canonical carriers of the same kind asserting opposite polarity on the same term."""
+    polarity: dict[tuple[str, str], set[bool]] = {}
+    origin: dict[tuple[str, str], list[str]] = {}
+    for artifact, line, _, kind, value in domain_carriers(subject):
+        for affirmed, term in propositions(current_value(value)):
+            polarity.setdefault((kind, term), set()).add(affirmed)
+            origin.setdefault((kind, term), []).append(f"{artifact}:{line}")
     return [
-        f"{artifact}:{line} [{form}/{kind}] {value!r} -- {verdict}"
-        for artifact, line, form, kind, value, verdict in domain_assertions(subject)
-        if verdict
+        f"{kind}/{term} asserted both ways by {origin[(kind, term)]}"
+        for (kind, term), seen in sorted(polarity.items())
+        if len(seen) > 1
     ]
+
+
+def prose_contradiction_advisories(subject: str) -> list[str]:
+    """AT-D10 section 9: deterministic, NON-BLOCKING, never a correctness prerequisite.
+
+    Reports register-shaped lines in NON-canonical records whose value contradicts canonical
+    state. Incomplete coverage is acceptable by contract; this never changes canonical truth.
+    """
+    notes = []
+    for artifact in NON_CANONICAL_STATE_ARTIFACTS:
+        for index, line in enumerate(read(artifact).splitlines()):
+            keyed = CARRIER_KEY[subject].match(line)
+            if not keyed:
+                continue
+            verdict = state_verdict(
+                carrier_kind(subject, keyed.group(1)),
+                propositions(current_value(keyed.group(2))),
+            )
+            if verdict and keyed.group(2).strip():
+                notes.append(f"{artifact}:{index + 1} {keyed.group(2).strip()[:60]!r} -- {verdict}")
+    return notes
 
 
 def claims_at_d09_closed(text: str) -> bool:
@@ -1071,43 +1199,39 @@ def main() -> int:  # noqa: PLR0915
         "check92i",
         f"the AT-D09 section-6 heading claims the question is answered: {d09_heading!r}",
     )
-    # AT-M1-RM5. Acceptance is now semantic and affirmative: each discovered assertion is assigned
-    # a KIND, its CURRENT value is parsed with negation preserved, and the value is accepted only
-    # if it affirms a canonical allowed state for that kind. An unknown value fails closed, so a
-    # synonym nobody enumerated (SETTLED, RATIFIED) is rejected without being on any list.
-    d09_assertions = domain_assertions("at-d09")
-    d09_unauthorized = unauthorized_assertions("at-d09")
+    # AT-M1-RM6 (AT-D10). Structured carriers are the sole canonical authority. Discovery is
+    # structural and precedes interpretation: a subject-keyed field in a canonical artifact is a
+    # carrier whatever its qualifier and whatever its value, and an uninterpretable value fails
+    # closed. Free prose is no longer a state channel at all.
+    d09_unauthorized = unauthorized_carriers("at-d09")
     expect(
         d09_unauthorized == [],
         "check92j",
-        f"an authoritative AT-D09 assertion is not in an allowed state: {d09_unauthorized!r}",
+        f"a canonical AT-D09 carrier is not in an allowed state: {d09_unauthorized!r}",
     )
-    d09_kinds = {kind for _, _, _, kind, _, _ in d09_assertions}
+    d09_kinds = {kind for _, _, _, kind, _ in domain_carriers("at-d09")}
     expect(
-        d09_kinds <= {"status", "decision", "authorization", "authority", "non-decision"},
+        d09_kinds <= {"status", "decision", "authorization", "authority"},
         "check92k",
-        f"an AT-D09 assertion was assigned an unknown kind: {sorted(d09_kinds)!r}",
+        f"an AT-D09 carrier was assigned an unknown kind: {sorted(d09_kinds)!r}",
     )
+    missing_carriers = missing_required_carriers()
     expect(
-        len(d09_assertions) >= AT_D09_MINIMUM_KNOWN_SURFACES,
+        missing_carriers == [],
         "check92l",
-        f"AT-D09 assertion discovery collapsed to {len(d09_assertions)} surfaces; the extractor "
-        "is no longer finding the assertions it is meant to guard",
+        f"a required canonical state carrier is no longer discoverable: {missing_carriers!r}",
     )
-    # Same defect class (ADV-R3-01, DEF-R5-06), evaluated by the same semantics: a historical
-    # parenthetical must not neutralise an unauthorized CURRENT state. Guarding the surface
-    # decides nothing; AT-M2 stays NOT AUTHORIZED.
-    m2_assertions = domain_assertions("at-m2")
-    expect(
-        len(m2_assertions) >= AT_M2_KNOWN_REGISTERS,
-        "check92m",
-        f"the AT-M2 authorization surfaces are no longer discoverable: {len(m2_assertions)}",
-    )
-    m2_unauthorized = unauthorized_assertions("at-m2")
+    m2_unauthorized = unauthorized_carriers("at-m2")
     expect(
         m2_unauthorized == [],
+        "check92m",
+        f"a canonical AT-M2 carrier no longer states NOT AUTHORIZED: {m2_unauthorized!r}",
+    )
+    conflicts = contradicting_carriers("at-d09") + contradicting_carriers("at-m2")
+    expect(
+        conflicts == [],
         "check92n",
-        f"an AT-M2 authorization surface no longer states NOT AUTHORIZED: {m2_unauthorized!r}",
+        f"canonical carriers assert contradictory governance state: {conflicts!r}",
     )
     expect(
         "must not canonicalize permissive continuation" in flat(d09_section),

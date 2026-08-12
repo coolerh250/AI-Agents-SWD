@@ -18,6 +18,7 @@ AT-D03:  RESOLVED / BINDING
 AT-D04:  RESOLVED / BINDING
 AT-D05:  RESOLVED / BINDING
 AT-D09:  OPEN / DEFERRED -- not a decision, an open question (section 6)
+AT-D10:  RESOLVED / BINDING -- canonical state carrier policy (section 9)
 
 RUNTIME_IMPLEMENTATION:  NOT STARTED / NOT AUTHORIZED BY THIS RECORD
 ```
@@ -315,6 +316,50 @@ PRODUCTION_EXECUTED_TRUE_COUNT:  0
 
 Deciding an architecture is not building one. AT-M2 requires its own explicit Product Owner
 authorization.
+
+## 9. AT-D10 — canonical state carrier policy
+
+```text
+STATUS:  RESOLVED / BINDING -- decided by the Product Owner
+```
+
+Canonical governance state may be established or changed ONLY through explicitly defined
+structured carriers. Free-form prose is NON-AUTHORITATIVE.
+
+```text
+Canonical carriers (the only channels that bind governance state)
+
+  register        a subject-keyed field inside a fenced text block or an ordinary line,
+                  for example "AT_D09:  OPEN" or "AT-M2..AT-M8:  NOT AUTHORIZED"
+  section-field   a labelled field inside a section whose heading declares the subject,
+                  for example "Decision:" followed by its value
+  heading-status  a parenthesised state marker in a heading that declares the subject,
+                  for example "## 6. AT-D09 -- clarification expiry ... (OPEN)"
+  table-state     a table row whose FIRST cell names the subject
+
+Canonical state artifacts
+  the binding decisions contract, the architecture documents and the two canonical master
+  registries. Handoff and evidence records are stage records and forward inputs: they may
+  quote, tabulate and narrate canonical state without binding it.
+```
+
+Free-form prose MAY explain, discuss, quote, describe history, propose future action, and even
+contradict canonical state. It MAY NOT by itself create, resolve, close or authorize state, bind
+a decision, or supersede canonical authority.
+
+**If prose conflicts with a structured carrier, the structured carrier wins.** A prose
+contradiction may raise an ADVISORY. An advisory never changes canonical state, is never a
+correctness prerequisite, and is not required to be exhaustive. No natural-language inference
+system is introduced or relied upon.
+
+Carrier discovery is structural and precedes value interpretation. A field keyed by a subject
+identifier is a carrier whatever noun qualifies its key and whatever its value says; a value that
+cannot be read as a canonical allowed state FAILS CLOSED. Discovery therefore does not depend on
+recognising state vocabulary, and an unforeseen wording cannot make a carrier invisible.
+
+This policy governs AT-D09, AT-M2 and equivalent governance-state assertions until superseded by
+a later Product Owner decision. It changes no existing decision: AT-D09 remains OPEN / DEFERRED,
+Step 66C.4 remains authoritative, and AT-M2 remains NOT AUTHORIZED.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP

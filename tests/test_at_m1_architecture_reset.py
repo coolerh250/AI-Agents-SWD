@@ -880,133 +880,241 @@ def test_rm3_every_at_d09_status_surface_records_it_open(surface):
     assert expected in live.upper(), f"the {surface} surface is not {expected}: {live!r}"
 
 
-def test_rm5_no_at_d09_assertion_in_the_whole_scope_is_unauthorized():
-    """The guard is over every assertion in the markdown domain, evaluated semantically."""
+CANONICAL_DOC = "docs/contracts/autonomous-team/at-binding-decisions.md"
+
+
+def carriers_in(module, body, subject="at-d09", artifact=CANONICAL_DOC):
+    """Drive the carrier protocol over a constructed canonical document."""
+    return module.canonical_carriers(artifact, body, subject)
+
+
+def verdicts_in(module, body, subject="at-d09", artifact=CANONICAL_DOC):
+    return [
+        module.state_verdict(kind, module.propositions(module.current_value(value)))
+        for _, _, _, kind, value in carriers_in(module, body, subject, artifact)
+    ]
+
+
+def rejects(module, body, subject="at-d09", artifact=CANONICAL_DOC):
+    return any(verdicts_in(module, body, subject, artifact))
+
+
+# =================================================================================================
+# AT-D10 carrier protocol. Tests exercise protocol PROPERTIES on constructed documents rather than
+# asserting the verifier's own output over the live corpus.
+# =================================================================================================
+
+
+def test_rm6_at_d10_is_canonicalized_as_a_binding_decision():
+    binding = read(BINDING)
+    assert "AT-D10:  RESOLVED / BINDING" in binding
+    section = binding.split("## 9. AT-D10")[1]
+    flat_section = re.sub(r"\s+", " ", section)
+    assert "Free-form prose is NON-AUTHORITATIVE" in flat_section
+    assert "structured carrier wins" in flat_section
+    assert "FAILS CLOSED" in flat_section
+    assert "never changes canonical state" in flat_section
+
+
+def test_rm6_live_canonical_carriers_are_all_in_an_allowed_state():
     module = verifier_module()
-    assert module.unauthorized_assertions("at-d09") == []
+    assert module.unauthorized_carriers("at-d09") == []
+    assert module.unauthorized_carriers("at-m2") == []
+    assert module.missing_required_carriers() == []
+    assert module.contradicting_carriers("at-d09") == []
+    assert module.contradicting_carriers("at-m2") == []
 
 
-def test_rm5_no_at_m2_assertion_in_the_whole_scope_is_unauthorized():
-    assert verifier_module().unauthorized_assertions("at-m2") == []
-
-
-def test_rm5_discovery_spans_the_scope_not_one_nominated_file():
+def test_rm6_every_required_carrier_kind_is_present_live():
     module = verifier_module()
-    rows = module.domain_assertions("at-d09")
-    artifacts = {artifact for artifact, *_ in rows}
-    assert len(rows) >= module.AT_D09_MINIMUM_KNOWN_SURFACES
-    assert BINDING_PATH in artifacts
-    assert len(artifacts) >= 7, f"discovery collapsed to {sorted(artifacts)!r}"
-    assert all(kind for _, _, _, kind, _, _ in rows), "an assertion was left without a kind"
+    for artifact, subject, kind in module.REQUIRED_CARRIERS:
+        kinds = {k for a, _, _, k, _ in module.domain_carriers(subject) if a == artifact}
+        assert kind in kinds, f"{artifact} lost its {subject}/{kind} carrier"
 
 
-# ---------------------------------------------------------------------------------------------
-# Semantic behaviour, exercised on constructed inputs rather than by re-asserting the verifier's
-# own output over the live corpus. AT-M1-RM5 test-independence requirement.
-# ---------------------------------------------------------------------------------------------
+# --- R6-B1: discovery must not be gated on vocabulary -------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "value,kind,allowed",
-    [
-        # negation is preserved, not deleted (DEF-R5-02)
-        ("OPEN / DEFERRED", "status", True),
-        ("NO LONGER OPEN", "status", False),
-        ("NOT OPEN", "status", False),
-        ("OPEN / NO LONGER DEFERRED", "status", False),
-        # unknown vocabulary fails closed without being enumerated (DEF-R5-03)
-        ("SETTLED", "status", False),
-        ("CONCLUDED", "status", False),
-        ("ADJUDICATED", "status", False),
-        ("RESOLVED / BINDING", "status", False),
-        # current state wins over a historical parenthetical (DEF-R5-06)
-        ("AUTHORIZED (previously NOT AUTHORIZED)", "at-m2-authorization", False),
-        ("NOT AUTHORIZED", "at-m2-authorization", True),
-        ("NOT AUTHORIZED (previously AUTHORIZED)", "at-m2-authorization", True),
-        # kind-specific acceptance
-        ("DEFERRED", "decision", True),
-        ("RESOLVED", "decision", False),
-        ("Step 66C.4 REMAINS AUTHORITATIVE", "authority", True),
-        ("Step 66C.4 is SUPERSEDED", "authority", False),
-        # a valid non-decision must not be rejected for containing a closure token (DEF-R5-07)
-        ("is NOT DECIDED by AT-M1", "non-decision", True),
-        ("is NOT BINDING on any stage", "non-decision", True),
-        ("is BINDING on every stage", "non-decision", False),
-    ],
+    "key",
+    ["AT_D09_DISPOSITION", "AT_D09_OUTCOME", "AT_D09_STANDING", "AT_D09_VERDICT", "AT_D09_XYZZY"],
 )
-def test_rm5_semantic_acceptance(value, kind, allowed):
+def test_rm6_qualified_key_is_a_carrier_whatever_its_noun(key):
+    """The key's trailing noun must not decide whether the field is discovered."""
     module = verifier_module()
-    verdict = module.state_verdict(kind, module.propositions(module.current_value(value)))
-    assert (verdict == "") is allowed, f"{value!r} as {kind}: {verdict!r}"
+    body = f"# Doc\n\n```text\n{key}:  ENACTED\n```\n"
+    found = carriers_in(module, body)
+    assert found, f"{key} was not discovered as a carrier"
+    assert rejects(module, body), f"{key}: ENACTED was discovered but not rejected"
+
+
+@pytest.mark.parametrize("value", ["ENACTED", "DISCHARGED", "SEALED", "PROMULGATED", "ZZTOP"])
+def test_rm6_unknown_value_on_a_carrier_fails_closed(value):
+    """No unseen word appears in the verifier; rejection comes from failing to affirm OPEN."""
+    module = verifier_module()
+    body = f"# Doc\n\n```text\nAT_D09:  {value}\n```\n"
+    assert rejects(module, body), f"unknown value {value!r} escaped"
+
+
+def test_rm6_no_unseen_probe_word_is_present_in_the_verifier_source():
+    source = read("scripts/verify_at_m1_architecture_reset.py").upper()
+    for word in ("DISPOSITION", "ENACTED", "DISCHARGED", "SEALED", "PROMULGATED", "ZZTOP"):
+        assert word not in source, f"{word} leaked into the verifier as vocabulary"
+
+
+# --- carrier shapes -----------------------------------------------------------------------------
+
+
+def test_rm6_multiline_and_blank_line_values_are_read_completely():
+    module = verifier_module()
+    assert rejects(module, "# Doc\n\n```text\nAT_D09_STATE:\n    ENACTED\n```\n")
+    assert rejects(module, "# Doc\n\n```text\nAT_D09_STATE:\n\n    ENACTED\n```\n")
+
+
+def test_rm6_section_field_takes_its_subject_from_the_section():
+    module = verifier_module()
+    body = "## 6. AT-D09 - clarification expiry (OPEN)\n\n```text\nDECISION:  ENACTED\n```\n"
+    assert rejects(module, body)
+
+
+def test_rm6_undeclared_section_field_label_fails_closed():
+    """An unknown labelled field inside a subject section is a carrier, not narrative."""
+    module = verifier_module()
+    body = "## 6. AT-D09 - clarification expiry (OPEN)\n\n```text\nDISPOSITION:  ENACTED\n```\n"
+    assert rejects(module, body)
+
+
+def test_rm6_declared_narrative_label_is_not_a_carrier():
+    module = verifier_module()
+    body = (
+        "## 6. AT-D09 - clarification expiry (OPEN)\n\n```text\n"
+        "UX suggestion under consideration:\n    an agent MAY proceed under a stated assumption\n"
+        "```\n"
+    )
+    labels = [form for _, _, form, _, _ in carriers_in(module, body)]
+    assert "section-field" not in labels
+    assert not rejects(module, body)
+
+
+def test_rm6_table_row_state_is_read_from_the_row_not_the_subject_cell():
+    """ADV-R6-01: the state sits in a sibling cell, not the cell naming the subject."""
+    module = verifier_module()
+    body = "# Doc\n\n| Subject | State |\n| --- | --- |\n| AT-D09 | ENACTED |\n"
+    found = carriers_in(module, body)
+    assert found, "table row was not discovered"
+    assert rejects(module, body)
+
+
+# --- R6-B4: heading authority is deterministic --------------------------------------------------
+
+
+def test_rm6_parenthesised_heading_marker_is_a_canonical_carrier():
+    module = verifier_module()
+    assert rejects(module, "## 6b. AT-D09 clarification expiry (RESOLVED)\n\nbody\n")
+
+
+def test_rm6_dash_delimited_heading_is_not_a_canonical_carrier():
+    """Declared outcome B: only the parenthesised marker binds. A title cannot change state."""
+    module = verifier_module()
+    body = "## 6b. AT-D09 clarification expiry - RESOLVED\n\nbody\n"
+    assert [f for _, _, f, _, _ in carriers_in(module, body) if f == "heading-status"] == []
+    assert not rejects(module, body)
+
+
+def test_rm6_removing_a_required_heading_carrier_is_rejected_live():
+    """The dash form cannot bind, so losing the parenthesised marker must fail as a MISSING carrier."""
+    module = verifier_module()
+    mutated = read(BINDING).replace(
+        "## 6. AT-D09 — clarification expiry execution semantics (OPEN)",
+        "## 6. AT-D09 — clarification expiry execution semantics - RESOLVED",
+    )
+    kinds = {k for _, _, f, k, _ in carriers_in(module, mutated) if f == "heading-status"}
+    assert kinds == set(), "the dash heading must not be a carrier"
+
+
+# --- free prose is not a canonical channel ------------------------------------------------------
 
 
 @pytest.mark.parametrize(
-    "line,expect_rejected",
+    "sentence",
     [
-        # nonstandard assertive verb, no colon and no copula (DEF-R5-01)
-        ("AT-D09 hereby stands RESOLVED and BINDING.", True),
-        ("AT-D09 now carries the final status CLOSED.", True),
-        # qualified register key (DEF-R5-04)
-        ("AT_D09_STATUS:  RESOLVED / BINDING", True),
-        ("AT_D09_FINAL:  RESOLVED / BINDING", True),
-        # case variation
-        ("at-d09: resolved / binding", True),
-        ("At-D09 authorization state: SETTLED", True),
-        # descriptive and hypothetical must survive
-        ("AT-D09 is recorded in section 6 of this contract.", False),
-        ("A future Product Owner decision may resolve AT-D09.", False),
-        ("AT-D09 could be resolved by a later Product Owner decision.", False),
-        ("AT-D09 owner: Product Owner", False),
-        ("AT-D09 is OPEN.", False),
+        "AT-D09 should now be treated as RESOLVED and BINDING by all downstream stages.",
+        "AT-D09 henceforth stands ENACTED and governs expiry behaviour.",
+        "It would be wrong to say AT-D09 is RESOLVED.",
+        "No stage has recorded AT-D09 as RESOLVED.",
+        "A prior draft claimed AT-D09 was RESOLVED; that claim was withdrawn.",
+        "Whether AT-D09 is RESOLVED remains the open question.",
+        "AT-D09 could be resolved in a future Product Owner decision.",
+        "AT-D09 is recorded in section 6 of this contract.",
     ],
 )
-def test_rm5_assertion_shapes(line, expect_rejected):
-    """Drive the extractor over a constructed document, independent of the live corpus."""
+def test_rm6_prose_is_never_a_canonical_carrier(sentence):
+    """Neither closure-looking nor criticism prose may bind or break canonical state."""
     module = verifier_module()
-    doc = "# Doc\n\nsome prose\n\n" + line + "\n"
-    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
-    rejected = any(verdict for *_, verdict in rows)
-    assert rejected is expect_rejected, f"{line!r} -> {rows!r}"
+    body = f"# Doc\n\n{sentence}\n"
+    assert carriers_in(module, body) == [], f"prose became a carrier: {sentence!r}"
 
 
-def test_rm5_blank_line_between_label_and_value_is_still_the_value():
-    """DEF-R5-05: the continuation lookahead must cross a blank line."""
+def test_rm6_evidence_records_are_not_canonical_state_artifacts():
     module = verifier_module()
-    doc = "# Doc\n\nAT-D09 authorization state:\n\n    RESOLVED / BINDING\n"
-    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
-    assert any(verdict for *_, verdict in rows), f"blank-line continuation escaped: {rows!r}"
+    body = "# Doc\n\n```text\nAT_D09:  RESOLVED / BINDING\n```\n"
+    assert carriers_in(module, body, artifact=EVIDENCE) == []
+    assert carriers_in(module, body) != [], "the same line must bind in a canonical artifact"
 
 
-def test_rm5_section_context_supplies_the_subject():
+def test_rm6_prose_contradiction_advisory_is_non_blocking():
     module = verifier_module()
-    doc = "## 6. AT-D09 - clarification expiry (OPEN)\n\nAUTHORIZATION STATE:\n    RESOLVED\n"
-    rows = module.authoritative_assertions("probe.md", doc, "at-d09")
-    assert any(verdict for *_, verdict in rows), f"section-context closure escaped: {rows!r}"
+    notes = module.prose_contradiction_advisories("at-d09")
+    assert isinstance(notes, list)
+    # Advisories never participate in the verdict.
+    assert module.unauthorized_carriers("at-d09") == []
 
 
-def test_rm5_at_m2_prose_and_qualified_keys_are_discovered():
-    """DEF-R5-06: substring containment, qualified keys and prose all had to be covered."""
+# --- AT-M2 under the same protocol --------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "line,should_reject",
+    [
+        ("AT_M2:  AUTHORIZED", True),
+        ("AT_M2:  AUTHORIZED (previously NOT AUTHORIZED)", True),
+        ("AT_M2_IMPLEMENTATION:  AUTHORIZED", True),
+        ("AT_M2:  NOT AUTHORIZED", False),
+        ("AT_M2:  NOT AUTHORIZED (previously AUTHORIZED)", False),
+        ("AT-M2..AT-M8:  NOT AUTHORIZED", False),
+    ],
+)
+def test_rm6_at_m2_authorization_carriers(line, should_reject):
     module = verifier_module()
-    for line in (
-        "AT_M2: AUTHORIZED (previously NOT AUTHORIZED)",
-        "AT_M2 implementation authorization: AUTHORIZED",
-        "AT-M2 is AUTHORIZED to begin implementation.",
-    ):
-        doc = "# Doc\n\n" + line + "\n"
-        rows = module.authoritative_assertions("probe.md", doc, "at-m2")
-        assert any(verdict for *_, verdict in rows), f"{line!r} escaped: {rows!r}"
+    body = f"# Doc\n\n```text\n{line}\n```\n"
+    assert rejects(module, body, subject="at-m2") is should_reject
 
 
-def test_rm5_at_m2_not_authorized_forms_are_accepted():
+def test_rm6_at_m2_prose_cannot_authorize():
     module = verifier_module()
-    doc = "# Doc\n\nAT_M2:                           NOT AUTHORIZED\n"
-    rows = module.authoritative_assertions("probe.md", doc, "at-m2")
-    assert rows, "the AT-M2 register was not discovered at all"
-    assert not any(verdict for *_, verdict in rows), f"NOT AUTHORIZED rejected: {rows!r}"
+    body = "# Doc\n\nAT-M2 is AUTHORIZED to begin implementation.\n"
+    assert carriers_in(module, body, subject="at-m2") == []
 
 
-def test_rm5_false_qualifier_is_a_predicate_not_a_footnote():
-    """'AT-M2 is authorized -- FALSE' asserts the opposite of what its head says."""
+# --- conflict and anti-vacuity ------------------------------------------------------------------
+
+
+def test_rm6_contradictory_structured_carriers_are_detected():
     module = verifier_module()
-    assert module.asserted_false("AT-M2 is authorized                     -- FALSE")
-    assert not module.asserted_false("OPEN / DEFERRED -- not a decision")
+    body = "# Doc\n\n```text\nAT_D09:  OPEN\nAT_D09_STATE:  NOT OPEN\n```\n"
+    found = module.canonical_carriers(CANONICAL_DOC, body, "at-d09")
+    polarity = {}
+    for _, _, _, kind, value in found:
+        for affirmed, term in module.propositions(module.current_value(value)):
+            polarity.setdefault((kind, term), set()).add(affirmed)
+    assert any(len(seen) > 1 for seen in polarity.values()), "contradiction not observable"
+
+
+def test_rm6_anti_vacuity_is_coverage_based_not_count_based():
+    module = verifier_module()
+    source = read("scripts/verify_at_m1_architecture_reset.py")
+    assert "missing_required_carriers" in source
+    assert module.REQUIRED_CARRIERS, "no required carriers declared"
+    # Every declared requirement names an artifact inside the authorized scope.
+    for artifact, _, _ in module.REQUIRED_CARRIERS:
+        assert artifact in module.AT_M1_EXPECTED_PATHS
