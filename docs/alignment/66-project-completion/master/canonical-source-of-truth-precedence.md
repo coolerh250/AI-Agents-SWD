@@ -192,6 +192,74 @@ Annotated partner evidence
 Resolving the vocabulary conflict is not a contract freeze. Step 66D-ARCH remains NOT AUTHORIZED,
 as do Step 66D-DESIGN and every Step 66D implementation slice.
 
+## Autonomous Team architecture precedence (AT-M1)
+
+```text
+Tier 1 -- Product Owner binding decisions
+  docs/contracts/autonomous-team/at-binding-decisions.md
+    AT-D01..AT-D05 RESOLVED / BINDING.
+
+Tier 1 supporting registry
+  docs/contracts/autonomous-team/at-canonical-terminology-registry.md
+  docs/contracts/autonomous-team/at-capability-state-registry.json
+  docs/decisions/at-m1-architecture-decisions.md   AT-ADR-01..08
+```
+
+**AT-D01..AT-D05 govern the CURRENT TARGET ARCHITECTURE of the autonomous-team middle journey —
+how agents obtain a shared goal, discuss, plan, decompose, divide work, execute, verify, debug and
+re-run.** This is a scoped precedence, not a global supersession. AT-M1 does not rewrite historical
+documents and does not displace Step 66 or 66D architecture outside the middle journey.
+
+Scoped relationships:
+
+```text
+AT-D01  Execution source of truth
+  PRESERVES binding decision D-1 (66SYNC.1) and 66D-D03 execution lineage:
+  project -> work item -> workflow -> run remains the execution anchor, and the Task surface is
+  still NOT the Agent execution source of truth.
+
+AT-D02  Agent principal model
+  ADDS ActorPrincipal / AgentProfile / ProjectTeamMembership as a SEPARATE agent-identity layer.
+  Does NOT replace the six human TASK_ROLES in shared/sdk/tasks/rbac.py, which stay the human
+  authorization contract, unmodified.
+
+AT-D03  Collaboration model
+  SUPERSEDES, as target architecture, the template/simulated discussion in
+  shared/sdk/agent_discussion/ (deterministic_template contribution strings). The existing module
+  is retained as a fixture, not deleted. Redis stream dispatch is not discussion.
+
+AT-D04  Planning, delegation and replanning
+  SUPERSEDES, as target architecture, the template planner (shared/sdk/project_planning/
+  task_graph.py literals), static work-item dispatch (shared/sdk/work_items/dispatcher.py plus its
+  policy YAML, demoted to fallback/policy seed) and linear LangGraph routing
+  (apps/orchestrator/src/workflow.py). All are retained; none is deleted by AT-M1.
+
+AT-D05  Middle-journey design amendment
+  SCOPED amendment of the 66D-DESIGN middle journey only. Delivery and Acceptance boundaries are
+  PRESERVED in full.
+```
+
+Explicitly preserved, NOT superseded by the AT family:
+
+```text
+66D Delivery Review and the six Review Gate Actions
+ProductOwnerDecision and the three Product Owner Final Decisions
+66D-D01..66D-D05 and ADR-66D-01..10
+Delivery / Acceptance boundaries and the DeliverySubmission aggregate
+Safety, evidence, cost and external-action contracts
+Human TASK_ROLES authorization (six human roles)
+Binding decision D-1 (66SYNC.1)
+Step 66C.4 clarification expiry contract -- AT-D09 remains OPEN / DEFERRED and is NOT decided here
+```
+
+```text
+AT-M1 canonical status:  architecture package on PR #29, NOT YET MERGED.
+                         These decisions are the target-architecture authority for the middle
+                         journey; they become canonical on main when PR #29 merges.
+PR #28:                  HOLD / PRESERVE / NON-CANONICAL -- future AT-M7 input, not a dependency
+                         of AT-M1..AT-M6.
+```
+
 ## Current authorization status
 
 ```text
@@ -200,6 +268,7 @@ Step 66D-ARCH:       NOT STARTED / NOT AUTHORIZED
 Step 67POC.0:        NOT STARTED / NOT AUTHORIZED
 RA-2M:               NOT STARTED / NOT AUTHORIZED
 BE3 resume/replay:   DISABLED
+AT-M2..AT-M8:        NOT AUTHORIZED
 ```
 
 ---

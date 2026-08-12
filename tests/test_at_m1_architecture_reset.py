@@ -561,8 +561,11 @@ def test_rm1_baseline_is_repinned_to_post_gov1_main():
 
 
 def test_rm1_old_baseline_is_gone_from_current_at_m1_semantics():
-    """Historical evidence prose may still cite 2d4da80; current contracts must not."""
-    old = "2d4da808b1a89ea278fbb760e27f49047995165e"
+    """Historical evidence prose may still cite the old baseline; current contracts must not.
+
+    The SHA is assembled at runtime so this module can scan itself without self-matching.
+    """
+    old = "2d4da808" + "b1a89ea278fbb760e27f49047995165e"
     for relpath in (
         "tests/test_at_m1_architecture_reset.py",
         f"{ARCH}/at-m1-architecture-reset.md",

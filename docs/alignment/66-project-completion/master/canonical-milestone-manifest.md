@@ -431,6 +431,59 @@ Owner roles: Claude Code (rollout architecture); Claude Design (onboarding/trust
 Status: NOT_STARTED.
 ```
 
+## Autonomous Team milestones (AT family)
+
+Registered by AT-M1-RM1. The AT family is a **separate milestone track** for the autonomous-team
+middle journey — shared goal, discussion, planning, decomposition, division of work, execution,
+verification, debugging, re-run and delivery. It does not renumber, replace or reorder M0–M7 above,
+which remain the canonical program milestones.
+
+```text
+AT-M0  Autonomous team rebaseline and capability audit
+       Status: CLOSED / REBASELINE COMPLETE.
+       Machine-derived current-state capability audit against the North Star; established that
+       Redis stream dispatch is not discussion and that template planning is not planning.
+
+AT-M1  Autonomous team architecture reset
+       Status: ARCHITECTURE PACKAGE ON PR #29 — RM1 COMPLETE, PENDING CANONICAL MERGE.
+       AT-D01..AT-D05 binding decisions, AT-ADR-01..08, canonical entity contracts and the
+       capability state registry. NOT canonical on main until PR #29 merges.
+       Architecture, contract and documentation only; no runtime.
+
+AT-M2  Team identity and collaboration substrate
+       Status: NOT AUTHORIZED.
+       ActorPrincipal / AgentProfile / ProjectTeamMembership, ConversationThread, TeamMessage,
+       TeamDecision, Ownership, Handoff.
+
+AT-M3  Goal intake and autonomous planning
+       Status: NOT AUTHORIZED.
+
+AT-M4  Dynamic delegation and conditional orchestration
+       Status: NOT AUTHORIZED.
+
+AT-M5  Verification, debugging and replanning loop
+       Status: NOT AUTHORIZED.
+
+AT-M6  Autonomous team end-to-end functional POC
+       Status: NOT AUTHORIZED.
+
+AT-M7  Delivery and acceptance hardening
+       Status: DEFERRED DELIVERY / ACCEPTANCE HARDENING.
+       Consumes PR #28 (HOLD / PRESERVE / NON-CANONICAL) as a future input. PR #28 is NOT a
+       dependency of AT-M1..AT-M6 and is not merge-authorized.
+
+AT-M8  Production platform
+       Status: NOT STARTED / PRODUCTION PLATFORM.
+       Gated behind the same Product-Owner authorization rules as M6/M7 above; no production or
+       external action is authorized by this registration.
+```
+
+```text
+AT-D09 (Step 66C.4 clarification expiry interaction):  OPEN / DEFERRED -- not decided by AT-M1.
+Canonical target-architecture authority for the middle journey:
+  docs/contracts/autonomous-team/at-binding-decisions.md  (see the precedence record)
+```
+
 ## Statement
 
 Consolidated planning document only. No runtime code, no backend, no API, no database, no workflow,
