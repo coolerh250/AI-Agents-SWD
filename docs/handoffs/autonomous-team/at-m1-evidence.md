@@ -912,6 +912,130 @@ ADV-R5-01  raw AT-D09 occurrence counts in this narrative go stale as the narrat
 ```
 
 ---
+
+## 21. AT-M1-RM6 — canonical state carrier policy (AT-D10)
+
+R6 returned four blockers and one design decision. The Product Owner decided AT-D10; this stage
+canonicalizes it and rebuilds state validation on it.
+
+### What R6 proved about RM5
+
+RM5 replaced value-vocabulary enumeration with an affirmative allow-state predicate and reported
+that as ending the synonym arms race. R6 showed the enumeration had been RELOCATED, not removed:
+
+```text
+record() returned early unless the VALUE held one of 21 enumerated state terms
+                          or the KEY held one of 4 enumerated keyword groups
+```
+
+An assertion outside both enumerations never reached the semantic predicate at all. The RM5
+fail-closed demonstration only ever exercised stateful keys -- the path where the gate lets
+things through -- so the evidence of closure was itself scoped to the passing case.
+
+### AT-D10
+
+Recorded as a binding decision in section 9 of the binding contract, and in the summary block.
+Structured carriers are the sole canonical authority; free prose is non-authoritative; the
+structured carrier wins over contradictory prose; contradiction detection is advisory-only; the
+policy governs AT-D09, AT-M2 and equivalent state until superseded.
+
+### Carrier inventory, taken before the parser changed
+
+```text
+form              canonical instances   example
+register                        11      AT_D09: OPEN   AT-M2..AT-M8: NOT AUTHORIZED
+section-field                    3      Decision: / DEFERRED  (subject from the section)
+heading-status                   1      ## 6. AT-D09 ... (OPEN)
+table-state                      0      declared; unused by the corpus today
+```
+
+Exactly ONE heading in the whole domain carries a parenthesised state marker, and no canonical
+artifact uses a table row to carry AT-D09 or AT-M2 state. The grammar was derived from that
+inventory, not from the R6 escape examples.
+
+### Ordering is the fix
+
+```text
+DISCOVERY (structural)  ->  KIND (from the key)  ->  VALUE  ->  VALIDATION
+```
+
+A subject-keyed field in a canonical artifact IS a carrier whatever noun qualifies its key and
+whatever its value says. `AT_D09_XYZZY: ENACTED` is rejected, and neither XYZZY nor ENACTED
+appears anywhere in the verifier -- a test asserts that absence, so the fix cannot silently
+degrade into another word list.
+
+### Heading authority — declared outcome B
+
+The dash-delimited heading form is NOT a canonical carrier. Only a parenthesised marker in a
+subject-declaring heading binds. That follows from the inventory rather than from making a probe
+pass, and it leaves no "sometimes headings are authoritative" ambiguity. Reshaping the required
+heading therefore does not change state by prose; it removes a REQUIRED carrier and fails
+check92l.
+
+### Free prose
+
+Removed from canonical determination entirely. This resolves R6-B2 and R6-B3 together, in
+opposite directions, without any natural-language inference:
+
+```text
+"AT-D09 should now be treated as RESOLVED"      cannot close AT-D09   (was an escape)
+"It would be wrong to say AT-D09 is RESOLVED"   cannot break the gate (was a false positive)
+```
+
+Both were the same defect -- a fragment read without its sentence -- and both disappear once
+prose is not a state channel.
+
+### Anti-vacuity
+
+Required-carrier COVERAGE, at (artifact, subject, kind, form) granularity. Probe D-HEADDEL first
+rejected via the older nominated heading checks rather than the protocol guard, because coverage
+was keyed without the form and the artifact's other status carriers still satisfied it. Recorded
+as a miss and fixed; it now fails check92l on its own.
+
+### Mutation matrix
+
+```text
+class                                probe        verdict  intended check
+A unknown value on a carrier         A-*          REJECT   check92j   (3 unseen values)
+B qualified structured field         B-*          REJECT   check92j   (3 unseen keys)
+C multiline / blank-line value       C-MULTI/BLANK REJECT  check92j
+D canonical heading form             D-HEADPAR    REJECT   check92j
+  required heading removed           D-HEADDEL    REJECT   check92l
+F structured conflict                F-CONFLICT   REJECT   check92j + check92n
+G AT-M2 authorization (4 carriers)   G-*          REJECT   check92m
+  anti-vacuity: discovery disabled   V-DISCOVERY  REJECT   check92l
+  anti-vacuity: register deleted     V-REGDROP    REJECT   check92l
+
+E non-canonical heading / prose      E-HEADNEW    PASS     state unchanged
+  deontic prose closure              E-PROSE      PASS     state unchanged
+  register shape in an evidence record E-EVID     PASS     state unchanged
+controls: descriptive, historical, hypothetical, quoted, NOT DECIDED, NOT BINDING,
+          criticism of a closure claim, noncanonical heading    all PASS
+```
+
+### Status after RM6
+
+```text
+AT-D09:                                   OPEN / DEFERRED
+Section-6 Decision:                       DEFERRED
+Step 66C.4 clarification expiry contract: REMAINS AUTHORITATIVE
+AT-D10:                                   RESOLVED / BINDING
+AT-M2:                                    NOT AUTHORIZED
+```
+
+RM6 introduces no Product Owner decision beyond the authorized AT-D10.
+
+### Deferred, not bundled
+
+```text
+ADV-R5-01   stale narrative counts        different concern
+ADV-R4-01   ALIGN1 fixed-range debt       different concern, outside AT-M1
+ADV-R6-02   PR #29 body is stale in four places (17 paths / 164 checks / 52 tests /
+            old baseline). Body text, not a contract; not bundled into a G2 repair.
+AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED        future G3 canonicalization requirement
+```
+
+---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local
