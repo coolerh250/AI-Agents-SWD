@@ -27,8 +27,11 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "AT_M1_ARCHITECTURE_RESET_VERIFY"
 
-AT_M1_BASELINE = "2d4da808b1a89ea278fbb760e27f49047995165e"
-AT_M1_BASELINE_SHORT = "2d4da80"
+# Re-pinned at AT-M1-RM1 (finding A-01). The former baseline 2d4da80 predates the canonical merge
+# of GOV1 (PR #30), so GOV1's own paths fell inside AT_M1_BASELINE...HEAD without being AT-M1 stage
+# paths. POST_GOV1_CANONICAL_MAIN is the canonical main after that merge and its canonicalization.
+AT_M1_BASELINE = "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009"
+AT_M1_BASELINE_SHORT = "fa5e5c4"
 AT_M1_POSITIVE_RANGE = f"{AT_M1_BASELINE}...HEAD"
 
 ARCH = "docs/architecture/autonomous-team"
@@ -55,6 +58,12 @@ SLICES = f"{HANDOFF}/at-m1-implementation-slice-handoff.md"
 VERIFIER = "scripts/verify_at_m1_architecture_reset.py"
 TESTS = "tests/test_at_m1_architecture_reset.py"
 
+# Authorized at AT-M1-RM1 (CANONICAL-REGISTRATION-01 / -02): the two EXISTING canonical registries
+# the AT family must appear in. No parallel precedence or milestone system is created.
+MASTER = "docs/alignment/66-project-completion/master"
+PRECEDENCE = f"{MASTER}/canonical-source-of-truth-precedence.md"
+MANIFEST = f"{MASTER}/canonical-milestone-manifest.md"
+
 AT_M1_EXPECTED_PATHS = frozenset(
     {
         RESET,
@@ -74,8 +83,12 @@ AT_M1_EXPECTED_PATHS = frozenset(
         SLICES,
         VERIFIER,
         TESTS,
+        PRECEDENCE,
+        MANIFEST,
     }
 )
+AT_M1_ORIGINAL_PATH_COUNT = 17
+AT_M1_RM1_REGISTRATION_PATHS = (PRECEDENCE, MANIFEST)
 
 ARCHITECTURE_DOCS = (
     RESET,
@@ -120,6 +133,21 @@ FORBIDDEN_STORAGE_FIELDS = (
     "token_trace",
     "private_scratchpad",
     "unredacted_prompt",
+)
+
+# INV-04 hardening (AT-M1-RM1). Substrings that make a CONTRACTED FIELD NAME a hidden-reasoning
+# leak. Matched against parsed field names only -- never against prose -- so a prohibition list
+# that names these can coexist with a contract that must not.
+FORBIDDEN_FIELD_NAME_MARKERS = (
+    "chain_of_thought",
+    "raw_reasoning",
+    "hidden_reasoning",
+    "reasoning_token",
+    "token_trace",
+    "scratchpad",
+    "system_prompt",
+    "unredacted",
+    "secret",
 )
 
 ALLOWED_CAPABILITY_STATES = (
@@ -202,6 +230,53 @@ def task_roles_from_source() -> set[str]:
     return set(re.findall(r'"([a-z_]+)"', match.group(1)))
 
 
+def contracted_field_names(doc: str, heading: str) -> tuple[str, ...]:
+    """Field names actually CONTRACTED under a heading's first fenced block.
+
+    INV-04 hardening (AT-M1-RM1). The previous check compared a whole-document count against an
+    identical whole-document count, so it reduced to "the name appears somewhere" and a contracted
+    `private_chain_of_thought` inside the TeamMessage schema passed. Parsing the block into field
+    names separates "named in a prohibition list" from "contracted as a member".
+    """
+    if heading not in doc:
+        return ()
+    after = doc.split(heading, 1)[1]
+    if after.count("```") < 2:
+        return ()
+    block = after.split("```", 2)[1]
+    lines = block.splitlines()
+    if lines and lines[0].strip() in ("text", "json", ""):
+        lines = lines[1:]
+    return tuple(line.split()[0] for line in lines if line.split())
+
+
+def leaking_field_names(fields: tuple[str, ...]) -> list[str]:
+    return sorted(
+        field
+        for field in fields
+        if any(marker in field.lower() for marker in FORBIDDEN_FIELD_NAME_MARKERS)
+    )
+
+
+def labelled_line(doc: str, prefix: str) -> str:
+    for line in doc.splitlines():
+        if line.strip().startswith(prefix):
+            return line.strip()
+    return ""
+
+
+def table_row(doc: str, needle: str) -> str:
+    for line in doc.splitlines():
+        if line.lstrip().startswith("|") and needle in line:
+            return line.strip()
+    return ""
+
+
+def claims_canonical(text: str) -> bool:
+    """True if the text asserts canonical status, ignoring the literal NON-CANONICAL denial."""
+    return "CANONICAL" in text.upper().replace("NON-CANONICAL", "")
+
+
 def capability_registry() -> dict:
     try:
         return json.loads(read(REGISTRY))
@@ -247,9 +322,28 @@ def main() -> int:  # noqa: PLR0915
         f"missing={sorted(AT_M1_EXPECTED_PATHS - changed)}",
     )
     expect(
-        len(AT_M1_EXPECTED_PATHS) == 17,
+        len(AT_M1_EXPECTED_PATHS) == 19,
         "check03",
-        f"the AT-M1 path registry must hold exactly 17 paths, holds {len(AT_M1_EXPECTED_PATHS)}",
+        f"the AT-M1 path registry must hold exactly 19 paths, holds {len(AT_M1_EXPECTED_PATHS)}",
+    )
+    expect(
+        len(AT_M1_EXPECTED_PATHS) - len(AT_M1_RM1_REGISTRATION_PATHS) == AT_M1_ORIGINAL_PATH_COUNT,
+        "check03a",
+        "the 19-path registry is not exactly the 17 original AT-M1 paths plus the two "
+        "RM1-authorized canonical registration paths",
+    )
+    expect(
+        all(path in AT_M1_EXPECTED_PATHS for path in AT_M1_RM1_REGISTRATION_PATHS),
+        "check03b",
+        "the authorized canonical registration paths are not in the AT-M1 registry",
+    )
+    gov1_contamination = sorted(
+        p for p in changed if "gov1" in p or p.startswith("scripts/verify_step66")
+    )
+    expect(
+        gov1_contamination == [],
+        "check03c",
+        f"GOV1 paths contaminate the AT-M1 positive scope (A-01 regression): {gov1_contamination}",
     )
 
     # --- 2. no implementation (INV-10) --------------------------------------------------------
@@ -363,13 +457,43 @@ def main() -> int:  # noqa: PLR0915
 
     # --- 7. AT-D03 collaboration and the storage prohibition (INV-04) -------------------------
     for index, field in enumerate(FORBIDDEN_STORAGE_FIELDS, start=38):
-        # The field name may appear ONLY inside an explicit prohibition list.
+        # The prohibition itself must still be stated somewhere in the architecture contracts.
         occurrences = sum(doc.count(field) for doc in (collab, binding, orchestration))
-        prohibited_context = collab.count(field) + binding.count(field) + orchestration.count(field)
         expect(
-            occurrences == prohibited_context and occurrences > 0,
+            occurrences > 0,
             f"check{index:02d}",
-            f"{field!r} must appear only as a prohibition, never as a contracted field",
+            f"{field!r} is no longer named in any prohibition list",
+        )
+    # INV-04 behavioral gate (AT-M1-RM1): parse the ACTUAL TeamMessage contract and prove no
+    # contracted member is a hidden-reasoning field. The prohibition prose above cannot satisfy
+    # this, and a contracted field cannot hide behind it.
+    team_message_fields = contracted_field_names(collab, "## 4. TeamMessage")
+    expect(
+        len(team_message_fields) >= 10,
+        "check45a",
+        "the TeamMessage contract block could not be parsed -- INV-04 cannot be enforced "
+        f"(parsed {len(team_message_fields)} fields)",
+    )
+    expect(
+        "sender_principal_id" in team_message_fields and "thread_id" in team_message_fields,
+        "check45b",
+        f"the parsed TeamMessage block is not the real contract: {team_message_fields[:6]}",
+    )
+    leaks = leaking_field_names(team_message_fields)
+    expect(
+        leaks == [],
+        "check45c",
+        f"TeamMessage CONTRACTS hidden-reasoning fields (INV-04 violation): {leaks}",
+    )
+    for entity, label in (
+        ("## 5. Message types", "check45d"),
+        ("## 6. ConversationThread", "check45e"),
+    ):
+        entity_leaks = leaking_field_names(contracted_field_names(collab, entity))
+        expect(
+            entity_leaks == [],
+            label,
+            f"{entity} contracts hidden-reasoning fields: {entity_leaks}",
         )
     expect(
         "FORBIDDEN FIELDS" in collab,
@@ -549,15 +673,57 @@ def main() -> int:  # noqa: PLR0915
     )
 
     # --- 14. PR #28 hold (INV-08) -------------------------------------------------------------
+    # INV-08 structural gate (AT-M1-RM1). The previous checks searched the WHOLE file for "HOLD"
+    # and "NON-CANONICAL", so PR #28 could be declared CANONICAL / ACTIVE / MERGE-READY on its own
+    # treatment line while incidental text elsewhere kept both checks green. These target the
+    # authoritative treatment line and the canonical-input-registry row for PR #28 specifically.
+    treatment = labelled_line(evidence, "PR #28 treatment:")
     expect(
-        "PR #28" in evidence and "HOLD" in evidence,
+        treatment != "",
         "check101",
-        "PR #28 is not recorded as HOLD in the evidence",
+        "the evidence has no authoritative 'PR #28 treatment:' line",
     )
     expect(
-        "NON-CANONICAL" in evidence.upper(),
+        "HOLD" in treatment.upper() and "PRESERVE" in treatment.upper(),
+        "check101a",
+        f"the PR #28 treatment line does not state HOLD / PRESERVE: {treatment!r}",
+    )
+    expect(
+        "NON-CANONICAL" in treatment.upper(),
         "check102",
-        "PR #28 is not recorded as non-canonical",
+        f"the PR #28 treatment line does not state NON-CANONICAL: {treatment!r}",
+    )
+    expect(
+        not claims_canonical(treatment),
+        "check102a",
+        f"the PR #28 treatment line asserts canonical status: {treatment!r}",
+    )
+    forbidden_claims = sorted(
+        claim
+        for claim in ("MERGE-READY", "MERGE READY", "ACTIVE", "DEPENDENCY", "ADOPTED", "MERGED")
+        if claim in treatment.upper().replace("NOT MERGED", "")
+    )
+    expect(
+        forbidden_claims == [],
+        "check102b",
+        f"the PR #28 treatment line claims active/merge-ready status {forbidden_claims}: "
+        f"{treatment!r}",
+    )
+    pr28_row = table_row(evidence, "PR #28")
+    expect(
+        pr28_row != "" and "hold" in pr28_row.lower(),
+        "check102c",
+        f"the canonical input registry row for PR #28 does not record a hold: {pr28_row!r}",
+    )
+    expect(
+        "AT-M7" in pr28_row,
+        "check102d",
+        f"the PR #28 registry row does not defer it to AT-M7: {pr28_row!r}",
+    )
+    expect(
+        not claims_canonical(pr28_row),
+        "check102e",
+        f"the PR #28 registry row asserts canonical status: {pr28_row!r}",
     )
     expect(
         "HOLD / PRESERVE / NON-CANONICAL" in binding or "HOLD" in binding,
@@ -568,6 +734,83 @@ def main() -> int:  # noqa: PLR0915
         not any("delivery_acceptance" in p or p.startswith("migrations/036") for p in changed),
         "check104",
         "AT-M1 must not touch PR #28 content",
+    )
+
+    # --- 14a. canonical registration (AT-M1-RM1) -----------------------------------------------
+    precedence = read(PRECEDENCE)
+    manifest = read(MANIFEST)
+    expect(
+        "Autonomous Team architecture precedence" in precedence,
+        "check104a",
+        "the AT family is not registered in the canonical source-of-truth precedence record",
+    )
+    for decision in BINDING_DECISIONS:
+        expect(
+            decision in precedence,
+            f"check104a-{decision.lower()}",
+            f"{decision} is not registered in the canonical precedence record",
+        )
+    for label, preserved in (
+        ("check104b", "Review Gate Actions"),
+        ("check104c", "ProductOwnerDecision"),
+        ("check104d", "TASK_ROLES"),
+        ("check104e", "D-1"),
+    ):
+        expect(
+            preserved in precedence,
+            label,
+            f"the precedence record does not preserve {preserved!r} against the AT family",
+        )
+    expect(
+        "scoped precedence, not a global supersession" in flat(precedence),
+        "check104f",
+        "the precedence record does not scope the AT family -- it must not globally supersede "
+        "Step 66 / 66D architecture",
+    )
+    expect(
+        "AT-D09" in precedence and "OPEN" in precedence,
+        "check104g",
+        "the precedence record does not keep AT-D09 OPEN / DEFERRED",
+    )
+    expect(
+        "Autonomous Team milestones" in manifest,
+        "check104h",
+        "the AT family is not registered in the canonical milestone manifest",
+    )
+    for index, milestone in enumerate(
+        ("AT-M0", "AT-M1", "AT-M2", "AT-M3", "AT-M4", "AT-M5", "AT-M6", "AT-M7", "AT-M8"),
+        start=1,
+    ):
+        expect(
+            milestone in manifest,
+            f"check104i-{index}",
+            f"{milestone} is not registered in the canonical milestone manifest",
+        )
+    flat_manifest = flat(manifest)
+    for label, milestone in (
+        ("check104j", "AT-M2"),
+        ("check104k", "AT-M3"),
+        ("check104l", "AT-M4"),
+        ("check104m", "AT-M5"),
+        ("check104n", "AT-M6"),
+    ):
+        section = flat_manifest.split(milestone, 1)[1][:200] if milestone in flat_manifest else ""
+        expect(
+            "NOT AUTHORIZED" in section,
+            label,
+            f"{milestone} is not registered as NOT AUTHORIZED in the milestone manifest",
+        )
+    expect(
+        "PENDING CANONICAL MERGE" in flat_manifest.upper(),
+        "check104o",
+        "the milestone manifest claims AT-M1 is canonical before PR #29 merges",
+    )
+    expect(
+        not claims_canonical(table_row(manifest, "AT-M7") or "")
+        and "AT-M7" in manifest
+        and "PR #28" in manifest,
+        "check104p",
+        "the milestone manifest does not record PR #28 as an AT-M7 input under hold",
     )
 
     # --- 15. POC contract ---------------------------------------------------------------------

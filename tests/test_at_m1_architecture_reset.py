@@ -28,7 +28,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "scripts" / "verify_at_m1_architecture_reset.py"
 
-AT_M1_BASELINE = "2d4da808b1a89ea278fbb760e27f49047995165e"
+AT_M1_BASELINE = "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009"
 
 ARCH = "docs/architecture/autonomous-team"
 CONTRACTS = "docs/contracts/autonomous-team"
@@ -43,6 +43,11 @@ PLANNING = f"{ARCH}/planning-and-plan-revision-model.md"
 ORCHESTRATION = f"{ARCH}/orchestration-debug-replan-model.md"
 LINEAGE = f"{ARCH}/source-of-truth-and-lineage-model.md"
 EVIDENCE = f"{HANDOFF}/at-m1-evidence.md"
+
+# Authorized at AT-M1-RM1: the two EXISTING canonical registries the AT family is registered in.
+MASTER = "docs/alignment/66-project-completion/master"
+PRECEDENCE = f"{MASTER}/canonical-source-of-truth-precedence.md"
+MANIFEST = f"{MASTER}/canonical-milestone-manifest.md"
 
 EXPECTED_PATHS = {
     f"{ARCH}/at-m1-architecture-reset.md",
@@ -62,7 +67,12 @@ EXPECTED_PATHS = {
     f"{HANDOFF}/at-m1-implementation-slice-handoff.md",
     "scripts/verify_at_m1_architecture_reset.py",
     "tests/test_at_m1_architecture_reset.py",
+    PRECEDENCE,
+    MANIFEST,
 }
+
+ORIGINAL_AT_M1_PATH_COUNT = 17
+RM1_REGISTRATION_PATHS = {PRECEDENCE, MANIFEST}
 
 
 def git(*args: str) -> str:
@@ -137,8 +147,10 @@ def test_scope_is_compared_by_set_equality_not_prefix():
     assert "changed == AT_M1_EXPECTED_PATHS" in source
 
 
-def test_all_seventeen_artifacts_exist():
-    assert len(EXPECTED_PATHS) == 17
+def test_all_nineteen_artifacts_exist():
+    """17 original AT-M1 artifacts plus the two RM1-authorized canonical registries."""
+    assert len(EXPECTED_PATHS) == 19
+    assert len(EXPECTED_PATHS - RM1_REGISTRATION_PATHS) == ORIGINAL_AT_M1_PATH_COUNT
     for relpath in sorted(EXPECTED_PATHS):
         assert (ROOT / relpath).is_file(), relpath
 
@@ -234,8 +246,23 @@ def test_inv07_template_planner_is_not_canonical():
 
 
 def test_inv08_pr28_held_and_untouched():
+    """AT-M1-RM1: target the authoritative treatment line, not the whole file.
+
+    The previous form searched the entire evidence document for "HOLD" and "NON-CANONICAL", so
+    PR #28 could be declared CANONICAL / ACTIVE / MERGE-READY on its own line while incidental
+    text elsewhere kept the assertion green.
+    """
+    module = verifier_module()
     evidence = read(EVIDENCE)
-    assert "HOLD" in evidence and "NON-CANONICAL" in evidence.upper()
+    treatment = module.labelled_line(evidence, "PR #28 treatment:")
+    assert treatment, "the evidence has no authoritative 'PR #28 treatment:' line"
+    assert "HOLD" in treatment.upper() and "PRESERVE" in treatment.upper()
+    assert "NON-CANONICAL" in treatment.upper()
+    assert not module.claims_canonical(treatment)
+    assert "MERGE-READY" not in treatment.upper()
+    row = module.table_row(evidence, "PR #28")
+    assert row and "hold" in row.lower() and "AT-M7" in row
+    assert not module.claims_canonical(row)
     changed = changed_paths()
     assert not any("delivery_acceptance" in p for p in changed)
     assert not any(p.startswith("migrations/036") for p in changed)
@@ -515,3 +542,151 @@ def test_no_artifact_leaks_an_identifier(relpath):
     text = read(relpath)
     for pattern, label in module.LEAK_PATTERNS:
         assert re.search(pattern, text) is None, f"{relpath} leaks a {label}"
+
+
+# =================================================================================================
+# AT-M1-RM1 closure
+# =================================================================================================
+
+
+def test_rm1_baseline_is_repinned_to_post_gov1_main():
+    """A-01: the AT-M1 baseline must be the post-GOV1 canonical main, exactly."""
+    module = verifier_module()
+    assert module.AT_M1_BASELINE == "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009"
+    assert module.AT_M1_BASELINE_SHORT == "fa5e5c4"
+    assert AT_M1_BASELINE == module.AT_M1_BASELINE, "verifier and test baselines disagree"
+    assert f'AT_M1_BASELINE = "{module.AT_M1_BASELINE}"' in read(
+        "scripts/verify_at_m1_architecture_reset.py"
+    )
+
+
+def test_rm1_old_baseline_is_gone_from_current_at_m1_semantics():
+    """Historical evidence prose may still cite 2d4da80; current contracts must not."""
+    old = "2d4da808b1a89ea278fbb760e27f49047995165e"
+    for relpath in (
+        "tests/test_at_m1_architecture_reset.py",
+        f"{ARCH}/at-m1-architecture-reset.md",
+        BINDING,
+        TERMINOLOGY,
+        REGISTRY,
+        ADRS,
+    ):
+        assert old not in read(relpath), f"{relpath} still pins the pre-GOV1 baseline"
+
+
+def test_rm1_gov1_paths_are_absent_from_at_m1_positive_scope():
+    """A-01 regression: GOV1's canonical paths must not contaminate AT-M1 scope."""
+    changed = changed_paths()
+    contamination = sorted(
+        p for p in changed if "gov1" in p or p.startswith("scripts/verify_step66")
+    )
+    assert contamination == [], f"GOV1 paths leaked into AT-M1 scope: {contamination}"
+
+
+def test_rm1_scope_is_exactly_nineteen_paths():
+    assert len(EXPECTED_PATHS) == 19
+    assert len(EXPECTED_PATHS - RM1_REGISTRATION_PATHS) == ORIGINAL_AT_M1_PATH_COUNT
+    assert changed_paths() == EXPECTED_PATHS
+
+
+def test_rm1_only_the_two_authorized_registration_paths_were_added():
+    module = verifier_module()
+    assert set(module.AT_M1_RM1_REGISTRATION_PATHS) == RM1_REGISTRATION_PATHS
+    assert module.AT_M1_ORIGINAL_PATH_COUNT == ORIGINAL_AT_M1_PATH_COUNT
+    assert set(module.AT_M1_EXPECTED_PATHS) == EXPECTED_PATHS
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["private_chain_of_thought", "raw_reasoning", "hidden_reasoning", "system_prompt", "secret"],
+)
+def test_rm1_inv04_verifier_rejects_a_contracted_hidden_reasoning_field(field):
+    """INV-04 behavioral: a CONTRACTED field must be caught, not just prohibition prose."""
+    module = verifier_module()
+    collab = read(COLLAB)
+    real = module.contracted_field_names(collab, "## 4. TeamMessage")
+    assert len(real) >= 10, "the TeamMessage contract block was not parsed -- probe is vacuous"
+    assert module.leaking_field_names(real) == [], "the live contract already leaks"
+    mutated = (*real, field)
+    assert module.leaking_field_names(mutated) == [field]
+
+
+def test_rm1_inv04_prohibition_prose_alone_still_passes():
+    """M-INV04-C: naming the fields in a prohibition list must NOT be a violation."""
+    module = verifier_module()
+    collab = read(COLLAB)
+    assert "FORBIDDEN FIELDS" in collab
+    for forbidden in module.FORBIDDEN_STORAGE_FIELDS:
+        assert forbidden in collab, f"{forbidden} is no longer prohibited in prose"
+    assert (
+        module.leaking_field_names(module.contracted_field_names(collab, "## 4. TeamMessage")) == []
+    )
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "PR #28 treatment: CANONICAL / ACTIVE / MERGE-READY -- adopted as a current dependency",
+        "PR #28 treatment: CANONICAL -- current AT-M1 execution dependency",
+        "PR #28 treatment: HOLD / PRESERVE / NON-CANONICAL -- MERGE-READY",
+    ],
+)
+def test_rm1_inv08_semantic_canonicalization_is_rejected(line):
+    """INV-08 structural: incidental NON-CANONICAL text elsewhere must not rescue these."""
+    module = verifier_module()
+    held = module.labelled_line(read(EVIDENCE), "PR #28 treatment:")
+    assert not module.claims_canonical(held) and "MERGE-READY" not in held.upper()
+    canonical_claim = module.claims_canonical(line)
+    merge_ready = "MERGE-READY" in line.upper()
+    assert canonical_claim or merge_ready, f"the probe line is not actually a violation: {line}"
+
+
+def test_rm1_precedence_registration_is_scoped_and_preserves_66d():
+    precedence = read(PRECEDENCE)
+    assert "Autonomous Team architecture precedence" in precedence
+    for decision in ("AT-D01", "AT-D02", "AT-D03", "AT-D04", "AT-D05"):
+        assert decision in precedence
+    for preserved in (
+        "Review Gate Actions",
+        "ProductOwnerDecision",
+        "TASK_ROLES",
+        "Delivery / Acceptance boundaries",
+    ):
+        assert preserved in precedence, f"{preserved} is not preserved against the AT family"
+    assert "scoped precedence, not a global supersession" in re.sub(r"\s+", " ", precedence)
+
+
+def test_rm1_milestone_registration_records_real_status():
+    manifest = read(MANIFEST)
+    assert "Autonomous Team milestones" in manifest
+    for milestone in (
+        "AT-M0",
+        "AT-M1",
+        "AT-M2",
+        "AT-M3",
+        "AT-M4",
+        "AT-M5",
+        "AT-M6",
+        "AT-M7",
+        "AT-M8",
+    ):
+        assert milestone in manifest
+    flat = re.sub(r"\s+", " ", manifest)
+    for milestone in ("AT-M2", "AT-M3", "AT-M4", "AT-M5", "AT-M6"):
+        assert "NOT AUTHORIZED" in flat.split(milestone, 1)[1][:200], f"{milestone} not gated"
+    assert "PENDING CANONICAL MERGE" in flat.upper(), "AT-M1 is claimed canonical before merge"
+    assert "M0 — Source of Truth" in manifest, "the original M0..M7 track was disturbed"
+
+
+def test_rm1_at_d09_remains_open_in_the_registration():
+    precedence = read(PRECEDENCE)
+    assert "AT-D09" in precedence
+    segment = re.sub(r"\s+", " ", precedence).split("AT-D09", 1)[1][:120]
+    assert "OPEN" in segment.upper(), "AT-D09 is no longer registered as OPEN / DEFERRED"
+
+
+def test_rm1_pr28_recorded_as_at_m7_input_not_a_dependency():
+    for relpath in (PRECEDENCE, MANIFEST):
+        text = read(relpath)
+        assert "PR #28" in text and "AT-M7" in text
+        assert "HOLD" in text.upper()

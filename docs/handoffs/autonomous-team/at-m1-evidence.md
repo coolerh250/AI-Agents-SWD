@@ -64,14 +64,81 @@ Discrepancies against the audit: NONE. All nine findings still hold at this base
 Additional machine counts taken at this baseline:
 
 ```text
-ActorPrincipal / principal_id      0 occurrences
+ActorPrincipal / principal_id      0 occurrences        <- SUPERSEDED, see section 4a
 PlanRevision / plan_revision       0 occurrences
 DebugAttempt / debug_attempt       0 occurrences
 recipient/addressing fields        0 occurrences
 Handoff                            2 occurrences, both legacy delivery `handoff_summaries`
                                    (migration 021) -- an unrelated document concept
+                                                        <- SUPERSEDED, see section 4a
 TASK_ROLES                         6 roles, all human, unchanged
 ```
+
+## 4a. Evidence corrections (AT-M1-RM1)
+
+AT-M1-R1 proved two of the counts above were wrong. Both are corrected here from fresh
+machine measurement at `POST_GOV1_CANONICAL_MAIN` (`fa5e5c4`). The rows above are left in place,
+annotated, because they are what this stage originally reported.
+
+### EVIDENCE-01 — `principal_id`
+
+The original row conflated two different names. `ActorPrincipal` is genuinely absent; `principal_id`
+is not.
+
+```text
+Scope:     git grep at fa5e5c4 -- apps/ shared/ agents/ services/ migrations/
+Command:   git grep -o "principal_id"            -> 25 occurrences across 7 files
+           git grep -o "ActorPrincipal|actor_principal" -> 0
+           git grep -o "principal_type"          -> 0
+           git grep -o "ProjectTeamMembership"   -> 0
+```
+
+```text
+apps/orchestrator/src/operations_replay_api.py          2
+apps/orchestrator/src/operations_resume_api.py          3
+shared/sdk/tasks/authorization_policy.py                2
+shared/sdk/tasks/authorization_service.py               7
+shared/sdk/tasks/production_approval_service.py         3
+shared/sdk/tasks/replay_service.py                      4
+shared/sdk/tasks/resume_service.py                      4
+```
+
+Classification: every occurrence is `AuthorizationActor.principal_id: str` — the identifier of the
+**task/authorization actor** answering "who requested or approved this operation". It is not
+`ActorPrincipal`, carries no `principal_type`, expresses no autonomous-agent functional role, and
+has no `ProjectTeamMembership`. The existing `Actor` is an authorization subject, not a team member.
+
+```text
+ActorPrincipal capability state:  CONTRACT_ONLY   (unchanged -- 0 implementation occurrences)
+```
+
+### EVIDENCE-02 — `Handoff`
+
+The original count of 2 was scoped to migration 021 alone. Repo-wide the legacy concept is far more
+present, and none of it is the autonomous work-transfer entity.
+
+```text
+Scope:     git grep at fa5e5c4 -- apps/ shared/ agents/ services/ migrations/
+Command:   git grep -oi "handoff"                        -> 77 occurrences across 14 files
+           git grep -o "handoff_summaries|handoff_summary" -> 24
+           git grep -o "class Handoff|CREATE TABLE handoffs|handoff_id" -> 3
+           git grep -o "assigned_to_agent|reassign|work_transfer" -> 0
+```
+
+The only declared type is `HandoffSummary` in `shared/sdk/delivery_package/models.py`; the other two
+hits are `handoff_ids` / `handoff_summary_ids` in `package_builder.py`. All 14 files sit in the
+legacy `delivery_package` domain.
+
+Classification: these are **delivery-package document sections** — a summary written into an
+exported delivery package. They transfer no ownership, name no from/to principal, carry no
+acceptance state, and there is no agent reassignment primitive anywhere (0 occurrences).
+
+```text
+Legacy delivery handoff_summaries:        IMPLEMENTED, but a document concept
+Autonomous work-transfer Handoff entity:  NOT_IMPLEMENTED / CONTRACT_ONLY target (unchanged)
+```
+
+Legacy delivery handoff summaries do **not** implement autonomous team handoff.
 
 ## 4. Binding decisions recorded
 
