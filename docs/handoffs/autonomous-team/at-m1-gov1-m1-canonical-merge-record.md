@@ -100,9 +100,9 @@ PR #29 content / PR #28 content:                 0
 66D-BE1-CR1-M1 record: three canonical-merge tests diff it against HEAD, and touching it here would
 trigger that known drift without being required by this stage.
 
-### Post-merge positive-scope note
+### Post-merge positive-scope freeze
 
-The GOV1 verifier computes `GOV1_BASELINE...HEAD`, safe while the branch was open because `HEAD` was
+The GOV1 verifier computed `GOV1_BASELINE...HEAD`, safe while the branch was open because `HEAD` was
 the PR head bounded by the exact 5-path registry. Merged, `HEAD` is `main` and advances. This record
 adds three paths, all of which the repaired admission rule admits by construction:
 
@@ -112,9 +112,25 @@ scripts/verify_at_m1_gov1_m1_canonical_merge.py                        autonomou
 tests/test_at_m1_gov1_m1_canonical_merge.py                            autonomous-team family
 ```
 
-The GOV1 verifier's own 5-path registry is therefore a **frozen historical range** from this point
-on; a later stage that needs it re-evaluated must re-pin it deliberately, exactly as A-01 requires
-for AT-M1.
+Admitted by the current-state rule, but still **unexpected** against a positive registry of exactly
+five paths — so the positive scope was frozen at canonicalization, the same treatment the
+66D-BE1-CR1-M1 record applied to the CR1 verifier:
+
+```text
+GOV1_BASELINE:       2d4da808b1a89ea278fbb760e27f49047995165e
+GOV1_STAGE_HEAD:     2faa9c7fe68dcd1bb04aab971c34a6d0bb047e2c
+Positive range:      2d4da80...2faa9c7   (frozen; was BASELINE...HEAD)
+Expected paths:      5        Actual paths: 5        Exact equality: YES
+Positive HEAD endpoints remaining:  0
+```
+
+The rejection guards were deliberately **not** frozen with it: they stay HEAD-relative and feed the
+denylist only, so a runtime or architecture path introduced by any later commit is still caught.
+
+This freeze is recorded as it happened. It was written into this record before it was implemented,
+landed one commit later than the record, and the omission was caught by the final
+post-canonicalization regression rather than by inspection — the same class of HEAD-endpoint debt
+that A-01 now carries for AT-M1.
 
 ## 5. Independent review history
 

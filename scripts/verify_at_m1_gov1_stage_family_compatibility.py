@@ -27,7 +27,11 @@ MARKER = "AT_M1_GOV1_STAGE_FAMILY_COMPATIBILITY_VERIFY"
 
 GOV1_BASELINE = "2d4da808b1a89ea278fbb760e27f49047995165e"
 GOV1_BASELINE_SHORT = "2d4da80"
-GOV1_POSITIVE_RANGE = f"{GOV1_BASELINE}...HEAD"
+# Frozen at canonicalization (AT-M1-GOV1-M1). While PR #30 was open this was BASELINE...HEAD,
+# safe only because HEAD was the PR head bounded by the exact 5-path registry. Merged, HEAD is
+# main and advances, so it can no longer be a positive endpoint.
+GOV1_STAGE_HEAD = "2faa9c7fe68dcd1bb04aab971c34a6d0bb047e2c"
+GOV1_POSITIVE_RANGE = f"{GOV1_BASELINE}...{GOV1_STAGE_HEAD}"
 
 ALIGN1_VERIFIER = "scripts/verify_step66d_align1_delivery_decision_model.py"
 ALIGN1_TEST = "tests/test_step66d_align1_delivery_decision_model.py"

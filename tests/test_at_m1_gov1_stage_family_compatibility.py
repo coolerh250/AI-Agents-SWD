@@ -42,6 +42,8 @@ EXPECTED_PATHS = {
 }
 
 GOV1_BASELINE = "2d4da808b1a89ea278fbb760e27f49047995165e"
+# Frozen at canonicalization (AT-M1-GOV1-M1) -- see the verifier's GOV1_STAGE_HEAD comment.
+GOV1_STAGE_HEAD = "2faa9c7fe68dcd1bb04aab971c34a6d0bb047e2c"
 ALIGN1_STAGE_HEAD = "6a8a7bfa2ae758e944b1126881a69fef2d122dcb"
 
 
@@ -91,7 +93,7 @@ def test_gov1_scope_registry_is_exactly_five_paths():
 def test_changed_paths_equal_the_registry_exactly():
     changed = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{GOV1_BASELINE}...HEAD").splitlines()
+        for line in git("diff", "--name-only", f"{GOV1_BASELINE}...{GOV1_STAGE_HEAD}").splitlines()
         if line.strip()
     }
     assert (
