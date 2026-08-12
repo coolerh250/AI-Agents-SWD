@@ -927,9 +927,9 @@ def test_rm6_live_canonical_carriers_are_all_in_an_allowed_state():
 
 def test_rm6_every_required_carrier_kind_is_present_live():
     module = verifier_module()
-    for artifact, subject, kind in module.REQUIRED_CARRIERS:
-        kinds = {k for a, _, _, k, _ in module.domain_carriers(subject) if a == artifact}
-        assert kind in kinds, f"{artifact} lost its {subject}/{kind} carrier"
+    for artifact, subject, kind, form in module.REQUIRED_CARRIERS:
+        found = {(k, f) for a, _, f, k, _ in module.domain_carriers(subject) if a == artifact}
+        assert (kind, form) in found, f"{artifact} lost its {subject}/{kind}/{form} carrier"
 
 
 # --- R6-B1: discovery must not be gated on vocabulary -------------------------------------------
@@ -1116,5 +1116,5 @@ def test_rm6_anti_vacuity_is_coverage_based_not_count_based():
     assert "missing_required_carriers" in source
     assert module.REQUIRED_CARRIERS, "no required carriers declared"
     # Every declared requirement names an artifact inside the authorized scope.
-    for artifact, _, _ in module.REQUIRED_CARRIERS:
+    for artifact, _, _, _ in module.REQUIRED_CARRIERS:
         assert artifact in module.AT_M1_EXPECTED_PATHS

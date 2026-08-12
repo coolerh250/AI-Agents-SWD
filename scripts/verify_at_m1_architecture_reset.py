@@ -587,15 +587,20 @@ KEY_KIND_WORDS = (
 # Canonical carriers that must exist. Anti-vacuity by required COVERAGE, not by token counts:
 # deleting or reshaping one of these (for example replacing the parenthesised heading marker with
 # a dash-delimited title) removes a required carrier and fails.
+# Granularity is (artifact, subject, kind, FORM). Without the form, reshaping the heading marker
+# would leave the artifact's other status carriers satisfying the requirement, and the loss of a
+# canonical carrier would go unnoticed by this check.
 REQUIRED_CARRIERS = (
-    (BINDING, "at-d09", "status"),
-    (BINDING, "at-d09", "decision"),
-    (BINDING, "at-d09", "authority"),
-    (BINDING, "at-m2", "at-m2-authorization"),
-    (RESET, "at-d09", "status"),
-    (RESET, "at-m2", "at-m2-authorization"),
-    (MANIFEST, "at-d09", "status"),
-    (PRECEDENCE, "at-m2", "at-m2-authorization"),
+    (BINDING, "at-d09", "status", "register"),
+    (BINDING, "at-d09", "status", "heading-status"),
+    (BINDING, "at-d09", "status", "section-field"),
+    (BINDING, "at-d09", "decision", "section-field"),
+    (BINDING, "at-d09", "authority", "section-field"),
+    (BINDING, "at-m2", "at-m2-authorization", "register"),
+    (RESET, "at-d09", "status", "register"),
+    (RESET, "at-m2", "at-m2-authorization", "register"),
+    (MANIFEST, "at-d09", "status", "register"),
+    (PRECEDENCE, "at-m2", "at-m2-authorization", "register"),
 )
 
 
@@ -723,14 +728,14 @@ def unauthorized_carriers(subject: str) -> list[str]:
 
 def missing_required_carriers() -> list[str]:
     missing = []
-    for artifact, subject, kind in REQUIRED_CARRIERS:
+    for artifact, subject, kind, form in REQUIRED_CARRIERS:
         present = any(
-            found_kind == kind
-            for found_artifact, _, _, found_kind, _ in domain_carriers(subject)
+            found_kind == kind and found_form == form
+            for found_artifact, _, found_form, found_kind, _ in domain_carriers(subject)
             if found_artifact == artifact
         )
         if not present:
-            missing.append(f"{artifact} [{subject}/{kind}]")
+            missing.append(f"{artifact} [{subject}/{kind}/{form}]")
     return missing
 
 
