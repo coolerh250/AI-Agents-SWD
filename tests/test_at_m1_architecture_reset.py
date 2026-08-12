@@ -702,3 +702,136 @@ def test_rm1_pr28_recorded_as_at_m7_input_not_a_dependency():
         text = read(relpath)
         assert "PR #28" in text and "AT-M7" in text
         assert "HOLD" in text.upper()
+
+
+# =================================================================================================
+# AT-M1-RM2 — R2 blocking defect closure (DEF-R2-01, DEF-R2-02)
+# =================================================================================================
+
+REGISTRY_PATH = REGISTRY
+BINDING_PATH = BINDING
+
+
+def _capability(name: str) -> dict:
+    data = json.loads(read(REGISTRY_PATH))
+    for entry in data.get("capabilities", []):
+        if entry.get("capability") == name:
+            return entry
+    raise AssertionError(f"capability {name!r} is not in the registry")
+
+
+def test_rm2_agent_principal_evidence_is_machine_true():
+    """DEF-R2-01: the canonical registry must not claim principal_id has 0 occurrences."""
+    entry = _capability("AgentPrincipal")
+    evidence = entry["evidence"]
+    assert entry["state"] == "CONTRACT_ONLY"
+    assert "principal_id: 0 occurrences" not in evidence
+    assert "ActorPrincipal: 0" in evidence
+    assert "Actor.principal_id" in evidence and "authorization" in evidence.lower()
+
+
+def test_rm2_handoff_evidence_is_machine_true():
+    """DEF-R2-01: the canonical registry must not claim only 2 handoff matches."""
+    entry = _capability("Handoff")
+    evidence = entry["evidence"]
+    assert entry["state"] == "NOT_IMPLEMENTED"
+    assert "Only 2 matches" not in evidence
+    assert "HandoffSummary" in evidence and "delivery_package" in evidence
+    assert "work-transfer" in evidence and "absent" in evidence.lower()
+
+
+def test_rm2_registry_evidence_matches_measured_repository_truth():
+    """The corrected counts must be the ones actually measurable, not new invented numbers."""
+    scope = ["apps", "shared", "agents", "services", "migrations"]
+    principal = len(
+        [ln for ln in git("grep", "-o", "principal_id", AT_M1_BASELINE, "--", *scope).splitlines()]
+    )
+    handoff = len(
+        [ln for ln in git("grep", "-oi", "handoff", AT_M1_BASELINE, "--", *scope).splitlines()]
+    )
+    assert principal > 0 and handoff > 0, "measurement harness returned nothing"
+    assert str(principal) in _capability("AgentPrincipal")["evidence"]
+    assert str(handoff) in _capability("Handoff")["evidence"]
+
+
+def test_rm2_capability_states_and_totals_unchanged_by_rm2():
+    data = json.loads(read(REGISTRY_PATH))
+    caps = data["capabilities"]
+    counts: dict[str, int] = {}
+    for entry in caps:
+        counts[entry["state"]] = counts.get(entry["state"], 0) + 1
+    assert len(caps) == 30
+    assert counts == {
+        "IMPLEMENTED": 7,
+        "PARTIAL": 10,
+        "MOCK_ONLY": 2,
+        "CONTRACT_ONLY": 5,
+        "NOT_IMPLEMENTED": 5,
+        "DEFERRED": 1,
+    }
+    assert data["production_executed_true_count"] == 0
+
+
+@pytest.mark.parametrize(
+    "surface,mutated",
+    [
+        ("summary", "AT-D09:  RESOLVED / BINDING -- decided by AT-M1 (section 6)"),
+        ("status", "STATUS:  RESOLVED / CLOSED -- decided by AT-M1"),
+    ],
+)
+def test_rm2_at_d09_authoritative_surface_closure_is_detected(surface, mutated):
+    """DEF-R2-02: closing an authoritative AT-D09 surface must be caught on that surface alone."""
+    module = verifier_module()
+    binding = read(BINDING_PATH)
+    section = module.section_text(binding, "## 6. AT-D09")
+    live = (
+        module.labelled_line(binding, "AT-D09:")
+        if surface == "summary"
+        else module.labelled_line(section, "STATUS:")
+    )
+    assert live, f"the authoritative {surface} surface was not found"
+    assert not module.claims_at_d09_closed(live), f"the live {surface} already claims closure"
+    assert module.claims_at_d09_closed(mutated), f"the probe {surface} is not a closure claim"
+
+
+def test_rm2_at_d09_decision_value_is_deferred():
+    module = verifier_module()
+    section = module.section_text(read(BINDING_PATH), "## 6. AT-D09")
+    assert module.indented_value(section, "Decision:").upper() == "DEFERRED"
+
+
+def test_rm2_at_d09_gate_is_not_satisfiable_by_unrelated_tokens():
+    """The whole-document form this replaces would pass with every AT-D09 surface closed."""
+    binding = read(BINDING_PATH)
+    module = verifier_module()
+    section = module.section_text(binding, "## 6. AT-D09")
+    authoritative = "\n".join(
+        [
+            module.labelled_line(binding, "AT-D09:"),
+            module.labelled_line(section, "STATUS:"),
+            module.indented_value(section, "Decision:"),
+        ]
+    )
+    residual = binding.replace(authoritative, "")
+    # Unrelated OPEN / DEFERRED tokens exist, which is exactly why the old check was insufficient.
+    assert "OPEN" in residual and "DEFERRED" in residual
+
+
+def test_rm2_step_66c4_authority_is_preserved_in_the_at_d09_section():
+    module = verifier_module()
+    section = module.section_text(read(BINDING_PATH), "## 6. AT-D09")
+    flat_section = re.sub(r"\s+", " ", section)
+    assert "(Step 66C.4) REMAINS AUTHORITATIVE" in flat_section
+    assert "must not canonicalize permissive continuation" in flat_section
+    assert "SUPERSEDED" not in section.upper() and "SUPERSEDES" not in section.upper()
+
+
+def test_rm2_at_d09_remains_open_and_undecided():
+    """RM2 must not decide AT-D09."""
+    module = verifier_module()
+    binding = read(BINDING_PATH)
+    section = module.section_text(binding, "## 6. AT-D09")
+    assert "OPEN" in module.labelled_line(binding, "AT-D09:").upper()
+    assert "OPEN" in module.labelled_line(section, "STATUS:").upper()
+    assert module.indented_value(section, "Decision:").upper() == "DEFERRED"
+    assert "AT-D09" in read(PRECEDENCE)
