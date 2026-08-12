@@ -2,7 +2,7 @@
 
 > **Decision records only. Nothing implemented. `production_executed_true_count: 0`.**
 
-Baseline: canonical main `2d4da808b1a89ea278fbb760e27f49047995165e`. None of these ADRs conflicts
+Baseline: canonical main `fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009`. None of these ADRs conflicts
 with binding decisions AT-D01 … AT-D05; each either implements one or resolves a question those
 decisions deliberately left open. None modifies a merged 66D contract.
 

@@ -7,7 +7,7 @@ Authoritative for autonomous-team vocabulary as of 2026-08-11, per
 `docs/contracts/autonomous-team/at-binding-decisions.md`.
 
 Every term below is `CONTRACT_ONLY / NOT IMPLEMENTED` on canonical main
-`2d4da808b1a89ea278fbb760e27f49047995165e` unless stated otherwise.
+`fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009` unless stated otherwise.
 
 ---
 

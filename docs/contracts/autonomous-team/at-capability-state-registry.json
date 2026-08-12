@@ -1,7 +1,7 @@
 {
   "registry": "at-capability-state-registry",
   "status": "CANONICAL",
-  "canonical_baseline": "2d4da808b1a89ea278fbb760e27f49047995165e",
+  "canonical_baseline": "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009",
   "recorded_by": "Claude Code (Step AT-M1)",
   "recorded_at": "2026-08-11",
   "production_executed_true_count": 0,

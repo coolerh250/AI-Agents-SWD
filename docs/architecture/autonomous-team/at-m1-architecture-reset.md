@@ -6,7 +6,7 @@
 > `production_executed_true_count: 0`.**
 
 ```text
-Canonical baseline:  main 2d4da808b1a89ea278fbb760e27f49047995165e
+Canonical baseline:  main fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009
 Binding decisions:   AT-D01 .. AT-D05 (RESOLVED / BINDING), AT-D09 (OPEN)
 Marker:              AT_M1_ARCHITECTURE_RESET_VERIFY: PASS
 ```
