@@ -594,6 +594,84 @@ ADV-R2-03  INV-04 historical nuance             RECORDED, not rewritten: private
 ```
 
 ---
+
+## 18. AT-M1-RM3 — authorization register closure (DEF-R3-01)
+
+AT-M1-R3 confirmed both R2 defects closed and found one blocking defect in the RM2 fix itself.
+
+### Reproduction, before the fix
+
+At `47d0246`, sole edit to the binding contract section 8:
+
+```text
+AT_D09:  OPEN  ->  AT_D09:  RESOLVED / BINDING
+
+verifier:  checks=225 failures=0  PASS      <- complete escape
+tests:     82 passed                        <- complete escape
+```
+
+RM2 hardened the AT-D09 gate by enumerating the surfaces the R2 finding named. The binding
+contract states AT-D09's status on more surfaces than that list contained, so the same
+false-canonical-status class survived on the surfaces nobody had enumerated.
+
+### Surface inventory
+
+Re-derived from the document rather than from the previous finding. Every line naming AT-D09 was
+classified, not only the ones a review had cited.
+
+```text
+line  20  summary block AT-D09: OPEN / DEFERRED         AUTHORITATIVE   check92a, check92b
+line 265  section-6 heading marker (OPEN)               AUTHORITATIVE   check92h, check92i  NEW
+line 268  section-6 STATUS: OPEN / DEFERRED             AUTHORITATIVE   check92c, check92d
+line 276  Step 66C.4 REMAINS AUTHORITATIVE              AUTHORITATIVE   check93a, check93b
+line 279  section-6 Decision: DEFERRED                  AUTHORITATIVE   check92e
+line 281  non-decision declaration                      AUTHORITATIVE   check93
+line 308  section-8 register AT_D09: OPEN               AUTHORITATIVE   check92f, check92g  NEW
+line 132  message-kind table entry "clarification"      DESCRIPTIVE     not gated
+line 273  "UX suggestion under consideration"           DESCRIPTIVE     not gated
+section 7 prohibited implications                       n/a -- states no AT-D09 status
+```
+
+The section-6 heading was a second escape, found by probing the inventory rather than the finding:
+`(OPEN)` -> `(RESOLVED / BINDING)` also left verifier 225/0 PASS and 82 tests passing. It is fixed
+under the same defect, not recorded as a new one.
+
+### Closure
+
+```text
+check92f  section-8 register records AT-D09 as OPEN
+check92g  section-8 register makes no closure claim
+check92h  section-6 heading marks the question OPEN
+check92i  section-6 heading makes no closure claim
+check92j  no AT-D09 status surface exists that no named check reads
+```
+
+`AUTHORIZED` was added to `AT_D09_CLOSURE_CLAIMS`, so every AT-D09 surface rejects it uniformly.
+
+`check92j` is the anti-subset guard: it collects every line that names AT-D09 **and** states a
+state, and fails if any is not one of the surfaces a check reads. Adding a new status surface to
+the contract now fails the verifier until that surface is guarded. Descriptive prose that names the
+question without stating a state is not gated, per the RM3 constraint.
+
+ADV-R3-02 closed: `test_at_d09_remains_open_and_not_an_adr` no longer carries the whole-document
+`"AT-D09" in binding and "OPEN" in binding` form. Per-surface assertions replace it.
+
+ADV-R3-01 recorded, not remediated: section 8 `AT_M2: NOT AUTHORIZED` is not gated on that line.
+Its authoritative state is guarded on the manifest surface and in section 7. RM3 did not expand
+into AT-M2 governance.
+
+### AT-D09 status after RM3
+
+```text
+AT-D09:                                   OPEN / DEFERRED
+Section-6 Decision:                       DEFERRED
+Section-8 authorization register:         OPEN
+Step 66C.4 clarification expiry contract: REMAINS AUTHORITATIVE
+```
+
+RM3 decides nothing. It makes the existing undecided state unfalsifiable.
+
+---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local
