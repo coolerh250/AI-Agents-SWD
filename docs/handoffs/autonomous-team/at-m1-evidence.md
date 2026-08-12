@@ -786,6 +786,132 @@ AT-M2:                                    NOT AUTHORIZED
 RM4 decides nothing. Guarding the AT-M2 register changes no AT-M2 authorization.
 
 ---
+
+## 20. AT-M1-RM5 — authoritative state semantic validation (DEF-R5-01..07)
+
+R5 returned seven blockers against RM4. They share one root cause, so RM5 replaces the model
+rather than patching seven shapes.
+
+### Why the lexical model could not close
+
+RM4 asked *does this text contain a forbidden word?* That question is unclosable:
+
+```text
+DEF-R5-03  every unenumerated synonym is a new escape (SETTLED, RATIFIED, FINALIZED)
+DEF-R5-02  deleting negators to control false positives made NO LONGER OPEN read as OPEN
+DEF-R5-07  a token test cannot tell NOT BINDING from BINDING, so valid non-decisions
+           were falsely rejected
+```
+
+The false-positive and false-negative failures were the same defect seen from two sides: a bag
+of tokens carries no proposition, so it can neither be completed nor negated correctly.
+
+### The model
+
+Each discovered assertion is assigned a KIND, its CURRENT value is parsed with negation
+preserved, and it is accepted only if it affirms a canonical allowed state for that kind.
+
+```text
+KIND                   ALLOWED CURRENT STATE
+status                 OPEN or DEFERRED
+decision               DEFERRED, or an explicit denial of a decision
+authorization          NOT AUTHORIZED / NOT DECIDED, or an open state
+authority              AUTHORITATIVE, and never superseded
+non-decision           an explicit denial, and never a closure
+at-m2-authorization    NOT AUTHORIZED
+```
+
+Acceptance is affirmative, so an authoritative value that does not affirm an allowed state is
+rejected **without the offending term being enumerated anywhere**. CONCLUDED, ADJUDICATED and
+PROMULGATED are all rejected although no list contains them. That is what ends the synonym
+arms race.
+
+Negation is preserved rather than deleted, so these are three different propositions:
+
+```text
+OPEN                 allowed
+NOT OPEN             rejected -- negates the canonical state
+NO LONGER OPEN       rejected -- negates the canonical state
+```
+
+Current state outranks history: `AUTHORIZED (previously NOT AUTHORIZED)` reads as AUTHORIZED and
+is rejected, while `NOT AUTHORIZED (previously AUTHORIZED)` is accepted. A trailing `-- FALSE` is
+read as the predicate, not a footnote, so the prohibited-implications block is not misread as
+affirming its own claims.
+
+### Discovery
+
+```text
+register         AT-D09: / AT_D09_STATUS: / AT-D09 authorization state:
+heading-marker   ## 6. AT-D09 ... (OPEN)
+section-label    Decision: / DEFERRED, subject supplied by the enclosing section
+table-cell       the cell naming the subject, not the whole row
+block-entry      a fenced register column
+prose            any assertive sentence; no specific copula is required
+```
+
+Every branch is attempted; none exits past the others because its own pattern failed. Qualified
+keys are part of the identifier, since `` cannot see `AT_D09_STATUS`. A label value may
+continue on the next line or across a blank line. A label naming a different AT-family subject is
+not attributed to AT-D09 even inside the AT-D09 section.
+
+### Adversary matrix
+
+```text
+axis                              probe        verdict  intended check
+cross-file                        A-FILE       REJECT   check92j
+cross-section                     B-SECTION    REJECT   check92j
+identifier case                   C-CASE       REJECT   check92j
+qualified identifier key          D-QUALKEY    REJECT   check92j
+same-line value                   E-SAMELINE   REJECT   check92j
+label + indented value            F-MULTILINE  REJECT   check92j
+label + blank line + value        G-BLANKLINE  REJECT   check92j
+nonstandard assertive verb        H-VERB       REJECT   check92j
+unknown closure synonym           I-UNKNOWN    REJECT   check92j
+negated open state                J-NEGOPEN    REJECT   check92j
+history qualifier                 K-HISTORY    REJECT   check92n
+AT-M2 qualified key               L-M2QUAL     REJECT   check92n
+AT-M2 predicated prose            M-M2PROSE    REJECT   check92n
+new authoritative surface         N-NEWSURF    REJECT   check92j
+contradictory current state       O-CONTRA     REJECT   check92j
+extractor disabled                P-VACUITY    REJECT   check92l
+
+descriptive prose                 C-DESC       PASS
+historical finding title          C-HIST       PASS
+benign metadata                   C-META       PASS
+future / hypothetical             C-HYPO       PASS
+hypothetical in a fenced block    C-HYPOF      PASS
+NOT DECIDED                       C-NOTDEC     PASS
+NOT BINDING                       C-NOTBIND    PASS
+REMAINS AUTHORITATIVE             C-PRESERVE   PASS
+AT-M2 NOT AUTHORIZED restated     C-M2NOT      PASS
+```
+
+C-M2NOT failed on the first implementation and is recorded as a failure, not a pass: an AT-M2
+label inside the AT-D09 section was attributed to AT-D09. Fixed by subject attribution; the
+control was not weakened.
+
+### Status after RM5
+
+```text
+AT-D09:                                   OPEN / DEFERRED
+Section-6 Decision:                       DEFERRED
+Section-8 authorization register:         OPEN
+Step 66C.4 clarification expiry contract: REMAINS AUTHORITATIVE
+AT-M2:                                    NOT AUTHORIZED
+```
+
+RM5 decides nothing.
+
+### Deferred
+
+```text
+ADV-R5-01  raw AT-D09 occurrence counts in this narrative go stale as the narrative itself
+           adds references. Counts are NOT an invariant; R6 must re-derive the domain
+           independently. Evidence-hygiene advisory only.
+```
+
+---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local
