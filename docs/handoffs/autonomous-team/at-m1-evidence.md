@@ -354,6 +354,114 @@ ADV-DRIFT-BE1-GUARDS-01   TRACKED / OUT OF SCOPE -- raised by PR #28, unaffected
                           AT-M1 touches no migrations/ or shared/ path
 ```
 
+## 16. AT-M1-RM1 closure
+
+```text
+POST_GOV1_CANONICAL_MAIN:   fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009
+Sync merge into PR #29:     b11acbe2d0f467a359cafc3f13932cba275d60ec
+                            parents 3f18e07 (AT-M1 head) + fa5e5c4 (canonical main)
+                            non-squash; the five original AT-M1 commits are untouched
+```
+
+### A-01 — post-GOV1 baseline re-pin
+
+Reproduced against real canonical main, not a simulated overlay:
+
+```text
+BEFORE  AT_M1_BASELINE = 2d4da80 (pre-GOV1)
+        AT_M1_ARCHITECTURE_RESET_VERIFY: checks=164 failures=2
+        check02  8 unexpected GOV1 paths inside 2d4da80...HEAD
+        check09  the non-docs set no longer equals [verifier, tests]
+
+AFTER   AT_M1_BASELINE = fa5e5c4
+        AT_M1_ARCHITECTURE_RESET_VERIFY: checks=210 failures=0
+        GOV1 paths in AT-M1 positive scope: 0   (check03c enforces this permanently)
+```
+
+References found 7, updated 7 — the verifier constants, the test constant, the architecture reset,
+the binding decisions, the terminology registry, the capability state registry and the ADRs. Two
+occurrences in this document (section 1 preflight, section 14) record what was measured at AT-M1
+time and are **preserved as historical truth**. GOV1's own baseline constants were not touched.
+
+### Verifier effectiveness (INV-04, INV-08)
+
+Both findings were reproduced as real escapes before being fixed:
+
+```text
+INV-04  checks 38-44 compared a whole-document count against an identically computed
+        whole-document count, so they reduced to "the name appears somewhere".
+        ESCAPE  contracting private_chain_of_thought inside the TeamMessage block passed all 7.
+        FIX     check45a-e parse the ACTUAL contract into field names; prohibition prose still
+                passes, a contracted member cannot.
+
+INV-08  check101/102 searched the whole evidence file for HOLD and NON-CANONICAL.
+        ESCAPE  "PR #28 treatment: CANONICAL / ACTIVE / MERGE-READY" passed, rescued by
+                incidental text elsewhere in the file.
+        FIX     check101a / check102a-e target the authoritative treatment line and the
+                canonical-input-registry row; claims_canonical() discounts the NON-CANONICAL
+                denial so a canonical claim cannot hide inside it.
+
+AT-D09  Found by probe M12 DURING this stage, not by review: check104g tested "OPEN" in the
+        whole precedence document, and an unrelated line contains OPEN_PRODUCT_OWNER_DECISIONS,
+        so closing AT-D09 passed. Same defect class as INV-08; fixed the same way
+        (check104g1-g3 target the AT-D09 statement).
+```
+
+### Mutation probes (§30)
+
+Each applies one forbidden change in a disposable worktree and runs the real verifier as a
+subprocess.
+
+```text
+M01 revert baseline to pre-GOV1        REJECTED     M07 contract raw_reasoning         REJECTED
+M02 omit an original AT-M1 path        REJECTED     M08 PR #28 declared canonical      REJECTED
+M03 admit a GOV1 path                  REJECTED     M09 PR #28 merge dependency        REJECTED
+M04 remove a registration path         REJECTED     M10 remove AT precedence           REJECTED
+M05 add an arbitrary 20th path         REJECTED     M11 AT-M2 marked authorized        REJECTED
+M06 contract private_chain_of_thought  REJECTED     M12 close AT-D09                   REJECTED
+                                    untampered control  PASS before and after
+```
+
+### Canonical registration
+
+```text
+docs/alignment/66-project-completion/master/canonical-source-of-truth-precedence.md
+  AT-D01..AT-D05 registered as CURRENT TARGET ARCHITECTURE for the middle journey.
+  Scoped, not global. 66D Delivery Review, the six Review Gate Actions, ProductOwnerDecision,
+  Delivery/Acceptance boundaries, safety/evidence/cost contracts, the six human TASK_ROLES and
+  binding decision D-1 are all listed as PRESERVED. AT-D09 stays OPEN / DEFERRED.
+
+docs/alignment/66-project-completion/master/canonical-milestone-manifest.md
+  AT-M0..AT-M8 registered as a SEPARATE track; M0-M7 are not renumbered or reordered.
+  AT-M0 CLOSED · AT-M1 PENDING CANONICAL MERGE (not canonical -- PR #29 is not merged)
+  AT-M2..AT-M6 NOT AUTHORIZED · AT-M7 deferred delivery/acceptance hardening · AT-M8 not started
+  PR #28 recorded as a held AT-M7 input, not a dependency of AT-M1..AT-M6.
+```
+
+### Scope
+
+```text
+Baseline:            fa5e5c4        Changed paths: 19        Exact equality: YES
+17 original AT-M1 paths + canonical-source-of-truth-precedence.md + canonical-milestone-manifest.md
+Unexpected paths:    0              source/progress.md:      UNCHANGED
+GOV1 files modified: 0              PR #28:                  UNCHANGED
+```
+
+### Forward handoff — AT-M1-M1 positive-scope hazard
+
+`AT_M1_POSITIVE_RANGE` is still `AT_M1_BASELINE...HEAD`. That is correct while PR #29 is open,
+because the 19-path registry bounds it exactly. It will **not** survive canonicalization: once
+PR #29 merges, `HEAD` becomes main and advances, and the merge record's own paths will be reported
+as unexpected — precisely what happened to GOV1 at AT-M1-GOV1-M1.
+
+```text
+AT-M1-M1 MUST, in the same commit as its merge record:
+  freeze AT_M1_POSITIVE_RANGE to AT_M1_BASELINE...AT_M1_STAGE_HEAD (the merged PR #29 head)
+  leave the rejection guards HEAD-relative so later runtime paths are still caught
+Deliberately NOT done here: RM1 is not authorized to change canonicalization semantics, and the
+frozen stage head is not knowable until PR #29 merges.
+```
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
