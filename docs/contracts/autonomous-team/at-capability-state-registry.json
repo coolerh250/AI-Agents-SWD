@@ -38,7 +38,7 @@
     {
       "capability": "AgentPrincipal",
       "state": "CONTRACT_ONLY",
-      "evidence": "ActorPrincipal / principal_id: 0 occurrences on main. Identity is fragmented across actor_ref strings, X-Task-Actor headers, agent service names and created_by_agent columns.",
+      "evidence": "ActorPrincipal: 0 occurrences on main (principal_type 0, ProjectTeamMembership 0). The NAME principal_id is NOT free: it already exists as Actor.principal_id in the task/authorization identity domain, 25 occurrences across 7 files under apps/ shared/ agents/ services/ migrations/, and drives two-person control in authorization_policy.py. That Actor is an authorization subject, not a team member -- it carries no principal_type, no autonomous agent functional role and no ProjectTeamMembership, so it does not establish AT-D02. Identity is otherwise fragmented across actor_ref strings, X-Task-Actor headers, agent service names and created_by_agent columns.",
       "poc_blocking": true,
       "slice": "AT-M2"
     },
@@ -94,7 +94,7 @@
     {
       "capability": "Handoff",
       "state": "NOT_IMPLEMENTED",
-      "evidence": "Only 2 matches for handoff on main, both legacy delivery-package handoff_summaries (migration 021) -- unrelated document summaries, not work transfer.",
+      "evidence": "The NAME handoff is NOT free: 77 case-insensitive occurrences across 14 files under apps/ shared/ agents/ services/ migrations/, all in the legacy delivery_package domain -- HandoffSummary (11) declared in shared/sdk/delivery_package/models.py, handoff_summar* (24), handoff_id (2), plus a notification topic filter and a metrics counter. Those are delivery-package DOCUMENT SECTIONS: no from/to principal, no ownership field, no acceptance state, no transfer verb. The autonomous agent work-transfer primitive is absent: recipient_principal_id, assigned_to_agent, reassign, work_transfer, ownership_transfer, owner_principal_id and transfer_ownership are 0 occurrences each. Legacy delivery handoff_summaries do NOT implement autonomous team Handoff.",
       "poc_blocking": true,
       "slice": "AT-M2"
     },
