@@ -682,10 +682,19 @@ def test_rm1_milestone_registration_records_real_status():
 
 
 def test_rm1_at_d09_remains_open_in_the_registration():
+    """Target the AT-D09 statement: an unrelated line already contains the word OPEN."""
+    module = verifier_module()
     precedence = read(PRECEDENCE)
-    assert "AT-D09" in precedence
-    segment = re.sub(r"\s+", " ", precedence).split("AT-D09", 1)[1][:120]
-    assert "OPEN" in segment.upper(), "AT-D09 is no longer registered as OPEN / DEFERRED"
+    statement = module.line_with(precedence, "AT-D09")
+    assert statement, "the precedence record does not mention AT-D09"
+    assert "OPEN" in statement.upper() and "DEFERRED" in statement.upper()
+    for closure in ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED"):
+        assert closure not in statement.upper(), f"AT-D09 claims {closure}: {statement!r}"
+    # The document-wide form this replaces would pass even with AT-D09 closed.
+    assert "OPEN" in precedence.replace(statement, ""), (
+        "precondition for this test: an unrelated OPEN token must exist, proving the "
+        "document-wide check was insufficient"
+    )
 
 
 def test_rm1_pr28_recorded_as_at_m7_input_not_a_dependency():

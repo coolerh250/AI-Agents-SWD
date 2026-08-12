@@ -277,6 +277,14 @@ def claims_canonical(text: str) -> bool:
     return "CANONICAL" in text.upper().replace("NON-CANONICAL", "")
 
 
+def line_with(doc: str, needle: str) -> str:
+    """The first line mentioning needle. Targets a statement instead of the whole document."""
+    for line in doc.splitlines():
+        if needle in line:
+            return line.strip()
+    return ""
+
+
 def capability_registry() -> dict:
     try:
         return json.loads(read(REGISTRY))
@@ -767,10 +775,31 @@ def main() -> int:  # noqa: PLR0915
         "the precedence record does not scope the AT family -- it must not globally supersede "
         "Step 66 / 66D architecture",
     )
+    # Target the AT-D09 STATEMENT, not the whole document: an unrelated line already contains
+    # "OPEN" (OPEN_PRODUCT_OWNER_DECISIONS), so a document-wide search cannot detect a closure.
+    at_d09 = line_with(precedence, "AT-D09")
     expect(
-        "AT-D09" in precedence and "OPEN" in precedence,
+        at_d09 != "",
         "check104g",
-        "the precedence record does not keep AT-D09 OPEN / DEFERRED",
+        "the precedence record does not mention AT-D09 at all",
+    )
+    expect(
+        "OPEN" in at_d09.upper() and "DEFERRED" in at_d09.upper(),
+        "check104g1",
+        f"the AT-D09 statement does not keep it OPEN / DEFERRED: {at_d09!r}",
+    )
+    closure_claims = sorted(
+        claim for claim in ("RESOLVED", "CLOSED", "BINDING", "ACCEPTED") if claim in at_d09.upper()
+    )
+    expect(
+        closure_claims == [],
+        "check104g2",
+        f"the AT-D09 statement claims closure {closure_claims}: {at_d09!r}",
+    )
+    expect(
+        "NOT decided" in at_d09 or "not decided" in at_d09,
+        "check104g3",
+        f"the AT-D09 statement does not record that AT-M1 leaves it undecided: {at_d09!r}",
     )
     expect(
         "Autonomous Team milestones" in manifest,
