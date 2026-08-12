@@ -673,6 +673,119 @@ Step 66C.4 clarification expiry contract: REMAINS AUTHORITATIVE
 RM3 decides nothing. It makes the existing undecided state unfalsifiable.
 
 ---
+
+## 19. AT-M1-RM4 — authority-surface completeness (DEF-R4-01, DEF-R4-02)
+
+R4 established that RM3's guard was scoped along one axis only. This stage replaces it with a
+domain-wide, subject-attributed mechanism.
+
+### Why the previous mechanism could not hold
+
+`states_at_d09_status` required the identifier AND a state token on the same physical line,
+matched the identifier case-sensitively, and ran over one nominated file. Four independent
+escapes followed from that single design: a label whose value continues on the next line; a value
+whose subject is supplied by the enclosing section; a lowercase identifier; any assertion in the
+other fifteen in-scope artifacts.
+
+### Domain enumeration, performed before implementation
+
+```text
+in-scope markdown artifacts     16      (of the 19-path positive scope)
+artifacts naming AT-D09          9
+raw AT-D09 occurrences          46
+attributed assertions           37
+closure-claiming assertions      0      (after the evidence correction below)
+```
+
+Enumeration was re-derived from the artifacts, not from the R4 finding list. The R4 known
+instances were treated as evidence of the class, not as the specification.
+
+### Mechanism: attribution, not line matching
+
+The unit is the ASSERTION, not the line. A value is attributed to AT-D09 only when AT-D09 is its
+subject, across six structural forms:
+
+```text
+register         AT-D09: <value>            value may continue on the next line
+heading-marker   ## 6. AT-D09 ... (OPEN)    parenthesised state in a heading that names it
+section-label    Decision: / DEFERRED       subject supplied by the enclosing AT-D09 section
+table-cell       | ... AT-D09 OPEN |        the cell naming it, not the whole row
+block-entry      AT-D09  <tail>             inside a fenced register block
+prose            AT-D09 is/remains <state>  requires a copula, so a title is not an assertion
+```
+
+Attribution is what makes the guard both complete and quiet. It is why
+`AT-D01 .. AT-D05 (RESOLVED / BINDING), AT-D09 (OPEN)` yields `OPEN` rather than a false closure,
+and why the finding title *"AT-D09 binding status could still be closed"* is correctly not an
+assertion.
+
+### Checks
+
+```text
+check92j  no assertion anywhere in the domain claims closure
+check92k  any assertion stating a state must state OPEN / DEFERRED
+check92l  anti-vacuity floor -- a broken extractor fails loudly instead of passing vacuously
+check92m  AT-M2 authorization registers remain discoverable
+check92n  AT-M2 registers still state NOT AUTHORIZED   (ADV-R3-01, same defect class)
+```
+
+`check92l` is a floor, not proof by count. `check92j` is what proves closure absence; the floor
+exists only so that disabling discovery cannot make `check92j` vacuously true — probe P-EXTRACT
+confirms it fires when the extractor is stubbed out.
+
+Closure vocabulary extended to ANSWERED, COMPLETE, COMPLETED, SUPERSEDED, SUPERSEDES with
+word-boundary matching. AUTHORITATIVE is deliberately excluded: *"Step 66C.4 REMAINS
+AUTHORITATIVE"* is a preservation statement, and treating it as closure would have made the
+guard reject the very sentence it exists to protect.
+
+### Adversary matrix
+
+```text
+axis                              probe       verdict  intended check
+cross-file                        P-CROSS     REJECT   check92j
+cross-section                     P-SECT      REJECT   check92j
+case variation                    P-CASE      REJECT   check92j
+same-line                         P-LINE      REJECT   check92j
+multiline / indented value        P-MULTI     REJECT   check92j
+section-context subject           P-CTX       REJECT   check92j
+alternate vocabulary (ANSWERED)   P-VOCAB     REJECT   check92j
+semantic supersession of 66C.4    P-VOCAB2    REJECT   check92j
+new authoritative surface         P-NEW       REJECT   check92j
+extractor disabled                P-EXTRACT   REJECT   check92l
+AT-M2 register -> AUTHORIZED      P-M2        REJECT   check92n
+
+descriptive prose                 C-PROSE     PASS
+historical / finding title        C-HIST      PASS
+benign non-state metadata         C-META      PASS
+negated closure claim             C-NEG       PASS
+preservation statement            C-PRESERVE  PASS
+```
+
+P-MULTI escaped the first implementation and is recorded as an escape, not a pass: the label
+pattern admitted only a parenthetical between identifier and colon, so `AT-D09 authorization
+state:` fell through to the block-entry rule and its indented value was never read. Fixed by
+bounding a qualifier window before the colon; the probe was not weakened.
+
+### Evidence correction
+
+This document's own section-8 reproduction line stated a mutation in register form
+(`AT_D09:` followed by a closure value) and so read as a canonical status claim in the very
+artifact set the guard protects. It is now described in prose. A record of a defect must not be
+indistinguishable from the defect.
+
+### Status after RM4
+
+```text
+AT-D09:                                   OPEN / DEFERRED
+Section-6 Decision:                       DEFERRED
+Section-8 authorization register:         OPEN
+Step 66C.4 clarification expiry contract: REMAINS AUTHORITATIVE
+AT-M2:                                    NOT AUTHORIZED
+```
+
+RM4 decides nothing. Guarding the AT-M2 register changes no AT-M2 authorization.
+
+---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
 secrets — use neutral labels such as "test host", "internal test runtime", "admin console local
