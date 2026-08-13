@@ -20,7 +20,7 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-08-13
-RECONCILED_AGAINST_MAIN:     5ee8403f883add38a6d39c0aa175897409a89443
+RECONCILED_AGAINST_MAIN:     5968167b547c6aa09d3b45f2808af1ccc5428670
 RECONCILED_BY_STAGE:         PCP-V2.1-RM1
 ```
 
@@ -101,7 +101,7 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    NONE
-GOVERNANCE_MEASURED_AT:      5ee8403f883add38a6d39c0aa175897409a89443
+GOVERNANCE_MEASURED_AT:      5968167b547c6aa09d3b45f2808af1ccc5428670
 GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
 ```
 
