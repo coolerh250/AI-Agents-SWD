@@ -323,11 +323,20 @@ GOVERNANCE_ARTIFACT = re.compile(r"^(scripts/verify_[a-z0-9_]+\.py|tests/test_[a
 
 
 def applicable_governance_verifiers() -> list[str]:
+    """Every HEAD-relative governance verifier except this one.
+
+    Self-measurement is a fixed point, not a check: this gate failing would make itself an
+    unregistered failure, which would make it fail. Its own exit code is the report the caller
+    reads, and its behaviour is covered by tests/test_pcp_v2_control_plane.py. The exclusion is
+    structural, not an accommodation for any stage family.
+    """
+    self_name = pathlib.Path(__file__).name
     scripts = sorted((ROOT / "scripts").glob("verify_*.py"))
     return [
         f"scripts/{path.name}"
         for path in scripts
-        if HEAD_RELATIVE.search(path.read_text(encoding="utf-8", errors="replace"))
+        if path.name != self_name
+        and HEAD_RELATIVE.search(path.read_text(encoding="utf-8", errors="replace"))
     ]
 
 
