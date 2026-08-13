@@ -29,6 +29,10 @@ ROOT = Path(__file__).resolve().parents[1]
 VERIFIER = ROOT / "scripts" / "verify_at_m1_architecture_reset.py"
 
 AT_M1_BASELINE = "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009"
+# Frozen at AT-M1-M1. The reviewed implementation state (AT-M1-R8) and the canonical merge of
+# PR #29, whose second parent is that state.
+AT_M1_STAGE_HEAD = "c80350ecc19e28212d9a95cddeb80a24aabe6eae"
+AT_M1_MERGE_COMMIT = "db4e7a781dcddf4f5ab4ac413457a88bc7bdefa0"
 
 ARCH = "docs/architecture/autonomous-team"
 CONTRACTS = "docs/contracts/autonomous-team"
@@ -82,12 +86,23 @@ def git(*args: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def changed_paths() -> set[str]:
+def paths_over(range_spec: str) -> set[str]:
     return {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{AT_M1_BASELINE}...HEAD").splitlines()
+        for line in git("diff", "--name-only", range_spec).splitlines()
         if line.strip()
     }
+
+
+def changed_paths() -> set[str]:
+    """FROZEN reviewed stage scope. Canonicalization commits land after the stage head, so the
+    reviewed-scope proof must not follow HEAD (AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED)."""
+    return paths_over(f"{AT_M1_BASELINE}...{AT_M1_STAGE_HEAD}")
+
+
+def head_changed_paths() -> set[str]:
+    """LIVE scope. Rejection logic must keep seeing what exists now."""
+    return paths_over(f"{AT_M1_BASELINE}...HEAD")
 
 
 def read(relpath: str) -> str:
@@ -144,7 +159,7 @@ def test_changed_paths_equal_the_registry_exactly():
 
 def test_scope_is_compared_by_set_equality_not_prefix():
     source = read("scripts/verify_at_m1_architecture_reset.py")
-    assert "changed == AT_M1_EXPECTED_PATHS" in source
+    assert "stage_changed == AT_M1_EXPECTED_PATHS" in source
 
 
 def test_all_nineteen_artifacts_exist():
@@ -681,7 +696,14 @@ def test_rm1_milestone_registration_records_real_status():
     flat = re.sub(r"\s+", " ", manifest)
     for milestone in ("AT-M2", "AT-M3", "AT-M4", "AT-M5", "AT-M6"):
         assert "NOT AUTHORIZED" in flat.split(milestone, 1)[1][:200], f"{milestone} not gated"
-    assert "PENDING CANONICAL MERGE" in flat.upper(), "AT-M1 is claimed canonical before merge"
+    # Inverted at AT-M1-M1: PR #29 is merged, so the manifest must claim the opposite, and must
+    # name the reviewed stage head and the merge so the claim is checkable rather than asserted.
+    at_m1_entry = flat.split("AT-M1 Autonomous team", 1)[-1][:400].upper()
+    assert "CLOSED / CANONICAL" in at_m1_entry
+    assert "PR #29 MERGED" in at_m1_entry
+    assert AT_M1_STAGE_HEAD[:7].upper() in at_m1_entry
+    assert AT_M1_MERGE_COMMIT[:7].upper() in at_m1_entry
+    assert "PENDING CANONICAL MERGE" not in flat.upper(), "stale pre-merge status survives"
     assert "M0 — Source of Truth" in manifest, "the original M0..M7 track was disturbed"
 
 
@@ -1355,3 +1377,108 @@ def test_rm7_anti_vacuity_stays_form_granular_and_tolerates_redundancy():
         if (a, kind, form) == (BINDING, "status", "register")
     ]
     assert len(registers) > 1, "the redundancy this test describes no longer exists"
+
+
+# =================================================================================================
+# AT-M1-M1 stage-head freeze. Closes AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED.
+#
+# Two changed-path sets with two responsibilities that must never be interchanged:
+#   POSITIVE  BASELINE...STAGE_HEAD   what was reviewed and accepted  (frozen)
+#   CURRENT   BASELINE...HEAD         what exists now                 (live)
+# =================================================================================================
+
+
+def verifier_source() -> str:
+    return read("scripts/verify_at_m1_architecture_reset.py")
+
+
+def test_m1_positive_scope_range_is_frozen_at_the_reviewed_stage_head():
+    """(A) The reviewed-scope proof must not follow HEAD."""
+    source = verifier_source()
+    assert f'AT_M1_STAGE_HEAD = "{AT_M1_STAGE_HEAD}"' in source
+    assert 'AT_M1_POSITIVE_RANGE = f"{AT_M1_BASELINE}...{AT_M1_STAGE_HEAD}"' in source
+    assert 'AT_M1_CURRENT_RANGE = f"{AT_M1_BASELINE}...HEAD"' in source
+
+
+def test_m1_frozen_positive_scope_is_the_reviewed_nineteen_paths():
+    """(F) The frozen range still yields exactly what AT-M1-R8 accepted."""
+    frozen = changed_paths()
+    assert (
+        frozen == EXPECTED_PATHS
+    ), f"unexpected={sorted(frozen - EXPECTED_PATHS)} missing={sorted(EXPECTED_PATHS - frozen)}"
+    assert len(frozen) == 19
+
+
+def test_m1_canonicalization_commits_do_not_disturb_the_frozen_scope():
+    """(B) HEAD has moved past the stage head, and the positive proof is unaffected."""
+    assert (
+        git("rev-parse", "HEAD") != AT_M1_STAGE_HEAD
+    ), "this test is vacuous until canonicalization commits exist after the stage head"
+    assert changed_paths() == EXPECTED_PATHS
+    assert head_changed_paths() >= changed_paths()
+
+
+def test_m1_rejection_logic_reads_the_current_set_not_the_frozen_one():
+    """(D) check04/05/06 must stay HEAD-relative or they go blind after canonicalization."""
+    source = verifier_source()
+    for call in (
+        "offenders = forbidden_scope_offenders(head_changed)",
+        "breached = protected_breaches(head_changed)",
+        '"source/progress.md" not in head_changed',
+    ):
+        assert call in source, f"rejection logic is not HEAD-relative: {call!r}"
+    assert "forbidden_scope_offenders(stage_changed)" not in source
+    assert "protected_breaches(stage_changed)" not in source
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "agents/runtime/executor.py",
+        "apps/web/console/page.tsx",
+        "migrations/999_add_agent_runtime.sql",
+        "infra/deploy/agent.yaml",
+        "shared/sdk/agents/runner.py",
+    ],
+)
+def test_m1_a_forbidden_path_added_after_the_stage_head_is_still_caught(path):
+    """(C) The reason the rejection set is not frozen: such a path is invisible to the frozen set
+    by construction, and must still be rejected from the live one."""
+    module = verifier_module()
+    frozen = changed_paths()
+    assert path not in frozen
+    assert module.forbidden_scope_offenders(frozen | {path}) == [path]
+
+
+@pytest.mark.parametrize("path", ["source/progress.md", "shared/sdk/tasks/rbac.py"])
+def test_m1_a_protected_file_touched_after_the_stage_head_is_still_caught(path):
+    module = verifier_module()
+    live = head_changed_paths()
+    assert path not in live
+    assert path in module.protected_breaches(live | {path}) or path == "source/progress.md"
+
+
+def test_m1_the_stage_head_pointer_is_pinned_to_the_merge_topology():
+    """(E) Moving AT_M1_STAGE_HEAD -- forward to the merge commit included -- must be rejected.
+
+    The merge commit's second parent IS the reviewed stage head, so the constant cannot be
+    repointed without contradicting the recorded topology.
+    """
+    assert git("rev-parse", f"{AT_M1_MERGE_COMMIT}^2") == AT_M1_STAGE_HEAD
+    assert git("rev-parse", f"{AT_M1_MERGE_COMMIT}^1") == AT_M1_BASELINE
+    source = verifier_source()
+    assert 'git("rev-parse", f"{AT_M1_MERGE_COMMIT}^2") == AT_M1_STAGE_HEAD' in source
+    for wrong in (AT_M1_MERGE_COMMIT, AT_M1_BASELINE):
+        assert git("rev-parse", f"{AT_M1_MERGE_COMMIT}^2") != wrong
+
+
+def test_m1_reviewed_history_is_preserved_in_the_canonical_line():
+    """No rebase, squash or cherry-pick reconstruction: both parents remain reachable."""
+    for sha in (AT_M1_BASELINE, AT_M1_STAGE_HEAD, AT_M1_MERGE_COMMIT):
+        assert (
+            subprocess.run(
+                ["git", "merge-base", "--is-ancestor", sha, "HEAD"], cwd=ROOT, check=False
+            ).returncode
+            == 0
+        ), f"{sha} left the canonical history"
+    assert len(git("rev-parse", f"{AT_M1_MERGE_COMMIT}^@").split()) == 2

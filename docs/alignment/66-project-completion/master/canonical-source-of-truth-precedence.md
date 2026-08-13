@@ -253,9 +253,10 @@ Step 66C.4 clarification expiry contract -- AT-D09 remains OPEN / DEFERRED and i
 ```
 
 ```text
-AT-M1 canonical status:  architecture package on PR #29, NOT YET MERGED.
+AT-M1 canonical status:  CLOSED / CANONICAL on main.
+                         PR #29 MERGED; reviewed stage head c80350e, merge commit db4e7a7.
                          These decisions are the target-architecture authority for the middle
-                         journey; they become canonical on main when PR #29 merges.
+                         journey and are canonical on main.
 PR #28:                  HOLD / PRESERVE / NON-CANONICAL -- future AT-M7 input, not a dependency
                          of AT-M1..AT-M6.
 ```
@@ -269,6 +270,7 @@ Step 67POC.0:        NOT STARTED / NOT AUTHORIZED
 RA-2M:               NOT STARTED / NOT AUTHORIZED
 BE3 resume/replay:   DISABLED
 AT-M2..AT-M8:        NOT AUTHORIZED
+PCP-V2.1:            REQUIRED BEFORE AT-M2
 ```
 
 ---

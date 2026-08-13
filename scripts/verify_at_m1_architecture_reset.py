@@ -8,8 +8,14 @@ that the debug/replan back-edge is contracted, that AT-D09 remains OPEN, that th
 boundary is untouched, that PR #28 stays held, and that this stage introduced no implementation.
 
 Positive scope is a fixed baseline plus an explicit path registry compared by SET EQUALITY -- never
-a broad positive prefix. It is `AT_M1_BASELINE...HEAD` while the branch is open, which is safe only
-because the registry bounds it exactly; the merge stage must freeze the endpoint to the stage head.
+a broad positive prefix. Since AT-M1-M1 the two scopes are SEPARATE concepts:
+
+  AT_M1_POSITIVE_RANGE  BASELINE...STAGE_HEAD  frozen; what was reviewed and accepted
+  AT_M1_CURRENT_RANGE   BASELINE...HEAD        live; what exists now, for rejection logic
+
+Freezing both would let a forbidden path added after the stage head go unseen; freezing neither
+would let canonicalization commits break the reviewed-scope proof. Each range answers exactly one
+question and they are never interchanged.
 
 Starts no runtime, container, database, migration apply or external provider.
 
@@ -32,7 +38,22 @@ MARKER = "AT_M1_ARCHITECTURE_RESET_VERIFY"
 # paths. POST_GOV1_CANONICAL_MAIN is the canonical main after that merge and its canonicalization.
 AT_M1_BASELINE = "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009"
 AT_M1_BASELINE_SHORT = "fa5e5c4"
-AT_M1_POSITIVE_RANGE = f"{AT_M1_BASELINE}...HEAD"
+
+# Frozen at AT-M1-M1: the exact implementation state independently reviewed at AT-M1-R8 and
+# authorized for merge. Canonicalization commits land after it, so the reviewed-scope proof must
+# not move with HEAD.
+AT_M1_STAGE_HEAD = "c80350ecc19e28212d9a95cddeb80a24aabe6eae"
+AT_M1_STAGE_HEAD_SHORT = "c80350e"
+# The canonical merge of PR #29. Its SECOND parent is the reviewed stage head, which pins the
+# constant above topologically: repointing it -- forward to the merge commit included -- stops
+# matching the merge's parentage and fails check01c.
+AT_M1_MERGE_COMMIT = "db4e7a781dcddf4f5ab4ac413457a88bc7bdefa0"
+AT_M1_MERGE_COMMIT_SHORT = "db4e7a7"
+
+# What was reviewed. Never HEAD-relative.
+AT_M1_POSITIVE_RANGE = f"{AT_M1_BASELINE}...{AT_M1_STAGE_HEAD}"
+# What exists now. Never frozen -- a forbidden path added after the stage head must still be seen.
+AT_M1_CURRENT_RANGE = f"{AT_M1_BASELINE}...HEAD"
 
 ARCH = "docs/architecture/autonomous-team"
 CONTRACTS = "docs/contracts/autonomous-team"
@@ -217,6 +238,25 @@ def git(*args: str) -> str:
         ["git", *args], cwd=ROOT, capture_output=True, text=True, encoding="utf-8", check=False
     )
     return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def changed_paths(range_spec: str) -> set[str]:
+    """Repository-relative paths changed over `range_spec`, slash-normalised."""
+    return {
+        line.strip().replace("\\", "/")
+        for line in git("diff", "--name-only", range_spec).splitlines()
+        if line.strip()
+    }
+
+
+def forbidden_scope_offenders(paths: set[str]) -> list[str]:
+    """Implementation paths AT-M1 may never introduce. Callers must pass the CURRENT set."""
+    return sorted(p for p in paths if p.startswith(FORBIDDEN_SCOPE_PREFIXES))
+
+
+def protected_breaches(paths: set[str]) -> list[str]:
+    """Frozen contract files that may never be modified. Callers must pass the CURRENT set."""
+    return sorted(p for p in paths if p in FORBIDDEN_EXACT_PATHS)
 
 
 def task_roles_from_source() -> set[str]:
@@ -894,17 +934,37 @@ def main() -> int:  # noqa: PLR0915
         "check01",
         f"the AT-M1 canonical baseline {AT_M1_BASELINE_SHORT} is not an ancestor of HEAD",
     )
-    changed = {
-        line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", AT_M1_POSITIVE_RANGE).splitlines()
-        if line.strip()
-    }
     expect(
-        changed == AT_M1_EXPECTED_PATHS,
+        subprocess.run(
+            ["git", "merge-base", "--is-ancestor", AT_M1_STAGE_HEAD, "HEAD"], cwd=ROOT, check=False
+        ).returncode
+        == 0,
+        "check01a",
+        f"the reviewed AT-M1 stage head {AT_M1_STAGE_HEAD_SHORT} is not reachable from HEAD; the "
+        "reviewed implementation must never leave the canonical history",
+    )
+    expect(
+        git("rev-parse", f"{AT_M1_MERGE_COMMIT}^2") == AT_M1_STAGE_HEAD,
+        "check01c",
+        f"the canonical merge {AT_M1_MERGE_COMMIT_SHORT} does not have the reviewed stage head "
+        f"{AT_M1_STAGE_HEAD_SHORT} as its merged parent; the frozen pointer has been moved",
+    )
+    expect(
+        git("rev-parse", f"{AT_M1_MERGE_COMMIT}^1") == AT_M1_BASELINE,
+        "check01d",
+        f"the canonical merge {AT_M1_MERGE_COMMIT_SHORT} does not sit directly on the canonical "
+        f"baseline {AT_M1_BASELINE_SHORT}; the merge topology has been rewritten",
+    )
+    # FROZEN: what AT-M1 was reviewed and accepted to be. Independent of later commits.
+    stage_changed = changed_paths(AT_M1_POSITIVE_RANGE)
+    # LIVE: what exists now. Rejection logic below reads this one, never the frozen set.
+    head_changed = changed_paths(AT_M1_CURRENT_RANGE)
+    expect(
+        stage_changed == AT_M1_EXPECTED_PATHS,
         "check02",
-        "changed paths are not exactly the AT-M1 registry: "
-        f"unexpected={sorted(changed - AT_M1_EXPECTED_PATHS)} "
-        f"missing={sorted(AT_M1_EXPECTED_PATHS - changed)}",
+        "reviewed stage paths are not exactly the AT-M1 registry: "
+        f"unexpected={sorted(stage_changed - AT_M1_EXPECTED_PATHS)} "
+        f"missing={sorted(AT_M1_EXPECTED_PATHS - stage_changed)}",
     )
     expect(
         len(AT_M1_EXPECTED_PATHS) == 19,
@@ -923,7 +983,7 @@ def main() -> int:  # noqa: PLR0915
         "the authorized canonical registration paths are not in the AT-M1 registry",
     )
     gov1_contamination = sorted(
-        p for p in changed if "gov1" in p or p.startswith("scripts/verify_step66")
+        p for p in stage_changed if "gov1" in p or p.startswith("scripts/verify_step66")
     )
     expect(
         gov1_contamination == [],
@@ -932,27 +992,29 @@ def main() -> int:  # noqa: PLR0915
     )
 
     # --- 2. no implementation (INV-10) --------------------------------------------------------
-    offenders = sorted(p for p in changed if p.startswith(FORBIDDEN_SCOPE_PREFIXES))
+    # HEAD-relative on purpose: freezing these at the stage head would blind them to anything
+    # added after the reviewed implementation.
+    offenders = forbidden_scope_offenders(head_changed)
     expect(offenders == [], "check04", f"AT-M1 introduced implementation paths: {offenders}")
-    breached = sorted(p for p in changed if p in FORBIDDEN_EXACT_PATHS)
+    breached = protected_breaches(head_changed)
     expect(breached == [], "check05", f"a protected file was modified: {breached}")
     expect(
-        "source/progress.md" not in changed,
+        "source/progress.md" not in head_changed,
         "check06",
         "source/progress.md must remain unchanged (ADV-DRIFT-PROGRESS-01)",
     )
     expect(
-        not any(p.endswith(".sql") for p in changed),
+        not any(p.endswith(".sql") for p in head_changed),
         "check07",
         "AT-M1 must create no migration",
     )
     expect(
-        not any(p.endswith((".tsx", ".ts", ".jsx", ".css")) for p in changed),
+        not any(p.endswith((".tsx", ".ts", ".jsx", ".css")) for p in head_changed),
         "check08",
         "AT-M1 must create no frontend source",
     )
     expect(
-        sorted(p for p in changed if not p.startswith("docs/")) == sorted([VERIFIER, TESTS]),
+        sorted(p for p in stage_changed if not p.startswith("docs/")) == sorted([VERIFIER, TESTS]),
         "check09",
         "the only non-docs paths may be the AT-M1 verifier and its tests",
     )
@@ -1424,7 +1486,7 @@ def main() -> int:  # noqa: PLR0915
         "the binding decisions do not record the PR #28 hold",
     )
     expect(
-        not any("delivery_acceptance" in p or p.startswith("migrations/036") for p in changed),
+        not any("delivery_acceptance" in p or p.startswith("migrations/036") for p in head_changed),
         "check104",
         "AT-M1 must not touch PR #28 content",
     )
@@ -1514,10 +1576,23 @@ def main() -> int:  # noqa: PLR0915
             label,
             f"{milestone} is not registered as NOT AUTHORIZED in the milestone manifest",
         )
+    # Inverted at AT-M1-M1: before the merge this asserted PENDING CANONICAL MERGE. The claim is
+    # now the opposite one, and it is pinned to the recorded merge so it cannot be made true by
+    # wording alone.
+    at_m1_entry = flat_manifest.split("AT-M1 Autonomous team", 1)[-1][:400].upper()
     expect(
-        "PENDING CANONICAL MERGE" in flat_manifest.upper(),
+        "CLOSED / CANONICAL" in at_m1_entry
+        and "PR #29 MERGED" in at_m1_entry
+        and AT_M1_MERGE_COMMIT_SHORT.upper() in at_m1_entry
+        and AT_M1_STAGE_HEAD_SHORT.upper() in at_m1_entry,
         "check104o",
-        "the milestone manifest claims AT-M1 is canonical before PR #29 merges",
+        "the milestone manifest does not register AT-M1 as CLOSED / CANONICAL with the merged "
+        f"PR #29, reviewed stage head {AT_M1_STAGE_HEAD_SHORT} and merge {AT_M1_MERGE_COMMIT_SHORT}",
+    )
+    expect(
+        "PENDING CANONICAL MERGE" not in flat_manifest.upper(),
+        "check104o1",
+        "the milestone manifest still says AT-M1 is pending canonical merge after PR #29 merged",
     )
     expect(
         not claims_canonical(table_row(manifest, "AT-M7") or "")

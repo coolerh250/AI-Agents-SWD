@@ -1141,6 +1141,98 @@ No runtime, API, database, schema, identity, security, dependency, infrastructur
 deployment path was touched. This record states no governance decision; the canonical state lives
 in the binding decisions contract.
 
+## 23. AT-M1-M1 — canonical merge and stage-head freeze
+
+PR #29 was merged after the Product Owner granted authorization on the AT-M1-R8 result
+(PASS_WITH_ADVISORY, no blockers). This stage is mechanical: it introduces no architecture entity,
+no capability claim and no Product Owner decision.
+
+### Merge
+
+| fact | value |
+| --- | --- |
+| pre-merge canonical main | fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009 |
+| reviewed stage head | c80350ecc19e28212d9a95cddeb80a24aabe6eae |
+| canonical merge commit | db4e7a781dcddf4f5ab4ac413457a88bc7bdefa0 |
+| method | merge commit, two parents |
+
+No rebase, squash, force-push or cherry-pick reconstruction. The merge commit's first parent is
+the pre-merge canonical main and its second parent is the reviewed stage head, so both lines
+remain reachable and every reviewed commit survives.
+
+### PR metadata reconciled before merge
+
+The pull request description is the artifact a merge decision is read from, so ADV-R6-02 came into
+scope for its metadata portion only. Reconciled against the reviewed evidence: the baseline was
+still the pre-RM1 one, the changed-path count still said 17, the verifier still said 164 checks and
+the tests still said 52. They now read the measured 19 paths, 234 checks and 180 tests, name the
+reviewed stage head, record the review chain through R8 and the granted authorization, and list the
+fourteen advisories carried as debt. No implementation history was rewritten and no code changed.
+
+### Stage-head freeze
+
+This closes the long-carried AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED. The verifier previously derived
+positive scope from BASELINE...HEAD, which stops describing the reviewed implementation the moment
+a canonicalization commit lands. Two ranges now answer two different questions and are never
+interchanged.
+
+| range | question | used by |
+| --- | --- | --- |
+| BASELINE...STAGE_HEAD (frozen) | what was reviewed and accepted | exact-scope equality, registry shape, contamination |
+| BASELINE...HEAD (live) | what exists now | forbidden-path, protected-file and progress-file rejection |
+
+Freezing the rejection side as well would have been the quiet failure: a runtime, migration, infra
+or protected-file change landing after the stage head would have been invisible. Freezing neither
+would have made a routine evidence commit look like a scope violation.
+
+The frozen pointer is pinned topologically rather than by assertion. The merge commit's second
+parent IS the reviewed stage head, so the constant cannot be repointed without contradicting the
+recorded merge. This matters because the first implementation was pinned only by its consequences,
+and moving the pointer FORWARD to the merge commit passed every gate: the reviewed range happened
+to yield the same 19 paths there. That was found by probe, recorded here as a miss, and fixed
+before the tests were written.
+
+### Freeze probes
+
+| probe | expected | measured |
+| --- | --- | --- |
+| runtime path added after the stage head | REJECT | REJECT, check04 |
+| migration added after the stage head | REJECT | REJECT, check04 and check07 |
+| frontend file added after the stage head | REJECT | REJECT, check04 and check08 |
+| infrastructure file added after the stage head | REJECT | REJECT, check04 |
+| protected progress file touched after the stage head | REJECT | REJECT, check05 and check06 |
+| evidence document appended after the stage head | PASS | PASS |
+| milestone manifest appended after the stage head | PASS | PASS |
+| stage-head pointer moved to the merge commit | REJECT | REJECT, check01c |
+| stage-head pointer moved to the baseline | REJECT | REJECT, check01c |
+| stage-head pointer moved to an earlier stage head | REJECT | REJECT, check01c |
+
+### Canonical status transition
+
+The milestone manifest, the precedence record and the architecture reset status block now register
+AT-M1 as closed and canonical, name the reviewed stage head and the merge, and record that the next
+acceptance gate is required before the following milestone. Two assertions were inverted rather
+than deleted, because their pre-merge form asserted the opposite truth: the manifest check and its
+test previously required the pending-merge wording, and now require the closed wording plus the
+recorded stage head and merge, so neither can be satisfied by wording alone.
+
+The open clarification-expiry question, the Step 66C.4 authority, the carrier policy and the atomic
+carrier value rule are all unchanged by this stage. The following milestone remains unauthorized.
+
+### G3
+
+| gate | result |
+| --- | --- |
+| AT-M1 verifier | 238 checks, 0 failures |
+| AT-M1 focused tests | 193 passed |
+| governance sentinels | PASS |
+| frozen positive scope | 19 paths |
+| ruff / black / mypy / diff-check | PASS |
+| identifier and credential scan | 0 |
+
+Fourteen advisories carried from the R4 through R8 reviews remain open as governance debt and are
+not touched here. Nothing in this stage closes them, and the record does not claim otherwise.
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment

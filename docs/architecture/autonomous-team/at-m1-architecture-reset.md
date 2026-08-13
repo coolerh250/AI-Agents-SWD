@@ -198,15 +198,17 @@ merged into project surfaces     execution lineage, not the route's existence
 ## 6. Status
 
 ```text
-AT_M1:                           PASS
+AT_M1:                           CLOSED / CANONICAL
+PR29:                            MERGED
 AUTONOMOUS_TEAM_ARCHITECTURE:    DEFINED
-AT_D01_D05:                      DOCUMENTED / PROPOSED FOR CANONICAL MERGE
+AT_D01_D05:                      CANONICAL / BINDING
 AT_D09:                          OPEN
 RUNTIME_IMPLEMENTATION:          NOT STARTED
 MIGRATION:                       NONE
 FRONTEND:                        NONE
 PR28:                            HOLD / UNCHANGED / NON-CANONICAL
 AT_M2:                           NOT AUTHORIZED
+PCP_V2_1:                        REQUIRED BEFORE AT_M2
 PRODUCTION_EXECUTED_TRUE_COUNT:  0
 ```
 

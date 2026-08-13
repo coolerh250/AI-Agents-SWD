@@ -445,9 +445,10 @@ AT-M0  Autonomous team rebaseline and capability audit
        Redis stream dispatch is not discussion and that template planning is not planning.
 
 AT-M1  Autonomous team architecture reset
-       Status: ARCHITECTURE PACKAGE ON PR #29 — RM1 COMPLETE, PENDING CANONICAL MERGE.
-       AT-D01..AT-D05 binding decisions, AT-ADR-01..08, canonical entity contracts and the
-       capability state registry. NOT canonical on main until PR #29 merges.
+       Status: CLOSED / CANONICAL.
+       PR #29 MERGED. Reviewed stage head c80350e, canonical merge commit db4e7a7.
+       AT-D01..AT-D05, AT-D10 and AT-D10.1 binding decisions, AT-ADR-01..08, canonical entity
+       contracts and the capability state registry, canonical on main.
        Architecture, contract and documentation only; no runtime.
 
 AT-M2  Team identity and collaboration substrate
