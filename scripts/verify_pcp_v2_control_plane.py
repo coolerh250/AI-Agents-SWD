@@ -299,6 +299,83 @@ def invariant_violations(
     return violations
 
 
+# =================================================================================================
+# Measured debt reconciliation (Step PCP-V2.1-RM1)
+#
+# "BLOCKERS: NONE" used to mean "the stage author did not notice one". PCP-V2.1-A asserted it while
+# two governance verifiers were failing on canonical main, and the failures hid behind ADV-R4-01
+# because they belonged to the same verifier family. Family-level debt cannot distinguish a known
+# failure from a new one beside it, so identity here is EXACT.
+# =================================================================================================
+
+GOVERNANCE_REGRESSION = "GOVERNANCE_REGRESSION"
+
+# A governance verifier is applicable to a change when it derives its own changed-path set against
+# live HEAD -- those are exactly the ones an incoming path can break. Derived structurally, so a
+# verifier cannot escape the set by not being nominated. PCP-V2.1-A hand-picked four sentinels and
+# missed the one that actually failed.
+HEAD_RELATIVE = re.compile(
+    r'"--name-only"[^\n]*"HEAD"|\.\.\.HEAD|--name-only[^\n]*HEAD|"HEAD"\s*\)'
+)
+
+# Paths whose change invalidates a recorded governance measurement.
+GOVERNANCE_ARTIFACT = re.compile(r"^(scripts/verify_[a-z0-9_]+\.py|tests/test_[a-z0-9_]+\.py)$")
+
+
+def applicable_governance_verifiers() -> list[str]:
+    scripts = sorted((ROOT / "scripts").glob("verify_*.py"))
+    return [
+        f"scripts/{path.name}"
+        for path in scripts
+        if HEAD_RELATIVE.search(path.read_text(encoding="utf-8", errors="replace"))
+    ]
+
+
+def measured_governance_failures() -> list[str]:
+    """Exact failure identities from an actual run of the applicable set."""
+    failures = []
+    for relpath in applicable_governance_verifiers():
+        result = subprocess.run(
+            [sys.executable, relpath],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        if result.returncode != 0:
+            failures.append(f"verifier:{pathlib.Path(relpath).name}")
+    return sorted(failures)
+
+
+def registered_debt_ids(pm_doc: str) -> set[str]:
+    """Exact registered failure identities, read from the PM state rather than hard-coded."""
+    return {
+        line.strip().removeprefix("- ").strip()
+        for line in pm_doc.splitlines()
+        if line.strip().removeprefix("- ").startswith(("verifier:", "test:"))
+    }
+
+
+def new_unregistered_failures(measured: list[str], registered: set[str]) -> list[str]:
+    """MEASURED - REGISTERED. Non-empty means BLOCKERS may not be NONE."""
+    return sorted(set(measured) - registered)
+
+
+def governance_measurement_stale(pm: dict[str, str]) -> list[str]:
+    """Governance artifacts changed since the recorded measurement, so it no longer speaks."""
+    measured_at = pm.get("GOVERNANCE_MEASURED_AT", "")
+    if not commit_exists(measured_at):
+        return ["GOVERNANCE_MEASURED_AT names no commit in this repository"]
+    changed = [
+        line.strip()
+        for line in git("diff", "--name-only", f"{measured_at}...HEAD").splitlines()
+        if GOVERNANCE_ARTIFACT.match(line.strip())
+    ]
+    return changed
+
+
 def confirm_remote(pm: dict[str, str]) -> list[str]:
     """Machine-confirm pull-request state. Opt-in: the default path stays offline."""
     conflicts = []
@@ -414,6 +491,42 @@ def main() -> int:
         "the AT-M1 denylist transition hazard is not recorded as requiring a disposition",
     )
 
+    # --- measured debt reconciliation (PCP-V2.1-RM1) ------------------------------------------
+    pm_doc = pathlib.Path(fixture).read_text(encoding="utf-8") if fixture else read(PM_STATE)
+    registered = registered_debt_ids(pm_doc)
+    expect(
+        bool(registered),
+        "check17",
+        "the PM state registers no exact failure identities, so BLOCKERS cannot be reconciled",
+    )
+    stale_since = governance_measurement_stale(pm)
+    expect(
+        stale_since == [],
+        "check18",
+        "the recorded governance measurement is stale -- these governance artifacts changed "
+        f"since GOVERNANCE_MEASURED_AT and it must be retaken: {stale_since[:6]}",
+    )
+    if "--governance" in sys.argv:
+        measured = measured_governance_failures()
+        unregistered = new_unregistered_failures(measured, registered)
+        for failure in unregistered:
+            print(f"  [{GOVERNANCE_REGRESSION}] unregistered governance failure: {failure}")
+        expect(
+            unregistered == [],
+            "check19",
+            f"{GOVERNANCE_REGRESSION}: {len(unregistered)} measured failure(s) are not registered "
+            "debt, so BLOCKERS: NONE is invalid",
+        )
+        notes.append(
+            f"governance: {len(applicable_governance_verifiers())} applicable, "
+            f"{len(measured)} failing, all registered"
+        )
+    expect(
+        pm.get("BLOCKERS", "").upper() != "NONE" or stale_since == [],
+        "check20",
+        "BLOCKERS: NONE is claimed against a stale governance measurement",
+    )
+
     if remote:
         remote_conflicts = confirm_remote(pm)
         for conflict in remote_conflicts:
@@ -422,7 +535,7 @@ def main() -> int:
 
     for note in notes:
         print(f"  [note] {note}")
-    checks = 17 if remote else 16
+    checks = 21 if remote else 20
     print(f"{MARKER}: checks={checks} failures={len(failures)}")
     print(f"{MARKER}: {'PASS' if not failures else 'FAIL'}")
     return 1 if failures else 0

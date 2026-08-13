@@ -20,8 +20,8 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-08-13
-RECONCILED_AGAINST_MAIN:     2a2facc898aa3738322d4487cbfce591cfbadc46
-RECONCILED_BY_STAGE:         PCP-V2.1-A
+RECONCILED_AGAINST_MAIN:     93f6921e55039798f6f11fe2fbe0afe6dd4682d6
+RECONCILED_BY_STAGE:         PCP-V2.1-RM1
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,10 +34,10 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M1
 CURRENT_MILESTONE_STATE:     CLOSED / CANONICAL
-PREVIOUS_COMPLETED_STAGE:    AT-M1-M1
+PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-B
 CURRENT_GATE:                PCP-V2.1
-CURRENT_STAGE:               PCP-V2.1-A
-NEXT_PERMITTED_STAGE:        PCP-V2.1-B
+CURRENT_STAGE:               PCP-V2.1-RM1
+NEXT_PERMITTED_STAGE:        PCP-V2.1-C
 ```
 
 ## 3. Engineering truth
@@ -80,7 +80,9 @@ AT-D09 is an open question, not a decision. Nothing downstream may represent it 
 ```text
 AT_M2:                       NOT AUTHORIZED
 AT_M3_TO_AT_M8:              NOT AUTHORIZED
-PCP_V2_1:                    REQUIRED BEFORE AT_M2
+PCP_V2_1:                    IN PROGRESS / REMEDIATION
+PCP_V2_1_B:                  FAIL / SUPERSEDED BY RE-ACCEPTANCE
+AT_M2_GATE:                  PCP_V2_1 REQUIRED BEFORE AT_M2
 RUNTIME_IMPLEMENTATION:      NOT STARTED
 PRODUCTION_AUTHORIZATION:    NOT GRANTED
 PRODUCTION_EXECUTED_TRUE_COUNT: 0
@@ -99,7 +101,40 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    NONE
+GOVERNANCE_MEASURED_AT:      93f6921e55039798f6f11fe2fbe0afe6dd4682d6
+GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
 ```
+
+`BLOCKERS: NONE` is a **measured** claim, not an assertion that nobody noticed one. For the
+governance domain it means exactly this: the applicable governance verification set was executed,
+and every measured failure appears in the registered-debt list below. If any measured failure is
+absent from that list, `BLOCKERS: NONE` is invalid and the control plane returns
+`GOVERNANCE_REGRESSION`. The claim is only as fresh as `GOVERNANCE_MEASURED_AT`; if any governance
+artifact has changed since that commit, the measurement must be retaken before the claim stands.
+
+### Registered failure identities
+
+Exact identities, not families. A new failure inside a verifier or test module that already
+appears here is still a new failure — family-level debt would let a regression hide behind an
+advisory with the same signature, which is exactly how DEF-PCPB-01 stayed invisible.
+
+```text
+- verifier:verify_step66d_align1_rm1_fixed_range_remediation.py
+- test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_66d_decisions_untouched_by_this_remediation
+- test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_rm1_verifier_passes
+- verifier:verify_step66c4_be1_merge.py
+- verifier:verify_step66c4_be3_a_authorization_foundation.py
+- verifier:verify_step66c4_be3_b_c1_authority_routing_alignment.py
+- verifier:verify_step66c4_be3_b_operator_resume.py
+- verifier:verify_step66c4_be3_c_authorized_replay.py
+- verifier:verify_step66c4_be3_planning.py
+- verifier:verify_step66c4_be3_ra1d_missing_config_json.py
+```
+
+The first three are ADV-R4-01, the long-carried ALIGN1 fixed-range debt. The seven that follow are
+ADV-PCPRM1-01: HEAD-relative 66C4 verifier failures that were already failing at the
+`GOVERNANCE_DEBT_BASELINE` commit and had never been registered anywhere. Registering them makes
+them visible; it does not close them, and nothing in this record claims they are fixed.
 
 Carried governance debt, none of it blocking. Nothing here is closed by being listed.
 
