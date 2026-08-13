@@ -137,7 +137,33 @@ I7  the next stage must satisfy its roadmap prerequisites
 
 I7 currently means: AT-M2 requires PCP-V2.1 to have passed. Until then AT-M2 is NOT AUTHORIZED.
 
-## 11. Memory drift gate
+## 11. What BLOCKERS: NONE means
+
+It does not mean "the stage author did not notice a blocker". For the governance domain it means
+all three of these, and it is machine-checked:
+
+```text
+1  the APPLICABLE governance verification set was executed
+   -- derived, never nominated: every verifier that computes its own changed-path set against
+      live HEAD, because those are exactly the ones an incoming path can break
+2  every MEASURED failure appears in the registered-debt list, by EXACT identity
+   -- verifier:<file> and test:<nodeid>; a family or a module is not an identity
+3  the measurement is FRESH
+   -- invalidated as soon as any governance artifact changes after it was taken
+```
+
+```text
+NEW_UNREGISTERED = MEASURED_FAILURE_IDS - REGISTERED_DEBT_IDS
+NEW_UNREGISTERED non-empty  ->  BLOCKERS may not be NONE  ->  GOVERNANCE_REGRESSION
+```
+
+Both halves of this were learned the hard way. A stage nominated four sentinels and missed the one
+that broke; the derived set later found a third site that the nomination had also missed. And debt
+recorded at family granularity let a new failure hide behind an existing advisory that shared its
+verifier family — the register said BLOCKERS: NONE while two governance verifiers were failing on
+canonical main.
+
+## 12. Memory drift gate
 
 The drift gate reconciles the PM State Snapshot against canonical engineering truth and
 distinguishes two failure modes:

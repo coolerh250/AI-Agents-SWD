@@ -27,7 +27,12 @@ PM_STATE = ROOT / "docs" / "governance" / "AI_AGENTS_PM_STATE.md"
 CONTRACT = ROOT / "docs" / "governance" / "project-control-plane-v2.md"
 RECOVERY = ROOT / "docs" / "governance" / "pcp-v2-recovery.md"
 
-CANONICAL_MAIN = "2a2facc898aa3738322d4487cbfce591cfbadc46"
+
+def snapshot_main() -> str:
+    """Read from the snapshot, never pinned to a constant: the value legitimately moves."""
+    return module().pm_state_fields()["RECONCILED_AGAINST_MAIN"]
+
+
 AT_M1_STAGE_HEAD = "c80350ecc19e28212d9a95cddeb80a24aabe6eae"
 AT_M1_MERGE_COMMIT = "db4e7a781dcddf4f5ab4ac413457a88bc7bdefa0"
 PR28_HEAD = "c9145cd848a211a9dd2bbff672c532da364eaa55"
@@ -87,7 +92,7 @@ def test_pcp_canonical_truth_is_read_from_the_repository_not_hard_coded():
     for field in ("AT-D09", "AT-D10", "AT-D10.1", "AT_M2", "AT_M1", "PR29"):
         assert truth[field], f"{field} was not derived from a canonical artifact"
     source = VERIFIER.read_text(encoding="utf-8")
-    assert CANONICAL_MAIN not in source, "the canonical main SHA is hard-coded into the gate"
+    assert snapshot_main() not in source, "the canonical main SHA is hard-coded into the gate"
     assert AT_M1_MERGE_COMMIT not in source, "the merge commit is hard-coded into the gate"
 
 
@@ -95,7 +100,10 @@ def test_pcp_snapshot_is_versioned_and_reconcilable():
     fields = module().pm_state_fields()
     assert fields["PM_STATE_VERSION"] == "1"
     assert fields["PM_STATE_SCHEMA"] == "pcp-v2"
-    assert fields["RECONCILED_AGAINST_MAIN"] == CANONICAL_MAIN
+    recorded = fields["RECONCILED_AGAINST_MAIN"]
+    loaded = module()
+    assert loaded.commit_exists(recorded), recorded
+    assert loaded.is_ancestor(recorded, loaded.canonical_main()), recorded
     assert fields["AT_M1_STAGE_HEAD"] == AT_M1_STAGE_HEAD
     assert fields["AT_M1_MERGE_COMMIT"] == AT_M1_MERGE_COMMIT
 
@@ -167,8 +175,8 @@ CONTRADICTIONS = [
         "C5_wrong_canonical_main",
         [
             (
-                f"RECONCILED_AGAINST_MAIN:     {CANONICAL_MAIN}",
-                f"RECONCILED_AGAINST_MAIN:     {PR28_HEAD}",
+                "RECONCILED_AGAINST_MAIN:     ",
+                f"RECONCILED_AGAINST_MAIN:     {PR28_HEAD}  # was ",
             )
         ],
     ),
@@ -385,3 +393,119 @@ def test_pcp_governance_paths_do_not_cross_an_at_m1_denylist():
     }
     assert loaded.forbidden_scope_offenders(added) == []
     assert loaded.protected_breaches(added) == []
+
+
+# =================================================================================================
+# 7. Measured debt reconciliation (Step PCP-V2.1-RM1)
+#
+# DEF-PCPB-01: two governance verifiers were failing on canonical main while the snapshot said
+# BLOCKERS: NONE, and the failures hid behind ADV-R4-01 because they shared its verifier family.
+# Debt classified by family cannot tell a known failure from a new one standing next to it.
+# =================================================================================================
+
+
+ADV_R4_01 = (
+    "test:tests/test_step66d_align1_rm1_fixed_range_remediation.py"
+    "::test_66d_decisions_untouched_by_this_remediation",
+    "test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_rm1_verifier_passes",
+)
+
+
+def test_rm1_applicable_governance_set_is_derived_not_nominated():
+    """PCP-V2.1-A hand-picked four sentinels and missed the guard that failed."""
+    loaded = module()
+    applicable = loaded.applicable_governance_verifiers()
+    assert len(applicable) > 20, "the applicable set looks hand-picked"
+    for required in (
+        "scripts/verify_step66d_align1_delivery_decision_model.py",
+        "scripts/verify_at_m1_gov1_stage_family_compatibility.py",
+        "scripts/verify_at_m1_gov1_m1_canonical_merge.py",
+        "scripts/verify_at_m1_architecture_reset.py",
+    ):
+        assert required in applicable, f"{required} escaped the applicable set"
+    assert "scripts/verify_pcp_v2_control_plane.py" not in applicable, "self-measurement"
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "HEAD_RELATIVE" in source and "glob" in source, "the set is not derived structurally"
+
+
+def test_rm1_registered_debt_is_read_from_the_pm_state():
+    registered = module().registered_debt_ids(PM_STATE.read_text(encoding="utf-8"))
+    assert len(registered) >= 10
+    for known in ADV_R4_01:
+        assert known in registered
+
+
+def test_rm1_a_new_failure_cannot_hide_behind_debt_in_the_same_family():
+    """THE camouflage probe. Two registered failures plus one new one in the SAME module."""
+    loaded = module()
+    registered = loaded.registered_debt_ids(PM_STATE.read_text(encoding="utf-8"))
+    intruder = (
+        "test:tests/test_step66d_align1_rm1_fixed_range_remediation.py"
+        "::test_a_brand_new_failure_in_the_same_module"
+    )
+    measured = [*ADV_R4_01, intruder]
+    new = loaded.new_unregistered_failures(measured, registered)
+    assert new == [intruder], f"the intruder was camouflaged by its family: {new}"
+
+
+def test_rm1_the_exact_registered_pair_alone_raises_nothing():
+    """The control. Without it the probe above would pass on a blanket-reject rule."""
+    loaded = module()
+    registered = loaded.registered_debt_ids(PM_STATE.read_text(encoding="utf-8"))
+    assert loaded.new_unregistered_failures(list(ADV_R4_01), registered) == []
+
+
+def test_rm1_a_new_verifier_failure_in_a_registered_family_is_new():
+    loaded = module()
+    registered = loaded.registered_debt_ids(PM_STATE.read_text(encoding="utf-8"))
+    sibling = "verifier:verify_step66c4_be3_z_something_else.py"
+    assert loaded.new_unregistered_failures([sibling], registered) == [sibling]
+
+
+def test_rm1_debt_identity_is_exact_not_family_shaped():
+    """A family prefix must never be accepted as a debt identity."""
+    loaded = module()
+    registered = loaded.registered_debt_ids(PM_STATE.read_text(encoding="utf-8"))
+    assert not any(entry.endswith(("*", "/", "::")) for entry in registered)
+    assert all(":" in entry for entry in registered)
+
+
+def test_rm1_blockers_none_is_a_measured_claim_not_an_assertion():
+    flat = re.sub(r"\s+", " ", PM_STATE.read_text(encoding="utf-8"))
+    assert "is a **measured** claim" in flat
+    assert "not an assertion that nobody noticed one" in flat
+    assert "GOVERNANCE_REGRESSION" in flat
+
+
+def test_rm1_stale_measurement_invalidates_the_blockers_claim(tmp_path):
+    """A measurement taken before a governance artifact changed no longer speaks for HEAD."""
+    fixture = fixture_from(
+        tmp_path,
+        "stale_measurement",
+        (
+            f"GOVERNANCE_MEASURED_AT:      {module().pm_state_fields()['GOVERNANCE_MEASURED_AT']}",
+            "GOVERNANCE_MEASURED_AT:      " "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009",
+        ),
+    )
+    result = run_verifier("--pm-state", str(fixture))
+    assert result.returncode != 0, result.stdout
+    assert "stale" in result.stdout
+
+
+def test_rm1_governance_admission_is_by_domain_not_family():
+    """The PCP paths must be admitted by the same rule an unseen family would use."""
+    spec = importlib.util.spec_from_file_location(
+        "align1", ROOT / "scripts" / "verify_step66d_align1_delivery_decision_model.py"
+    )
+    align1 = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(align1)
+    assert not hasattr(align1, "REGISTERED_GOVERNANCE_FAMILIES")
+    for path in (
+        "scripts/verify_pcp_v2_control_plane.py",
+        "tests/test_pcp_v2_control_plane.py",
+        "scripts/verify_zzz_family_nobody_has_invented_yet.py",
+        "tests/test_zzz_family_nobody_has_invented_yet.py",
+    ):
+        assert align1.is_admitted_current_state_path(path), path
+    for path in ("scripts/at_runtime_patch.py", "agents/x/src/a.py", "migrations/9.sql"):
+        assert not align1.is_admitted_current_state_path(path), path
