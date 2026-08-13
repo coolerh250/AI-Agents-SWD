@@ -326,24 +326,26 @@ def test_probe_untampered_control_passes(probe_worktree):
     assert "AT_M1_GOV1_STAGE_FAMILY_COMPATIBILITY_VERIFY: PASS" in result.stdout
 
 
-def test_probe_m01_remove_at_verifier_registration(probe_worktree):
+def test_probe_m01_verifier_pattern_removed(probe_worktree):
+    """Deleting the verifier half of the domain rule must be rejected."""
     restore(probe_worktree)
     apply_mutation(
         probe_worktree,
         ALIGN1_VERIFIER_REL,
-        r'r"^scripts/verify_at_m\d+[a-z0-9_]*\.py$"',
-        r'r"^scripts/verify_NOTHING_at_m\d+[a-z0-9_]*\.py$"',
+        r'    r"^scripts/verify_[a-z0-9_]+\.py$",',
+        "",
     )
     assert_rejected(probe_worktree, "M01")
 
 
-def test_probe_m02_remove_at_test_registration(probe_worktree):
+def test_probe_m02_test_pattern_removed(probe_worktree):
+    """Deleting the mirrored-test half of the domain rule must be rejected."""
     restore(probe_worktree)
     apply_mutation(
         probe_worktree,
         ALIGN1_VERIFIER_REL,
-        r'r"^tests/test_at_m\d+[a-z0-9_]*\.py$"',
-        r'r"^tests/test_NOTHING_at_m\d+[a-z0-9_]*\.py$"',
+        r'    r"^tests/test_[a-z0-9_]+\.py$",',
+        "",
     )
     assert_rejected(probe_worktree, "M02")
 
@@ -381,15 +383,20 @@ def test_probe_m05_catch_all_verify_prefix(probe_worktree):
     assert_rejected(probe_worktree, "M05")
 
 
-def test_probe_m06_accept_unregistered_stage_family(probe_worktree):
+def test_probe_m06_stage_family_registry_reintroduced(probe_worktree):
+    """The recurrence probe.
+
+    Putting a stage-family registry back must fail even though it changes no current admission
+    decision. This defect grew back twice through a registry that still read as the place to add
+    the next family; the guard has to fire on the SHAPE returning, not on a path being rejected.
+    """
     restore(probe_worktree)
     apply_mutation(
         probe_worktree,
         ALIGN1_VERIFIER_REL,
-        "REGISTERED_GOVERNANCE_FAMILIES: tuple[tuple[str, str, str], ...] = (",
-        "REGISTERED_GOVERNANCE_FAMILIES: tuple[tuple[str, str, str], ...] = (\n"
-        '    ("unregistered-family", r"^scripts/verify_unregistered_family\\.py$",'
-        ' r"^tests/test_unregistered_family\\.py$"),',
+        "GOVERNANCE_ARTIFACT_PATTERNS: tuple[str, ...] = (",
+        'REGISTERED_GOVERNANCE_FAMILIES = (("step66", ""), ("autonomous-team", ""))\n'
+        "GOVERNANCE_ARTIFACT_PATTERNS: tuple[str, ...] = (",
     )
     assert_rejected(probe_worktree, "M06")
 
