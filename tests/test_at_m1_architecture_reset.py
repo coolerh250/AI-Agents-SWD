@@ -890,7 +890,7 @@ def carriers_in(module, body, subject="at-d09", artifact=CANONICAL_DOC):
 
 def verdicts_in(module, body, subject="at-d09", artifact=CANONICAL_DOC):
     return [
-        module.state_verdict(kind, module.propositions(module.current_value(value)))
+        module.carrier_verdict(kind, value)
         for _, _, _, kind, value in carriers_in(module, body, subject, artifact)
     ]
 
@@ -1098,7 +1098,9 @@ def test_rm6_prose_contradiction_advisory_is_non_blocking():
         ("AT_M2:  AUTHORIZED (previously NOT AUTHORIZED)", True),
         ("AT_M2_IMPLEMENTATION:  AUTHORIZED", True),
         ("AT_M2:  NOT AUTHORIZED", False),
-        ("AT_M2:  NOT AUTHORIZED (previously AUTHORIZED)", False),
+        # AT-D10.1 (RM7): the historical parenthetical is commentary inside the value. It used to
+        # be tolerated as a qualifier; it is now non-atomic, and the explanation belongs outside.
+        ("AT_M2:  NOT AUTHORIZED (previously AUTHORIZED)", True),
         ("AT-M2..AT-M8:  NOT AUTHORIZED", False),
     ],
 )
@@ -1123,7 +1125,7 @@ def test_rm6_contradictory_structured_carriers_are_detected():
     found = module.canonical_carriers(CANONICAL_DOC, body, "at-d09")
     polarity = {}
     for _, _, _, kind, value in found:
-        for affirmed, term in module.propositions(module.current_value(value)):
+        for affirmed, term in module.propositions(value):
             polarity.setdefault((kind, term), set()).add(affirmed)
     assert any(len(seen) > 1 for seen in polarity.values()), "contradiction not observable"
 
@@ -1136,3 +1138,220 @@ def test_rm6_anti_vacuity_is_coverage_based_not_count_based():
     # Every declared requirement names an artifact inside the authorized scope.
     for artifact, _, _, _ in module.REQUIRED_CARRIERS:
         assert artifact in module.AT_M1_EXPECTED_PATHS
+
+
+# =================================================================================================
+# AT-D10.1 atomic canonical carrier value rule, and the structural key grammar that replaced the
+# character whitelist. Tests exercise protocol PROPERTIES on constructed documents.
+# =================================================================================================
+
+
+def test_rm7_at_d10_1_is_canonicalized_as_a_binding_decision():
+    binding = read(BINDING)
+    assert "AT-D10.1:  RESOLVED / BINDING" in binding
+    section = re.sub(r"\s+", " ", binding.split("## 10. AT-D10.1")[1])
+    assert "expresses exactly ONE canonical proposition" in section
+    assert "MUST NOT appear inside a canonical value" in section
+    assert "FAILS CLOSED" in section
+    assert "Explanation belongs OUTSIDE the carrier" in section
+    assert "AT-D09 remains OPEN / DEFERRED" in section
+    assert "AT-M2 remains NOT AUTHORIZED" in section
+
+
+# --- DEF-R7-01: discovery must not depend on how the key is written -----------------------------
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        "AT-D09 [tracking ref 4]",
+        "AT_D09~~superseded marker~~",
+        "AT-D09 status @ record 12",
+        "at-d09 standing of record",
+        'AT-D09 "field of record"',
+        "AT-D09, entry of record",
+        "AT-D09 — entry of record",
+        "AT-D09 / expiry semantics",
+        "AT-D09 entry. of record",
+        "AT-D09 " + "an elaborated qualifier phrase " * 8,
+    ],
+)
+def test_rm7_key_punctuation_and_length_never_hide_a_carrier(key):
+    """DEF-R7-01: the key is whatever precedes the first colon. Nothing about how it is spelled,
+    punctuated or how long it is may decide whether the line is discovered."""
+    module = verifier_module()
+    body = f"# Doc\n\n```text\n{key}:  ESTOPPED\n```\n"
+    assert carriers_in(module, body), f"{key!r} was not discovered as a carrier"
+    assert rejects(module, body), f"{key!r} was discovered but its value was not rejected"
+
+
+@pytest.mark.parametrize("decorated", ["- {k}: ESTOPPED", "> {k}: ESTOPPED", "**{k}:** ESTOPPED"])
+def test_rm7_markdown_decoration_is_formatting_not_grammar(decorated):
+    module = verifier_module()
+    body = "# Doc\n\n```text\n" + decorated.format(k="AT_D09_STANDING") + "\n```\n"
+    assert carriers_in(module, body), f"{decorated!r} was not discovered"
+    assert rejects(module, body)
+
+
+def test_rm7_key_grammar_holds_no_character_class():
+    """The regression that made DEF-R7-01 possible was a whitelist on the qualifier's characters.
+
+    keyed_field splits at the first colon, so a key made only of characters no author would
+    anticipate is still a key.
+    """
+    module = verifier_module()
+    assert module.keyed_field("AT-D09 <#%^&*>{}[]|+=~: ESTOPPED") == (
+        "AT-D09 <#%^&*>{}[]|+=~",
+        " ESTOPPED",
+    )
+    assert module.keyed_field("no colon here at all") is None
+
+
+def test_rm7_a_line_that_does_not_begin_with_the_subject_is_not_a_carrier():
+    """Subject membership is decided by the key, not by mentioning the subject somewhere."""
+    module = verifier_module()
+    body = "# Doc\n\n```text\nNOTE about AT-D09:  RESOLVED / BINDING\n```\n"
+    assert carriers_in(module, body) == []
+
+
+# --- DEF-R7-02 / AT-D10.1: one carrier, one proposition -----------------------------------------
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "OPEN / DEFERRED; RESOLVED / BINDING",
+        "OPEN -- amended, now CLOSED",
+        "OPEN — now RESOLVED",
+        "OPEN – now RESOLVED",
+        "OPEN (previously RESOLVED)",
+        "OPEN [see section 6]",
+        "OPEN -- see section 6 for context",
+        "OPEN. This remains undecided",
+        "DEVOLVED -- as recorded above",
+    ],
+)
+def test_rm7_multi_clause_canonical_values_fail_closed(value):
+    """The rule is atomicity. An allowed head no longer shields whatever follows it, and no
+    clause is discarded to reach a readable value."""
+    module = verifier_module()
+    assert module.atomicity_verdict(value), f"{value!r} was accepted as atomic"
+    assert rejects(module, f"# Doc\n\n```text\nAT_D09:  {value}\n```\n")
+
+
+@pytest.mark.parametrize("value", ["OPEN", "OPEN / DEFERRED", "DEFERRED", "NOT AUTHORIZED"])
+def test_rm7_clean_atomic_values_remain_valid(value):
+    """A slash-separated compound is ONE proposition; atomicity must not reject valid truth."""
+    module = verifier_module()
+    assert module.atomicity_verdict(value) == ""
+
+
+def test_rm7_the_complete_value_reaches_validation():
+    """DEF-R7-02: nothing is truncated before validation, so a second line is a second clause."""
+    module = verifier_module()
+    single = "# Doc\n\n```text\nAT_D09_STANDING:\n    OPEN\n```\n"
+    doubled = "# Doc\n\n```text\nAT_D09_STANDING:\n    OPEN\n    RESOLVED / BINDING\n```\n"
+    assert not rejects(module, single)
+    assert rejects(module, doubled), "a continuation line was dropped before validation"
+
+
+def test_rm7_an_empty_carrier_value_fails_closed():
+    module = verifier_module()
+    assert module.atomicity_verdict("   ")
+    assert module.carrier_verdict("status", "")
+
+
+def test_rm7_two_heading_markers_are_two_propositions():
+    module = verifier_module()
+    assert not rejects(module, "## 6b. AT-D09 clarification expiry (OPEN)\n\nbody\n")
+    assert rejects(module, "## 6b. AT-D09 clarification expiry (OPEN) (now RESOLVED)\n\nbody\n")
+
+
+def test_rm7_live_canonical_carriers_are_all_atomic():
+    module = verifier_module()
+    for subject in ("at-d09", "at-m2"):
+        for artifact, line, form, _, value in module.domain_carriers(subject):
+            assert (
+                module.atomicity_verdict(value) == ""
+            ), f"{artifact}:{line} [{form}] carries a non-atomic value {value!r}"
+
+
+# --- the RM6 guarantees must survive the RM7 grammar change -------------------------------------
+
+
+@pytest.mark.parametrize("value", ["ESTOPPED", "DEVOLVED", "MOOTED"])
+def test_rm7_unknown_atomic_values_still_fail_closed(value):
+    """Atomicity did not replace allowed-state validation: an atomic unknown is still rejected."""
+    module = verifier_module()
+    assert module.atomicity_verdict(value) == "", "the probe value must itself be atomic"
+    assert rejects(module, f"# Doc\n\n```text\nAT_D09:  {value}\n```\n")
+
+
+@pytest.mark.parametrize(
+    "line,should_reject",
+    [
+        ("AT_M2:  NOT AUTHORIZED", False),
+        ("AT_M2:  AUTHORIZED", True),
+        ("AT_M2:  NOT AUTHORIZED; AUTHORIZED", True),
+        ("AT_M2:  MOOTED", True),
+        ("AT-M2, entry of record:  AUTHORIZED", True),
+        ("AT-M2..AT-M8:  NOT AUTHORIZED", False),
+    ],
+)
+def test_rm7_at_m2_under_the_atomic_protocol(line, should_reject):
+    module = verifier_module()
+    body = f"# Doc\n\n```text\n{line}\n```\n"
+    assert rejects(module, body, subject="at-m2") is should_reject
+
+
+@pytest.mark.parametrize(
+    "sentence",
+    [
+        "The Product Owner has now CLOSED the expiry question.",
+        "Downstream stages MUST treat the expiry question as CLOSED.",
+        "An earlier draft of this record marked the question RESOLVED.",
+        "A later decision COULD mark the question RESOLVED and BINDING.",
+        "Calling the expiry question SETTLED misreads this record.",
+        'Someone wrote "the question is RESOLVED"; that was wrong.',
+    ],
+)
+def test_rm7_prose_is_still_never_a_canonical_carrier(sentence):
+    module = verifier_module()
+    assert carriers_in(module, f"# Doc\n\n{sentence}\n") == []
+
+
+def test_rm7_a_sentence_inside_a_subject_section_is_not_a_section_field():
+    """A label binds only inside a fenced block: without the subject in the key, the fence is the
+    structure that separates a canonical field from a sentence containing a colon."""
+    module = verifier_module()
+    body = (
+        "## 6. AT-D09 - clarification expiry (OPEN)\n\n"
+        "Note: this paragraph asserts no governance state.\n"
+    )
+    assert [f for _, _, f, _, _ in carriers_in(module, body) if f == "section-field"] == []
+    body_fenced = "## 6. AT-D09 - clarification expiry (OPEN)\n\n```text\nSTATUS:  MOOTED\n```\n"
+    assert rejects(module, body_fenced)
+
+
+def test_rm7_structured_conflict_detection_survives():
+    module = verifier_module()
+    body = "# Doc\n\n```text\nAT_D09:  OPEN\nAT_D09_STANDING:  NOT OPEN\n```\n"
+    polarity: dict[tuple[str, str], set[bool]] = {}
+    for _, _, _, kind, value in carriers_in(module, body):
+        for affirmed, term in module.propositions(value):
+            polarity.setdefault((kind, term), set()).add(affirmed)
+    assert any(len(seen) > 1 for seen in polarity.values())
+
+
+def test_rm7_anti_vacuity_stays_form_granular_and_tolerates_redundancy():
+    """Coverage is (artifact, subject, kind, FORM). A redundant restatement is not itself
+    required; losing the whole category is."""
+    module = verifier_module()
+    assert all(len(required) == 4 for required in module.REQUIRED_CARRIERS)
+    assert module.missing_required_carriers() == []
+    registers = [
+        (a, line)
+        for a, line, form, kind, _ in module.domain_carriers("at-d09")
+        if (a, kind, form) == (BINDING, "status", "register")
+    ]
+    assert len(registers) > 1, "the redundancy this test describes no longer exists"
