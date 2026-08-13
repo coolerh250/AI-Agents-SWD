@@ -72,8 +72,6 @@ MUST_ADMIT = (
 )
 
 MUST_REJECT = (
-    "scripts/verify_unregistered_family.py",
-    "tests/test_unregistered_family.py",
     "scripts/at_runtime_patch.py",
     "scripts/random_helper.py",
     "tests/random_test_helper.py",
@@ -301,11 +299,17 @@ def main() -> int:  # noqa: PLR0915
             "check34",
             f"non-governance paths are admitted: {wrongly_admitted}",
         )
-    families = {f[0] for f in getattr(module, "REGISTERED_GOVERNANCE_FAMILIES", ())}
+    # GOV-DOMAIN-ADMISSION-01 (Step PCP-V2.1-RM1): admission is decided by domain membership, so
+    # there is no stage-family registry to compare. What must hold is that an unseen family is
+    # admitted and the registry has not come back.
+    classify = getattr(module, "is_governance_artifact", None)
     expect(
-        families == {"step66", "autonomous-team"},
+        callable(classify)
+        and classify("scripts/verify_zzz_family_nobody_has_invented_yet.py")
+        and classify("tests/test_zzz_family_nobody_has_invented_yet.py")
+        and not hasattr(module, "REGISTERED_GOVERNANCE_FAMILIES"),
         "check35",
-        f"the registered stage families changed: {sorted(families)}",
+        "governance admission still depends on a stage-family registry",
     )
     expect(
         'ADMITTED_PATH_PREFIXES = ("docs/",)' in align1_src,

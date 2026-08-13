@@ -186,9 +186,18 @@ def test_align1_historical_scope_still_matches_its_registry_exactly():
     assert set(historical) == set(align1.ALIGN1_EXPECTED_PATHS)
 
 
-def test_registered_families_are_still_exactly_two():
-    families = {f[0] for f in align1_module().REGISTERED_GOVERNANCE_FAMILIES}
-    assert families == {"step66", "autonomous-team"}
+def test_admission_is_by_domain_and_no_family_registry_survives():
+    """GOV-DOMAIN-ADMISSION-01 (Step PCP-V2.1-RM1).
+
+    This assertion previously required exactly two registered stage families. That requirement
+    was the defect: every new governance family had to be added by hand before it could land,
+    and two of them were rejected on arrival before anyone noticed the model was wrong.
+    """
+    align1 = align1_module()
+    assert not hasattr(align1, "REGISTERED_GOVERNANCE_FAMILIES")
+    assert align1.is_governance_artifact("scripts/verify_zzz_family_nobody_has_invented_yet.py")
+    assert align1.is_governance_artifact("tests/test_zzz_family_nobody_has_invented_yet.py")
+    assert not align1.is_governance_artifact("scripts/anything.py")
 
 
 @pytest.mark.parametrize(
@@ -212,8 +221,6 @@ def test_this_stages_own_artifacts_are_admitted(path):
 @pytest.mark.parametrize(
     "path",
     [
-        "scripts/verify_unregistered_family.py",
-        "tests/test_unregistered_family.py",
         "scripts/at_runtime_patch.py",
         "tests/random_test_helper.py",
         "shared/sdk/tasks/rbac.py",
@@ -383,13 +390,15 @@ def test_probe_p04_broad_scripts_admission(probe_worktree):
     assert_rejected(probe_worktree, "P04")
 
 
-def test_probe_p05_at_family_deregistered(probe_worktree):
+def test_probe_p05_domain_rule_narrowed_to_a_family(probe_worktree):
+    """GOV-DOMAIN-ADMISSION-01: narrowing the domain rule back to a named family must be
+    rejected, which is the mutation that would recreate the original defect."""
     restore(probe_worktree)
     apply_mutation(
         probe_worktree,
         ALIGN1_VERIFIER_REL,
-        r'r"^scripts/verify_at_m\d+[a-z0-9_]*\.py$"',
-        r'r"^scripts/verify_NOTHING_at_m\d+[a-z0-9_]*\.py$"',
+        r'    r"^scripts/verify_[a-z0-9_]+\.py$",',
+        r'    r"^scripts/verify_step66[a-z0-9_]*\.py$",',
     )
     assert_rejected(probe_worktree, "P05")
 
