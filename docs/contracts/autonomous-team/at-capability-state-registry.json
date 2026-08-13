@@ -1,0 +1,245 @@
+{
+  "registry": "at-capability-state-registry",
+  "status": "CANONICAL",
+  "canonical_baseline": "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009",
+  "recorded_by": "Claude Code (Step AT-M1)",
+  "recorded_at": "2026-08-11",
+  "production_executed_true_count": 0,
+  "allowed_states": [
+    "IMPLEMENTED",
+    "PARTIAL",
+    "MOCK_ONLY",
+    "CONTRACT_ONLY",
+    "NOT_IMPLEMENTED",
+    "DEFERRED"
+  ],
+  "rules": [
+    "A capability is classified by repository evidence, never by the existence of a name.",
+    "MOCK_ONLY means the capability has code and tests but its behaviour is templated or faked.",
+    "CONTRACT_ONLY means it is specified in a merged or proposed contract with no implementation.",
+    "PARTIAL means a real mechanism exists but does not satisfy the capability as defined.",
+    "PR #28 is NON-CANONICAL and never counts toward a canonical-main classification."
+  ],
+  "capabilities": [
+    {
+      "capability": "Goal",
+      "state": "CONTRACT_ONLY",
+      "evidence": "No Goal entity on main. `projects` carries title/summary, which are not acceptance criteria or constraints. Contract in planning-and-plan-revision-model.md section 2.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    },
+    {
+      "capability": "Team",
+      "state": "CONTRACT_ONLY",
+      "evidence": "ProjectTeamMembership has 0 occurrences on main. Contract in actor-principal-and-team-model.md section 4.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "AgentPrincipal",
+      "state": "CONTRACT_ONLY",
+      "evidence": "ActorPrincipal: 0 occurrences on main (principal_type 0, ProjectTeamMembership 0). The NAME principal_id is NOT free: it already exists as Actor.principal_id in the task/authorization identity domain, 25 occurrences across 7 files under apps/ shared/ agents/ services/ migrations/, and drives two-person control in authorization_policy.py. That Actor is an authorization subject, not a team member -- it carries no principal_type, no autonomous agent functional role and no ProjectTeamMembership, so it does not establish AT-D02. Identity is otherwise fragmented across actor_ref strings, X-Task-Actor headers, agent service names and created_by_agent columns.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Discussion",
+      "state": "MOCK_ONLY",
+      "evidence": "shared/sdk/agent_discussion: REVIEW_MODES = (deterministic_template, llm_assisted_disabled, human_review) has no live mode; contribution_templates.py holds hard-coded role strings authored by a single agent (design-review-agent).",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Proposal",
+      "state": "NOT_IMPLEMENTED",
+      "evidence": "CONTRIBUTION_TYPES includes recommendation/architecture_option but there is no proposal entity, no author-vs-challenger relationship and no second participant.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Decision",
+      "state": "PARTIAL",
+      "evidence": "design_review_decisions and project_review_gates exist as real tables, but they are produced by one deterministic reviewer, not by a team, and there is no TeamDecision entity with options_considered / dissent_summary.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Planning",
+      "state": "MOCK_ONLY",
+      "evidence": "shared/sdk/project_planning/task_graph.py contains _FASTAPI_TODO_MILESTONES (7), _FASTAPI_TODO_WORK_ITEMS (9) and _FASTAPI_TODO_DEPENDENCIES (11) as Python literals. ENABLE_PROJECT_PLANNER_REAL_LLM defaults false.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    },
+    {
+      "capability": "PlanRevision",
+      "state": "NOT_IMPLEMENTED",
+      "evidence": "plan_revision / PlanRevision: 0 occurrences on main. project_graph_snapshots stores snapshots but carries no revision reason, supersession link or diff.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    },
+    {
+      "capability": "Assignment",
+      "state": "PARTIAL",
+      "evidence": "shared/sdk/work_items/dispatcher.py resolves a target from infra/delivery/work-item-dispatch-policy.yaml -- a static workType-to-agent lookup. Real mechanism, not capability-based, and ENABLE_PROJECT_WORK_ITEM_DISPATCH defaults false.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    },
+    {
+      "capability": "Delegation",
+      "state": "NOT_IMPLEMENTED",
+      "evidence": "0 recipient/addressing fields in shared/. StreamAgent input_stream and output_stream are compile-time class attributes; no agent can choose a recipient.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Handoff",
+      "state": "NOT_IMPLEMENTED",
+      "evidence": "The NAME handoff is NOT free: 77 case-insensitive occurrences across 14 files under apps/ shared/ agents/ services/ migrations/, all in the legacy delivery_package domain -- HandoffSummary (11) declared in shared/sdk/delivery_package/models.py, handoff_summar* (24), handoff_id (2), plus a notification topic filter and a metrics counter. Those are delivery-package DOCUMENT SECTIONS: no from/to principal, no ownership field, no acceptance state, no transfer verb. The autonomous agent work-transfer primitive is absent: recipient_principal_id, assigned_to_agent, reassign, work_transfer, ownership_transfer, owner_principal_id and transfer_ownership are 0 occurrences each. Legacy delivery handoff_summaries do NOT implement autonomous team Handoff.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "Execution",
+      "state": "IMPLEMENTED",
+      "evidence": "shared/sdk/workspace_operator/command_runner.py runs subprocess with shell=False and ALLOWED_MODULES; code_generator.py writes real files under a path allowlist with diffs, change-type and secret validation.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "CodeGeneration",
+      "state": "PARTIAL",
+      "evidence": "The writer is real; the content is a deterministic FastAPI Todo template (fastapi_todo_generator.py). llm_planner.py exists but ENABLE_LLM_ASSISTED_PLANNING defaults false and the only real provider is plan-only.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    },
+    {
+      "capability": "TestExecution",
+      "state": "IMPLEMENTED",
+      "evidence": "shared/sdk/workspace_operator/test_runner.py run_pytest is invoked by runner.py; results are recorded in workspace_test_runs with command, exit code and output summary.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "QA",
+      "state": "PARTIAL",
+      "evidence": "qa-agent imports neither subprocess nor pytest; it evaluates static rules (shared/sdk/qa/rules.py) producing findings. Real evidence model, but verification is not test-driven.",
+      "poc_blocking": true,
+      "slice": "AT-M4"
+    },
+    {
+      "capability": "Diagnosis",
+      "state": "PARTIAL",
+      "evidence": "QA findings carry an auto_fixable flag and CodeAutoFixAgent handles exactly three hard-coded buckets (missing generated test file, PR draft sections, syntax error). Anything else is refused to blocked_for_human_review.",
+      "poc_blocking": true,
+      "slice": "AT-M4"
+    },
+    {
+      "capability": "Debug",
+      "state": "PARTIAL",
+      "evidence": "A genuine fix-then-revalidate loop exists (autofix republishes to stream.qa and QA bumps auto_fix_attempts), but the responsible agent is hard-coded and DebugAttempt has 0 occurrences.",
+      "poc_blocking": true,
+      "slice": "AT-M4"
+    },
+    {
+      "capability": "Retry",
+      "state": "IMPLEMENTED",
+      "evidence": "StreamAgent._handle_failure republishes with with_incremented_retry and dead-letters on exhaustion. This is infrastructure retry and is explicitly NOT autonomous debugging (INV-06).",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "DLQ",
+      "state": "IMPLEMENTED",
+      "evidence": "publish_dead_letter plus stream.deadletter, retry-scheduler app and clarification outbox relay.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "Replan",
+      "state": "NOT_IMPLEMENTED",
+      "evidence": "The orchestrator LangGraph is linear (intake -> requirement -> policy -> approval -> audit -> dispatch -> END) with no conditional edges and no back-edge.",
+      "poc_blocking": true,
+      "slice": "AT-M4"
+    },
+    {
+      "capability": "Delivery",
+      "state": "PARTIAL",
+      "evidence": "Legacy delivery_packages (migration 021) with human_acceptance_status is implemented. The 66D DeliverySubmission aggregate is contract-only on main.",
+      "poc_blocking": false,
+      "slice": "AT-M7"
+    },
+    {
+      "capability": "Acceptance",
+      "state": "CONTRACT_ONLY",
+      "evidence": "DeliverySubmission and ProductOwnerDecision appear on main only in verifiers, tests and docs. The sole implementation is PR #28, which is NON-CANONICAL and HELD.",
+      "poc_blocking": false,
+      "slice": "AT-M7"
+    },
+    {
+      "capability": "Identity",
+      "state": "CONTRACT_ONLY",
+      "evidence": "X-Task-Actor / X-Task-Role headers are self-asserted. ADMIN_CONSOLE_OIDC_ENABLED and ADMIN_CONSOLE_PRODUCTION_AUTH_ENABLED default false. Verified identity is ARCH1-G08, owned by RA-2.",
+      "poc_blocking": false,
+      "slice": "AT-M8"
+    },
+    {
+      "capability": "SharedContext",
+      "state": "PARTIAL",
+      "evidence": "Workflow state, task_messages, artifact refs and decision history are real but task- or project-scoped. There is no cross-task shared team context. No embedding, vector store or retrieval dependency exists.",
+      "poc_blocking": true,
+      "slice": "AT-M2"
+    },
+    {
+      "capability": "VectorRetrieval",
+      "state": "DEFERRED",
+      "evidence": "Deliberately deferred by AT-M1. Shared team context is relational (Goal, Team, Thread, Decision, PlanRevision, WorkItem, Artifact, RunEvidence) until a cross-project or semantic need exists.",
+      "poc_blocking": false,
+      "slice": "deferred"
+    },
+    {
+      "capability": "Audit",
+      "state": "IMPLEMENTED",
+      "evidence": "17 SDK files across shared/sdk/audit and shared/sdk/audit_integrity, HMAC chaining, integrity verification runs and repair tooling.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "Approvals",
+      "state": "IMPLEMENTED",
+      "evidence": "approval-engine app plus approval_policy_api.py (922 lines) and shared/sdk/approval_policy.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "Secrets",
+      "state": "IMPLEMENTED",
+      "evidence": "shared/sdk/secrets provider (392 lines) and secrets_foundation with reference-only handling and redaction.",
+      "poc_blocking": false,
+      "slice": "preserved"
+    },
+    {
+      "capability": "RuntimeDeployment",
+      "state": "PARTIAL",
+      "evidence": "26 compose services, 20 Dockerfiles and 43 Kubernetes files are real. infra/helm, infra/argocd and infra/vault contain only .gitkeep. .github/workflows does not exist -- there is no CI.",
+      "poc_blocking": false,
+      "slice": "AT-M8"
+    },
+    {
+      "capability": "LLMReasoning",
+      "state": "PARTIAL",
+      "evidence": "RealLLMPlanOnlyProvider makes genuine httpx calls to OpenAI/Anthropic endpoints, but it is plan-only, ENABLE_REAL_LLM_NETWORK_CALL defaults false, and no LLM SDK is declared in requirements.txt.",
+      "poc_blocking": true,
+      "slice": "AT-M3"
+    }
+  ],
+  "totals": {
+    "entries": 30,
+    "IMPLEMENTED": 7,
+    "PARTIAL": 10,
+    "MOCK_ONLY": 2,
+    "CONTRACT_ONLY": 5,
+    "NOT_IMPLEMENTED": 5,
+    "DEFERRED": 1,
+    "poc_blocking": 18
+  }
+}
