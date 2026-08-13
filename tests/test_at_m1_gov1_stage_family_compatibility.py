@@ -104,17 +104,40 @@ def test_changed_paths_equal_the_registry_exactly():
 def test_single_source_admission_rule_exists_and_is_consumed_by_the_test():
     align1 = align1_module()
     assert hasattr(align1, "is_admitted_current_state_path")
-    assert hasattr(align1, "is_registered_governance_artifact")
-    assert hasattr(align1, "REGISTERED_GOVERNANCE_FAMILIES")
+    assert hasattr(align1, "is_governance_artifact")
+    assert hasattr(align1, "GOVERNANCE_ARTIFACT_PATTERNS")
     # The mirrored test must consume the rule, not restate it.
     test_src = read(ALIGN1_TEST_REL)
     assert "is_admitted_current_state_path" in test_src
     assert 'allowed = ("docs/", "scripts/verify_step66", "tests/test_step66")' not in test_src
 
 
-def test_exactly_two_stage_families_are_registered():
-    families = {f[0] for f in align1_module().REGISTERED_GOVERNANCE_FAMILIES}
-    assert families == {"step66", "autonomous-team"}
+def test_no_stage_family_registry_remains():
+    """GOV-DOMAIN-ADMISSION-01. The registry must be absent, not dormant.
+
+    A registry that survives as documentation is how this defect grew back twice: it keeps
+    reading as the place to add a family, and the next author adds one there.
+    """
+    align1 = align1_module()
+    assert not hasattr(align1, "REGISTERED_GOVERNANCE_FAMILIES")
+    assert "REGISTERED_GOVERNANCE_FAMILIES" not in read(ALIGN1_VERIFIER_REL)
+    for pattern in align1.GOVERNANCE_ARTIFACT_PATTERNS:
+        for family in ("step66", "at_m", "pcp", "align", "gov"):
+            assert family not in pattern, f"the domain rule names a stage family: {pattern}"
+
+
+def test_an_unseen_governance_family_is_admitted_without_registry_edits():
+    """The closure property: domain membership, not known-family membership."""
+    admit = align1_module().is_admitted_current_state_path
+    for path in (
+        "scripts/verify_zzz_family_nobody_has_invented_yet.py",
+        "tests/test_zzz_family_nobody_has_invented_yet.py",
+        "scripts/verify_unregistered_family.py",
+        "tests/test_unregistered_family.py",
+        "scripts/verify_pcp_v2_control_plane.py",
+        "tests/test_pcp_v2_control_plane.py",
+    ):
+        assert admit(path), path
 
 
 def test_historical_frozen_boundary_is_untouched():
@@ -207,12 +230,13 @@ def test_registered_governance_artifacts_are_accepted(path):
 @pytest.mark.parametrize(
     "path",
     [
-        "scripts/verify_unregistered_family.py",
-        "tests/test_unregistered_family.py",
         "scripts/at_runtime_patch.py",
         "scripts/random_helper.py",
         "tests/at_random_helper.py",
         "tests/random_test_helper.py",
+        "scripts/verify_.py",
+        "tests/test_.py",
+        "scripts/nested/verify_thing.py",
         "shared/sdk/tasks/rbac.py",
         "apps/orchestrator/src/main.py",
         "agents/qa-agent/src/agent.py",
@@ -351,8 +375,8 @@ def test_probe_m05_catch_all_verify_prefix(probe_worktree):
     apply_mutation(
         probe_worktree,
         ALIGN1_VERIFIER_REL,
-        r'("step66", r"^scripts/verify_step66[a-z0-9_]*\.py$", r"^tests/test_step66[a-z0-9_]*\.py$"),',
-        r'("step66", r"^scripts/verify_.*\.py$", r"^tests/test_.*\.py$"),',
+        r'    r"^scripts/verify_[a-z0-9_]+\.py$",',
+        r'    r"^scripts/.*\.py$",',
     )
     assert_rejected(probe_worktree, "M05")
 

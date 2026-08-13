@@ -545,18 +545,27 @@ def test_current_state_admission_is_not_a_broad_path_allowlist() -> None:
         "scripts/random_helper.py",
         "tests/at_random_helper.py",
         "tests/random_test_helper.py",
-        "scripts/verify_unregistered_family.py",
-        "tests/test_unregistered_family.py",
+        "scripts/verify_.py",
+        "tests/test_.py",
+        "scripts/nested/verify_thing.py",
         "shared/sdk/tasks/rbac.py",
         "apps/orchestrator/src/main.py",
+        "agents/qa-agent/src/agent.py",
         "migrations/037_example.sql",
         "infra/docker-compose/docker-compose.yml",
+        ".github/workflows/ci.yml",
+        "",
     ):
         assert not is_admitted(rejected), rejected
 
 
-def test_registered_governance_families_are_admitted() -> None:
-    """Both registered stage families are admitted, for verifiers and tests alike."""
+def test_governance_artifacts_are_admitted_by_domain_not_by_family() -> None:
+    """GOV-DOMAIN-ADMISSION-01. Admission may not depend on the stage family in the name.
+
+    The last two entries are families that do not exist in this repository. Under the previous
+    registry model each of them had to be added by hand before it could land, which is how this
+    defect recurred; under the domain rule they are already admitted.
+    """
     is_admitted = _verifier_module().is_admitted_current_state_path
     for accepted in (
         "scripts/verify_step66d_align1_delivery_decision_model.py",
@@ -565,10 +574,23 @@ def test_registered_governance_families_are_admitted() -> None:
         "tests/test_at_m1_architecture_reset.py",
         "scripts/verify_at_m2_team_identity_collaboration.py",
         "tests/test_at_m2_team_identity_collaboration.py",
+        "scripts/verify_pcp_v2_control_plane.py",
+        "tests/test_pcp_v2_control_plane.py",
+        "scripts/verify_unregistered_family.py",
+        "tests/test_unregistered_family.py",
+        "scripts/verify_zzz_family_nobody_has_invented_yet.py",
+        "tests/test_zzz_family_nobody_has_invented_yet.py",
         "docs/anything/at/all.md",
         "source/progress.md",
     ):
         assert is_admitted(accepted), accepted
+
+
+def test_admission_consults_no_stage_family_registry() -> None:
+    """The registry must not merely be unused -- it must be gone, so it cannot come back."""
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "REGISTERED_GOVERNANCE_FAMILIES" not in source
+    assert "step66" not in source.split("GOVERNANCE_ARTIFACT_PATTERNS")[1].split(")")[0]
 
 
 def test_production_executed_true_count_is_zero_everywhere() -> None:

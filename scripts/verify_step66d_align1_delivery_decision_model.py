@@ -112,27 +112,38 @@ FORBIDDEN_SOURCE_PREFIXES = (
 # purely for being called something else, even though it contributes exactly the same two artifact
 # categories this rule exists to permit.
 #
-# The repair keeps admission EXPLICIT and CLOSED. A path is admitted only when its stage family is
-# registered below AND its filename matches that family's exact convention. Living under scripts/
-# or tests/ is deliberately NOT sufficient, and an unregistered family is still rejected.
+# That repair registered the AT family by NAME, which closed the instance and left the model
+# intact: admission still depended on a list a human had to extend for every new stage family. The
+# next family to appear -- the PCP control-plane series -- was rejected for the same reason AT was,
+# and the list had to grow again. That is the defect recurring, not the defect closing.
+#
+# GOV-DOMAIN-ADMISSION-01 (Step PCP-V2.1-RM1).
+#
+# Admission is now decided by DOMAIN MEMBERSHIP, not by family membership. The governance domain is
+# defined by the repository's own governance-artifact convention: a verifier is a single module at
+# scripts/verify_<name>.py and its mirrored suite is tests/test_<name>.py. That convention is a
+# stable structural property of where governance artifacts live and what role they play; it names
+# no stage, so a future family is admitted without editing anything here.
+#
+# Deliberately still CLOSED. The domain admits exactly two filename shapes in exactly two
+# directories, both anchored and both requiring a non-empty stem. Living under scripts/ or tests/
+# remains insufficient: scripts/at_runtime_patch.py, scripts/random_helper.py,
+# tests/random_test_helper.py, scripts/verify_.py and every runtime, frontend, migration,
+# infrastructure and deployment path stay rejected, because none of them is a governance artifact.
+#
+# What deliberately CHANGED: an unseen stage family that contributes a genuine governance
+# verifier/test pair is now ADMITTED. Rejecting it was the defect.
 #
 # This is a CURRENT-STATE governance rule (check30 diffs against live HEAD). It is intentionally
 # separate from check33_positive_exact_scope, which validates this stage's own HISTORICAL scope
 # over the frozen range CANONICAL_MAIN..ALIGN1_STAGE_HEAD and is not touched by this remediation.
-REGISTERED_GOVERNANCE_FAMILIES: tuple[tuple[str, str, str], ...] = (
-    # family id,          verifier filename pattern,            test filename pattern
-    ("step66", r"^scripts/verify_step66[a-z0-9_]*\.py$", r"^tests/test_step66[a-z0-9_]*\.py$"),
-    (
-        "autonomous-team",
-        r"^scripts/verify_at_m\d+[a-z0-9_]*\.py$",
-        r"^tests/test_at_m\d+[a-z0-9_]*\.py$",
-    ),
+GOVERNANCE_ARTIFACT_PATTERNS: tuple[str, ...] = (
+    r"^scripts/verify_[a-z0-9_]+\.py$",
+    r"^tests/test_[a-z0-9_]+\.py$",
 )
 
 _GOVERNANCE_ARTIFACT_PATTERNS = tuple(
-    re.compile(pattern)
-    for _family, verifier_pattern, test_pattern in REGISTERED_GOVERNANCE_FAMILIES
-    for pattern in (verifier_pattern, test_pattern)
+    re.compile(pattern) for pattern in GOVERNANCE_ARTIFACT_PATTERNS
 )
 
 # Directories whose contents are admitted wholesale, plus the single admitted non-docs file.
@@ -141,12 +152,16 @@ ADMITTED_PATH_PREFIXES = ("docs/",)
 ADMITTED_EXACT_PATHS = ("source/progress.md",)
 
 
-def is_registered_governance_artifact(path: str) -> bool:
-    """Whether PATH is a governance verifier/test belonging to a REGISTERED stage family.
+def is_governance_artifact(path: str) -> bool:
+    """Whether PATH is a governance verifier or its mirrored test, by repository convention.
 
-    Being located under scripts/ or tests/ is deliberately not sufficient: the filename must match
-    a registered family's convention exactly. `scripts/at_runtime_patch.py`,
-    `tests/random_test_helper.py` and `scripts/verify_unregistered_family.py` are all rejected.
+    Domain membership, not family membership: the stage family in the name is never consulted, so
+    a governance pair from a family nobody has seen yet is admitted with no edit to this file.
+
+    Being located under scripts/ or tests/ is still not sufficient. `scripts/at_runtime_patch.py`,
+    `scripts/random_helper.py`, `tests/random_test_helper.py`, `tests/at_random_helper.py` and the
+    empty-stem forms `scripts/verify_.py` and `tests/test_.py` are all rejected, as is every
+    runtime, frontend, migration, infrastructure and deployment path.
     """
     return any(pattern.match(path) for pattern in _GOVERNANCE_ARTIFACT_PATTERNS)
 
@@ -160,7 +175,7 @@ def is_admitted_current_state_path(path: str) -> bool:
     return (
         path.startswith(ADMITTED_PATH_PREFIXES)
         or path in ADMITTED_EXACT_PATHS
-        or is_registered_governance_artifact(path)
+        or is_governance_artifact(path)
     )
 
 

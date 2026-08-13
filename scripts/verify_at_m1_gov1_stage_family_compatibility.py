@@ -60,6 +60,14 @@ MUST_ADMIT = (
     "tests/test_at_m1_gov1_stage_family_compatibility.py",
     "scripts/verify_at_m2_team_identity_collaboration.py",
     "tests/test_at_m2_team_identity_collaboration.py",
+    # GOV-DOMAIN-ADMISSION-01: families that do not exist here. Under the previous registry model
+    # each had to be hand-registered before it could land; that is how the defect recurred.
+    "scripts/verify_pcp_v2_control_plane.py",
+    "tests/test_pcp_v2_control_plane.py",
+    "scripts/verify_unregistered_family.py",
+    "tests/test_unregistered_family.py",
+    "scripts/verify_zzz_family_nobody_has_invented_yet.py",
+    "tests/test_zzz_family_nobody_has_invented_yet.py",
     "docs/handoffs/autonomous-team/at-m1-gov1-stage-family-compatibility-evidence.md",
     "source/progress.md",
 )
@@ -70,9 +78,9 @@ MUST_REJECT = (
     "scripts/random_helper.py",
     "tests/at_random_helper.py",
     "tests/random_test_helper.py",
-    "scripts/verify_unregistered_family.py",
-    "tests/test_unregistered_family.py",
     "scripts/verify_.py",
+    "scripts/nested/verify_thing.py",
+    "tests/nested/test_thing.py",
     "tests/test_.py",
     "agents/qa-agent/src/agent.py",
     "apps/orchestrator/src/main.py",
@@ -299,30 +307,35 @@ def main() -> int:  # noqa: PLR0915
         "the ALIGN1 verifier exposes no single-source admission rule",
     )
     expect(
-        hasattr(module, "is_registered_governance_artifact"),
+        hasattr(module, "is_governance_artifact"),
         "check15",
-        "the ALIGN1 verifier exposes no registered-governance-artifact classifier",
+        "the ALIGN1 verifier exposes no governance-domain classifier",
     )
+    # GOV-DOMAIN-ADMISSION-01. The stage-family registry must be ABSENT, not merely unread: a
+    # dormant registry is the shape this defect grew back through twice.
     expect(
-        hasattr(module, "REGISTERED_GOVERNANCE_FAMILIES"),
+        not hasattr(module, "REGISTERED_GOVERNANCE_FAMILIES")
+        and "REGISTERED_GOVERNANCE_FAMILIES" not in align1_src,
         "check16",
-        "no explicit stage-family registry exists",
+        "a stage-family registry still exists in the admission rule",
     )
-    families = {f[0] for f in getattr(module, "REGISTERED_GOVERNANCE_FAMILIES", ())}
+    patterns = getattr(module, "GOVERNANCE_ARTIFACT_PATTERNS", ())
     expect(
-        "step66" in families,
+        bool(patterns) and not any(re.search(r"step66|at_m|pcp", p) for p in patterns),
         "check17",
-        f"the step66 stage family is no longer registered: {sorted(families)}",
+        f"the governance domain rule still names a stage family: {patterns}",
     )
+    classify = getattr(module, "is_governance_artifact", lambda _p: False)
     expect(
-        "autonomous-team" in families,
+        classify("scripts/verify_zzz_family_nobody_has_invented_yet.py")
+        and classify("tests/test_zzz_family_nobody_has_invented_yet.py"),
         "check18",
-        f"the autonomous-team stage family is not registered: {sorted(families)}",
+        "an unseen governance family is rejected; admission still depends on family membership",
     )
     expect(
-        len(families) == 2,
+        not classify("scripts/anything.py") and not classify("tests/anything.py"),
         "check19",
-        f"exactly two stage families are expected, found {sorted(families)}",
+        "location under scripts/ or tests/ wrongly confers admission",
     )
 
     admit = getattr(module, "is_admitted_current_state_path", lambda _p: False)
