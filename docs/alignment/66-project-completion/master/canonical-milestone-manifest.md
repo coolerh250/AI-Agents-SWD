@@ -479,10 +479,12 @@ AT-M8  Production platform
 ```
 
 ```text
-AT-D09 (Step 66C.4 clarification expiry interaction):  OPEN / DEFERRED -- not decided by AT-M1.
+AT-D09 (Step 66C.4 clarification expiry interaction):  OPEN / DEFERRED
 Canonical target-architecture authority for the middle journey:
   docs/contracts/autonomous-team/at-binding-decisions.md  (see the precedence record)
 ```
+
+The entry above is registered, not decided; AT-M1 does not decide it.
 
 ## Statement
 

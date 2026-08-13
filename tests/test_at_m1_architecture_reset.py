@@ -825,7 +825,7 @@ def test_rm2_step_66c4_authority_is_preserved_in_the_at_d09_section():
     module = verifier_module()
     section = module.section_text(read(BINDING_PATH), "## 6. AT-D09")
     flat_section = re.sub(r"\s+", " ", section)
-    assert "(Step 66C.4) REMAINS AUTHORITATIVE" in flat_section
+    assert "Step 66C.4 clarification expiry contract REMAINS AUTHORITATIVE" in flat_section
     assert "must not canonicalize permissive continuation" in flat_section
     assert "SUPERSEDED" not in section.upper() and "SUPERSEDES" not in section.upper()
 
@@ -958,7 +958,25 @@ def test_rm6_unknown_value_on_a_carrier_fails_closed(value):
 
 def test_rm6_no_unseen_probe_word_is_present_in_the_verifier_source():
     source = read("scripts/verify_at_m1_architecture_reset.py").upper()
-    for word in ("DISPOSITION", "ENACTED", "DISCHARGED", "SEALED", "PROMULGATED", "ZZTOP"):
+    probes = (
+        "DISPOSITION",
+        "ENACTED",
+        "DISCHARGED",
+        "SEALED",
+        "PROMULGATED",
+        "ZZTOP",
+        # R7's independent probe words, and RM7's own.
+        "ADJUDICATED",
+        "QUIESCED",
+        "CONSUMMATED",
+        "INTERDICTED",
+        "ABEYANCE",
+        "POSTURE",
+        "ABROGATED",
+        "PERFECTED",
+        "EXTINGUISHED",
+    )
+    for word in probes:
         assert word not in source, f"{word} leaked into the verifier as vocabulary"
 
 

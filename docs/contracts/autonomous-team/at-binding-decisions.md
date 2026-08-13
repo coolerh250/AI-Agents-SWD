@@ -17,11 +17,17 @@ AT-D02:  RESOLVED / BINDING
 AT-D03:  RESOLVED / BINDING
 AT-D04:  RESOLVED / BINDING
 AT-D05:  RESOLVED / BINDING
-AT-D09:  OPEN / DEFERRED -- not a decision, an open question (section 6)
-AT-D10:  RESOLVED / BINDING -- canonical state carrier policy (section 9)
+AT-D09:  OPEN / DEFERRED
+AT-D10:  RESOLVED / BINDING
+AT-D10.1:  RESOLVED / BINDING
 
 RUNTIME_IMPLEMENTATION:  NOT STARTED / NOT AUTHORIZED BY THIS RECORD
 ```
+
+The register above carries the canonical state and nothing else. To read it: the entry for
+AT-D09 records an open question rather than a decision, and section 6 states it. AT-D10 is the
+canonical state carrier policy of section 9, and AT-D10.1 the atomic carrier value rule of
+section 10. This paragraph explains the register; under AT-D10 it is non-authoritative.
 
 ## Why this record exists
 
@@ -266,15 +272,17 @@ D05-R4  AT-M1 produces IA amendment REQUIREMENTS only -- no wireframes, no route
 ## 6. AT-D09 — clarification expiry execution semantics (OPEN)
 
 ```text
-STATUS:  OPEN / DEFERRED -- deliberately NOT decided by AT-M1
+STATUS:  OPEN / DEFERRED
 ```
+
+The deferral is deliberate: AT-M1 records the question and does not answer it.
 
 ```text
 UX suggestion under consideration:
     on clarification expiry, an agent MAY proceed under an explicitly stated assumption
 
 Current canonical implementation:
-    the existing clarification expiry contract (Step 66C.4) REMAINS AUTHORITATIVE
+    Step 66C.4 clarification expiry contract REMAINS AUTHORITATIVE
 
 Decision:
     DEFERRED
@@ -360,6 +368,53 @@ recognising state vocabulary, and an unforeseen wording cannot make a carrier in
 This policy governs AT-D09, AT-M2 and equivalent governance-state assertions until superseded by
 a later Product Owner decision. It changes no existing decision: AT-D09 remains OPEN / DEFERRED,
 Step 66C.4 remains authoritative, and AT-M2 remains NOT AUTHORIZED.
+
+---
+
+## 10. AT-D10.1 — atomic canonical carrier value rule
+
+```text
+STATUS:  RESOLVED / BINDING
+```
+
+A canonical structured carrier expresses exactly ONE canonical proposition. Inline narrative,
+historical commentary, qualifiers, asides and additional state predicates MUST NOT appear inside
+a canonical value.
+
+```text
+Constructions that make a value NON-ATOMIC (illustrative, not a closed list;
+the rule is on shape, not on what the extra clause happens to say)
+
+  ;                        a semicolon clause
+  spaced double dash       a dash comment clause
+  en dash or em dash       a dash clause in either width
+  ( ) [ ] { }              a bracketed aside
+  full stop then space     a sentence break
+  a further value line     a value continued onto another line
+
+VALID    the AT-D09 status register reads   OPEN / DEFERRED
+INVALID  a status register that reads       OPEN / DEFERRED; RESOLVED / BINDING
+INVALID  a status register that reads       OPEN -- amended, now CLOSED
+INVALID  an AT-M2 register that reads       NOT AUTHORIZED; AUTHORIZED
+```
+
+A non-atomic canonical value FAILS CLOSED. The verifier does not decide which clause wins: a
+carrier bearing more than one proposition is invalid **as a carrier**. No clause is ever silently
+discarded in order to reach a readable value, which is what previously allowed an acceptable head
+to shield a second predicate.
+
+Explanation belongs OUTSIDE the carrier, as ordinary prose, where AT-D10 makes it
+NON-AUTHORITATIVE. A slash-separated compound such as OPEN / DEFERRED remains ONE proposition.
+
+Carrier discovery does not depend on how a key is written. A key is whatever precedes the first
+colon: any punctuation, any qualifier wording, any length, with markdown decoration ignored. A key
+the parser has never seen yields a carrier that FAILS CLOSED, never a line that disappears. A
+labelled field that does not name its own subject binds only inside a fenced block of a
+subject-declaring section, where the fence is the structure that distinguishes a canonical field
+from a sentence that happens to contain a colon.
+
+AT-D10.1 introduces no state change: AT-D09 remains OPEN / DEFERRED, Step 66C.4 remains
+authoritative, and AT-M2 remains NOT AUTHORIZED.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP

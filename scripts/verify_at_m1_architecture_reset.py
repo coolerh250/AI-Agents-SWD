@@ -551,17 +551,16 @@ SUBJECT_PATTERNS = {
     "at-d09": re.compile(r"AT[-_]D09[A-Za-z0-9_.-]*", re.IGNORECASE),
     "at-m2": re.compile(r"AT[-_]M2[A-Za-z0-9_.-]*", re.IGNORECASE),
 }
-
-# A carrier key: the subject identifier, optionally qualified by a trailing noun or parenthetical,
-# terminated by a colon. Discovery never inspects the VALUE.
-CARRIER_KEY = {
-    subject: re.compile(
-        rf"^\s*({pattern.pattern}(?:\s*\([^)]*\))?[A-Za-z0-9 _'-]{{0,48}}?)\s*:\s*(.*)$",
-        re.IGNORECASE,
-    )
+# A carrier key BEGINS with the subject identifier. What follows it, up to the colon, is the
+# qualifier and is accepted unconditionally -- see keyed_field().
+SUBJECT_KEY_START = {
+    subject: re.compile(rf"^{pattern.pattern}", re.IGNORECASE)
     for subject, pattern in SUBJECT_PATTERNS.items()
 }
-LABEL_FIELD = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 /_'-]*?)\s*:\s*(.*)$")
+
+# Markdown decoration is formatting, not grammar. Removing it first makes "- AT-D09: ...",
+# "> AT-D09: ..." and "**AT-D09:** ..." the same carrier as "AT-D09: ...".
+DECORATION = re.compile(r"^[\s>]*(?:[-*+]\s+|\d+[.)]\s+)?[\s>]*")
 
 # Section fields inside a subject-declaring section. A label outside both declared sets is treated
 # as a state carrier and fails closed; declaring a new narrative field is a deliberate change.
@@ -584,6 +583,18 @@ KEY_KIND_WORDS = (
     ("authorization", ("AUTHORIZATION", "AUTHORIZED")),
 )
 
+# AT-D10.1: one canonical carrier expresses exactly ONE proposition. These are the structural
+# constructions that make a value express more than one. The test is on SHAPE -- the rule is
+# atomicity, not whether the extra clause happens to say something acceptable.
+CLAUSE_CONSTRUCTS = (
+    (re.compile(r";"), "a semicolon clause"),
+    (re.compile(r"\n"), "a second value line"),
+    (re.compile(r"[(\[{]|[)\]}]"), "a bracketed aside"),
+    (re.compile(r"(?:^|\s)-{2,}(?:\s|$)"), "a dash comment clause"),
+    (re.compile("[‒–—―]"), "an en/em dash clause"),
+    (re.compile(r"\.(?:\s|$)"), "a sentence break"),
+)
+
 # Canonical carriers that must exist. Anti-vacuity by required COVERAGE, not by token counts:
 # deleting or reshaping one of these (for example replacing the parenthesised heading marker with
 # a dash-delimited title) removes a required carrier and fails.
@@ -604,6 +615,49 @@ REQUIRED_CARRIERS = (
 )
 
 
+def undecorated(line: str) -> str:
+    return DECORATION.sub("", line).replace("**", "").replace("`", "").strip()
+
+
+def keyed_field(line: str) -> tuple[str, str] | None:
+    """(key, inline value) split at the FIRST colon, or None when the line has no colon.
+
+    DEF-R7-01: no character class, length bound or punctuation whitelist is applied to the key.
+    The key is whatever precedes the first colon, so an unforeseen qualifier -- punctuated,
+    decorated, or a 200-character noun phrase -- cannot make a carrier invisible. Whether that
+    key belongs to a subject is decided separately, by SUBJECT_KEY_START, and never by what the
+    key is called.
+    """
+    key, separator, value = undecorated(line).partition(":")
+    if not separator:
+        return None
+    return key.strip(), value
+
+
+def atomicity_verdict(value: str) -> str:
+    """'' when the value is a single canonical proposition, else why it is not (AT-D10.1)."""
+    if not value.strip():
+        return "carrier value is empty"
+    for pattern, construction in CLAUSE_CONSTRUCTS:
+        if pattern.search(value):
+            return f"non-atomic canonical value: contains {construction}"
+    return ""
+
+
+def carrier_verdict(kind: str, value: str) -> str:
+    """AT-D10.1 atomicity, then AT-D10 allowed-state validation on the COMPLETE value.
+
+    Nothing is discarded before validation. DEF-R7-02's escape was a trailing clause silently
+    dropped as a "qualifier", which let an allowed head shield a second predicate; a carrier
+    that carries more than one proposition is now rejected as non-atomic rather than truncated
+    down to the acceptable part.
+    """
+    non_atomic = atomicity_verdict(value)
+    if non_atomic:
+        return non_atomic
+    return state_verdict(kind, propositions(value))
+
+
 def carrier_kind(subject: str, key: str, declared: str = "") -> str:
     if subject == "at-m2":
         return "at-m2-authorization"
@@ -621,59 +675,63 @@ def canonical_carriers(
 ) -> list[tuple[str, int, str, str, str]]:
     """(artifact, line, form, kind, value) for every CANONICAL carrier of `subject`.
 
-    Structural discovery only. No state vocabulary participates in deciding what is a carrier.
+    Structural discovery only. Neither state vocabulary nor a key character whitelist decides
+    what is a carrier.
     """
     if artifact in NON_CANONICAL_STATE_ARTIFACTS:
         return []
     ident = SUBJECT_PATTERNS[subject]
-    key_pattern = CARRIER_KEY[subject]
+    starts_with_subject = SUBJECT_KEY_START[subject]
     found: list[tuple[str, int, str, str, str]] = []
     lines = doc.splitlines()
     fenced = False
     in_subject_section = False
 
-    def value_from(index: int, inline: str) -> str:
+    def carrier_value(index: int, inline: str) -> str:
+        """The COMPLETE value: the inline text, or every continuation line (DEF-R7-02).
+
+        Continuations are joined with a newline, which CLAUSE_CONSTRUCTS reads as a second
+        proposition -- a value spread over two lines is two clauses, not a longer one.
+        """
         if inline.strip():
             return inline.strip()
+        parts: list[str] = []
         blanks = 0
         for following in lines[index + 1 :]:
             if not following.strip():
+                if parts:
+                    break
                 blanks += 1
                 if blanks > 2:
                     break
                 continue
-            if blanks == 0 or following.startswith((" ", "\t")):
-                return following.strip()
-            break
-        return ""
+            if parts and not following.startswith((" ", "\t")):
+                break
+            parts.append(following.strip())
+        return "\n".join(parts)
 
     for index, line in enumerate(lines):
         if line.strip().startswith("```"):
             fenced = not fenced
             continue
+
         if line.startswith("#"):
             in_subject_section = bool(ident.search(line))
-            marker = " ".join(re.findall(r"\(([^)]*)\)", line))
             # Only the parenthesised marker is a declared heading carrier. A heading without one
             # states no canonical status; it is a title. Removing the marker from a required
-            # heading carrier is caught by REQUIRED_CARRIERS, not by guessing at prose.
-            if in_subject_section and marker.strip():
+            # heading carrier is caught by REQUIRED_CARRIERS, not by guessing at prose. Two
+            # markers are two propositions and fail AT-D10.1.
+            markers = [m.strip() for m in re.findall(r"\(([^)]*)\)", line) if m.strip()]
+            if in_subject_section and markers:
                 found.append(
-                    (artifact, index + 1, "heading-status", carrier_kind(subject, ""), marker)
+                    (
+                        artifact,
+                        index + 1,
+                        "heading-status",
+                        carrier_kind(subject, ""),
+                        "\n".join(markers),
+                    )
                 )
-            continue
-
-        keyed = key_pattern.match(line)
-        if keyed:
-            found.append(
-                (
-                    artifact,
-                    index + 1,
-                    "register" if fenced else "field",
-                    carrier_kind(subject, keyed.group(1)),
-                    value_from(index, keyed.group(2)),
-                )
-            )
             continue
 
         if line.lstrip().startswith("|"):
@@ -685,16 +743,33 @@ def canonical_carriers(
                         index + 1,
                         "table-state",
                         carrier_kind(subject, cells[0]),
-                        " / ".join(cells[1:]),
+                        "\n".join(c for c in cells[1:] if c),
                     )
                 )
             continue
 
-        if in_subject_section and subject == "at-d09":
-            labelled = LABEL_FIELD.match(line)
-            if not labelled:
-                continue
-            label = normalized_key(labelled.group(1))
+        field = keyed_field(line)
+        if not field:
+            continue
+        key, inline = field
+
+        if starts_with_subject.match(key):
+            found.append(
+                (
+                    artifact,
+                    index + 1,
+                    "register" if fenced else "field",
+                    carrier_kind(subject, key),
+                    carrier_value(index, inline),
+                )
+            )
+            continue
+
+        # A label carrying no subject of its own inherits the section's subject. It binds only
+        # inside a fenced block: with the subject absent from the key, the fence is the structure
+        # that separates a canonical field from a sentence that happens to contain a colon.
+        if fenced and in_subject_section and subject == "at-d09":
+            label = normalized_key(key)
             if label in SECTION_NARRATIVE_LABELS:
                 continue
             found.append(
@@ -703,7 +778,7 @@ def canonical_carriers(
                     index + 1,
                     "section-field",
                     carrier_kind(subject, label, SECTION_STATE_LABELS.get(label, "")),
-                    value_from(index, labelled.group(2)),
+                    carrier_value(index, inline),
                 )
             )
     return found
@@ -720,7 +795,7 @@ def unauthorized_carriers(subject: str) -> list[str]:
     """Every canonical carrier whose CURRENT value is not an allowed state for its kind."""
     failures = []
     for artifact, line, form, kind, value in domain_carriers(subject):
-        verdict = state_verdict(kind, propositions(current_value(value)))
+        verdict = carrier_verdict(kind, value)
         if verdict:
             failures.append(f"{artifact}:{line} [{form}/{kind}] {value!r} -- {verdict}")
     return failures
@@ -744,7 +819,7 @@ def contradicting_carriers(subject: str) -> list[str]:
     polarity: dict[tuple[str, str], set[bool]] = {}
     origin: dict[tuple[str, str], list[str]] = {}
     for artifact, line, _, kind, value in domain_carriers(subject):
-        for affirmed, term in propositions(current_value(value)):
+        for affirmed, term in propositions(value):
             polarity.setdefault((kind, term), set()).add(affirmed)
             origin.setdefault((kind, term), []).append(f"{artifact}:{line}")
     return [
@@ -761,17 +836,19 @@ def prose_contradiction_advisories(subject: str) -> list[str]:
     state. Incomplete coverage is acceptable by contract; this never changes canonical truth.
     """
     notes = []
+    starts_with_subject = SUBJECT_KEY_START[subject]
     for artifact in NON_CANONICAL_STATE_ARTIFACTS:
         for index, line in enumerate(read(artifact).splitlines()):
-            keyed = CARRIER_KEY[subject].match(line)
-            if not keyed:
+            field = keyed_field(line)
+            if not field or not starts_with_subject.match(field[0]) or not field[1].strip():
                 continue
+            # Deliberately the lenient reading: a record narrates, so its trailing clauses are
+            # commentary. Atomicity is a rule about CANONICAL carriers, not about records.
             verdict = state_verdict(
-                carrier_kind(subject, keyed.group(1)),
-                propositions(current_value(keyed.group(2))),
+                carrier_kind(subject, field[0]), propositions(current_value(field[1]))
             )
-            if verdict and keyed.group(2).strip():
-                notes.append(f"{artifact}:{index + 1} {keyed.group(2).strip()[:60]!r} -- {verdict}")
+            if verdict:
+                notes.append(f"{artifact}:{index + 1} {field[1].strip()[:60]!r} -- {verdict}")
     return notes
 
 
@@ -1245,7 +1322,9 @@ def main() -> int:  # noqa: PLR0915
         "continuation",
     )
     expect(
-        "(Step 66C.4) REMAINS AUTHORITATIVE" in flat(d09_section),
+        # AT-D10.1 removed the parenthetical aside from the carrier value; the assertion is the
+        # same, written atomically.
+        "Step 66C.4 clarification expiry contract REMAINS AUTHORITATIVE" in flat(d09_section),
         "check93a",
         "the AT-D09 section no longer preserves the Step 66C.4 clarification expiry contract as "
         "authoritative",
