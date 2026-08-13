@@ -1035,6 +1035,112 @@ ADV-R6-02   PR #29 body is stale in four places (17 paths / 164 checks / 52 test
 AT_M1_M1_STAGE_HEAD_FREEZE_REQUIRED        future G3 canonicalization requirement
 ```
 
+## 22. AT-M1-RM7 — atomic canonical carrier value rule (AT-D10.1)
+
+Closes DEF-R7-01 and DEF-R7-02, both raised by the AT-M1-R7 independent audit. Both were
+reproduced on the prior head before any change: with the escaping lines in place the verifier
+reported 234 checks and 0 failures and the whole focused suite passed.
+
+### What was wrong
+
+DEF-R7-01. RM6 removed the state-vocabulary gate from carrier discovery but left a LEXICAL gate
+in its place: the key qualifier had to be drawn from `[A-Za-z0-9 _'-]` and be at most 48
+characters. A comma, an em dash, a slash, a period, a parenthetical after the noun, a longer
+qualifier or a markdown list prefix therefore made a structured carrier invisible. The defect
+family was not closed at RM6; the enumeration had moved from words to characters.
+
+DEF-R7-02. The value reaching validation was truncated at the first ` -- ` or `;`, on the theory
+that a trailing clause is a qualifier. An acceptable head could therefore shield a second
+predicate, and check92j, check92m and check92n were blinded together because all three consumed
+the same truncated value.
+
+### AT-D10.1
+
+The Product Owner resolved the underlying ambiguity: a canonical carrier expresses exactly ONE
+proposition. Section 10 of the binding decisions contract records it. The verifier no longer has
+to decide which clause of a multi-clause value wins; such a value is invalid as a carrier and
+fails closed. Explanation moves outside the carrier, where AT-D10 already makes it
+non-authoritative.
+
+### Implementation
+
+| concern | before | after |
+| --- | --- | --- |
+| key grammar | character class + 48-char bound | split at the first colon, no class, no bound |
+| decoration | part of the grammar | stripped as formatting |
+| value | truncated at ` -- ` / `;` | complete, including continuation lines |
+| multi-clause | silently reduced to its head | rejected as non-atomic |
+| section label | character class, any line in section | any label, fenced blocks only |
+
+`keyed_field` splits a line at the first colon and accepts whatever precedes it;
+`SUBJECT_KEY_START` then decides subject membership. `atomicity_verdict` tests the value's SHAPE
+for clause constructions; `carrier_verdict` runs atomicity first and allowed-state validation
+second, on the complete value.
+
+### Live carriers normalized
+
+Four canonical carriers carried commentary inside the value. Each was rewritten atomically with
+its assertion unchanged, and the commentary now sits beside it as ordinary prose.
+
+| artifact | was | is |
+| --- | --- | --- |
+| binding summary register | open state plus an aside naming section 6 | the open state alone |
+| binding section-6 status field | open state plus "deliberately not decided" | the open state alone |
+| binding section-6 authority field | parenthesised contract reference | the same reference, unbracketed |
+| milestone manifest register | open state plus "not decided by AT-M1" | the open state alone |
+
+No decision changed. The two summary lines for AT-D10 and AT-D10.1 in the same register block were
+made atomic at the same time, for consistency of the block.
+
+### Adversary matrix
+
+51 probes on a disposable worktree; 50 behaved as specified and none was an accidental-only
+rejection. Probe values `ABATED`, `REMITTED` and `VACATED` were grep-proven absent from the
+verifier and from the test module before use.
+
+| class | probes | result |
+| --- | --- | --- |
+| fresh key shapes | bracketed, tilde, at-sign, quoted, lower-case, 220-char, comma, em dash | REJECT, check92j each |
+| decoration | list marker, bold, blockquote | REJECT, check92j each |
+| same shapes for the second subject | comma, bracketed | REJECT, check92m |
+| atomicity A-F | semicolon, dash comment, em dash, en dash, historical aside, comment, sentence break, bad value plus comment | REJECT, check92j |
+| atomicity G | one clean compound value | PASS |
+| atomicity across forms | section-field, continuation line, two heading markers, manifest, precedence, all six required registers at once | REJECT |
+| unknown atomic values | three fresh words | REJECT, check92j / check92m |
+| second subject | authorized value on two surfaces | REJECT, check92m |
+| conflict | two individually valid carriers disagreeing | REJECT, check92n |
+| anti-vacuity | heading form converted, register deleted, section field deleted, discovery disabled | REJECT, check92l |
+| prose controls | descriptive, historical, hypothetical, quoted, deontic, criticism, declarative | PASS, truth unchanged |
+| structural controls | noncanonical heading, in-section narrative, register syntax inside this record | PASS |
+
+The fifty-first probe removed one of the two redundant status registers in the binding contract.
+Required-carrier coverage tolerated it, which is the specified behaviour; the verifier still
+rejected, because two older nominated checks pin those particular documentary lines. Removing both
+registers makes coverage report the missing category. The anti-vacuity granularity is therefore
+intact and the rejection came from a separate, pre-existing requirement.
+
+### Incidental consequence
+
+Scoping section-field discovery to fenced blocks also removes the in-section prose false positive
+recorded as ADV-R7-02. That was not the goal; it follows from replacing the label character class
+with structural scoping, and is reported rather than claimed as separate work. Every other R7
+advisory is untouched and remains deferred.
+
+### Gate G2
+
+| gate | result |
+| --- | --- |
+| AT-M1 verifier | 234 checks, 0 failures |
+| focused tests | 180 passed |
+| governance sentinels | four verifiers PASS, 321 tests |
+| positive scope | 19 paths, 0 new |
+| ruff / black / mypy / diff-check | PASS |
+| identifier and credential scan | 0 |
+
+No runtime, API, database, schema, identity, security, dependency, infrastructure, CI or
+deployment path was touched. This record states no governance decision; the canonical state lives
+in the binding decisions contract.
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment
