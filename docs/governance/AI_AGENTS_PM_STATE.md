@@ -20,7 +20,7 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-08-13
-RECONCILED_AGAINST_MAIN:     5968167b547c6aa09d3b45f2808af1ccc5428670
+RECONCILED_AGAINST_MAIN:     e33cd7a90e47d6fd11027a6bc6c4e7263e9d823a
 RECONCILED_BY_STAGE:         PCP-V2.1-RM1
 ```
 
@@ -34,10 +34,10 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M1
 CURRENT_MILESTONE_STATE:     CLOSED / CANONICAL
-PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-B
+PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-C
 CURRENT_GATE:                PCP-V2.1
-CURRENT_STAGE:               PCP-V2.1-RM1
-NEXT_PERMITTED_STAGE:        PCP-V2.1-C
+CURRENT_STAGE:               PCP-V2.1-RM2
+NEXT_PERMITTED_STAGE:        PCP-V2.1-D
 ```
 
 ## 3. Engineering truth
@@ -81,7 +81,8 @@ AT-D09 is an open question, not a decision. Nothing downstream may represent it 
 AT_M2:                       NOT AUTHORIZED
 AT_M3_TO_AT_M8:              NOT AUTHORIZED
 PCP_V2_1:                    IN PROGRESS / REMEDIATION
-PCP_V2_1_B:                  FAIL / SUPERSEDED BY RE-ACCEPTANCE
+PCP_V2_1_B:                  FAIL / HISTORICAL
+PCP_V2_1_C:                  FAIL / HISTORICAL
 AT_M2_GATE:                  PCP_V2_1 REQUIRED BEFORE AT_M2
 RUNTIME_IMPLEMENTATION:      NOT STARTED
 PRODUCTION_AUTHORIZATION:    NOT GRANTED
@@ -101,7 +102,7 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    NONE
-GOVERNANCE_MEASURED_AT:      5968167b547c6aa09d3b45f2808af1ccc5428670
+GOVERNANCE_MEASURED_AT:      e33cd7a90e47d6fd11027a6bc6c4e7263e9d823a
 GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
 ```
 
