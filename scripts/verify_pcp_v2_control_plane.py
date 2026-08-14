@@ -26,6 +26,7 @@ Marker: PCP_V2_CONTROL_PLANE_VERIFY: PASS | FAIL
 from __future__ import annotations
 
 import ast
+import hashlib
 import pathlib
 import re
 import subprocess
@@ -318,33 +319,72 @@ GOVERNANCE_REGRESSION = "GOVERNANCE_REGRESSION"
 # finite. Runtime, application, migration and infrastructure paths are outside it by construction.
 GOVERNANCE_ARTIFACT = re.compile(r"^(scripts/verify_[a-z0-9_]+\.py|tests/test_[a-z0-9_]+\.py)$")
 
-# APPLICABILITY -- semantic, not lexical (Step PCP-V2.1-RM2, blocker B-1).
+# APPLICABILITY -- fail closed on repository-state dependency (Step PCP-V2.1-RM3, gap A1).
 #
-# RM1 selected verifiers by grepping their source for the literal token HEAD. Four verifiers spell
-# the same live reference "origin/main" and were therefore invisible; three of them were failing on
-# canonical main, registered nowhere. Replacing a nominated list with a regex over source text was
-# the enumeration defect one layer down -- membership still depended on which word an author
-# happened to use.
+# RM2 asked "does this module invoke git?", detected by finding the constant "git" in its AST. That
+# is a classification by COMMAND FORM, and command forms are unbounded: a shell string, a binary
+# name built from pieces, os.system, or a wrapper all query the same state and all escaped. It was
+# the same enumeration defect as B-1, one axis over.
 #
-# The question is now asked structurally: does this module QUERY REPOSITORY REVISION STATE at all?
-# A module that shells out to git depends on state that can advance, whatever it names the
-# reference. No ref spelling is consulted anywhere below -- HEAD, origin/main, a default-branch
-# variable and an unseen future expression are all equally caught, because none of them is read.
+# The question is no longer asked. A governance module reads repository files, and repository files
+# advance, so EVERY module in the outer governance domain depends on repository state. Applicability
+# is therefore the default and needs no proof; only EXCLUSION needs proof.
 #
-# Uncertainty fails CLOSED into the set: an unparseable module is applicable. Over-inclusion inside
-# the governance domain is acceptable; under-sampling is what produced B-1.
+# Note the polarity of the one enumeration below. It sits on the EXCLUSION side: a spelling this
+# list does not recognise leaves the module IN the measured set. An unseen shape can only ever cause
+# over-inclusion, never the under-sampling that produced A1 and B-1.
+
+# Clients whose presence proves the module reaches outside the repository.
+EXTERNAL_CLIENTS = frozenset(
+    {"urllib", "requests", "http", "socket", "psycopg", "psycopg2", "redis", "boto3", "httpx"}
+)
+# Tools that require an environment this measurement cannot assume.
+EXTERNAL_TOOLS = frozenset(
+    {"docker", "docker-compose", "helm", "kubectl", "psql", "minikube", "kind", "terraform"}
+)
 
 
-def queries_revision_state(source: str) -> tuple[bool, str]:
-    """(applicable, reason) for one governance module, decided from its AST."""
+def environment_dependent(source: str) -> tuple[bool, str]:
+    """(excluded, reason). Only a PROVEN external dependency excludes a module.
+
+    A tool name is recognised only in EXECUTABLE position. `verify_step66c4_be1_merge.py` mentions
+    "helm" as a forbidden path prefix; reading that as an invocation dropped a registered debt
+    identity out of the domain, which is exactly the false exclusion this rule must not make.
+    """
     try:
         tree = ast.parse(source)
     except SyntaxError:
-        return True, "unparseable, so applicability cannot be disproved"
+        return False, ""
     for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and node.value == "git":
-            return True, "invokes a repository revision query"
-    return False, "queries no repository revision state"
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                if alias.name.split(".")[0] in EXTERNAL_CLIENTS:
+                    return True, f"imports the external client {alias.name}"
+        if isinstance(node, ast.ImportFrom) and node.module:
+            if node.module.split(".")[0] in EXTERNAL_CLIENTS:
+                return True, f"imports from the external client {node.module}"
+        if isinstance(node, (ast.List, ast.Tuple)) and node.elts:
+            head = node.elts[0]
+            if isinstance(head, ast.Constant) and head.value in EXTERNAL_TOOLS:
+                return True, f"invokes the external tool {head.value}"
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            command = node.value.strip()
+            executable = command.split(" ")[0]
+            if " " in command and executable in EXTERNAL_TOOLS:
+                return True, f"shell-invokes the external tool {executable}"
+    return False, ""
+
+
+def repository_state_dependent(source: str) -> tuple[bool, str]:
+    """(applicable, reason). Fail closed: applicable unless external dependency is PROVEN.
+
+    No command form, executable name, subprocess API shape, wrapper name or reference spelling is
+    consulted. There is nothing here for an unseen spelling to slip past.
+    """
+    excluded, reason = environment_dependent(source)
+    if excluded:
+        return False, reason
+    return True, "governance module reading repository state"
 
 
 def governance_modules(directory: str, prefix: str) -> list[str]:
@@ -357,29 +397,38 @@ def governance_modules(directory: str, prefix: str) -> list[str]:
 
 
 def applicable_governance_verifiers() -> list[str]:
-    """Every live-state-sensitive governance verifier except this one.
+    """Every governance verifier except this one and the provably environment-dependent.
 
     Self-measurement is a fixed point, not a check: this gate failing would make itself an
-    unregistered failure, which would make it fail. Its own exit code is the report the caller
-    reads. The exclusion is keyed off __file__, not a name list.
+    unregistered failure, which would make it fail. Its own exit code is the report, and the
+    external observer in the focused tests keys on that. Keyed off __file__, not a name list.
     """
     self_relpath = f"scripts/{pathlib.Path(__file__).name}"
     applicable = []
     for relpath in governance_modules("scripts", "verify_"):
         if relpath == self_relpath:
             continue
-        live, _ = queries_revision_state(read(relpath))
+        live, _ = repository_state_dependent(read(relpath))
         if live:
             applicable.append(relpath)
     return applicable
 
 
+def excluded_environment_verifiers() -> list[tuple[str, str]]:
+    """Reported, never silent: an exclusion nobody can see is indistinguishable from a gap."""
+    excluded = []
+    for relpath in governance_modules("scripts", "verify_"):
+        dependent, reason = environment_dependent(read(relpath))
+        if dependent:
+            excluded.append((relpath, reason))
+    return excluded
+
+
 def applicable_governance_tests() -> list[str]:
     """Governance tests that can fail because of current repository state.
 
-    Derived, never hand-picked: a test is applicable when it mirrors an applicable verifier by the
-    repository's own stem convention, or when it queries revision state itself. Unrelated runtime
-    and application tests are outside the governance domain and are not swept in.
+    Derived, never hand-picked: a test mirroring a measured verifier by the repository's own stem
+    convention. Unrelated runtime and application tests stay outside the governance domain.
     """
     mirrored = {
         pathlib.Path(relpath).stem[len("verify_") :]
@@ -388,8 +437,10 @@ def applicable_governance_tests() -> list[str]:
     applicable = []
     for relpath in governance_modules("tests", "test_"):
         stem = pathlib.Path(relpath).stem[len("test_") :]
-        live, _ = queries_revision_state(read(relpath))
-        if stem in mirrored or live:
+        if stem not in mirrored:
+            continue
+        live, _ = repository_state_dependent(read(relpath))
+        if live:
             applicable.append(relpath)
     return applicable
 
@@ -469,17 +520,73 @@ def overregistered_active_debt(measured: list[str], registered: set[str]) -> lis
     return sorted(registered - set(measured))
 
 
+def authority_inputs() -> list[str]:
+    """Every input whose change can alter the measured result.
+
+    Derived from what reconciliation actually consumes, not from "files this stage happened to
+    touch". The active-debt register is an input -- it decides exemption -- which is why editing it
+    must invalidate a measurement (gap A2).
+    """
+    return sorted(
+        {
+            *applicable_governance_verifiers(),
+            *applicable_governance_tests(),
+            f"scripts/{pathlib.Path(__file__).name}",
+        }
+    )
+
+
+def authority_input_digest() -> str:
+    """Deterministic provenance: a measurement can prove WHICH input state it measured.
+
+    Path-based freshness could only see files it was told to watch. A digest cannot miss an input
+    that reconciliation reads, because the input's content is what is hashed.
+    """
+    hasher = hashlib.sha256()
+    for relpath in authority_inputs():
+        hasher.update(relpath.encode("utf-8"))
+        hasher.update(read(relpath).encode("utf-8"))
+    active, historical = debt_sections(read(PM_STATE))
+    for entry in sorted(active):
+        hasher.update(b"active:" + entry.encode("utf-8"))
+    for entry in sorted(historical):
+        hasher.update(b"historical:" + entry.encode("utf-8"))
+    return hasher.hexdigest()
+
+
 def governance_measurement_stale(pm: dict[str, str]) -> list[str]:
-    """Governance artifacts changed since the recorded measurement, so it no longer speaks."""
+    """Empty when the recorded measurement still describes the current authority-input state."""
+    recorded = pm.get("GOVERNANCE_INPUT_DIGEST", "")
+    if not recorded:
+        return ["GOVERNANCE_INPUT_DIGEST is absent, so no measurement provenance exists"]
+    current = authority_input_digest()
+    if recorded != current:
+        return [
+            f"authority inputs changed since the measurement: recorded {recorded[:12]}, "
+            f"current {current[:12]} over {len(authority_inputs())} inputs plus the debt register"
+        ]
+    return []
+
+
+def provenance_conflicts(pm: dict[str, str]) -> list[str]:
+    """A4: the snapshot's own provenance fields must form a coherent record."""
+    conflicts = []
+    by_stage = pm.get("RECONCILED_BY_STAGE", "")
+    current_stage = pm.get("CURRENT_STAGE", "")
+    if by_stage and current_stage and by_stage != current_stage:
+        conflicts.append(
+            f"RECONCILED_BY_STAGE is {by_stage!r} but the snapshot's CURRENT_STAGE is "
+            f"{current_stage!r}; the values were re-recorded by a different stage than they claim"
+        )
     measured_at = pm.get("GOVERNANCE_MEASURED_AT", "")
-    if not commit_exists(measured_at):
-        return ["GOVERNANCE_MEASURED_AT names no commit in this repository"]
-    changed = [
-        line.strip()
-        for line in git("diff", "--name-only", f"{measured_at}...HEAD").splitlines()
-        if GOVERNANCE_ARTIFACT.match(line.strip())
-    ]
-    return changed
+    against = pm.get("RECONCILED_AGAINST_MAIN", "")
+    if commit_exists(measured_at) and commit_exists(against):
+        if not (measured_at == against or is_ancestor(measured_at, against)):
+            conflicts.append(
+                "GOVERNANCE_MEASURED_AT is not the reconciliation commit nor an ancestor of it; "
+                "the measurement claims a state the snapshot was never reconciled against"
+            )
+    return conflicts
 
 
 def confirm_remote(pm: dict[str, str]) -> list[str]:
@@ -508,6 +615,18 @@ def confirm_remote(pm: dict[str, str]) -> list[str]:
 
 
 def main() -> int:
+    known = {"--remote", "--governance", "--pm-state"}
+    unknown = [
+        arg
+        for index, arg in enumerate(sys.argv[1:], start=1)
+        if arg.startswith("--") and arg not in known
+    ]
+    if unknown:
+        # A3: a mistyped --governance must not silently produce a weaker PASS that a recovery
+        # session could mistake for a full measurement.
+        print(f"  [FAIL] usage: unknown option(s) {unknown}; known options are {sorted(known)}")
+        print(f"{MARKER}: FAIL")
+        return 2
     remote = "--remote" in sys.argv
     fixture = ""
     if "--pm-state" in sys.argv:
@@ -605,12 +724,17 @@ def main() -> int:
         "check17",
         "the PM state registers no exact failure identities, so BLOCKERS cannot be reconciled",
     )
+    provenance = provenance_conflicts(pm)
+    for conflict in provenance:
+        print(f"  [{CONFLICT}] provenance: {conflict}")
+    expect(provenance == [], "check17a", f"{CONFLICT}: snapshot provenance is self-inconsistent")
+
     stale_since = governance_measurement_stale(pm)
     expect(
         stale_since == [],
         "check18",
-        "the recorded governance measurement is stale -- these governance artifacts changed "
-        f"since GOVERNANCE_MEASURED_AT and it must be retaken: {stale_since[:6]}",
+        f"the recorded governance measurement no longer describes current authority inputs and "
+        f"must be retaken: {stale_since}",
     )
     if "--governance" in sys.argv:
         measured = measured_governance_failures()
@@ -652,7 +776,7 @@ def main() -> int:
 
     for note in notes:
         print(f"  [note] {note}")
-    checks = 21 if remote else 20
+    checks = 22 if remote else 21
     print(f"{MARKER}: checks={checks} failures={len(failures)}")
     print(f"{MARKER}: {'PASS' if not failures else 'FAIL'}")
     return 1 if failures else 0

@@ -425,7 +425,7 @@ def test_rm1_applicable_governance_set_is_derived_not_nominated():
         assert required in applicable, f"{required} escaped the applicable set"
     assert "scripts/verify_pcp_v2_control_plane.py" not in applicable, "self-measurement"
     source = VERIFIER.read_text(encoding="utf-8")
-    assert "queries_revision_state" in source and "glob" in source, "not derived structurally"
+    assert "repository_state_dependent" in source and "glob" in source, "not derived structurally"
 
 
 def test_rm1_registered_debt_is_read_from_the_pm_state():
@@ -478,14 +478,12 @@ def test_rm1_blockers_none_is_a_measured_claim_not_an_assertion():
 
 
 def test_rm1_stale_measurement_invalidates_the_blockers_claim(tmp_path):
-    """A measurement taken before a governance artifact changed no longer speaks for HEAD."""
+    """A measurement that no longer describes current authority inputs must not stand."""
+    recorded = module().pm_state_fields()["GOVERNANCE_INPUT_DIGEST"]
     fixture = fixture_from(
         tmp_path,
         "stale_measurement",
-        (
-            f"GOVERNANCE_MEASURED_AT:      {module().pm_state_fields()['GOVERNANCE_MEASURED_AT']}",
-            "GOVERNANCE_MEASURED_AT:      " "fa5e5c4e6712fbbc59bf18d2ee33421c28f9b009",
-        ),
+        (f"GOVERNANCE_INPUT_DIGEST:     {recorded}", "GOVERNANCE_INPUT_DIGEST:     " + "0" * 64),
     )
     result = run_verifier("--pm-state", str(fixture))
     assert result.returncode != 0, result.stdout
@@ -537,34 +535,49 @@ LIVE_REF_SHAPES = {
 def test_rm2_every_live_reference_spelling_is_applicable(shape):
     """No ref spelling is consulted, so an unseen one cannot escape."""
     loaded = module()
-    applicable, reason = loaded.queries_revision_state(LIVE_REF_SHAPES[shape])
+    applicable, reason = loaded.repository_state_dependent(LIVE_REF_SHAPES[shape])
     assert applicable, f"{shape} escaped the applicable set: {reason}"
 
 
 def test_rm2_the_classifier_reads_no_reference_token_list():
     """The B-1 recurrence guard: a ref spelling inside the classifier means it is a list again."""
     source = VERIFIER.read_text(encoding="utf-8")
-    classifier = source.split("def queries_revision_state")[1].split("\ndef ")[0]
-    for spelling in ("HEAD", "origin/main", "master", "default_branch", "upstream"):
+    classifier = source.split("def repository_state_dependent")[1].split("\ndef ")[0]
+    for spelling in ("HEAD", "origin/main", "master", "default_branch", "upstream", '"git"'):
         assert spelling not in classifier, f"the classifier consults the spelling {spelling!r}"
 
 
-def test_rm2_a_module_that_never_queries_revision_state_is_not_applicable():
-    """The lexical false-positive control: the token alone must not confer membership."""
+def test_rm3_vocabulary_decides_membership_in_neither_direction():
+    """RM3 inverted the default: applicable unless external dependency is PROVEN.
+
+    The RM2 form of this test asserted the module below was EXCLUDED. Under RM3 it is included,
+    for a structural reason rather than a lexical one -- it reads repository files, and those
+    advance. Vocabulary still decides nothing, and now it cannot cause an omission either.
+    """
     loaded = module()
-    applicable, reason = loaded.queries_revision_state(
-        '"""Compares docs. HEAD is mentioned here and in AT_M1_STAGE_HEAD."""\n'
+    vocabulary_only = (
+        '"""Compares docs. HEAD, origin/main and default_branch appear only here."""\n'
         'AT_M1_STAGE_HEAD = "c80350e"\n'
         "def check():\n    return open('docs/x.md').read()\n"
     )
-    assert not applicable, reason
-    assert "no repository revision state" in reason
+    applicable, reason = loaded.repository_state_dependent(vocabulary_only)
+    assert applicable, reason
+    assert "reading repository state" in reason
+    assert loaded.environment_dependent(vocabulary_only) == (False, "")
 
 
-def test_rm2_uncertainty_fails_closed_into_the_set():
+def test_rm3_uncertainty_fails_closed_into_the_set():
     loaded = module()
-    applicable, reason = loaded.queries_revision_state("def broken(:\n")
-    assert applicable and "unparseable" in reason
+    applicable, _ = loaded.repository_state_dependent("def broken(:\n")
+    assert applicable, "an unparseable module must be measured, not omitted"
+
+
+def test_rm3_a_path_string_naming_a_tool_is_not_an_invocation():
+    """The false-exclusion guard: reading 'helm' as an invocation dropped a registered identity."""
+    loaded = module()
+    assert loaded.environment_dependent('FORBIDDEN = ("helm/", "k8s/")') == (False, "")
+    assert loaded.environment_dependent('subprocess.run(["helm", "template", "."])')[0]
+    assert loaded.environment_dependent("import requests")[0]
 
 
 def test_rm2_applicability_is_not_a_hand_maintained_list():
@@ -676,3 +689,149 @@ def test_rm2_no_applicable_count_is_encoded_as_correctness():
     source = VERIFIER.read_text(encoding="utf-8")
     for count in ("== 47", "== 63", "== 25"):
         assert count not in source, f"an expected count {count} is encoded as correctness"
+
+
+# =================================================================================================
+# 9. Fail-closed applicability, freshness provenance, recovery and PM provenance (PCP-V2.1-RM3)
+#
+# A1: RM2 classified by COMMAND FORM, so a shell string, a constructed binary name, os.system and
+#     a wrapper all escaped. RM3 stops asking: applicable is the default, exclusion needs proof.
+# =================================================================================================
+
+
+COMMAND_FORMS = {
+    "subprocess_list": 'subprocess.run(["git", "diff", "--name-only", "HEAD"])',
+    "shell_string": 'subprocess.run("git diff --name-only origin/main", shell=True)',
+    "split_binary": 'B = "g" + "it"\nsubprocess.run([B, "status"])',
+    "constructed_argv": 'CMD = ["gi" + "t", "rev-parse"]\nsubprocess.run(CMD)',
+    "os_system": 'import os\nos.system("git rev-parse HEAD")',
+    "wrapper_helper": (
+        "def run(*a):\n    return subprocess.run(list(a))\n\ndef check():\n"
+        "    return run('git', 'log', upstream())"
+    ),
+    "unseen_form": 'runner.exec_(["git", "for-each-ref", "--sort=-committerdate"])',
+    "worktree_read_only": 'open("docs/governance/AI_AGENTS_PM_STATE.md").read()',
+    "pathlib_read_only": 'pathlib.Path("docs/x.md").read_text()',
+    "no_io_at_all": "VALUE = 1\n\ndef add(a, b):\n    return a + b\n",
+}
+
+
+@pytest.mark.parametrize("form", sorted(COMMAND_FORMS), ids=sorted(COMMAND_FORMS))
+def test_rm3_no_command_form_can_escape_applicability(form):
+    """A1: every one of these is applicable, including the three that escaped RM2 and the two
+    that never touch a process at all."""
+    loaded = module()
+    applicable, reason = loaded.repository_state_dependent(COMMAND_FORMS[form])
+    assert applicable, f"{form} escaped: {reason}"
+
+
+def test_rm3_only_a_proven_external_dependency_excludes():
+    loaded = module()
+    for external in ("import requests", "from urllib import request", "import socket"):
+        assert loaded.repository_state_dependent(external)[0] is False, external
+    for tool in (
+        'subprocess.run(["docker", "ps"])',
+        'subprocess.run("kubectl get pods", shell=True)',
+    ):
+        assert loaded.repository_state_dependent(tool)[0] is False, tool
+
+
+def test_rm3_exclusions_are_reported_not_silent():
+    """An exclusion nobody can see is indistinguishable from a gap."""
+    loaded = module()
+    excluded = loaded.excluded_environment_verifiers()
+    assert excluded, "no exclusions reported at all"
+    assert all(isinstance(reason, str) and reason for _, reason in excluded)
+    applicable = set(loaded.applicable_governance_verifiers())
+    assert not applicable & {relpath for relpath, _ in excluded}
+
+
+# --- A2: freshness over the authority-input domain ----------------------------------------------
+
+
+def test_rm3_the_authority_input_domain_includes_the_debt_register():
+    """A2: the register decides exemption, so editing it must invalidate a measurement."""
+    loaded = module()
+    baseline = loaded.authority_input_digest()
+    source = VERIFIER.read_text(encoding="utf-8")
+    digest_fn = source.split("def authority_input_digest")[1].split("\ndef ")[0]
+    assert "debt_sections" in digest_fn, "the debt register is not part of the provenance digest"
+    assert "applicable_governance_verifiers" in source
+    assert baseline == loaded.authority_input_digest(), "the digest is not deterministic"
+
+
+def test_rm3_a_debt_register_change_invalidates_the_measurement(tmp_path):
+    loaded = module()
+    recorded = loaded.pm_state_fields()["GOVERNANCE_INPUT_DIGEST"]
+    assert loaded.governance_measurement_stale(loaded.pm_state_fields()) == []
+    fixture = fixture_from(
+        tmp_path,
+        "register_changed",
+        (f"GOVERNANCE_INPUT_DIGEST:     {recorded}", "GOVERNANCE_INPUT_DIGEST:     " + "1" * 64),
+    )
+    result = run_verifier("--pm-state", str(fixture))
+    assert result.returncode != 0
+    assert "authority inputs changed" in result.stdout or "retaken" in result.stdout
+
+
+def test_rm3_freshness_is_not_path_based():
+    """Path lists can only see files someone remembered to list; a digest cannot miss content."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    stale_fn = source.split("def governance_measurement_stale")[1].split("\ndef ")[0]
+    assert "authority_input_digest" in stale_fn
+    assert "GOVERNANCE_ARTIFACT" not in stale_fn
+
+
+# --- A3: the recovery procedure must require remeasurement ---------------------------------------
+
+
+def test_rm3_recovery_packet_requires_current_governance_measurement():
+    packet = RECOVERY.read_text(encoding="utf-8")
+    assert "--governance" in packet, "the measurement mode is undiscoverable from the packet"
+    flat = re.sub(r"\s+", " ", packet)
+    assert "MANDATORY before accepting" in flat
+    assert "it does not measure" in flat
+    assert "INHERITED claim from a MEASURED one" in flat
+
+
+def test_rm3_a_mistyped_required_option_cannot_downgrade_to_a_weaker_pass():
+    result = run_verifier("--governnace")
+    assert result.returncode != 0, result.stdout
+    assert "unknown option" in result.stdout
+    assert "PASS" not in result.stdout.split("unknown option")[-1]
+
+
+# --- A4: snapshot provenance self-consistency ----------------------------------------------------
+
+
+def test_rm3_snapshot_provenance_is_coherent():
+    loaded = module()
+    assert loaded.provenance_conflicts(loaded.pm_state_fields()) == []
+
+
+def test_rm3_a_stage_attribution_mismatch_is_rejected(tmp_path):
+    loaded = module()
+    fields = loaded.pm_state_fields()
+    fixture = fixture_from(
+        tmp_path,
+        "stage_mismatch",
+        (
+            f"RECONCILED_BY_STAGE:         {fields['RECONCILED_BY_STAGE']}",
+            "RECONCILED_BY_STAGE:         PCP-V2.1-A",
+        ),
+    )
+    result = run_verifier("--pm-state", str(fixture))
+    assert result.returncode != 0
+    assert "RECONCILED_BY_STAGE" in result.stdout
+
+
+# --- A5: two classes of fact, two authority models -----------------------------------------------
+
+
+def test_rm3_the_contract_separates_engineering_facts_from_pm_facts():
+    flat = re.sub(r"\s+", " ", CONTRACT.read_text(encoding="utf-8"))
+    assert "ENGINEERING VOLATILE FACT" in flat
+    assert "PM CONTROL-PLANE FACT" in flat
+    assert "The snapshot is a cache and is never sufficient" in flat
+    assert "recorded only as prose is not authoritative at all" in flat
+    assert "structured and versioned" in flat

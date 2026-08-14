@@ -21,7 +21,7 @@ PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-08-13
 RECONCILED_AGAINST_MAIN:     e33cd7a90e47d6fd11027a6bc6c4e7263e9d823a
-RECONCILED_BY_STAGE:         PCP-V2.1-RM1
+RECONCILED_BY_STAGE:         PCP-V2.1-RM3
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,10 +34,10 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M1
 CURRENT_MILESTONE_STATE:     CLOSED / CANONICAL
-PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-C
+PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-D
 CURRENT_GATE:                PCP-V2.1
-CURRENT_STAGE:               PCP-V2.1-RM2
-NEXT_PERMITTED_STAGE:        PCP-V2.1-D
+CURRENT_STAGE:               PCP-V2.1-RM3
+NEXT_PERMITTED_STAGE:        PCP-V2.1-E
 ```
 
 ## 3. Engineering truth
@@ -83,6 +83,7 @@ AT_M3_TO_AT_M8:              NOT AUTHORIZED
 PCP_V2_1:                    IN PROGRESS / REMEDIATION
 PCP_V2_1_B:                  FAIL / HISTORICAL
 PCP_V2_1_C:                  FAIL / HISTORICAL
+PCP_V2_1_D:                  PASS_WITH_ADVISORY / REMEDIATION REQUIRED
 AT_M2_GATE:                  PCP_V2_1 REQUIRED BEFORE AT_M2
 RUNTIME_IMPLEMENTATION:      NOT STARTED
 PRODUCTION_AUTHORIZATION:    NOT GRANTED
@@ -102,7 +103,8 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    NONE
-GOVERNANCE_MEASURED_AT:      e33cd7a90e47d6fd11027a6bc6c4e7263e9d823a
+GOVERNANCE_MEASURED_AT:      PENDING
+GOVERNANCE_INPUT_DIGEST:     e449ef7eda17621ea7f5424dd87dd50d494c41dccea7b208d1126d4834457a6e
 GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
 ```
 
@@ -125,15 +127,24 @@ failing must be retired to the historical section below, because leaving it acti
 pre-absolve whatever regression later reintroduces it.
 
 ```text
+- test:tests/test_admin_console_demo_evidence_ui_remediation.py::test_demo_evidence_page_and_route_exist
+- test:tests/test_local_secret_scan_baseline.py::test_fixtures_classified_informational
+- test:tests/test_local_secret_scan_baseline.py::test_runs_and_reports_no_confirmed_secret
+- test:tests/test_product_ui_integration_fix_test.py::test_demo_evidence_diagnostic_only_in_nav
+- test:tests/test_product_ui_integration_fix_test.py::test_formal_pages_are_code_backed
 - test:tests/test_step66c4_be1_merge.py::test_no_live_outbox_producer_on_main
 - test:tests/test_step66c4_be3_planning.py::test_no_backend_api_migration_frontend_deployment_code_changed
 - test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_66d_decisions_untouched_by_this_remediation
 - test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_rm1_verifier_passes
+- test:tests/test_step66m0_fe1d_sot_reconciliation_merge.py::test_alignment_branches_remain_unmerged
 - test:tests/test_step66ui2_fe1_fix1_review.py::test_branch_not_merged_into_main
 - test:tests/test_step66ui2_fe1_fix1_review.py::test_diff_stays_within_expected_scope
 - test:tests/test_step66ui2_fe1_navigation_grouping.py::test_step66ui2_fe1_navigation_grouping_verifier_passes
 - test:tests/test_step66ui2_fe1_review.py::test_branch_not_merged_into_main
 - test:tests/test_step66ui2_fe1_review.py::test_diff_stays_within_expected_scope
+- verifier:verify_admin_console_demo_evidence_ui_remediation.py
+- verifier:verify_local_secret_scan_baseline.py
+- verifier:verify_product_ui_integration_fix_test.py
 - verifier:verify_step66c4_be1_data_model_deadline_outbox.py
 - verifier:verify_step66c4_be1_merge.py
 - verifier:verify_step66c4_be1_r1_remediation.py
@@ -147,6 +158,7 @@ pre-absolve whatever regression later reintroduces it.
 - verifier:verify_step66c4_be3_ra1c_ledger_schema_cli.py
 - verifier:verify_step66c4_be3_ra1d_missing_config_json.py
 - verifier:verify_step66d_align1_rm1_fixed_range_remediation.py
+- verifier:verify_step66m0_fe1d_sot_reconciliation_merge.py
 - verifier:verify_step66ui2_fe1_fix1_review.py
 - verifier:verify_step66ui2_fe1_navigation_grouping.py
 - verifier:verify_step66ui2_fe1_review.py

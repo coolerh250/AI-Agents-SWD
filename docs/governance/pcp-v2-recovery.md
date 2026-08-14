@@ -30,10 +30,28 @@ Repository:  this checkout.
           reconciles the snapshot against canonical engineering truth.
           A PM_STATE_CONFLICT verdict means the snapshot and main disagree.
 
+3b. Run   python scripts/verify_pcp_v2_control_plane.py --governance
+          MANDATORY before accepting "BLOCKERS: NONE". Step 3 only checks whether the
+          RECORDED measurement still matches current authority inputs; it does not measure.
+          This mode re-executes the applicable governance verifiers and tests and reconciles
+          the result against the active debt register in both directions.
+          Read its verdict as:
+            GOVERNANCE_REGRESSION   a measured failure is not registered active debt,
+                                    or an active identity no longer fails. BLOCKERS is not NONE.
+            stale measurement       the recorded digest no longer describes current inputs.
+                                    Remeasure; do not inherit the old claim.
+            all reconciled          measured failures exactly equal active registered debt.
+          Add --remote to machine-confirm pull-request state as well.
+          A mistyped option exits with a usage error rather than a weaker PASS.
+
 4. Verify volatile facts yourself from git and, where available, from the pull requests.
    Never take a SHA, a count, a stage or a pull-request state from the snapshot alone.
 
-5. Report the state, then STOP. Start no milestone. Authorization is not implied by readiness.
+5. Distinguish an INHERITED claim from a MEASURED one. If you did not run step 3b in this
+   session, you have not measured current blocker truth -- you have read someone else's
+   measurement, and step 3 only tells you whether it is still applicable.
+
+6. Report the state, then STOP. Start no milestone. Authorization is not implied by readiness.
 
 If the snapshot conflicts with canonical truth: reconcile downward from main, report
 PM_STATE_CONFLICT, and do not proceed.

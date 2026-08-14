@@ -163,7 +163,33 @@ recorded at family granularity let a new failure hide behind an existing advisor
 verifier family — the register said BLOCKERS: NONE while two governance verifiers were failing on
 canonical main.
 
-## 12. Memory drift gate
+## 12. Two classes of fact, two authority models
+
+Not every fact in the snapshot has a Git source, and pretending otherwise produced a real
+contradiction: the packet said never to take a stage from the snapshot alone, while the stage
+verdicts existed nowhere else.
+
+```text
+ENGINEERING VOLATILE FACT      any SHA, PR state, merge state, ancestry, path or test count,
+                               measured failure identity
+  authority   canonical main. The snapshot is a cache and is never sufficient.
+  recovery    verify against git / GitHub / a canonical engineering artifact, every time.
+
+PM CONTROL-PLANE FACT          independent review verdict, acceptance outcome, PM authorization,
+                               gate disposition, stage position
+  authority   the PM State Snapshot MAY be authoritative, but only when all four hold:
+                the field is structured and versioned, not narrative prose;
+                its provenance fields are internally consistent;
+                the snapshot itself reconciles against engineering truth;
+                no higher tier contradicts it.
+  recovery    read the structured field, then check those four conditions.
+```
+
+A PM control-plane fact recorded only as prose is not authoritative at all. The distinction is
+between *a fact that has an engineering source and must be checked against it* and *a fact whose
+only possible source is the control plane* — never a licence for narrative to become truth.
+
+## 13. Memory drift gate
 
 The drift gate reconciles the PM State Snapshot against canonical engineering truth and
 distinguishes two failure modes:
