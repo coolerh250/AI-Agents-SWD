@@ -112,29 +112,58 @@ absent from that list, `BLOCKERS: NONE` is invalid and the control plane returns
 `GOVERNANCE_REGRESSION`. The claim is only as fresh as `GOVERNANCE_MEASURED_AT`; if any governance
 artifact has changed since that commit, the measurement must be retaken before the claim stands.
 
-### Registered failure identities
+### Active registered debt
 
-Exact identities, not families. A new failure inside a verifier or test module that already
+Exact identities, never families. A new failure inside a verifier or test module that already
 appears here is still a new failure — family-level debt would let a regression hide behind an
-advisory with the same signature, which is exactly how DEF-PCPB-01 stayed invisible.
+advisory with the same signature, which is how DEF-PCPB-01 stayed invisible.
+
+Every identity below was measured failing at `GOVERNANCE_DEBT_BASELINE`, before any PCP-v2 work.
+None of them is fixed by being listed. Reconciliation is **bidirectional**: an identity that stops
+failing must be retired to the historical section below, because leaving it active would
+pre-absolve whatever regression later reintroduces it.
 
 ```text
-- verifier:verify_step66d_align1_rm1_fixed_range_remediation.py
+- test:tests/test_step66c4_be1_merge.py::test_no_live_outbox_producer_on_main
+- test:tests/test_step66c4_be3_planning.py::test_no_backend_api_migration_frontend_deployment_code_changed
 - test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_66d_decisions_untouched_by_this_remediation
 - test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_rm1_verifier_passes
+- test:tests/test_step66ui2_fe1_fix1_review.py::test_branch_not_merged_into_main
+- test:tests/test_step66ui2_fe1_fix1_review.py::test_diff_stays_within_expected_scope
+- test:tests/test_step66ui2_fe1_navigation_grouping.py::test_step66ui2_fe1_navigation_grouping_verifier_passes
+- test:tests/test_step66ui2_fe1_review.py::test_branch_not_merged_into_main
+- test:tests/test_step66ui2_fe1_review.py::test_diff_stays_within_expected_scope
+- verifier:verify_step66c4_be1_data_model_deadline_outbox.py
 - verifier:verify_step66c4_be1_merge.py
+- verifier:verify_step66c4_be1_r1_remediation.py
+- verifier:verify_step66c4_be2_r1_remediation.py
 - verifier:verify_step66c4_be3_a_authorization_foundation.py
 - verifier:verify_step66c4_be3_b_c1_authority_routing_alignment.py
 - verifier:verify_step66c4_be3_b_operator_resume.py
 - verifier:verify_step66c4_be3_c_authorized_replay.py
 - verifier:verify_step66c4_be3_planning.py
+- verifier:verify_step66c4_be3_ra1b_migration_runner_remediation.py
+- verifier:verify_step66c4_be3_ra1c_ledger_schema_cli.py
 - verifier:verify_step66c4_be3_ra1d_missing_config_json.py
+- verifier:verify_step66d_align1_rm1_fixed_range_remediation.py
+- verifier:verify_step66ui2_fe1_fix1_review.py
+- verifier:verify_step66ui2_fe1_navigation_grouping.py
+- verifier:verify_step66ui2_fe1_review.py
 ```
 
-The first three are ADV-R4-01, the long-carried ALIGN1 fixed-range debt. The seven that follow are
-ADV-PCPRM1-01: HEAD-relative 66C4 verifier failures that were already failing at the
-`GOVERNANCE_DEBT_BASELINE` commit and had never been registered anywhere. Registering them makes
-them visible; it does not close them, and nothing in this record claims they are fixed.
+Groups, for human reading only — the machine authority is the exact list above:
+**ADV-R4-01** the ALIGN1 fixed-range debt; **ADV-PCPRM1-01** the 66C4 live-reference verifiers and
+their mirrored tests, plus the 66UI2-FE1 review verifiers surfaced once applicability stopped
+depending on how a verifier spells its live reference.
+
+### Historical debt
+
+Identities that no longer fail. Audit record only: an entry here exempts nothing, so if one starts
+failing again it is a new blocker.
+
+```text
+(none)
+```
 
 Carried governance debt, none of it blocking. Nothing here is closed by being listed.
 

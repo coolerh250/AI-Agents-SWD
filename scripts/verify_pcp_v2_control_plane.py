@@ -25,6 +25,7 @@ Marker: PCP_V2_CONTROL_PLANE_VERIFY: PASS | FAIL
 
 from __future__ import annotations
 
+import ast
 import pathlib
 import re
 import subprocess
@@ -42,6 +43,9 @@ RECOVERY = f"{GOVERNANCE}/pcp-v2-recovery.md"
 # Canonical engineering artifacts the snapshot is reconciled AGAINST.
 BINDING = "docs/contracts/autonomous-team/at-binding-decisions.md"
 MANIFEST = "docs/alignment/66-project-completion/master/canonical-milestone-manifest.md"
+
+ACTIVE_DEBT_HEADING = "### Active registered debt"
+HISTORICAL_DEBT_HEADING = "### Historical debt"
 
 REGISTER = re.compile(r"^\s*([A-Za-z][A-Za-z0-9 ._/-]*?)\s*:\s*(\S.*?)\s*$")
 
@@ -310,38 +314,92 @@ def invariant_violations(
 
 GOVERNANCE_REGRESSION = "GOVERNANCE_REGRESSION"
 
-# A governance verifier is applicable to a change when it derives its own changed-path set against
-# live HEAD -- those are exactly the ones an incoming path can break. Derived structurally, so a
-# verifier cannot escape the set by not being nominated. PCP-V2.1-A hand-picked four sentinels and
-# missed the one that actually failed.
-HEAD_RELATIVE = re.compile(
-    r'"--name-only"[^\n]*"HEAD"|\.\.\.HEAD|--name-only[^\n]*HEAD|"HEAD"\s*\)'
-)
-
-# Paths whose change invalidates a recorded governance measurement.
+# The OUTER governance domain: the repository's own verifier/test naming convention. Structural and
+# finite. Runtime, application, migration and infrastructure paths are outside it by construction.
 GOVERNANCE_ARTIFACT = re.compile(r"^(scripts/verify_[a-z0-9_]+\.py|tests/test_[a-z0-9_]+\.py)$")
+
+# APPLICABILITY -- semantic, not lexical (Step PCP-V2.1-RM2, blocker B-1).
+#
+# RM1 selected verifiers by grepping their source for the literal token HEAD. Four verifiers spell
+# the same live reference "origin/main" and were therefore invisible; three of them were failing on
+# canonical main, registered nowhere. Replacing a nominated list with a regex over source text was
+# the enumeration defect one layer down -- membership still depended on which word an author
+# happened to use.
+#
+# The question is now asked structurally: does this module QUERY REPOSITORY REVISION STATE at all?
+# A module that shells out to git depends on state that can advance, whatever it names the
+# reference. No ref spelling is consulted anywhere below -- HEAD, origin/main, a default-branch
+# variable and an unseen future expression are all equally caught, because none of them is read.
+#
+# Uncertainty fails CLOSED into the set: an unparseable module is applicable. Over-inclusion inside
+# the governance domain is acceptable; under-sampling is what produced B-1.
+
+
+def queries_revision_state(source: str) -> tuple[bool, str]:
+    """(applicable, reason) for one governance module, decided from its AST."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return True, "unparseable, so applicability cannot be disproved"
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and node.value == "git":
+            return True, "invokes a repository revision query"
+    return False, "queries no repository revision state"
+
+
+def governance_modules(directory: str, prefix: str) -> list[str]:
+    """The OUTER governance domain: the repository's verifier/test naming convention."""
+    return sorted(
+        f"{directory}/{path.name}"
+        for path in (ROOT / directory).glob(f"{prefix}*.py")
+        if GOVERNANCE_ARTIFACT.match(f"{directory}/{path.name}")
+    )
 
 
 def applicable_governance_verifiers() -> list[str]:
-    """Every HEAD-relative governance verifier except this one.
+    """Every live-state-sensitive governance verifier except this one.
 
     Self-measurement is a fixed point, not a check: this gate failing would make itself an
     unregistered failure, which would make it fail. Its own exit code is the report the caller
-    reads, and its behaviour is covered by tests/test_pcp_v2_control_plane.py. The exclusion is
-    structural, not an accommodation for any stage family.
+    reads. The exclusion is keyed off __file__, not a name list.
     """
-    self_name = pathlib.Path(__file__).name
-    scripts = sorted((ROOT / "scripts").glob("verify_*.py"))
-    return [
-        f"scripts/{path.name}"
-        for path in scripts
-        if path.name != self_name
-        and HEAD_RELATIVE.search(path.read_text(encoding="utf-8", errors="replace"))
-    ]
+    self_relpath = f"scripts/{pathlib.Path(__file__).name}"
+    applicable = []
+    for relpath in governance_modules("scripts", "verify_"):
+        if relpath == self_relpath:
+            continue
+        live, _ = queries_revision_state(read(relpath))
+        if live:
+            applicable.append(relpath)
+    return applicable
+
+
+def applicable_governance_tests() -> list[str]:
+    """Governance tests that can fail because of current repository state.
+
+    Derived, never hand-picked: a test is applicable when it mirrors an applicable verifier by the
+    repository's own stem convention, or when it queries revision state itself. Unrelated runtime
+    and application tests are outside the governance domain and are not swept in.
+    """
+    mirrored = {
+        pathlib.Path(relpath).stem[len("verify_") :]
+        for relpath in applicable_governance_verifiers()
+    }
+    applicable = []
+    for relpath in governance_modules("tests", "test_"):
+        stem = pathlib.Path(relpath).stem[len("test_") :]
+        live, _ = queries_revision_state(read(relpath))
+        if stem in mirrored or live:
+            applicable.append(relpath)
+    return applicable
 
 
 def measured_governance_failures() -> list[str]:
-    """Exact failure identities from an actual run of the applicable set."""
+    """Exact failure identities from an actual run of BOTH applicable domains.
+
+    A registered `test:` identity that could never be measured was A-3: the reconciliation could
+    not see a new governance test failure at all.
+    """
     failures = []
     for relpath in applicable_governance_verifiers():
         result = subprocess.run(
@@ -355,21 +413,60 @@ def measured_governance_failures() -> list[str]:
         )
         if result.returncode != 0:
             failures.append(f"verifier:{pathlib.Path(relpath).name}")
-    return sorted(failures)
+    tests = applicable_governance_tests()
+    if tests:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly", "--tb=no", *tests],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            check=False,
+        )
+        failures.extend(
+            f"test:{line.split()[1]}"
+            for line in result.stdout.splitlines()
+            if line.startswith("FAILED") and len(line.split()) > 1
+        )
+    return sorted(set(failures))
 
 
-def registered_debt_ids(pm_doc: str) -> set[str]:
-    """Exact registered failure identities, read from the PM state rather than hard-coded."""
+def _identities(block: str) -> set[str]:
     return {
         line.strip().removeprefix("- ").strip()
-        for line in pm_doc.splitlines()
+        for line in block.splitlines()
         if line.strip().removeprefix("- ").startswith(("verifier:", "test:"))
     }
 
 
+def debt_sections(pm_doc: str) -> tuple[set[str], set[str]]:
+    """(ACTIVE, HISTORICAL) exact identities, read from the PM state.
+
+    ACTIVE debt exempts a CURRENTLY failing identity. HISTORICAL debt is audit record only and
+    exempts nothing: an identity that starts failing again while only historical is a new blocker.
+    Keeping a resolved identity active would pre-absolve the regression that reintroduces it (A-4).
+    """
+    active_block, _, rest = pm_doc.partition(ACTIVE_DEBT_HEADING)
+    if not _:
+        return set(), set()
+    active_body, _, historical_body = rest.partition(HISTORICAL_DEBT_HEADING)
+    return _identities(active_body), _identities(historical_body)
+
+
+def registered_debt_ids(pm_doc: str) -> set[str]:
+    """Only ACTIVE debt participates in current blocker reconciliation."""
+    return debt_sections(pm_doc)[0]
+
+
 def new_unregistered_failures(measured: list[str], registered: set[str]) -> list[str]:
-    """MEASURED - REGISTERED. Non-empty means BLOCKERS may not be NONE."""
+    """MEASURED - ACTIVE. Non-empty means BLOCKERS may not be NONE."""
     return sorted(set(measured) - registered)
+
+
+def overregistered_active_debt(measured: list[str], registered: set[str]) -> list[str]:
+    """ACTIVE - MEASURED. An active identity that no longer fails must be retired, not retained."""
+    return sorted(registered - set(measured))
 
 
 def governance_measurement_stale(pm: dict[str, str]) -> list[str]:
@@ -518,17 +615,28 @@ def main() -> int:
     if "--governance" in sys.argv:
         measured = measured_governance_failures()
         unregistered = new_unregistered_failures(measured, registered)
+        overregistered = overregistered_active_debt(measured, registered)
         for failure in unregistered:
             print(f"  [{GOVERNANCE_REGRESSION}] unregistered governance failure: {failure}")
+        for stale in overregistered:
+            print(f"  [{GOVERNANCE_REGRESSION}] active debt that no longer fails: {stale}")
         expect(
             unregistered == [],
             "check19",
-            f"{GOVERNANCE_REGRESSION}: {len(unregistered)} measured failure(s) are not registered "
-            "debt, so BLOCKERS: NONE is invalid",
+            f"{GOVERNANCE_REGRESSION}: {len(unregistered)} measured failure(s) are not active "
+            "registered debt, so BLOCKERS: NONE is invalid",
         )
+        expect(
+            overregistered == [],
+            "check19a",
+            f"{GOVERNANCE_REGRESSION}: {len(overregistered)} active debt identity(ies) no longer "
+            "fail; retire them, or they pre-absolve the regression that reintroduces them",
+        )
+        reconciled = not unregistered and not overregistered
         notes.append(
-            f"governance: {len(applicable_governance_verifiers())} applicable, "
-            f"{len(measured)} failing, all registered"
+            f"governance: {len(applicable_governance_verifiers())} verifiers + "
+            f"{len(applicable_governance_tests())} tests applicable, {len(measured)} failing, "
+            + ("all reconciled" if reconciled else "NOT reconciled")
         )
     expect(
         pm.get("BLOCKERS", "").upper() != "NONE" or stale_since == [],
