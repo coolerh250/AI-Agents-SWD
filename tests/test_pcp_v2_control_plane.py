@@ -425,7 +425,7 @@ def test_rm1_applicable_governance_set_is_derived_not_nominated():
         assert required in applicable, f"{required} escaped the applicable set"
     assert "scripts/verify_pcp_v2_control_plane.py" not in applicable, "self-measurement"
     source = VERIFIER.read_text(encoding="utf-8")
-    assert "HEAD_RELATIVE" in source and "glob" in source, "the set is not derived structurally"
+    assert "queries_revision_state" in source and "glob" in source, "not derived structurally"
 
 
 def test_rm1_registered_debt_is_read_from_the_pm_state():
@@ -509,3 +509,170 @@ def test_rm1_governance_admission_is_by_domain_not_family():
         assert align1.is_admitted_current_state_path(path), path
     for path in ("scripts/at_runtime_patch.py", "agents/x/src/a.py", "migrations/9.sql"):
         assert not align1.is_admitted_current_state_path(path), path
+
+
+# =================================================================================================
+# 8. Semantic applicability and bidirectional debt (Step PCP-V2.1-RM2)
+#
+# B-1: applicability was a regex for the literal token HEAD, so a verifier spelling the same live
+# reference "origin/main" was invisible. The rule must not care which word is used.
+# =================================================================================================
+
+
+LIVE_REF_SHAPES = {
+    "head": '["git", "diff", "--name-only", "abc123...HEAD"]',
+    "origin_main": '["git", "diff", "--name-only", "origin/main"]',
+    "indirect_variable": 'REF = compute_ref()\nsubprocess.run(["git", "diff", REF])',
+    "default_branch_helper": 'b = default_branch()\nsubprocess.run(["git", "log", b])',
+    "fstring_range": 'BASE = "x"\nsubprocess.run(["git", "diff", f"{BASE}...{tip()}"])',
+    "unseen_expression": 'subprocess.run(["git", "rev-list", resolve_upstream(cfg)[0]])',
+    "wrapper_indirection": (
+        "def git(*args):\n    return subprocess.run(['git', *args])\n\n"
+        "def check():\n    return git('diff', '--name-only', upstream_ref())"
+    ),
+}
+
+
+@pytest.mark.parametrize("shape", sorted(LIVE_REF_SHAPES), ids=sorted(LIVE_REF_SHAPES))
+def test_rm2_every_live_reference_spelling_is_applicable(shape):
+    """No ref spelling is consulted, so an unseen one cannot escape."""
+    loaded = module()
+    applicable, reason = loaded.queries_revision_state(LIVE_REF_SHAPES[shape])
+    assert applicable, f"{shape} escaped the applicable set: {reason}"
+
+
+def test_rm2_the_classifier_reads_no_reference_token_list():
+    """The B-1 recurrence guard: a ref spelling inside the classifier means it is a list again."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    classifier = source.split("def queries_revision_state")[1].split("\ndef ")[0]
+    for spelling in ("HEAD", "origin/main", "master", "default_branch", "upstream"):
+        assert spelling not in classifier, f"the classifier consults the spelling {spelling!r}"
+
+
+def test_rm2_a_module_that_never_queries_revision_state_is_not_applicable():
+    """The lexical false-positive control: the token alone must not confer membership."""
+    loaded = module()
+    applicable, reason = loaded.queries_revision_state(
+        '"""Compares docs. HEAD is mentioned here and in AT_M1_STAGE_HEAD."""\n'
+        'AT_M1_STAGE_HEAD = "c80350e"\n'
+        "def check():\n    return open('docs/x.md').read()\n"
+    )
+    assert not applicable, reason
+    assert "no repository revision state" in reason
+
+
+def test_rm2_uncertainty_fails_closed_into_the_set():
+    loaded = module()
+    applicable, reason = loaded.queries_revision_state("def broken(:\n")
+    assert applicable and "unparseable" in reason
+
+
+def test_rm2_applicability_is_not_a_hand_maintained_list():
+    loaded = module()
+    verifiers = loaded.applicable_governance_verifiers()
+    assert len(verifiers) > 40, "the applicable set looks nominated"
+    for required in (
+        "scripts/verify_step66c4_be1_data_model_deadline_outbox.py",
+        "scripts/verify_step66d_align1_delivery_decision_model.py",
+        "scripts/verify_at_m1_gov1_stage_family_compatibility.py",
+        "scripts/verify_at_m1_architecture_reset.py",
+    ):
+        assert required in verifiers, f"{required} escaped the applicable set"
+    assert "scripts/verify_pcp_v2_control_plane.py" not in verifiers
+    assert loaded.GOVERNANCE_ARTIFACT.match("agents/verify_thing.py") is None
+    assert loaded.GOVERNANCE_ARTIFACT.match("scripts/nested/verify_thing.py") is None
+
+
+# --- the governance TEST domain (A-3) -----------------------------------------------------------
+
+
+def test_rm2_the_governance_test_domain_is_derived_and_non_empty():
+    loaded = module()
+    tests = loaded.applicable_governance_tests()
+    assert len(tests) > 20, "the governance test domain looks hand-picked"
+    assert "tests/test_step66d_align1_rm1_fixed_range_remediation.py" in tests
+    assert all(t.startswith("tests/test_") for t in tests)
+    assert "tests/test_alert_receiver_auth.py" not in tests
+
+
+def test_rm2_a_test_identity_can_actually_be_measured():
+    """A registered test: identity that could never be measured was the A-3 hole."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    measured = source.split("def measured_governance_failures")[1].split("\ndef ")[0]
+    assert "applicable_governance_tests()" in measured
+    assert "test:" in measured
+    active, _ = module().debt_sections(PM_STATE.read_text(encoding="utf-8"))
+    assert any(entry.startswith("test:") for entry in active)
+
+
+# --- bidirectional reconciliation (A-4) ---------------------------------------------------------
+
+
+def active_debt():
+    return module().debt_sections(PM_STATE.read_text(encoding="utf-8"))[0]
+
+
+def test_rm2_under_registration_is_a_regression():
+    loaded = module()
+    registered = active_debt()
+    known = sorted(e for e in registered if "align1_rm1_fixed_range" in e)
+    assert len(known) >= 2, known
+    intruder = (
+        "test:tests/test_step66d_align1_rm1_fixed_range_remediation.py::test_brand_new_failure"
+    )
+    assert loaded.new_unregistered_failures([*known, intruder], registered) == [intruder]
+    assert loaded.new_unregistered_failures(known, registered) == []
+
+
+def test_rm2_over_registration_is_detected():
+    """A-4: an ACTIVE identity that no longer fails must be retired, not retained."""
+    loaded = module()
+    registered = active_debt()
+    measured = sorted(registered)[1:]
+    stale = loaded.overregistered_active_debt(measured, registered)
+    assert stale == [sorted(registered)[0]], stale
+    assert loaded.overregistered_active_debt(sorted(registered), registered) == []
+
+
+def test_rm2_historical_debt_exempts_nothing():
+    """An identity parked as historical must not pre-absolve its own re-failure."""
+    loaded = module()
+    identity = "verifier:verify_step66c4_be3_planning.py"
+    doc = PM_STATE.read_text(encoding="utf-8").replace(f"- {identity}\n", "", 1)
+    doc = doc.replace(
+        loaded.HISTORICAL_DEBT_HEADING,
+        f"{loaded.HISTORICAL_DEBT_HEADING}\n\n- {identity}",
+        1,
+    )
+    active, historical = loaded.debt_sections(doc)
+    assert identity in historical and identity not in active
+    assert loaded.new_unregistered_failures([identity], active) == [identity]
+
+
+def test_rm2_active_and_historical_are_separate_authorities():
+    loaded = module()
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "def debt_sections" in source
+    assert "Only ACTIVE debt participates" in source
+    active, historical = loaded.debt_sections(PM_STATE.read_text(encoding="utf-8"))
+    assert active and not (active & historical)
+
+
+def test_rm2_every_active_identity_is_baseline_backed_and_open():
+    flat = re.sub(r"\s+", " ", PM_STATE.read_text(encoding="utf-8"))
+    assert "measured failing at `GOVERNANCE_DEBT_BASELINE`" in flat
+    assert "None of them is fixed by being listed" in flat
+    assert "an entry here exempts nothing" in flat
+
+
+def test_rm2_the_reconciliation_note_is_conditional():
+    """A-7: the note previously said 'all registered' even on runs reporting regressions."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert 'if reconciled else "NOT reconciled"' in source
+
+
+def test_rm2_no_applicable_count_is_encoded_as_correctness():
+    """The count legitimately moves when governance files change."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    for count in ("== 47", "== 63", "== 25"):
+        assert count not in source, f"an expected count {count} is encoded as correctness"
