@@ -1155,7 +1155,7 @@ def test_rm4_the_policy_is_part_of_the_authority_digest():
     digest_fn = source.split("def authority_input_digest")[1].split("\ndef ")[0]
     assert "measurement_policy_digest()" in digest_fn
     policy_fn = source.split("def measurement_policy_digest")[1].split("\ndef ")[0]
-    assert "PROBE_DIR" in policy_fn, "the tracer implementing admissibility is not covered"
+    assert "TRACER_SOURCE" in policy_fn, "the tracer implementing admissibility is not covered"
     assert "ENVIRONMENT_ALLOWLIST" in policy_fn
 
 

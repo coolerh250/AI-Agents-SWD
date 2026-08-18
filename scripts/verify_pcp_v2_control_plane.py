@@ -341,8 +341,13 @@ EXTERNAL_CLIENTS = frozenset(
     {"urllib", "requests", "http", "socket", "psycopg", "psycopg2", "redis", "boto3", "httpx"}
 )
 # Tools that require an environment this measurement cannot assume.
+#
+# `gh` was missing until RM4. It needs GitHub credentials, which live in the operator's account
+# rather than in the repository, so a verifier calling it answered from whichever machine ran the
+# measurement -- the DEF-PCPE-01 defect reached through a subprocess instead of a file. The tracer
+# cannot see inside another process, so this dependency has to be recognised statically.
 EXTERNAL_TOOLS = frozenset(
-    {"docker", "docker-compose", "helm", "kubectl", "psql", "minikube", "kind", "terraform"}
+    {"docker", "docker-compose", "gh", "helm", "kubectl", "psql", "minikube", "kind", "terraform"}
 )
 
 
