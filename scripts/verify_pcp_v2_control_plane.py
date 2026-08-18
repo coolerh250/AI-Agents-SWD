@@ -478,7 +478,6 @@ MEASUREMENT_POLICY_ID = "pcp-v2-canonical-isolated"
 MEASUREMENT_POLICY_VERSION = "1"
 ADMISSIBILITY_CONTRACT_VERSION = "1"
 MEASUREMENT_ISOLATION_MODE = "disposable-clean-worktree+sanitized-environment"
-PROBE_DIR = "scripts/pcp_measurement_probe"
 PROBE_HEADER = "probe\tinput-authority-tracer/1"
 
 # The environment the measurement policy PROVIDES. Reading anything outside it is reading ambient
@@ -537,6 +536,179 @@ ENVIRONMENT_NOTE = (
 )
 
 
+# The tracer is written into the disposable scaffold at measurement time rather than kept as
+# repository files. It is part of the measurement POLICY, not a governance artifact, and
+# shipping it as loose files under scripts/ put paths into the tree that the ALIGN1 scope guard
+# correctly rejects. Holding the source here also guarantees the tracer and the policy digest
+# can never describe different code.
+TRACER_SOURCE = '''"""Input-authority tracer for the canonical governance measurement (Step PCP-V2.1-RM4).
+
+Loaded by the measurement harness through PYTHONPATH, so it runs before the module under
+measurement. It records every filesystem path and environment variable the module actually
+touches, and whether the module's OWN code made the call.
+
+Observation, not inspection. DEF-PCPE-01 escaped a static classifier because a path can be spelled
+an unbounded number of ways -- a constant, an f-string, a loop variable, a helper's return value.
+What a process opens is decidable regardless of spelling, so a verifier reading a non-canonical
+input is caught without anyone having to anticipate the mechanism.
+
+Attribution matters because the interpreter is noisy. Python reads COMSPEC, PATH and PATHEXT on
+every subprocess call, APPDATA and USERPROFILE at startup, and imported libraries probe machine
+paths of their own. Counting those as dependencies of the governance module made almost every
+verifier look ambient and silently excluded three already-registered debt identities.
+
+Emitted records:
+
+    probe   header proving the tracer loaded at all
+    path    a filesystem path touched by anyone in the process
+    mpath   a filesystem path touched by the module's own frame
+    env     an environment variable read by the module's own frame
+    node    the pytest identity subsequent records belong to (written by the pytest plugin)
+"""
+
+import io
+import os
+import sys
+
+_TRACE = os.environ.get("PCP_MEASUREMENT_TRACE")
+
+PROBE_HEADER = "probe\\tinput-authority-tracer/1"
+
+if _TRACE:
+    _sink = open(_TRACE, "a", encoding="utf-8", errors="replace")
+    # Proves the module's inputs were actually observed. A trace without this line means the
+    # tracer never loaded, and an unobserved module is UNKNOWN, never assumed deterministic.
+    _sink.write(PROBE_HEADER + "\\n")
+    _sink.flush()
+
+    _MEASURED_ROOT = os.path.normcase(os.path.abspath(os.environ.get("PCP_MEASUREMENT_ROOT", "")))
+
+    def _from_measured_module(depth: int) -> bool:
+        """True when the frame `depth` levels above the tracer wrapper is the module's own code."""
+        if not _MEASURED_ROOT:
+            return True
+        try:
+            filename = sys._getframe(depth + 1).f_code.co_filename
+        except (ValueError, AttributeError):
+            return False
+        return os.path.normcase(os.path.abspath(filename)).startswith(_MEASURED_ROOT)
+
+    def _emit(kind: str, value: object) -> None:
+        try:
+            value = os.fspath(value)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            return
+        if isinstance(value, bytes):
+            value = value.decode("utf-8", "replace")
+        _sink.write(f"{kind}\\t{value}\\n")
+        _sink.flush()
+
+    def _emit_path(value: object, depth: int) -> None:
+        # Repository-relative authority is judged without attribution, so that a non-canonical
+        # dependency reached through any depth of helper is still caught. Attribution only decides
+        # whether an OUT-OF-repository read belongs to the module or to machinery beneath it.
+        _emit("path", value)
+        if _from_measured_module(depth + 1):
+            _emit("mpath", value)
+
+    def _trace_path(module: object, name: str) -> None:
+        original = getattr(module, name)
+
+        def traced(path, *args, **kwargs):  # type: ignore[no-untyped-def]
+            _emit_path(path, 1)
+            return original(path, *args, **kwargs)
+
+        setattr(module, name, traced)
+
+    for _name in ("stat", "lstat", "listdir", "scandir", "open", "readlink"):
+        _trace_path(os, _name)
+    _trace_path(os.path, "exists")
+    _trace_path(os.path, "isfile")
+    _trace_path(os.path, "isdir")
+
+    _real_open = io.open
+
+    def _traced_open(file, *args, **kwargs):  # type: ignore[no-untyped-def]
+        _emit_path(file, 1)
+        return _real_open(file, *args, **kwargs)
+
+    io.open = _traced_open  # type: ignore[assignment]
+    import builtins
+
+    builtins.open = _traced_open  # type: ignore[assignment]
+
+    def _emit_env(key: object, depth: int) -> None:
+        if _from_measured_module(depth + 1):
+            _emit("env", key)
+
+    _real_getenv = os.getenv
+
+    def _traced_getenv(key, default=None):  # type: ignore[no-untyped-def]
+        _emit_env(key, 1)
+        return _real_getenv(key, default)
+
+    os.getenv = _traced_getenv  # type: ignore[assignment]
+
+    _environ_class = type(os.environ)
+    _real_getitem = _environ_class.__getitem__
+    _real_get = _environ_class.get
+    _real_contains = _environ_class.__contains__
+
+    def _traced_getitem(self, key):  # type: ignore[no-untyped-def]
+        _emit_env(key, 1)
+        return _real_getitem(self, key)
+
+    def _traced_get(self, key, default=None):  # type: ignore[no-untyped-def]
+        _emit_env(key, 1)
+        return _real_get(self, key, default)
+
+    def _traced_contains(self, key):  # type: ignore[no-untyped-def]
+        _emit_env(key, 1)
+        return _real_contains(self, key)
+
+    _environ_class.__getitem__ = _traced_getitem  # type: ignore[assignment]
+    _environ_class.get = _traced_get  # type: ignore[assignment]
+    _environ_class.__contains__ = _traced_contains  # type: ignore[assignment]
+'''
+
+PYTEST_PLUGIN_SOURCE = '''"""Attributes traced inputs to the exact pytest node that touched them (Step PCP-V2.1-RM4).
+
+The verifier domain gets one process per identity, so its trace needs no attribution. The test
+domain runs in a single pytest process, so without a marker the tracer could only say "something in
+this batch read a non-canonical input" -- which is not an exact identity, and exact identity is the
+property the debt register depends on.
+"""
+
+import os
+
+
+def _mark(nodeid: str) -> None:
+    trace = os.environ.get("PCP_MEASUREMENT_TRACE")
+    if not trace:
+        return
+    with open(trace, "a", encoding="utf-8", errors="replace") as sink:
+        sink.write(f"node\\t{nodeid}\\n")
+
+
+def pytest_collectstart(collector):  # type: ignore[no-untyped-def]
+    # Import-time reads happen during collection, before any node starts. Attributing them to the
+    # file lets them reach every identity in it instead of escaping attribution entirely.
+    _mark(getattr(collector, "nodeid", "") or "")
+
+
+def pytest_runtest_logstart(nodeid, location):  # type: ignore[no-untyped-def]
+    _mark(nodeid)
+'''
+
+
+def _write_probe(scaffold: pathlib.Path) -> pathlib.Path:
+    probe = scaffold / "probe"
+    probe.mkdir(exist_ok=True)
+    (probe / "sitecustomize.py").write_text(TRACER_SOURCE, encoding="utf-8")
+    (probe / "pcp_trace_plugin.py").write_text(PYTEST_PLUGIN_SOURCE, encoding="utf-8")
+    return probe
+
+
 def measurement_policy() -> dict[str, str]:
     """What a recorded measurement must state so another session can reproduce its execution."""
     return {
@@ -559,9 +731,9 @@ def measurement_policy_digest() -> str:
         hasher.update(f"{key}={value}\n".encode())
     for name in sorted(ENVIRONMENT_ALLOWLIST):
         hasher.update(f"env:{name}\n".encode())
-    for relpath in sorted(f"{PROBE_DIR}/{path.name}" for path in (ROOT / PROBE_DIR).glob("*.py")):
-        hasher.update(relpath.encode("utf-8"))
-        hasher.update(read(relpath).encode("utf-8"))
+    for name, source in (("tracer", TRACER_SOURCE), ("plugin", PYTEST_PLUGIN_SOURCE)):
+        hasher.update(name.encode("utf-8"))
+        hasher.update(source.encode("utf-8"))
     return hasher.hexdigest()
 
 
@@ -697,7 +869,6 @@ def _outside_measurement(resolved: pathlib.Path, scaffold: pathlib.Path) -> bool
     """The harness's own scaffolding and the interpreter's install are not ambient inputs."""
     for base in (
         scaffold,
-        ROOT / PROBE_DIR,
         pathlib.Path(sys.prefix),
         pathlib.Path(sys.base_prefix),
     ):
@@ -725,7 +896,7 @@ def _sanitized_environment(scaffold: pathlib.Path, home: pathlib.Path, trace: pa
         "TMPDIR": str(temp),
         "HOME": str(home),
         "USERPROFILE": str(home),
-        "PYTHONPATH": str(ROOT / PROBE_DIR),
+        "PYTHONPATH": str(_write_probe(scaffold)),
         "PYTHONHASHSEED": "0",
         "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONIOENCODING": "utf-8",
