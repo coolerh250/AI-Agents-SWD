@@ -1174,8 +1174,9 @@ def test_rm4_the_admissibility_rule_is_not_a_verifier_name_list():
 def test_rm4_recovery_packet_names_the_canonical_measurement():
     flat = re.sub(r"\s+", " ", RECOVERY.read_text(encoding="utf-8"))
     assert "--governance" in flat
-    assert "disposable clean checkout" in flat
+    assert "STANDALONE repository it builds itself" in flat
     assert "NOT the working tree you happen to have open" in flat
+    assert "branches, remotes, config or credentials" in flat
 
 
 # =================================================================================================

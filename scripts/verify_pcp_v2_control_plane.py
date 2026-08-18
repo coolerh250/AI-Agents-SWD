@@ -533,6 +533,7 @@ ENVIRONMENT_ALLOWLIST = frozenset(
         "PYTHONPYCACHEPREFIX",
         "PCP_MEASUREMENT_TRACE",
         "PCP_MEASUREMENT_ROOT",
+        "PCP_GIT_TRACE_DIR",
         "GIT_CONFIG_NOSYSTEM",
         "GIT_CONFIG_GLOBAL",
         "GIT_TERMINAL_PROMPT",
@@ -715,12 +716,24 @@ property the debt register depends on.
 import os
 
 
+_counter = [0]
+
+
 def _mark(nodeid: str) -> None:
     trace = os.environ.get("PCP_MEASUREMENT_TRACE")
     if not trace:
         return
     with open(trace, "a", encoding="utf-8", errors="replace") as sink:
         sink.write(f"node\\t{nodeid}\\n")
+        # Rotate git's own argv log per identity. A single session-wide log made one
+        # module's dependency on a foreign commit look like every node's dependency,
+        # which would have exempted every failing test in the batch.
+        directory = os.environ.get("PCP_GIT_TRACE_DIR")
+        if directory:
+            _counter[0] += 1
+            target = os.path.join(directory, f"node-{_counter[0]:05d}.git")
+            os.environ["GIT_TRACE"] = target
+            sink.write(f"gitlog\\t{nodeid}\\t{target}\\n")
 
 
 def pytest_collectstart(collector):  # type: ignore[no-untyped-def]
@@ -834,9 +847,19 @@ def requested_revisions(git_trace: str) -> set[str]:
         if not matched:
             continue
         for token in matched.group(1).split():
-            candidate = token.strip("'\"").split("...")[0].split("..")[0].split("^")[0]
+            candidate = token.strip("'\",;()[]{}").split("...")[0].split("..")[0].split("^")[0]
             if REVISION_TOKEN.match(candidate):
                 requested.add(candidate)
+    return requested
+
+
+def _revisions_from(logs: list[str]) -> set[str]:
+    """Revisions requested during ONE identity's execution, from its own rotated git logs."""
+    requested: set[str] = set()
+    for target in logs:
+        path = pathlib.Path(target)
+        if path.is_file():
+            requested |= requested_revisions(path.read_text(encoding="utf-8", errors="replace"))
     return requested
 
 
@@ -858,24 +881,30 @@ def unresolvable_revisions(
     return missing
 
 
-def parse_trace(text: str) -> tuple[bool, dict[str, set[str]], dict[str, set[str]], dict]:
-    """(observed, paths by node, module-attributed paths by node, env names by node)."""
+def parse_trace(
+    text: str,
+) -> tuple[bool, dict[str, set[str]], dict[str, set[str]], dict, dict[str, list[str]]]:
+    """(observed, paths, module paths, env names, git-log files) -- all keyed by node."""
     observed = PROBE_HEADER in text
     paths: dict[str, set[str]] = {}
     module_paths: dict[str, set[str]] = {}
     env: dict[str, set[str]] = {}
+    gitlogs: dict[str, list[str]] = {}
     node = ""
     for line in text.splitlines():
         kind, _, value = line.partition("\t")
         if kind == "node":
             node = value
+        elif kind == "gitlog":
+            attributed, _, target = value.partition("\t")
+            gitlogs.setdefault(attributed, []).append(target)
         elif kind == "path":
             paths.setdefault(node, set()).add(value)
         elif kind == "mpath":
             module_paths.setdefault(node, set()).add(value)
         elif kind == "env":
             env.setdefault(node, set()).add(value)
-    return observed, paths, module_paths, env
+    return observed, paths, module_paths, env, gitlogs
 
 
 def admissibility(
@@ -999,6 +1028,7 @@ def _sanitized_environment(
         # git's own argv log. The RM4 tracer cannot see inside a child git process, and a
         # dependency on a commit that exists only on an operator branch hides there.
         "GIT_TRACE": str(trace.with_suffix(".git")),
+        "PCP_GIT_TRACE_DIR": str(scaffold / "gitlogs"),
         # A measured verifier shells out to git constantly. Without these it would answer from the
         # operator's global config, credential helper and terminal, which is precisely the
         # authority BLK-PCPF-01 is about -- and the tracer cannot see inside a child git process.
@@ -1109,6 +1139,7 @@ def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None)
         home.mkdir()
         traces = scaffold / "traces"
         traces.mkdir()
+        (scaffold / "gitlogs").mkdir()
         repo, remote, error = materialize_canonical_repository(commit, scaffold, home)
         if error:
             return {"error": error}
@@ -1161,7 +1192,7 @@ def _measure_tree(
             errors="replace",
             check=False,
         )
-        observed, paths, module_paths, env = parse_trace(
+        observed, paths, module_paths, env, gitlogs = parse_trace(
             trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
         )
         accessed = set().union(*paths.values()) if paths else set()
@@ -1210,16 +1241,12 @@ def _measure_tree(
             errors="replace",
             check=False,
         )
-        git_log = trace.with_suffix(".git")
-        session_revisions = requested_revisions(
-            git_log.read_text(encoding="utf-8", errors="replace") if git_log.is_file() else ""
-        )
         node_failures = {
             line.split()[1]
             for line in result.stdout.splitlines()
             if line.startswith("FAILED") and len(line.split()) > 1
         }
-        observed, paths, module_paths, env = parse_trace(
+        observed, paths, module_paths, env, gitlogs = parse_trace(
             trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
         )
         for node in sorted(node_failures):
@@ -1228,7 +1255,9 @@ def _measure_tree(
             attributed = module_paths.get(node, set()) | module_paths.get(origin, set())
             names = env.get(node, set()) | env.get(origin, set())
             raw[f"test:{node}"] = (observed, accessed, attributed, names)
-            requested[f"test:{node}"] = session_revisions
+            requested[f"test:{node}"] = _revisions_from(
+                gitlogs.get(node, []) + gitlogs.get(origin, [])
+            )
             seen_paths |= accessed
         failing |= {f"test:{node}" for node in node_failures}
 
