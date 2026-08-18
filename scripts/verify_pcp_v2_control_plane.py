@@ -1665,9 +1665,7 @@ def main() -> int:
         unmeasurable = {identity for identity, _ in measurement.get("environment_dependent", [])}
         for module_path in measurement.get("unmeasurable_modules", []):
             unmeasurable |= {
-                identity
-                for identity in registered
-                if identity.startswith(f"test:{module_path}::")
+                identity for identity in registered if identity.startswith(f"test:{module_path}::")
             }
         unregistered = new_unregistered_failures(measured, registered)
         overregistered = overregistered_active_debt(measured, registered, unmeasurable)
