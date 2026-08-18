@@ -1241,6 +1241,10 @@ def _measure_tree(
             errors="replace",
             check=False,
         )
+        # Every git log this module produced, whichever node's window it landed in. A module
+        # that resolves fixtures from a commit outside the declared namespace has no canonically
+        # meaningful assertions at all, so the axis is module-wide by construction.
+        module_revisions = _revisions_from([t for targets in gitlogs.values() for t in targets])
         node_failures = {
             line.split()[1]
             for line in result.stdout.splitlines()
@@ -1255,13 +1259,12 @@ def _measure_tree(
             attributed = module_paths.get(node, set()) | module_paths.get(origin, set())
             names = env.get(node, set()) | env.get(origin, set())
             raw[f"test:{node}"] = (observed, accessed, attributed, names)
-            requested[f"test:{node}"] = _revisions_from(
-                gitlogs.get(node, []) + gitlogs.get(origin, [])
-            )
+            requested[f"test:{node}"] = module_revisions
             seen_paths |= accessed
         failing |= {f"test:{node}" for node in node_failures}
 
     ignored = non_canonical_paths(tree, _relative_candidates(tree, seen_paths))
+    unmeasurable_modules: set[str] = set()
     resolvable_cache: dict[tuple[str, ...], list[str]] = {}
     for identity, (observed, accessed, attributed, names) in raw.items():
         key = tuple(sorted(requested.get(identity, set())))
@@ -1269,6 +1272,8 @@ def _measure_tree(
             resolvable_cache[key] = unresolvable_revisions(
                 tree, scaffold, home, requested.get(identity, set())
             )
+        if resolvable_cache[key] and identity.startswith("test:"):
+            unmeasurable_modules.add(identity.split(":", 1)[1].split("::")[0])
         states[identity] = admissibility(
             tree,
             scaffold,
@@ -1294,6 +1299,7 @@ def _measure_tree(
             for identity, (state, reason) in states.items()
             if state == ENVIRONMENT_DEPENDENT
         ),
+        "unmeasurable_modules": sorted(unmeasurable_modules),
         "unknown": sorted(
             (identity, reason) for identity, (state, reason) in states.items() if state == UNKNOWN
         ),
@@ -1357,9 +1363,16 @@ def new_unregistered_failures(measured: list[str], registered: set[str]) -> list
     return sorted(set(measured) - registered)
 
 
-def overregistered_active_debt(measured: list[str], registered: set[str]) -> list[str]:
-    """ACTIVE - MEASURED. An active identity that no longer fails must be retired, not retained."""
-    return sorted(registered - set(measured))
+def overregistered_active_debt(
+    measured: list[str], registered: set[str], unmeasurable: set[str] | None = None
+) -> list[str]:
+    """ACTIVE - MEASURED, less anything the measurement could not canonically evaluate.
+
+    An identity whose module depends on revisions outside the declared namespace has not been
+    fixed; it has left canonical measurement. Reporting it as "no longer fails" would invite
+    retiring debt on the strength of a vacuous pass.
+    """
+    return sorted(registered - set(measured) - (unmeasurable or set()))
 
 
 def authority_inputs() -> list[str]:
@@ -1646,8 +1659,18 @@ def main() -> int:
             f"the canonical measurement could not be taken: {measurement.get('error', '')}",
         )
         measured = list(measurement.get("failures", []))
+        # Identities the canonical measurement could not evaluate: an environment-dependent
+        # verifier, or a test whose module resolves fixtures from outside the declared namespace.
+        # They are neither canonical failures nor evidence that anything was fixed.
+        unmeasurable = {identity for identity, _ in measurement.get("environment_dependent", [])}
+        for module_path in measurement.get("unmeasurable_modules", []):
+            unmeasurable |= {
+                identity
+                for identity in registered
+                if identity.startswith(f"test:{module_path}::")
+            }
         unregistered = new_unregistered_failures(measured, registered)
-        overregistered = overregistered_active_debt(measured, registered)
+        overregistered = overregistered_active_debt(measured, registered, unmeasurable)
         for failure in unregistered:
             print(f"  [{GOVERNANCE_REGRESSION}] unregistered governance failure: {failure}")
         for stale in overregistered:
@@ -1682,7 +1705,8 @@ def main() -> int:
             f"canonical measurement at {measurement.get('commit', '')[:12]} "
             f"[{MEASUREMENT_ISOLATION_MODE}]: {measurement.get('verifiers', 0)} verifiers + "
             f"{measurement.get('tests', 0)} tests applicable, "
-            f"{len(measurement.get('environment_dependent', []))} environment-dependent, "
+            f"{len(measurement.get('environment_dependent', []))} environment-dependent "
+            f"({len(measurement.get('unmeasurable_modules', []))} unmeasurable module(s)), "
             f"{len(measurement.get('unknown', []))} unknown, {len(measured)} admissible failing, "
             + ("all reconciled" if reconciled else "NOT reconciled")
         )
