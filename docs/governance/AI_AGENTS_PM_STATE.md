@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-13
-RECONCILED_AGAINST_MAIN:     d7e1311cf782e0b7d1036db9de098d3ce7a37141
-RECONCILED_BY_STAGE:         PCP-V2.1-RM3
+RECONCILED_ON:               2026-08-18
+RECONCILED_AGAINST_MAIN:     bb300c3f7fe411cb6676bf426f898cb84ba12250
+RECONCILED_BY_STAGE:         PCP-V2.1-RM4
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,10 +34,10 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M1
 CURRENT_MILESTONE_STATE:     CLOSED / CANONICAL
-PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-D
+PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-E
 CURRENT_GATE:                PCP-V2.1
-CURRENT_STAGE:               PCP-V2.1-RM3
-NEXT_PERMITTED_STAGE:        PCP-V2.1-E
+CURRENT_STAGE:               PCP-V2.1-RM4
+NEXT_PERMITTED_STAGE:        PCP-V2.1-F
 ```
 
 ## 3. Engineering truth
@@ -84,6 +84,7 @@ PCP_V2_1:                    IN PROGRESS / REMEDIATION
 PCP_V2_1_B:                  FAIL / HISTORICAL
 PCP_V2_1_C:                  FAIL / HISTORICAL
 PCP_V2_1_D:                  PASS_WITH_ADVISORY / REMEDIATION REQUIRED
+PCP_V2_1_E:                  FAIL / DEF-PCPE-01 / REMEDIATION REQUIRED
 AT_M2_GATE:                  PCP_V2_1 REQUIRED BEFORE AT_M2
 RUNTIME_IMPLEMENTATION:      NOT STARTED
 PRODUCTION_AUTHORIZATION:    NOT GRANTED
@@ -103,10 +104,26 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    NONE
-GOVERNANCE_MEASURED_AT:      d7e1311cf782e0b7d1036db9de098d3ce7a37141
-GOVERNANCE_INPUT_DIGEST:     e449ef7eda17621ea7f5424dd87dd50d494c41dccea7b208d1126d4834457a6e
+GOVERNANCE_MEASURED_AT:      bb300c3f7fe411cb6676bf426f898cb84ba12250
+GOVERNANCE_INPUT_DIGEST:     ddd9d2ab917d8cae080ae44a58608a6b013aca1acf2162d39cca30f6def386d5
 GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
+CANONICAL_MEASURED_COMMIT:   bb300c3f7fe411cb6676bf426f898cb84ba12250
+MEASUREMENT_POLICY_ID:       pcp-v2-canonical-isolated
+MEASUREMENT_POLICY_VERSION:  1
+MEASUREMENT_POLICY_DIGEST:   a532e28a4b33233d9b5fbe6274241f553b1ac04816a84d0628c363d461cf57e0
+MEASUREMENT_ISOLATION_MODE:  disposable-clean-worktree+sanitized-environment
+ADMISSIBILITY_CONTRACT:      1
 ```
+
+The measurement is taken in a **disposable clean checkout** of `CANONICAL_MEASURED_COMMIT` under a
+sanitized environment, never in a working tree. It used to run wherever the operator happened to
+be, and three verifiers reading a gitignored `.runtime/` directory therefore passed on one
+workstation and failed in a clean checkout of the same commit — with a byte-identical
+`GOVERNANCE_INPUT_DIGEST`. That is DEF-PCPE-01, and it meant `BLOCKERS: NONE` described a machine.
+
+`MEASUREMENT_POLICY_DIGEST` covers the policy, the environment it grants and the tracer that
+implements admissibility, so changing how a measurement is taken invalidates the recorded result
+exactly as changing what it reads does.
 
 `BLOCKERS: NONE` is a **measured** claim, not an assertion that nobody noticed one. For the
 governance domain it means exactly this: the applicable governance verification set was executed,
@@ -114,6 +131,12 @@ and every measured failure appears in the registered-debt list below. If any mea
 absent from that list, `BLOCKERS: NONE` is invalid and the control plane returns
 `GOVERNANCE_REGRESSION`. The claim is only as fresh as `GOVERNANCE_MEASURED_AT`; if any governance
 artifact has changed since that commit, the measurement must be retaken before the claim stands.
+
+Every measured identity resolves to one of three admissibility states. Only **REPO_DETERMINISTIC**
+identities appear below. **ENVIRONMENT_DEPENDENT** identities — whose truth needs an input a clean
+checkout cannot contain — are reported by the measurement with the exact input and are deliberately
+**not** registered here: repository debt means a known canonical governance failure, and must not
+come to mean "this machine had no runtime evidence". **UNKNOWN** identities block outright.
 
 ### Active registered debt
 
@@ -154,9 +177,6 @@ pre-absolve whatever regression later reintroduces it.
 - verifier:verify_step66c4_be3_b_operator_resume.py
 - verifier:verify_step66c4_be3_c_authorized_replay.py
 - verifier:verify_step66c4_be3_planning.py
-- verifier:verify_step66c4_be3_ra1b_migration_runner_remediation.py
-- verifier:verify_step66c4_be3_ra1c_ledger_schema_cli.py
-- verifier:verify_step66c4_be3_ra1d_missing_config_json.py
 - verifier:verify_step66d_align1_rm1_fixed_range_remediation.py
 - verifier:verify_step66m0_fe1d_sot_reconciliation_merge.py
 - verifier:verify_step66ui2_fe1_fix1_review.py
@@ -168,6 +188,16 @@ Groups, for human reading only — the machine authority is the exact list above
 **ADV-R4-01** the ALIGN1 fixed-range debt; **ADV-PCPRM1-01** the 66C4 live-reference verifiers and
 their mirrored tests, plus the 66UI2-FE1 review verifiers surfaced once applicability stopped
 depending on how a verifier spells its live reference.
+
+Three identities were **removed** at PCP-V2.1-RM4, and removal is not repair. The verifiers
+`verify_step66c4_be3_ra1b_migration_runner_remediation.py`,
+`verify_step66c4_be3_ra1c_ledger_schema_cli.py` and
+`verify_step66c4_be3_ra1d_missing_config_json.py` query pull-request state through the GitHub CLI,
+whose credentials live in the operator's account rather than in the repository. Their result was
+decided by whichever machine ran the measurement, so they are environment-dependent and cannot be
+canonical repository debt. The underlying validations are **not** fixed and are **not** claimed to
+pass; they have left the canonical repository-state domain, and the exclusion is printed with its
+reason on every run.
 
 ### Historical debt
 
