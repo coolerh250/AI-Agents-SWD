@@ -33,14 +33,26 @@ Repository:  this checkout.
 3b. Run   python scripts/verify_pcp_v2_control_plane.py --governance
           MANDATORY before accepting "BLOCKERS: NONE". Step 3 only checks whether the
           RECORDED measurement still matches current authority inputs; it does not measure.
-          This mode re-executes the applicable governance verifiers and tests and reconciles
-          the result against the active debt register in both directions.
+          This mode measures canonical truth, in a disposable clean checkout of the canonical
+          commit under a sanitized environment -- NOT the working tree you happen to have open.
+          You do not need to clean your tree first, and cleaning it changes nothing: leftover
+          untracked or gitignored files cannot reach the measurement at all.
+          It re-executes the applicable governance verifiers and tests there and reconciles the
+          result against the active debt register in both directions.
           Read its verdict as:
             GOVERNANCE_REGRESSION   a measured failure is not registered active debt,
                                     or an active identity no longer fails. BLOCKERS is not NONE.
             stale measurement       the recorded digest no longer describes current inputs.
                                     Remeasure; do not inherit the old claim.
             all reconciled          measured failures exactly equal active registered debt.
+          It also reports two classes that are NOT repository debt:
+            ENVIRONMENT_DEPENDENT   the check needs an input a clean checkout cannot contain.
+                                    Reported with the exact input, exempts nothing, and is not
+                                    registered as debt -- "this machine had no runtime evidence"
+                                    is not a known governance failure.
+            UNKNOWN                 the check's inputs could not be observed, so their authority
+                                    is unestablished. This BLOCKS: it is never resolved by
+                                    guessing in either direction.
           Add --remote to machine-confirm pull-request state as well.
           A mistyped option exits with a usage error rather than a weaker PASS.
 

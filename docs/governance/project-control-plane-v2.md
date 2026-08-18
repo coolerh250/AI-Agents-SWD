@@ -163,6 +163,45 @@ recorded at family granularity let a new failure hide behind an existing advisor
 verifier family — the register said BLOCKERS: NONE while two governance verifiers were failing on
 canonical main.
 
+### 11a. Where the measurement runs, and what may count
+
+Both of the above assume the measurement describes canonical main. It did not. The measurement ran
+in the operator's own working tree, so three verifiers that read a gitignored `.runtime/` directory
+passed here and failed in a clean checkout of the same commit — with a byte-identical authority
+digest. `BLOCKERS: NONE` was a property of one workstation.
+
+```text
+CANONICAL_MEASUREMENT = F(canonical_commit, canonical_authority_inputs, measurement_policy)
+
+not                   F(canonical_commit, whatever_happens_to_exist_locally, ambient_environment)
+```
+
+So a canonical measurement runs in a disposable clean checkout of the canonical commit under a
+sanitized environment, and every measured identity resolves to one of three states:
+
+```text
+REPO_DETERMINISTIC     every input it actually read is canonical tracked repository state
+                       -> participates in debt reconciliation
+
+ENVIRONMENT_DEPENDENT  its truth needs an input a clean checkout cannot contain
+                       -> reported with the exact input, and NOT registered as repository debt.
+                          Repository debt means a known canonical governance failure; it must not
+                          come to mean "this machine had no runtime evidence"
+
+UNKNOWN                its inputs could not be observed, so their authority is unestablished
+                       -> BLOCKS. Never mapped to either neighbour: calling it environment-
+                          dependent would silently exclude it, and calling it deterministic would
+                          silently adopt the workstation's answer
+```
+
+Admissibility is decided by **observing what a module actually reads**, not by inspecting how it is
+written, and what counts as non-canonical is decided by `git check-ignore` rather than by any list
+kept here. Both choices are deliberate. A path can be spelled an unbounded number of ways, and
+every previous attempt to classify governance modules by their text — stage family, ref spelling,
+command form, executable name — was defeated by a spelling nobody anticipated. What a process opens
+is decidable regardless of spelling, and the repository already declares which paths it will never
+carry.
+
 ## 12. Two classes of fact, two authority models
 
 Not every fact in the snapshot has a Git source, and pretending otherwise produced a real

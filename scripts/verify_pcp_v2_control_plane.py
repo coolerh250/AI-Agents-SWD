@@ -27,10 +27,12 @@ from __future__ import annotations
 
 import ast
 import hashlib
+import os
 import pathlib
 import re
 import subprocess
 import sys
+import tempfile
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "PCP_V2_CONTROL_PLANE_VERIFY"
@@ -387,11 +389,12 @@ def repository_state_dependent(source: str) -> tuple[bool, str]:
     return True, "governance module reading repository state"
 
 
-def governance_modules(directory: str, prefix: str) -> list[str]:
+def governance_modules(directory: str, prefix: str, root: pathlib.Path | None = None) -> list[str]:
     """The OUTER governance domain: the repository's verifier/test naming convention."""
+    base = root or ROOT
     return sorted(
         f"{directory}/{path.name}"
-        for path in (ROOT / directory).glob(f"{prefix}*.py")
+        for path in (base / directory).glob(f"{prefix}*.py")
         if GOVERNANCE_ARTIFACT.match(f"{directory}/{path.name}")
     )
 
@@ -445,42 +448,470 @@ def applicable_governance_tests() -> list[str]:
     return applicable
 
 
-def measured_governance_failures() -> list[str]:
-    """Exact failure identities from an actual run of BOTH applicable domains.
+# ===================== CANONICAL MEASUREMENT AND ADMISSIBILITY (Step PCP-V2.1-RM4) ===============
+#
+# DEF-PCPE-01: the measurement ran with cwd=ROOT, the operator's own working tree. Three verifiers
+# read a gitignored `.runtime/` directory, so they passed here and failed in a clean checkout of the
+# SAME commit, with a byte-identical authority digest. "BLOCKERS: NONE" described the workstation.
+#
+# Two defects, deliberately fixed separately:
+#
+#   ISOLATION      canonical measurement now runs in a disposable pristine worktree under a
+#                  sanitized environment. Developer-tree leftovers cannot reach it at all.
+#
+#   ADMISSIBILITY  a check whose truth needs a non-canonical input must not become repository debt
+#                  just because that input is absent from a clean checkout. "This machine had no
+#                  runtime evidence" is not a known governance failure.
+#
+# Admissibility is decided by OBSERVING what a module actually reads, not by inspecting how it is
+# written. A path can be spelled an unbounded number of ways -- constant, f-string, loop variable,
+# helper return value -- and a static classifier must anticipate every one. That is the enumeration
+# defect this project has now hit ten times. What a process opens is decidable regardless of
+# spelling, so a future verifier reading a newly ignored directory is caught with nobody editing
+# this file.
 
-    A registered `test:` identity that could never be measured was A-3: the reconciliation could
-    not see a new governance test failure at all.
+REPO_DETERMINISTIC = "REPO_DETERMINISTIC"
+ENVIRONMENT_DEPENDENT = "ENVIRONMENT_DEPENDENT"
+UNKNOWN = "UNKNOWN"
+
+MEASUREMENT_POLICY_ID = "pcp-v2-canonical-isolated"
+MEASUREMENT_POLICY_VERSION = "1"
+ADMISSIBILITY_CONTRACT_VERSION = "1"
+MEASUREMENT_ISOLATION_MODE = "disposable-clean-worktree+sanitized-environment"
+PROBE_DIR = "scripts/pcp_measurement_probe"
+PROBE_HEADER = "probe\tinput-authority-tracer/1"
+
+# The environment the measurement policy PROVIDES. Reading anything outside it is reading ambient
+# process state, whose value this measurement cannot reproduce.
+ENVIRONMENT_ALLOWLIST = frozenset(
+    {
+        "PATH",
+        "PATHEXT",
+        "SYSTEMROOT",
+        "SYSTEMDRIVE",
+        "WINDIR",
+        "COMSPEC",
+        "TEMP",
+        "TMP",
+        "TMPDIR",
+        "HOME",
+        "USERPROFILE",
+        "PYTHONPATH",
+        "PYTHONHASHSEED",
+        "PYTHONDONTWRITEBYTECODE",
+        "PYTHONIOENCODING",
+        "PYTHONUTF8",
+        "PYTHONPYCACHEPREFIX",
+        "PCP_MEASUREMENT_TRACE",
+        "PCP_MEASUREMENT_ROOT",
+        "LANG",
+        "LC_ALL",
+    }
+)
+
+# The subset the policy PASSES THROUGH from the operator's environment rather than setting itself.
+# Needed to locate the interpreter and git at all.
+AMBIENT_ENVIRONMENT = frozenset(
+    {"PATH", "PATHEXT", "SYSTEMROOT", "SYSTEMDRIVE", "WINDIR", "COMSPEC"}
+)
+
+# Why admissibility has no environment axis.
+#
+# Sanitising the environment does not merely classify environment dependence, it ELIMINATES it: the
+# environment is fixed by policy, so two runs under the same policy see the same environment. Every
+# variable is either granted a value the policy derives, passed through from the machine, or absent
+# -- and absence is as deterministic as any value.
+#
+# Only the six pass-through names above carry a machine-specific value, and an attempt to treat
+# reading one as evidence of dependence classified THREE ALREADY-REGISTERED debt identities as
+# environment-dependent. Python's own process machinery reads COMSPEC, PATH and PATHEXT on every
+# subprocess call, and separating the interpreter's reads from the module's by call stack proved
+# unreliable. Shipping it would have silently removed real debt from measurement, which is the
+# exact under-sampling this stage exists to stop -- so the axis is not shipped.
+#
+# The case that actually matters is not lost. A verifier whose result depends on PATH's value is
+# probing the filesystem for an executable, and those reads land outside the repository, where the
+# path rule below catches them.
+ENVIRONMENT_NOTE = (
+    "environment is fixed by measurement policy, so it is controlled rather than classified"
+)
+
+
+def measurement_policy() -> dict[str, str]:
+    """What a recorded measurement must state so another session can reproduce its execution."""
+    return {
+        "MEASUREMENT_POLICY_ID": MEASUREMENT_POLICY_ID,
+        "MEASUREMENT_POLICY_VERSION": MEASUREMENT_POLICY_VERSION,
+        "ADMISSIBILITY_CONTRACT_VERSION": ADMISSIBILITY_CONTRACT_VERSION,
+        "MEASUREMENT_ISOLATION_MODE": MEASUREMENT_ISOLATION_MODE,
+    }
+
+
+def measurement_policy_digest() -> str:
+    """Distinguishes 'same commit under another ambient environment' from 'same policy'.
+
+    Covers the policy fields, the environment the policy grants, and the tracer the admissibility
+    contract is implemented by -- so changing how measurement decides anything invalidates the
+    recorded result.
     """
-    failures = []
-    for relpath in applicable_governance_verifiers():
+    hasher = hashlib.sha256()
+    for key, value in sorted(measurement_policy().items()):
+        hasher.update(f"{key}={value}\n".encode())
+    for name in sorted(ENVIRONMENT_ALLOWLIST):
+        hasher.update(f"env:{name}\n".encode())
+    for relpath in sorted(f"{PROBE_DIR}/{path.name}" for path in (ROOT / PROBE_DIR).glob("*.py")):
+        hasher.update(relpath.encode("utf-8"))
+        hasher.update(read(relpath).encode("utf-8"))
+    return hasher.hexdigest()
+
+
+def domains_at(root: pathlib.Path) -> tuple[list[str], list[str]]:
+    """(verifiers, tests) applicable at a given checkout, derived from that checkout's own files."""
+    self_relpath = f"scripts/{pathlib.Path(__file__).name}"
+    verifiers = []
+    for relpath in governance_modules("scripts", "verify_", root):
+        if relpath == self_relpath:
+            continue
+        source = (root / relpath).read_text(encoding="utf-8", errors="replace")
+        if repository_state_dependent(source)[0]:
+            verifiers.append(relpath)
+    mirrored = {pathlib.Path(relpath).stem[len("verify_") :] for relpath in verifiers}
+    tests = []
+    for relpath in governance_modules("tests", "test_", root):
+        if pathlib.Path(relpath).stem[len("test_") :] not in mirrored:
+            continue
+        source = (root / relpath).read_text(encoding="utf-8", errors="replace")
+        if repository_state_dependent(source)[0]:
+            tests.append(relpath)
+    return verifiers, tests
+
+
+def non_canonical_paths(root: pathlib.Path, candidates: set[str]) -> set[str]:
+    """Which repo-relative paths the REPOSITORY itself declares non-canonical.
+
+    git answers, not a list maintained here. A tracked file is never ignored, so this is exactly
+    "content a clean checkout of this commit cannot contain".
+    """
+    if not candidates:
+        return set()
+    # NUL-separated in both directions. Newline separation is silently corrupted on Windows, where
+    # text-mode pipes rewrite \n as \r\n and git then quotes every path back with a trailing CR --
+    # so nothing matched and three non-canonical dependencies looked deterministic.
+    result = subprocess.run(
+        ["git", "check-ignore", "--stdin", "-z"],
+        cwd=root,
+        input="\0".join(sorted(candidates)),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    return {entry.replace("\\", "/") for entry in result.stdout.split("\0") if entry.strip()}
+
+
+def parse_trace(text: str) -> tuple[bool, dict[str, set[str]], dict[str, set[str]], dict]:
+    """(observed, paths by node, module-attributed paths by node, env names by node)."""
+    observed = PROBE_HEADER in text
+    paths: dict[str, set[str]] = {}
+    module_paths: dict[str, set[str]] = {}
+    env: dict[str, set[str]] = {}
+    node = ""
+    for line in text.splitlines():
+        kind, _, value = line.partition("\t")
+        if kind == "node":
+            node = value
+        elif kind == "path":
+            paths.setdefault(node, set()).add(value)
+        elif kind == "mpath":
+            module_paths.setdefault(node, set()).add(value)
+        elif kind == "env":
+            env.setdefault(node, set()).add(value)
+    return observed, paths, module_paths, env
+
+
+def admissibility(
+    tree: pathlib.Path,
+    scaffold: pathlib.Path,
+    home: pathlib.Path,
+    observed: bool,
+    accessed: set[str],
+    module_accessed: set[str],
+    env_names: set[str],
+    ignored: set[str],
+) -> tuple[str, str]:
+    """(state, reason) for one measured identity, from what it actually read.
+
+    UNKNOWN is never mapped to either neighbour. An unobserved module does not quietly enter debt
+    reconciliation using the workstation's answer, and it is not quietly excluded either.
+    """
+    if not observed:
+        return UNKNOWN, "inputs were not observed, so their authority cannot be established"
+    # There is deliberately no environment axis here; see ENVIRONMENT_NOTE. env_names is carried
+    # so the harness can report what was read without it deciding admissibility.
+    del env_names
+    # Repository authority, judged without attribution: a non-canonical dependency reached through
+    # any depth of helper is still this identity's dependency. This is the DEF-PCPE-01 class.
+    for raw in sorted(accessed):
+        relative = _repo_relative(tree, raw)
+        if relative is not None and relative in ignored:
+            return (
+                ENVIRONMENT_DEPENDENT,
+                f"depends on {relative}, which this repository declares non-canonical",
+            )
+        if relative is None and _under(tree, home, raw):
+            # The home the policy grants is an empty scaffold directory nothing else touches, so a
+            # read there is always the module reaching for a home or cache location.
+            return ENVIRONMENT_DEPENDENT, "reads an ambient home or cache location"
+    # Elsewhere outside the repository, attribution decides. An imported library probing a machine
+    # path is not this module's dependency; the module opening one itself is.
+    for raw in sorted(module_accessed):
+        if _repo_relative(tree, raw) is not None:
+            continue
+        resolved = pathlib.Path(raw)
+        resolved = resolved if resolved.is_absolute() else tree / resolved
+        if _outside_measurement(resolved, scaffold):
+            return ENVIRONMENT_DEPENDENT, f"reads the out-of-repository path {raw}"
+    return REPO_DETERMINISTIC, "every observed input is canonical tracked repository state"
+
+
+def _under(tree: pathlib.Path, base: pathlib.Path, raw: str) -> bool:
+    candidate = pathlib.Path(raw)
+    resolved = candidate if candidate.is_absolute() else tree / candidate
+    try:
+        return resolved.resolve().is_relative_to(base.resolve())
+    except (ValueError, OSError):
+        return False
+
+
+def _repo_relative(tree: pathlib.Path, raw: str) -> str | None:
+    candidate = pathlib.Path(raw)
+    resolved = candidate if candidate.is_absolute() else tree / candidate
+    try:
+        return resolved.resolve().relative_to(tree.resolve()).as_posix()
+    except (ValueError, OSError):
+        return None
+
+
+def _outside_measurement(resolved: pathlib.Path, scaffold: pathlib.Path) -> bool:
+    """The harness's own scaffolding and the interpreter's install are not ambient inputs."""
+    for base in (
+        scaffold,
+        ROOT / PROBE_DIR,
+        pathlib.Path(sys.prefix),
+        pathlib.Path(sys.base_prefix),
+    ):
+        try:
+            if resolved.resolve().is_relative_to(base.resolve()):
+                return False
+        except (ValueError, OSError):
+            continue
+    return True
+
+
+def _sanitized_environment(scaffold: pathlib.Path, home: pathlib.Path, trace: pathlib.Path) -> dict:
+    """Only what the policy grants. Undeclared ambient values cannot reach the measurement."""
+    temp = scaffold / "tmp"
+    temp.mkdir(exist_ok=True)
+    granted = {
+        "PATH": os.environ.get("PATH", ""),
+        "PATHEXT": os.environ.get("PATHEXT", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "SYSTEMDRIVE": os.environ.get("SYSTEMDRIVE", ""),
+        "WINDIR": os.environ.get("WINDIR", ""),
+        "COMSPEC": os.environ.get("COMSPEC", ""),
+        "TEMP": str(temp),
+        "TMP": str(temp),
+        "TMPDIR": str(temp),
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "PYTHONPATH": str(ROOT / PROBE_DIR),
+        "PYTHONHASHSEED": "0",
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "PYTHONUTF8": "1",
+        # Bytecode is derived from canonical source, so it is not an ambient input -- but it lands
+        # in a gitignored __pycache__, which the authority rule would rightly call non-canonical.
+        # Writing it outside the tree removes the phenomenon instead of special-casing its name.
+        "PYTHONPYCACHEPREFIX": str(scaffold / "pycache"),
+        "PCP_MEASUREMENT_TRACE": str(trace),
+        "PCP_MEASUREMENT_ROOT": str(scaffold / "tree"),
+    }
+    return {key: value for key, value in granted.items() if value}
+
+
+def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None) -> dict:
+    """Measure both governance domains from a disposable pristine checkout of a canonical commit.
+
+    `ambient` exists only so a test can PROVE isolation by seeding non-canonical state into the
+    measurement tree. Canonical runs never pass it.
+    """
+    commit = commit or git("rev-parse", "HEAD")
+    with tempfile.TemporaryDirectory(
+        prefix="pcp-canonical-", ignore_cleanup_errors=True
+    ) as scaffold_name:
+        scaffold = pathlib.Path(scaffold_name)
+        tree = scaffold / "tree"
+        home = scaffold / "home"
+        home.mkdir()
+        traces = scaffold / "traces"
+        traces.mkdir()
+        if not git("worktree", "add", "--detach", str(tree), commit) and not tree.is_dir():
+            return {"error": f"a pristine checkout of {commit[:12]} could not be created"}
+        try:
+            return _measure_tree(tree, scaffold, home, traces, commit, ambient)
+        finally:
+            git("worktree", "remove", "--force", str(tree))
+            git("worktree", "prune")
+
+
+def _measure_tree(
+    tree: pathlib.Path,
+    scaffold: pathlib.Path,
+    home: pathlib.Path,
+    traces: pathlib.Path,
+    commit: str,
+    ambient: pathlib.Path | None,
+) -> dict:
+    residue = subprocess.run(
+        ["git", "status", "--porcelain", "--ignored"],
+        cwd=tree,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    ).stdout.strip()
+    if ambient and ambient.is_dir():
+        for source in ambient.rglob("*"):
+            if source.is_file():
+                target = tree / source.relative_to(ambient)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(source.read_bytes())
+    elif residue:
+        return {"error": f"the measurement checkout is not pristine: {residue.splitlines()[0]}"}
+
+    verifiers, tests = domains_at(tree)
+    states: dict[str, tuple[str, str]] = {}
+    failing: set[str] = set()
+    seen_paths: set[str] = set()
+    raw: dict[str, tuple[bool, set[str], set[str], set[str]]] = {}
+
+    for relpath in verifiers:
+        identity = f"verifier:{pathlib.Path(relpath).name}"
+        trace = traces / f"{pathlib.Path(relpath).stem}.trace"
         result = subprocess.run(
             [sys.executable, relpath],
-            cwd=ROOT,
+            cwd=tree,
+            env=_sanitized_environment(scaffold, home, trace),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
         )
+        observed, paths, module_paths, env = parse_trace(
+            trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
+        )
+        accessed = set().union(*paths.values()) if paths else set()
+        raw[identity] = (
+            observed,
+            accessed,
+            set().union(*module_paths.values()) if module_paths else set(),
+            set().union(*env.values()) if env else set(),
+        )
+        seen_paths |= accessed
         if result.returncode != 0:
-            failures.append(f"verifier:{pathlib.Path(relpath).name}")
-    tests = applicable_governance_tests()
+            failing.add(identity)
+
+    node_failures: set[str] = set()
     if tests:
+        trace = traces / "pytest.trace"
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-p", "no:randomly", "--tb=no", *tests],
-            cwd=ROOT,
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                "-q",
+                "-p",
+                "no:randomly",
+                "-p",
+                "pcp_trace_plugin",
+                "--tb=no",
+                *tests,
+            ],
+            cwd=tree,
+            env=_sanitized_environment(scaffold, home, trace),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
         )
-        failures.extend(
-            f"test:{line.split()[1]}"
+        node_failures = {
+            line.split()[1]
             for line in result.stdout.splitlines()
             if line.startswith("FAILED") and len(line.split()) > 1
+        }
+        observed, paths, module_paths, env = parse_trace(
+            trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
         )
-    return sorted(set(failures))
+        for node in sorted(node_failures):
+            origin = node.split("::")[0]
+            accessed = paths.get(node, set()) | paths.get(origin, set())
+            attributed = module_paths.get(node, set()) | module_paths.get(origin, set())
+            names = env.get(node, set()) | env.get(origin, set())
+            raw[f"test:{node}"] = (observed, accessed, attributed, names)
+            seen_paths |= accessed
+        failing |= {f"test:{node}" for node in node_failures}
+
+    ignored = non_canonical_paths(tree, _relative_candidates(tree, seen_paths))
+    for identity, (observed, accessed, attributed, names) in raw.items():
+        states[identity] = admissibility(
+            tree, scaffold, home, observed, accessed, attributed, names, ignored
+        )
+
+    admissible = sorted(
+        identity for identity in failing if states.get(identity, ("", ""))[0] == REPO_DETERMINISTIC
+    )
+    return {
+        "commit": commit,
+        "verifiers": len(verifiers),
+        "tests": len(tests),
+        "failures": admissible,
+        "environment_dependent": sorted(
+            (identity, reason)
+            for identity, (state, reason) in states.items()
+            if state == ENVIRONMENT_DEPENDENT
+        ),
+        "unknown": sorted(
+            (identity, reason) for identity, (state, reason) in states.items() if state == UNKNOWN
+        ),
+        "policy_digest": measurement_policy_digest(),
+        **measurement_policy(),
+    }
+
+
+def _relative_candidates(tree: pathlib.Path, accessed: set[str]) -> set[str]:
+    candidates = set()
+    for raw in accessed:
+        candidate = pathlib.Path(raw)
+        resolved = candidate if candidate.is_absolute() else tree / candidate
+        try:
+            candidates.add(resolved.resolve().relative_to(tree.resolve()).as_posix())
+        except (ValueError, OSError):
+            continue
+    return {path for path in candidates if path not in {"", "."}}
+
+
+def measured_governance_failures() -> list[str]:
+    """Exact ADMISSIBLE failure identities from a canonical isolated measurement.
+
+    Only REPO_DETERMINISTIC identities reach debt reconciliation. Environment-dependent and unknown
+    identities are reported separately by the caller, because registering them as repository debt
+    would record "this machine lacked runtime evidence" as a known governance failure (RM4 §12).
+    """
+    return list(canonical_measurement().get("failures", []))
 
 
 def _identities(block: str) -> set[str]:
@@ -551,6 +982,9 @@ def authority_input_digest() -> str:
         hasher.update(b"active:" + entry.encode("utf-8"))
     for entry in sorted(historical):
         hasher.update(b"historical:" + entry.encode("utf-8"))
+    # RM4: how the measurement is taken decides what it can see, so the policy and the tracer that
+    # implements the admissibility contract are authority inputs too.
+    hasher.update(b"policy:" + measurement_policy_digest().encode("utf-8"))
     return hasher.hexdigest()
 
 
@@ -585,6 +1019,39 @@ def provenance_conflicts(pm: dict[str, str]) -> list[str]:
             conflicts.append(
                 "GOVERNANCE_MEASURED_AT is not the reconciliation commit nor an ancestor of it; "
                 "the measurement claims a state the snapshot was never reconciled against"
+            )
+    return conflicts
+
+
+def measurement_provenance_conflicts(pm: dict[str, str]) -> list[str]:
+    """RM4: a recorded measurement must state the policy it was taken under, and that policy must
+    still be the current one. Otherwise two results that disagree cannot be told apart."""
+    conflicts = []
+    required = (
+        "CANONICAL_MEASURED_COMMIT",
+        "MEASUREMENT_POLICY_ID",
+        "MEASUREMENT_POLICY_DIGEST",
+        "MEASUREMENT_ISOLATION_MODE",
+    )
+    for field in required:
+        if not pm.get(field):
+            conflicts.append(f"{field} is absent, so the measurement's execution policy is unknown")
+    if pm.get("MEASUREMENT_POLICY_ID") and pm["MEASUREMENT_POLICY_ID"] != MEASUREMENT_POLICY_ID:
+        conflicts.append(
+            f"MEASUREMENT_POLICY_ID is {pm['MEASUREMENT_POLICY_ID']!r} but this gate measures "
+            f"under {MEASUREMENT_POLICY_ID!r}"
+        )
+    recorded = pm.get("MEASUREMENT_POLICY_DIGEST", "")
+    if recorded and recorded != measurement_policy_digest():
+        conflicts.append(
+            "the measurement policy changed since the recorded measurement, which must be retaken"
+        )
+    commit = pm.get("CANONICAL_MEASURED_COMMIT", "")
+    against = pm.get("RECONCILED_AGAINST_MAIN", "")
+    if commit_exists(commit) and commit_exists(against):
+        if not (commit == against or is_ancestor(commit, against)):
+            conflicts.append(
+                "CANONICAL_MEASURED_COMMIT is neither the reconciliation commit nor an ancestor"
             )
     return conflicts
 
@@ -737,13 +1204,23 @@ def main() -> int:
         f"must be retaken: {stale_since}",
     )
     if "--governance" in sys.argv:
-        measured = measured_governance_failures()
+        measurement = canonical_measurement()
+        expect(
+            "error" not in measurement,
+            "check19c",
+            f"the canonical measurement could not be taken: {measurement.get('error', '')}",
+        )
+        measured = list(measurement.get("failures", []))
         unregistered = new_unregistered_failures(measured, registered)
         overregistered = overregistered_active_debt(measured, registered)
         for failure in unregistered:
             print(f"  [{GOVERNANCE_REGRESSION}] unregistered governance failure: {failure}")
         for stale in overregistered:
             print(f"  [{GOVERNANCE_REGRESSION}] active debt that no longer fails: {stale}")
+        for identity, reason in measurement.get("environment_dependent", []):
+            print(f"  [ENVIRONMENT_DEPENDENT] {identity}: {reason}")
+        for identity, reason in measurement.get("unknown", []):
+            print(f"  [UNKNOWN] {identity}: {reason}")
         expect(
             unregistered == [],
             "check19",
@@ -756,16 +1233,39 @@ def main() -> int:
             f"{GOVERNANCE_REGRESSION}: {len(overregistered)} active debt identity(ies) no longer "
             "fail; retire them, or they pre-absolve the regression that reintroduces them",
         )
-        reconciled = not unregistered and not overregistered
+        # An input whose authority nobody can establish must not be resolved by guessing. Mapping
+        # UNKNOWN to environment-dependent would silently exclude it; mapping it to deterministic
+        # would silently admit the workstation's answer. It blocks instead.
+        expect(
+            measurement.get("unknown", []) == [],
+            "check19b",
+            f"{len(measurement.get('unknown', []))} measured identity(ies) have inputs of "
+            "unestablished authority, so BLOCKERS: NONE is invalid",
+        )
+        reconciled = not unregistered and not overregistered and not measurement.get("unknown")
         notes.append(
-            f"governance: {len(applicable_governance_verifiers())} verifiers + "
-            f"{len(applicable_governance_tests())} tests applicable, {len(measured)} failing, "
+            f"canonical measurement at {measurement.get('commit', '')[:12]} "
+            f"[{MEASUREMENT_ISOLATION_MODE}]: {measurement.get('verifiers', 0)} verifiers + "
+            f"{measurement.get('tests', 0)} tests applicable, "
+            f"{len(measurement.get('environment_dependent', []))} environment-dependent, "
+            f"{len(measurement.get('unknown', []))} unknown, {len(measured)} admissible failing, "
             + ("all reconciled" if reconciled else "NOT reconciled")
         )
     expect(
         pm.get("BLOCKERS", "").upper() != "NONE" or stale_since == [],
         "check20",
         "BLOCKERS: NONE is claimed against a stale governance measurement",
+    )
+
+    # RM4: evidence must distinguish "same commit measured under another ambient environment" from
+    # "same canonical measurement policy". Without this a recorded result cannot be reproduced.
+    policy_conflicts = measurement_provenance_conflicts(pm)
+    for conflict in policy_conflicts:
+        print(f"  [{CONFLICT}] measurement provenance: {conflict}")
+    expect(
+        policy_conflicts == [],
+        "check21",
+        f"{CONFLICT}: the recorded measurement does not state a reproducible execution policy",
     )
 
     if remote:
@@ -776,7 +1276,7 @@ def main() -> int:
 
     for note in notes:
         print(f"  [note] {note}")
-    checks = 22 if remote else 21
+    checks = 23 if remote else 22
     print(f"{MARKER}: checks={checks} failures={len(failures)}")
     print(f"{MARKER}: {'PASS' if not failures else 'FAIL'}")
     return 1 if failures else 0

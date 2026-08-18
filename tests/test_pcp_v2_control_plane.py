@@ -14,8 +14,10 @@ from __future__ import annotations
 
 import importlib.util
 import re
+import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -611,8 +613,8 @@ def test_rm2_the_governance_test_domain_is_derived_and_non_empty():
 def test_rm2_a_test_identity_can_actually_be_measured():
     """A registered test: identity that could never be measured was the A-3 hole."""
     source = VERIFIER.read_text(encoding="utf-8")
-    measured = source.split("def measured_governance_failures")[1].split("\ndef ")[0]
-    assert "applicable_governance_tests()" in measured
+    measured = source.split("def _measure_tree")[1].split("\ndef ")[0]
+    assert "domains_at(tree)" in measured
     assert "test:" in measured
     active, _ = module().debt_sections(PM_STATE.read_text(encoding="utf-8"))
     assert any(entry.startswith("test:") for entry in active)
@@ -835,3 +837,340 @@ def test_rm3_the_contract_separates_engineering_facts_from_pm_facts():
     assert "The snapshot is a cache and is never sufficient" in flat
     assert "recorded only as prose is not authoritative at all" in flat
     assert "structured and versioned" in flat
+
+
+# =================================================================================================
+# 10. Canonical measurement determinism and ambient-state isolation (Step PCP-V2.1-RM4)
+#
+# DEF-PCPE-01: the measurement ran in the operator's own working tree. Three verifiers reading a
+# gitignored .runtime/ passed here and failed in a clean checkout of the same commit, with a
+# byte-identical authority digest. "BLOCKERS: NONE" described the workstation, not canonical main.
+# =================================================================================================
+
+
+PROBE_PREFIX = "verify_rm4probe_"
+
+PROBE_VERIFIERS = {
+    # A -- tracked repository input only.
+    "tracked": (
+        "import pathlib\n"
+        "ROOT = pathlib.Path(__file__).resolve().parents[1]\n"
+        "print((ROOT / 'docs' / 'governance' / 'AI_AGENTS_PM_STATE.md').is_file())\n"
+    ),
+    # B -- an input the harness itself generates, deterministically, from tracked content.
+    "generated": (
+        "import os, pathlib\n"
+        "ROOT = pathlib.Path(__file__).resolve().parents[1]\n"
+        "derived = pathlib.Path(os.environ['TEMP']) / 'rm4-generated.txt'\n"
+        "derived.write_text((ROOT / 'README.md').read_text(encoding='utf-8')[:16])\n"
+        "print(derived.read_text())\n"
+    ),
+    # C -- a gitignored local file. The DEF-PCPE-01 shape.
+    "ignored": (
+        "import pathlib\n"
+        "ROOT = pathlib.Path(__file__).resolve().parents[1]\n"
+        "print((ROOT / '.runtime' / 'rm4-probe.json').is_file())\n"
+    ),
+    # D -- a variable whose value measurement policy passes through from the machine.
+    "envvar": "import os\nprint(len(os.environ['PATH']))\n",
+    # E -- a home or cache location.
+    "homefile": "import pathlib\nprint((pathlib.Path.home() / '.pcp-rm4-probe').is_file())\n",
+    # F -- inputs that cannot be observed at all: this one erases the record of what it read.
+    "unobserved": (
+        "import io, os\n"
+        "io.open(os.environ['PCP_MEASUREMENT_TRACE'], 'w').close()\n"
+        "print('inputs unobservable')\n"
+    ),
+    # An external tool named only as forbidden path text must not be excluded for the word alone.
+    "toolword": (
+        "import pathlib\n"
+        "FORBIDDEN = 'infra/helm/'\n"
+        "ROOT = pathlib.Path(__file__).resolve().parents[1]\n"
+        "print(FORBIDDEN, (ROOT / 'README.md').is_file())\n"
+    ),
+    # A previously unseen way of reaching repository state must stay measured, never excluded.
+    "unseenform": (
+        "import os, pathlib\n"
+        "ROOT = pathlib.Path(__file__).resolve().parents[1]\n"
+        "print(len(os.listdir(ROOT / 'docs')))\n"
+    ),
+}
+
+OUT_OF_DOMAIN = "agents/verify_rm4probe_runtime.py"
+
+
+def seed_probe_tree() -> Path:
+    seed = Path(tempfile.mkdtemp(prefix="pcp-rm4-probe-"))
+    (seed / "scripts").mkdir(parents=True, exist_ok=True)
+    for name, body in PROBE_VERIFIERS.items():
+        (seed / "scripts" / f"{PROBE_PREFIX}{name}.py").write_text(body, encoding="utf-8")
+    planted = seed / OUT_OF_DOMAIN
+    planted.parent.mkdir(parents=True, exist_ok=True)
+    planted.write_text("print('runtime module, not governance')\n", encoding="utf-8")
+    return seed
+
+
+def measure_probes(loaded) -> dict:
+    """One canonical measurement over a deliberately tiny seeded domain."""
+    original = loaded.domains_at
+
+    def restricted(root):
+        verifiers, _ = original(root)
+        return [p for p in verifiers if Path(p).name.startswith(PROBE_PREFIX)], []
+
+    loaded.domains_at = restricted
+    seed = seed_probe_tree()
+    try:
+        return loaded.canonical_measurement(ambient=seed)
+    finally:
+        loaded.domains_at = original
+        shutil.rmtree(seed, ignore_errors=True)
+
+
+@pytest.fixture(scope="module")
+def probes() -> dict:
+    measurement = measure_probes(module())
+    assert "error" not in measurement, measurement.get("error")
+    return measurement
+
+
+def state_of(measurement: dict, name: str) -> tuple[str, str]:
+    identity = f"verifier:{PROBE_PREFIX}{name}.py"
+    for reported, reason in measurement.get("environment_dependent", []):
+        if reported == identity:
+            return module().ENVIRONMENT_DEPENDENT, reason
+    for reported, reason in measurement.get("unknown", []):
+        if reported == identity:
+            return module().UNKNOWN, reason
+    return module().REPO_DETERMINISTIC, ""
+
+
+# --- the harness: canonical measurement never runs in the developer's tree ------------------------
+
+
+def test_rm4_canonical_measurement_runs_in_a_disposable_pristine_checkout():
+    source = VERIFIER.read_text(encoding="utf-8")
+    harness = source.split("def canonical_measurement")[1].split("\ndef ")[0]
+    assert "worktree" in harness
+    assert "tempfile.TemporaryDirectory" in harness
+    body = source.split("def _measure_tree")[1].split("\ndef ")[0]
+    assert "cwd=tree" in body, "the measurement still executes in the developer's working tree"
+    assert "cwd=ROOT" not in body
+    assert "_sanitized_environment" in body
+
+
+def test_rm4_the_measurement_checkout_must_be_pristine():
+    """A checkout carrying inherited untracked state is not a canonical measurement environment."""
+    body = VERIFIER.read_text(encoding="utf-8").split("def _measure_tree")[1].split("\ndef ")[0]
+    assert "--ignored" in body
+    assert "is not pristine" in body
+
+
+def test_rm4_the_environment_is_an_allowlist_not_the_operators():
+    loaded = module()
+    granted = (
+        VERIFIER.read_text(encoding="utf-8")
+        .split("def _sanitized_environment")[1]
+        .split("\ndef ")[0]
+    )
+    assert "os.environ.copy()" not in granted, "the ambient environment is inherited wholesale"
+    for controlled in ("HOME", "USERPROFILE", "TEMP", "PYTHONHASHSEED", "PYTHONPYCACHEPREFIX"):
+        assert controlled in granted
+    assert loaded.AMBIENT_ENVIRONMENT <= loaded.ENVIRONMENT_ALLOWLIST
+
+
+def test_rm4_developer_tree_leftovers_cannot_reach_the_measurement():
+    """DEF-PCPE-01 directly: the same non-canonical artifact, present then absent, in the tree the
+    operator happens to have open. The canonical answer must not move."""
+    loaded = module()
+    relpath = ".runtime/rm4-devtree-independence-probe.json"
+    assert loaded.non_canonical_paths(ROOT, {relpath}), "the probe path is not gitignored"
+    leftover = ROOT / relpath
+    leftover.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        leftover.write_text('{"probe": true}\n', encoding="utf-8")
+        with_leftover = measure_probes(loaded)
+        leftover.unlink()
+        without_leftover = measure_probes(loaded)
+    finally:
+        if leftover.exists():
+            leftover.unlink()
+    for field in ("failures", "environment_dependent", "unknown", "verifiers"):
+        assert with_leftover[field] == without_leftover[field], field
+
+
+# --- admissibility: three states, and UNKNOWN is mapped to neither neighbour ----------------------
+
+
+def test_rm4_admissibility_has_three_explicit_states():
+    loaded = module()
+    assert {loaded.REPO_DETERMINISTIC, loaded.ENVIRONMENT_DEPENDENT, loaded.UNKNOWN} == {
+        "REPO_DETERMINISTIC",
+        "ENVIRONMENT_DEPENDENT",
+        "UNKNOWN",
+    }
+
+
+def test_rm4_probe_a_tracked_input_is_repo_deterministic(probes):
+    assert state_of(probes, "tracked")[0] == module().REPO_DETERMINISTIC
+
+
+def test_rm4_probe_b_a_generated_input_is_repo_deterministic(probes):
+    """Provisioned deterministically from canonical content, so its authority is canonical."""
+    assert state_of(probes, "generated")[0] == module().REPO_DETERMINISTIC
+
+
+def test_rm4_probe_c_a_gitignored_dependency_is_environment_dependent(probes):
+    state, reason = state_of(probes, "ignored")
+    assert state == module().ENVIRONMENT_DEPENDENT
+    assert ".runtime/rm4-probe.json" in reason
+
+
+def test_rm4_probe_d_the_environment_is_controlled_rather_than_classified(probes):
+    """Deliberate deviation, recorded rather than hidden.
+
+    Sanitising the environment eliminates environment dependence instead of classifying it: every
+    variable is granted a policy-derived value, passed through, or deterministically absent. An
+    axis that flagged reads of the six pass-through names classified three ALREADY-REGISTERED debt
+    identities as environment-dependent, because Python's own machinery reads COMSPEC and PATH on
+    every subprocess call. That is under-sampling, so the axis was dropped and the guarantee is
+    made by the policy instead.
+    """
+    loaded = module()
+    assert state_of(probes, "envvar")[0] == loaded.REPO_DETERMINISTIC
+    assert "controlled rather than classified" in loaded.ENVIRONMENT_NOTE
+    rule = VERIFIER.read_text(encoding="utf-8").split("def admissibility")[1].split("\ndef ")[0]
+    assert "AMBIENT_ENVIRONMENT" not in rule
+    granted = (
+        VERIFIER.read_text(encoding="utf-8")
+        .split("def _sanitized_environment")[1]
+        .split("\ndef ")[0]
+    )
+    assert "os.environ.copy()" not in granted, "an unsanitized environment would restore the risk"
+
+
+def test_rm4_probe_e_a_home_or_cache_dependency_is_environment_dependent(probes):
+    state, reason = state_of(probes, "homefile")
+    assert state == module().ENVIRONMENT_DEPENDENT
+    assert "home" in reason or "cache" in reason
+
+
+def test_rm4_probe_f_unobservable_inputs_fail_closed_as_unknown(probes):
+    """Not excluded, and not admitted using the workstation's answer. It blocks."""
+    state, reason = state_of(probes, "unobserved")
+    assert state == module().UNKNOWN
+    assert "not observed" in reason
+
+
+def test_rm4_a_tool_word_in_path_text_does_not_exclude(probes):
+    """The RM3 false exclusion must not come back on the admissibility axis."""
+    assert state_of(probes, "toolword")[0] == module().REPO_DETERMINISTIC
+
+
+def test_rm4_an_unseen_repository_access_form_stays_measured(probes):
+    assert state_of(probes, "unseenform")[0] == module().REPO_DETERMINISTIC
+
+
+def test_rm4_unknown_blocks_the_blockers_none_claim():
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "check19b" in source
+    guard = source.split('"check19b"')[0].rsplit("expect(", 1)[1]
+    assert 'measurement.get("unknown", []) == []' in guard
+
+
+def test_rm4_out_of_domain_runtime_modules_are_not_pulled_in(probes):
+    for identity in probes.get("failures", []):
+        assert "agents/" not in identity
+    assert module().GOVERNANCE_ARTIFACT.match(OUT_OF_DOMAIN) is None
+
+
+def test_rm4_environment_dependent_identities_are_not_registered_as_debt(probes):
+    """RM4 section 12: 'this machine had no runtime evidence' is not a governance failure."""
+    loaded = module()
+    active, historical = loaded.debt_sections(PM_STATE.read_text(encoding="utf-8"))
+    for identity, _ in probes.get("environment_dependent", []):
+        assert identity not in active
+        assert identity not in historical
+    for name in ("verify_production_readiness_runtime.py", "verify_backup_restore_dr_runtime.py"):
+        assert f"verifier:{name}" not in active
+
+
+# --- reproducibility: two independent pristine checkouts, run one after the other -----------------
+
+
+def test_rm4_two_clean_checkouts_produce_identical_exact_results():
+    """Count-only equality is not accepted: the exact identity sets must match."""
+    loaded = module()
+    first = measure_probes(loaded)
+    second = measure_probes(loaded)
+    assert first["commit"] == second["commit"]
+    assert first["verifiers"] == second["verifiers"]
+    assert first["failures"] == second["failures"]
+    assert first["environment_dependent"] == second["environment_dependent"]
+    assert first["unknown"] == second["unknown"]
+    assert first["policy_digest"] == second["policy_digest"]
+
+
+# --- provenance: a result must state the policy it was taken under -------------------------------
+
+
+def test_rm4_measurement_provenance_is_recorded_and_current():
+    loaded = module()
+    assert loaded.measurement_provenance_conflicts(loaded.pm_state_fields()) == []
+    fields = loaded.pm_state_fields()
+    assert fields["MEASUREMENT_POLICY_ID"] == loaded.MEASUREMENT_POLICY_ID
+    assert fields["MEASUREMENT_POLICY_DIGEST"] == loaded.measurement_policy_digest()
+
+
+def test_rm4_a_policy_change_invalidates_the_recorded_measurement(tmp_path):
+    loaded = module()
+    fixture = fixture_from(
+        tmp_path,
+        "policy_changed",
+        (
+            f"MEASUREMENT_POLICY_DIGEST:   {loaded.measurement_policy_digest()}",
+            "MEASUREMENT_POLICY_DIGEST:   " + "9" * 64,
+        ),
+    )
+    result = run_verifier("--pm-state", str(fixture))
+    assert result.returncode != 0
+    assert "measurement policy changed" in result.stdout
+
+
+def test_rm4_a_measurement_without_a_policy_is_rejected(tmp_path):
+    loaded = module()
+    fixture = fixture_from(
+        tmp_path,
+        "policy_absent",
+        (f"MEASUREMENT_POLICY_ID:       {loaded.MEASUREMENT_POLICY_ID}", "REMOVED_POLICY_ID: x"),
+    )
+    result = run_verifier("--pm-state", str(fixture))
+    assert result.returncode != 0
+    assert "MEASUREMENT_POLICY_ID is absent" in result.stdout
+
+
+def test_rm4_the_policy_is_part_of_the_authority_digest():
+    """Changing how measurement decides anything must make the recorded result stale."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    digest_fn = source.split("def authority_input_digest")[1].split("\ndef ")[0]
+    assert "measurement_policy_digest()" in digest_fn
+    policy_fn = source.split("def measurement_policy_digest")[1].split("\ndef ")[0]
+    assert "PROBE_DIR" in policy_fn, "the tracer implementing admissibility is not covered"
+    assert "ENVIRONMENT_ALLOWLIST" in policy_fn
+
+
+def test_rm4_the_admissibility_rule_is_not_a_verifier_name_list():
+    """Exclusion is the under-sampling boundary now, so it must not be an enumeration of names."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    rule = source.split("def admissibility")[1].split("\ndef ")[0]
+    for token in ("verify_", "runtime.py", ".runtime", "readiness", "backup-dr"):
+        assert token not in rule, f"the admissibility rule consults {token!r}"
+    lookup = source.split("def non_canonical_paths")[1].split("\ndef ")[0]
+    assert "check-ignore" in lookup, "non-canonical status is not decided by the repository itself"
+
+
+def test_rm4_recovery_packet_names_the_canonical_measurement():
+    flat = re.sub(r"\s+", " ", RECOVERY.read_text(encoding="utf-8"))
+    assert "--governance" in flat
+    assert "disposable clean checkout" in flat
+    assert "NOT the working tree you happen to have open" in flat
