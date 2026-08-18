@@ -33,10 +33,13 @@ Repository:  this checkout.
 3b. Run   python scripts/verify_pcp_v2_control_plane.py --governance
           MANDATORY before accepting "BLOCKERS: NONE". Step 3 only checks whether the
           RECORDED measurement still matches current authority inputs; it does not measure.
-          This mode measures canonical truth, in a disposable clean checkout of the canonical
-          commit under a sanitized environment -- NOT the working tree you happen to have open.
+          This mode measures canonical truth in a STANDALONE repository it builds itself: a
+          clone of the canonical commit with its own .git, only policy-declared refs, and an
+          origin pointing at a deterministic local fixture -- NOT the working tree you happen to
+          have open, and not your repository's branches, remotes, config or credentials.
           You do not need to clean your tree first, and cleaning it changes nothing: leftover
-          untracked or gitignored files cannot reach the measurement at all.
+          untracked or gitignored files, extra local branches and your origin URL cannot reach
+          the measurement at all. Nothing it needs comes from the network.
           It re-executes the applicable governance verifiers and tests there and reconciles the
           result against the active debt register in both directions.
           Read its verdict as:

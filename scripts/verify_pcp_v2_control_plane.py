@@ -480,9 +480,34 @@ ENVIRONMENT_DEPENDENT = "ENVIRONMENT_DEPENDENT"
 UNKNOWN = "UNKNOWN"
 
 MEASUREMENT_POLICY_ID = "pcp-v2-canonical-isolated"
-MEASUREMENT_POLICY_VERSION = "1"
-ADMISSIBILITY_CONTRACT_VERSION = "1"
-MEASUREMENT_ISOLATION_MODE = "disposable-clean-worktree+sanitized-environment"
+MEASUREMENT_POLICY_VERSION = "2"
+ADMISSIBILITY_CONTRACT_VERSION = "2"
+MEASUREMENT_ISOLATION_MODE = "standalone-clone+declared-refs+sanitized-environment"
+
+# BLK-PCPF-01: RM4 measured in a linked worktree, whose `git rev-parse --git-common-dir` resolves
+# to the operator's repository. The measurement therefore inherited 48 local branches, the
+# operator's origin URL, their git identity and live network reachability -- and six verifiers
+# returned different results at the SAME canonical commit when that namespace differed.
+#
+# The measurement repository is now built, not borrowed: a bare fixture is populated with exactly
+# the canonical commit under a policy-declared ref namespace, and cloned into the scaffold. Nothing
+# about the operator's repository is reachable from it.
+GIT_ISOLATION_POLICY = "standalone-clone-from-policy-declared-bare-fixture"
+
+# The only refs the measurement repository is allowed to contain. Operator-local branches are not
+# copied, so creating or deleting one cannot move canonical truth.
+DECLARED_REFS = ("refs/heads/main",)
+
+# Remote authority is a deterministic local fixture, never the operator's origin and never the
+# network. `git ls-remote origin` answers from objects this policy materialised, so an account,
+# a credential helper or an unreachable network cannot change canonical debt.
+REMOTE_AUTHORITY_POLICY = "declared-local-fixture-only; no network, no operator remote"
+
+# BLK-PCPF-02: pytest's session-end cache write landed in .pytest_cache, which is gitignored, and
+# the tracer attributed it to whichever node ran last -- so an identical new failing test blocked
+# at first and middle position and was silently exempted at last position. Harness state now lives
+# outside the measurement repository entirely; there is no filename filter to keep growing.
+HARNESS_ARTIFACT_POLICY = "harness state outside the measured repository; pytest cache disabled"
 PROBE_HEADER = "probe\tinput-authority-tracer/1"
 
 # The environment the measurement policy PROVIDES. Reading anything outside it is reading ambient
@@ -508,6 +533,9 @@ ENVIRONMENT_ALLOWLIST = frozenset(
         "PYTHONPYCACHEPREFIX",
         "PCP_MEASUREMENT_TRACE",
         "PCP_MEASUREMENT_ROOT",
+        "GIT_CONFIG_NOSYSTEM",
+        "GIT_CONFIG_GLOBAL",
+        "GIT_TERMINAL_PROMPT",
         "LANG",
         "LC_ALL",
     }
@@ -721,6 +749,10 @@ def measurement_policy() -> dict[str, str]:
         "MEASUREMENT_POLICY_VERSION": MEASUREMENT_POLICY_VERSION,
         "ADMISSIBILITY_CONTRACT_VERSION": ADMISSIBILITY_CONTRACT_VERSION,
         "MEASUREMENT_ISOLATION_MODE": MEASUREMENT_ISOLATION_MODE,
+        "GIT_ISOLATION_POLICY": GIT_ISOLATION_POLICY,
+        "REMOTE_AUTHORITY_POLICY": REMOTE_AUTHORITY_POLICY,
+        "HARNESS_ARTIFACT_POLICY": HARNESS_ARTIFACT_POLICY,
+        "DECLARED_REFS": " ".join(DECLARED_REFS),
     }
 
 
@@ -787,6 +819,45 @@ def non_canonical_paths(root: pathlib.Path, candidates: set[str]) -> set[str]:
     return {entry.replace("\\", "/") for entry in result.stdout.split("\0") if entry.strip()}
 
 
+# Objects a measured module asked git about. GIT_TRACE is git's own native argv log, so this
+# observes child git processes without a shell shim and without any quoting hazard -- closing the
+# RM4 gap where a dependency carried inside a child git process was invisible.
+GIT_TRACE_INVOCATION = re.compile(r"trace: built-in: git (.+)$")
+REVISION_TOKEN = re.compile(r"^(?:[0-9a-f]{7,40}|refs/[\w./-]+|origin/[\w./-]+)$")
+
+
+def requested_revisions(git_trace: str) -> set[str]:
+    """Revision-shaped arguments the module handed to git."""
+    requested = set()
+    for line in git_trace.splitlines():
+        matched = GIT_TRACE_INVOCATION.search(line)
+        if not matched:
+            continue
+        for token in matched.group(1).split():
+            candidate = token.strip("'\"").split("...")[0].split("..")[0].split("^")[0]
+            if REVISION_TOKEN.match(candidate):
+                requested.add(candidate)
+    return requested
+
+
+def unresolvable_revisions(
+    repo: pathlib.Path, scaffold: pathlib.Path, home: pathlib.Path, requested: set[str]
+) -> list[str]:
+    """Which of them the DECLARED canonical namespace cannot resolve.
+
+    A verifier pinning a commit that lives only on an operator-local branch is not measurable
+    against canonical truth: its answer would come from whichever branches the operator happens to
+    keep. Deciding this against the canonical repository -- not against the operator's -- is what
+    makes the classification identical on every machine.
+    """
+    missing = []
+    for revision in sorted(requested):
+        probe = _isolated_git(scaffold, home, repo, "rev-parse", "--verify", "--quiet", revision)
+        if probe.returncode != 0:
+            missing.append(revision)
+    return missing
+
+
 def parse_trace(text: str) -> tuple[bool, dict[str, set[str]], dict[str, set[str]], dict]:
     """(observed, paths by node, module-attributed paths by node, env names by node)."""
     observed = PROBE_HEADER in text
@@ -816,6 +887,7 @@ def admissibility(
     module_accessed: set[str],
     env_names: set[str],
     ignored: set[str],
+    missing_revisions: list[str],
 ) -> tuple[str, str]:
     """(state, reason) for one measured identity, from what it actually read.
 
@@ -824,6 +896,12 @@ def admissibility(
     """
     if not observed:
         return UNKNOWN, "inputs were not observed, so their authority cannot be established"
+    if missing_revisions:
+        return (
+            ENVIRONMENT_DEPENDENT,
+            f"asks git for {missing_revisions[0]}, which the declared canonical ref namespace "
+            "does not contain, so its answer would come from operator-local refs",
+        )
     # There is deliberately no environment axis here; see ENVIRONMENT_NOTE. env_names is carried
     # so the harness can report what was read without it deciding admissibility.
     del env_names
@@ -889,7 +967,9 @@ def _outside_measurement(resolved: pathlib.Path, scaffold: pathlib.Path) -> bool
     return True
 
 
-def _sanitized_environment(scaffold: pathlib.Path, home: pathlib.Path, trace: pathlib.Path) -> dict:
+def _sanitized_environment(
+    scaffold: pathlib.Path, home: pathlib.Path, trace: pathlib.Path, repo: pathlib.Path
+) -> dict:
     """Only what the policy grants. Undeclared ambient values cannot reach the measurement."""
     temp = scaffold / "tmp"
     temp.mkdir(exist_ok=True)
@@ -915,16 +995,108 @@ def _sanitized_environment(scaffold: pathlib.Path, home: pathlib.Path, trace: pa
         # Writing it outside the tree removes the phenomenon instead of special-casing its name.
         "PYTHONPYCACHEPREFIX": str(scaffold / "pycache"),
         "PCP_MEASUREMENT_TRACE": str(trace),
-        "PCP_MEASUREMENT_ROOT": str(scaffold / "tree"),
+        "PCP_MEASUREMENT_ROOT": str(repo),
+        # git's own argv log. The RM4 tracer cannot see inside a child git process, and a
+        # dependency on a commit that exists only on an operator branch hides there.
+        "GIT_TRACE": str(trace.with_suffix(".git")),
+        # A measured verifier shells out to git constantly. Without these it would answer from the
+        # operator's global config, credential helper and terminal, which is precisely the
+        # authority BLK-PCPF-01 is about -- and the tracer cannot see inside a child git process.
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": str(scaffold / "gitconfig"),
+        "GIT_TERMINAL_PROMPT": "0",
     }
     return {key: value for key, value in granted.items() if value}
 
 
-def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None) -> dict:
-    """Measure both governance domains from a disposable pristine checkout of a canonical commit.
+def _isolated_git_environment(scaffold: pathlib.Path, home: pathlib.Path) -> dict:
+    """Git with no operator config, no credentials and no terminal to prompt at."""
+    config = scaffold / "gitconfig"
+    if not config.is_file():
+        config.write_text("", encoding="utf-8")
+    granted = {
+        "PATH": os.environ.get("PATH", ""),
+        "PATHEXT": os.environ.get("PATHEXT", ""),
+        "SYSTEMROOT": os.environ.get("SYSTEMROOT", ""),
+        "SYSTEMDRIVE": os.environ.get("SYSTEMDRIVE", ""),
+        "WINDIR": os.environ.get("WINDIR", ""),
+        "COMSPEC": os.environ.get("COMSPEC", ""),
+        "HOME": str(home),
+        "USERPROFILE": str(home),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_GLOBAL": str(config),
+        "GIT_TERMINAL_PROMPT": "0",
+        "GIT_ASKPASS": "",
+        "SSH_ASKPASS": "",
+        "GIT_AUTHOR_NAME": "pcp-canonical-measurement",
+        "GIT_AUTHOR_EMAIL": "pcp@localhost",
+        "GIT_COMMITTER_NAME": "pcp-canonical-measurement",
+        "GIT_COMMITTER_EMAIL": "pcp@localhost",
+    }
+    return {key: value for key, value in granted.items() if value != "" or key.endswith("ASKPASS")}
 
-    `ambient` exists only so a test can PROVE isolation by seeding non-canonical state into the
-    measurement tree. Canonical runs never pass it.
+
+def _isolated_git(
+    scaffold: pathlib.Path, home: pathlib.Path, cwd: pathlib.Path, *args: str
+) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        ["git", *args],
+        cwd=cwd,
+        env=_isolated_git_environment(scaffold, home),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+
+def materialize_canonical_repository(
+    commit: str, scaffold: pathlib.Path, home: pathlib.Path
+) -> tuple[pathlib.Path, pathlib.Path, str]:
+    """Build the measurement repository instead of borrowing the operator's.
+
+    A bare fixture receives exactly the canonical commit under the declared ref namespace, and the
+    measurement repository is cloned from it. The clone therefore has its own .git, exactly the
+    declared refs, and an origin pointing at a deterministic local fixture -- so operator branches,
+    the operator's origin URL, their credentials and the network are all simply absent rather than
+    filtered out.
+    """
+    remote = scaffold / "canonical-remote.git"
+    repo = scaffold / "repo"
+    created = _isolated_git(scaffold, home, scaffold, "init", "--quiet", "--bare", str(remote))
+    if created.returncode != 0:
+        return repo, remote, f"the canonical remote fixture could not be created: {created.stderr}"
+    for ref in DECLARED_REFS:
+        fetched = _isolated_git(
+            scaffold, home, remote, "fetch", "--quiet", str(ROOT), f"{commit}:{ref}"
+        )
+        if fetched.returncode != 0:
+            return repo, remote, f"{commit[:12]} could not be placed on {ref}: {fetched.stderr}"
+    # Without this the fixture's HEAD names whichever default branch git was configured for, the
+    # clone finds it missing, and checks out an empty working tree -- an empty domain, silently.
+    pointed = _isolated_git(scaffold, home, remote, "symbolic-ref", "HEAD", DECLARED_REFS[0])
+    if pointed.returncode != 0:
+        return repo, remote, f"the fixture HEAD could not be set: {pointed.stderr}"
+    cloned = _isolated_git(scaffold, home, scaffold, "clone", "--quiet", str(remote), str(repo))
+    if cloned.returncode != 0:
+        return repo, remote, f"the measurement repository could not be cloned: {cloned.stderr}"
+    return repo, remote, ""
+
+
+def ref_manifest(repo: pathlib.Path, scaffold: pathlib.Path, home: pathlib.Path) -> list[str]:
+    """Every ref the measurement repository contains, so provenance can state the namespace."""
+    listed = _isolated_git(
+        scaffold, home, repo, "for-each-ref", "--format=%(refname) %(objectname)"
+    )
+    return sorted(line.strip() for line in listed.stdout.splitlines() if line.strip())
+
+
+def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None) -> dict:
+    """Measure both governance domains from a standalone canonical repository.
+
+    `ambient` exists only so a test can PROVE isolation by seeding state into the measurement
+    repository. Canonical runs never pass it.
     """
     # Resolved, never the caller's spelling: recording "b21d0b0" for one run and the full
     # SHA for another makes two records of the SAME measurement look like two measurements.
@@ -933,18 +1105,14 @@ def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None)
         prefix="pcp-canonical-", ignore_cleanup_errors=True
     ) as scaffold_name:
         scaffold = pathlib.Path(scaffold_name)
-        tree = scaffold / "tree"
         home = scaffold / "home"
         home.mkdir()
         traces = scaffold / "traces"
         traces.mkdir()
-        if not git("worktree", "add", "--detach", str(tree), commit) and not tree.is_dir():
-            return {"error": f"a pristine checkout of {commit[:12]} could not be created"}
-        try:
-            return _measure_tree(tree, scaffold, home, traces, commit, ambient)
-        finally:
-            git("worktree", "remove", "--force", str(tree))
-            git("worktree", "prune")
+        repo, remote, error = materialize_canonical_repository(commit, scaffold, home)
+        if error:
+            return {"error": error}
+        return _measure_tree(repo, scaffold, home, traces, commit, ambient)
 
 
 def _measure_tree(
@@ -978,6 +1146,7 @@ def _measure_tree(
     failing: set[str] = set()
     seen_paths: set[str] = set()
     raw: dict[str, tuple[bool, set[str], set[str], set[str]]] = {}
+    requested: dict[str, set[str]] = {}
 
     for relpath in verifiers:
         identity = f"verifier:{pathlib.Path(relpath).name}"
@@ -985,7 +1154,7 @@ def _measure_tree(
         result = subprocess.run(
             [sys.executable, relpath],
             cwd=tree,
-            env=_sanitized_environment(scaffold, home, trace),
+            env=_sanitized_environment(scaffold, home, trace, tree),
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -996,6 +1165,10 @@ def _measure_tree(
             trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
         )
         accessed = set().union(*paths.values()) if paths else set()
+        git_log = trace.with_suffix(".git")
+        requested[identity] = requested_revisions(
+            git_log.read_text(encoding="utf-8", errors="replace") if git_log.is_file() else ""
+        )
         raw[identity] = (
             observed,
             accessed,
@@ -1017,18 +1190,29 @@ def _measure_tree(
                 "-q",
                 "-p",
                 "no:randomly",
+                # BLK-PCPF-02: the session-end cache write is harness I/O, and attributing it to
+                # whichever node happened to run last silently exempted a real new failure.
+                # Disabled rather than filtered by name, so there is no list to keep growing.
+                "-p",
+                "no:cacheprovider",
                 "-p",
                 "pcp_trace_plugin",
+                "-o",
+                f"cache_dir={scaffold / 'pytest_cache'}",
                 "--tb=no",
                 *tests,
             ],
             cwd=tree,
-            env=_sanitized_environment(scaffold, home, trace),
+            env=_sanitized_environment(scaffold, home, trace, tree),
             capture_output=True,
             text=True,
             encoding="utf-8",
             errors="replace",
             check=False,
+        )
+        git_log = trace.with_suffix(".git")
+        session_revisions = requested_revisions(
+            git_log.read_text(encoding="utf-8", errors="replace") if git_log.is_file() else ""
         )
         node_failures = {
             line.split()[1]
@@ -1044,13 +1228,28 @@ def _measure_tree(
             attributed = module_paths.get(node, set()) | module_paths.get(origin, set())
             names = env.get(node, set()) | env.get(origin, set())
             raw[f"test:{node}"] = (observed, accessed, attributed, names)
+            requested[f"test:{node}"] = session_revisions
             seen_paths |= accessed
         failing |= {f"test:{node}" for node in node_failures}
 
     ignored = non_canonical_paths(tree, _relative_candidates(tree, seen_paths))
+    resolvable_cache: dict[tuple[str, ...], list[str]] = {}
     for identity, (observed, accessed, attributed, names) in raw.items():
+        key = tuple(sorted(requested.get(identity, set())))
+        if key not in resolvable_cache:
+            resolvable_cache[key] = unresolvable_revisions(
+                tree, scaffold, home, requested.get(identity, set())
+            )
         states[identity] = admissibility(
-            tree, scaffold, home, observed, accessed, attributed, names, ignored
+            tree,
+            scaffold,
+            home,
+            observed,
+            accessed,
+            attributed,
+            names,
+            ignored,
+            resolvable_cache[key],
         )
 
     admissible = sorted(
@@ -1070,6 +1269,7 @@ def _measure_tree(
             (identity, reason) for identity, (state, reason) in states.items() if state == UNKNOWN
         ),
         "policy_digest": measurement_policy_digest(),
+        "ref_manifest": ref_manifest(tree, scaffold, home),
         **measurement_policy(),
     }
 
@@ -1236,6 +1436,30 @@ def measurement_provenance_conflicts(pm: dict[str, str]) -> list[str]:
                 "CANONICAL_MEASURED_COMMIT is neither the reconciliation commit nor an ancestor"
             )
     return conflicts
+
+
+def final_head_conflicts(pm: dict[str, str]) -> list[str]:
+    """Whether anything the measurement depends on changed after the measurement was taken.
+
+    A stage can otherwise end with an authority-bearing commit landing after its last measurement,
+    leaving evidence that describes a state no longer on main. Machine-checked rather than argued:
+    every path changed between the measured commit and current main is examined, and a governance
+    verifier or test among them means the measurement must be retaken.
+    """
+    measured = pm.get("CANONICAL_MEASURED_COMMIT", "")
+    head = canonical_main()
+    if not commit_exists(measured) or not head or measured == head:
+        return []
+    if not is_ancestor(measured, head):
+        return [f"CANONICAL_MEASURED_COMMIT {measured[:12]} is not an ancestor of current main"]
+    changed = git("diff", "--name-only", f"{measured}..{head}").splitlines()
+    authority = sorted(path for path in changed if GOVERNANCE_ARTIFACT.match(path.strip()))
+    if authority:
+        return [
+            f"{len(authority)} governance artifact(s) changed after the measurement "
+            f"({', '.join(authority[:3])}); the measurement must be retaken"
+        ]
+    return []
 
 
 def confirm_remote(pm: dict[str, str]) -> list[str]:
@@ -1450,6 +1674,17 @@ def main() -> int:
         f"{CONFLICT}: the recorded measurement does not state a reproducible execution policy",
     )
 
+    # RM5 section 25: the measured commit and the final head must not disagree about anything the
+    # measurement read.
+    head_conflicts = final_head_conflicts(pm)
+    for conflict in head_conflicts:
+        print(f"  [{CONFLICT}] final head: {conflict}")
+    expect(
+        head_conflicts == [],
+        "check22",
+        f"{CONFLICT}: an authority-bearing change landed after the recorded measurement",
+    )
+
     if remote:
         remote_conflicts = confirm_remote(pm)
         for conflict in remote_conflicts:
@@ -1458,7 +1693,7 @@ def main() -> int:
 
     for note in notes:
         print(f"  [note] {note}")
-    checks = 23 if remote else 22
+    checks = 24 if remote else 23
     print(f"{MARKER}: checks={checks} failures={len(failures)}")
     print(f"{MARKER}: {'PASS' if not failures else 'FAIL'}")
     return 1 if failures else 0

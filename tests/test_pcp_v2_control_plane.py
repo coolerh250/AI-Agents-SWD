@@ -951,7 +951,8 @@ def state_of(measurement: dict, name: str) -> tuple[str, str]:
 def test_rm4_canonical_measurement_runs_in_a_disposable_pristine_checkout():
     source = VERIFIER.read_text(encoding="utf-8")
     harness = source.split("def canonical_measurement")[1].split("\ndef ")[0]
-    assert "worktree" in harness
+    assert "materialize_canonical_repository" in harness
+    assert "worktree" not in harness, "a linked worktree inherits the operator namespace"
     assert "tempfile.TemporaryDirectory" in harness
     body = source.split("def _measure_tree")[1].split("\ndef ")[0]
     assert "cwd=tree" in body, "the measurement still executes in the developer's working tree"
@@ -1175,3 +1176,238 @@ def test_rm4_recovery_packet_names_the_canonical_measurement():
     assert "--governance" in flat
     assert "disposable clean checkout" in flat
     assert "NOT the working tree you happen to have open" in flat
+
+
+# =================================================================================================
+# 11. Git namespace isolation and harness-artifact attribution (Step PCP-V2.1-RM5)
+#
+# BLK-PCPF-01: the measurement ran in a linked worktree, whose git common-dir IS the operator's
+# repository. It inherited 48 local branches, the operator's origin URL, their git identity and
+# live network -- and six verifiers returned different results at the same canonical commit when
+# that namespace differed.
+#
+# BLK-PCPF-02: pytest's session-end cache write landed in a gitignored .pytest_cache and was
+# attributed to whichever node ran last, so an identical new failing test blocked at first and
+# middle position and was silently exempted at last position.
+# =================================================================================================
+
+
+PROBE_TEST_MODULE = "tests/test_step66d_align1_rm1_fixed_range_remediation.py"
+PROBE_VERIFIER = "verify_step66d_align1_rm1_fixed_range_remediation.py"
+PROBE_BODY = 'def test_rm5_probe_new_failure():\n    assert False, "deliberate probe failure"\n\n\n'
+
+
+def canonical_repo(loaded, tmp_path):
+    """Materialise the measurement repository the way a canonical run does."""
+    scaffold = tmp_path / "scaffold"
+    scaffold.mkdir()
+    home = scaffold / "home"
+    home.mkdir()
+    commit = loaded.git("rev-parse", "HEAD")
+    repo, remote, error = loaded.materialize_canonical_repository(commit, scaffold, home)
+    assert not error, error
+    return repo, remote, scaffold, home, commit
+
+
+def insert_probe(body: str, new: str, position: str) -> str:
+    """Insert at a syntactically safe boundary: before an UNDECORATED top-level test."""
+    import ast
+
+    tree = ast.parse(body)
+    tests = [
+        node
+        for node in tree.body
+        if isinstance(node, ast.FunctionDef)
+        and node.name.startswith("test_")
+        and not node.decorator_list
+    ]
+    assert tests, "no undecorated top-level test to anchor on"
+    if position == "last":
+        return body.rstrip("\n") + "\n" + new
+    anchor = tests[0] if position == "first" else tests[len(tests) // 2]
+    lines = body.splitlines(keepends=True)
+    return "".join(lines[: anchor.lineno - 1]) + new + "".join(lines[anchor.lineno - 1 :])
+
+
+def measure_new_test(loaded, position: str, body: str = PROBE_BODY) -> dict:
+    """Append a real failing governance test and take a real canonical measurement."""
+    seed = Path(tempfile.mkdtemp(prefix="pcp-rm5-"))
+    (seed / "tests").mkdir(parents=True)
+    original_source = (ROOT / PROBE_TEST_MODULE).read_text(encoding="utf-8")
+    (seed / PROBE_TEST_MODULE).write_text(
+        insert_probe(original_source, body, position), encoding="utf-8"
+    )
+    original = loaded.domains_at
+
+    def restricted(root):
+        verifiers, tests = original(root)
+        return (
+            [p for p in verifiers if Path(p).name == PROBE_VERIFIER],
+            [p for p in tests if p == PROBE_TEST_MODULE],
+        )
+
+    loaded.domains_at = restricted
+    try:
+        return loaded.canonical_measurement(ambient=seed)
+    finally:
+        loaded.domains_at = original
+        shutil.rmtree(seed, ignore_errors=True)
+
+
+# --- git namespace isolation ----------------------------------------------------------------------
+
+
+def test_rm5_measurement_repository_has_its_own_git_namespace(tmp_path):
+    loaded = module()
+    repo, _, scaffold, home, commit = canonical_repo(loaded, tmp_path)
+    common = loaded._isolated_git(scaffold, home, repo, "rev-parse", "--git-common-dir").stdout
+    stated = Path(common.strip())
+    resolved = stated if stated.is_absolute() else (repo / stated)
+    assert (
+        resolved.resolve() != (ROOT / ".git").resolve()
+    ), "the measurement repository shares the operator's git common-dir"
+    assert loaded._isolated_git(scaffold, home, repo, "rev-parse", "HEAD").stdout.strip() == commit
+
+
+def test_rm5_only_declared_refs_exist_in_the_measurement_repository(tmp_path):
+    loaded = module()
+    repo, _, scaffold, home, commit = canonical_repo(loaded, tmp_path)
+    refs = loaded.ref_manifest(repo, scaffold, home)
+    assert refs, "the measurement repository has no refs at all"
+    assert all(entry.endswith(commit) for entry in refs), refs
+    names = {entry.split()[0] for entry in refs}
+    assert names <= {"refs/heads/main", "refs/remotes/origin/main", "refs/remotes/origin/HEAD"}
+    operator_branches = len(loaded.git("branch", "--format=%(refname)").splitlines())
+    assert operator_branches > len(names), "the operator repo has too few branches to prove this"
+
+
+def test_rm5_the_operator_origin_is_not_reachable_from_the_measurement_repository(tmp_path):
+    loaded = module()
+    repo, remote, scaffold, home, _ = canonical_repo(loaded, tmp_path)
+    origin = loaded._isolated_git(scaffold, home, repo, "config", "--get", "remote.origin.url")
+    assert Path(origin.stdout.strip()).resolve() == remote.resolve(), origin.stdout
+    operator_origin = loaded.git("config", "--get", "remote.origin.url")
+    assert operator_origin and operator_origin not in origin.stdout
+
+
+def test_rm5_git_runs_without_operator_or_system_configuration(tmp_path):
+    loaded = module()
+    repo, _, scaffold, home, _ = canonical_repo(loaded, tmp_path)
+    granted = loaded._isolated_git_environment(scaffold, home)
+    assert granted["GIT_CONFIG_NOSYSTEM"] == "1"
+    assert Path(granted["GIT_CONFIG_GLOBAL"]) == scaffold / "gitconfig"
+    assert granted["GIT_TERMINAL_PROMPT"] == "0"
+    identity = loaded._isolated_git(scaffold, home, repo, "config", "--get", "user.email")
+    assert identity.stdout.strip() == "", "the operator's git identity reached the measurement"
+    measured = loaded._sanitized_environment(scaffold, home, scaffold / "t.trace", repo)
+    for key in ("GIT_CONFIG_NOSYSTEM", "GIT_CONFIG_GLOBAL", "GIT_TERMINAL_PROMPT", "GIT_TRACE"):
+        assert key in measured, f"measured processes run git without {key}"
+
+
+def test_rm5_an_operator_local_branch_cannot_move_canonical_truth():
+    """The BLK-PCPF-01 property, exercised rather than asserted."""
+    loaded = module()
+    branch = "rm5/namespace-independence-probe"
+    subprocess.run(
+        ["git", "branch", "-f", branch, "HEAD"], cwd=ROOT, check=False, capture_output=True
+    )
+    try:
+        with_branch = measure_probes(loaded)
+    finally:
+        subprocess.run(["git", "branch", "-D", branch], cwd=ROOT, check=False, capture_output=True)
+    without_branch = measure_probes(loaded)
+    for field in ("failures", "environment_dependent", "unknown", "verifiers", "ref_manifest"):
+        assert with_branch[field] == without_branch[field], field
+
+
+def test_rm5_a_revision_outside_the_declared_namespace_is_classified_not_registered():
+    """A verifier pinning an operator-local commit is not canonical debt, and it says why."""
+    loaded = module()
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert "def unresolvable_revisions" in source
+    rule = source.split("def unresolvable_revisions")[1].split("\ndef ")[0]
+    assert "rev-parse" in rule and "--verify" in rule
+    for token in ("verify_", "step66", "sync1"):
+        assert token not in rule, f"the ref-authority rule consults {token!r}"
+    assert loaded.requested_revisions(
+        "trace: built-in: git rev-parse 828ea90\ntrace: built-in: git log origin/some-branch\n"
+    ) == {"828ea90", "origin/some-branch"}
+
+
+def test_rm5_git_child_processes_are_observed_natively():
+    """GIT_TRACE is git's own argv log, so a shell shim and its quoting hazards are unnecessary."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    assert '"GIT_TRACE"' in source
+    assert "GIT_TRACE_INVOCATION" in source
+
+
+# --- harness-owned artifacts ----------------------------------------------------------------------
+
+
+def test_rm5_the_pytest_cache_cannot_become_a_measured_dependency():
+    body = VERIFIER.read_text(encoding="utf-8").split("def _measure_tree")[1].split("\ndef ")[0]
+    assert "no:cacheprovider" in body
+    assert "cache_dir=" in body
+    assert ".pytest_cache" not in body, "the fix is a filename filter rather than isolation"
+
+
+def test_rm5_harness_state_lives_outside_the_measured_repository():
+    """Ownership, not a filename list: nothing the harness writes lands in the measured repo."""
+    source = VERIFIER.read_text(encoding="utf-8")
+    granted = source.split("def _sanitized_environment")[1].split("\ndef ")[0]
+    for harness_owned in ("PYTHONPYCACHEPREFIX", "TEMP", "PCP_MEASUREMENT_TRACE", "GIT_TRACE"):
+        assert harness_owned in granted
+    assert "scaffold" in granted
+    admissible = source.split("def admissibility")[1].split("\ndef ")[0]
+    assert "pytest_cache" not in admissible
+    assert "__pycache__" not in admissible
+
+
+@pytest.mark.parametrize("position", ["first", "middle", "last"])
+def test_rm5_a_new_failing_test_blocks_from_any_position(position):
+    """BLK-PCPF-02 directly. Execution order must not decide whether a failure is canonical."""
+    loaded = module()
+    measurement = measure_new_test(loaded, position)
+    node = f"test:{PROBE_TEST_MODULE}::test_rm5_probe_new_failure"
+    escaped = [
+        reason for identity, reason in measurement["environment_dependent"] if identity == node
+    ]
+    assert node in measurement["failures"], f"the probe escaped at {position}: {escaped}"
+    active, _ = loaded.debt_sections(PM_STATE.read_text(encoding="utf-8"))
+    assert loaded.new_unregistered_failures(measurement["failures"], active) != []
+
+
+def test_rm5_a_test_reading_a_noncanonical_file_is_still_classified():
+    """The control: the harness-artifact fix must not become blanket suppression."""
+    loaded = module()
+    measurement = measure_new_test(
+        loaded,
+        "last",
+        body=(
+            "def test_rm5_probe_new_failure():\n"
+            "    import pathlib\n"
+            "    root = pathlib.Path(__file__).resolve().parents[1]\n"
+            "    assert (root / '.runtime' / 'rm5-probe.json').is_file()\n\n\n"
+        ),
+    )
+    node = f"test:{PROBE_TEST_MODULE}::test_rm5_probe_new_failure"
+    reasons = {identity: reason for identity, reason in measurement["environment_dependent"]}
+    assert node in reasons, "a test's own non-canonical dependency was suppressed"
+    assert ".runtime" in reasons[node]
+
+
+def test_rm5_the_measurement_policy_was_versioned_for_these_semantics():
+    """RM4 evidence must not survive a change in how measurement works."""
+    loaded = module()
+    assert loaded.MEASUREMENT_POLICY_VERSION == "2"
+    assert loaded.ADMISSIBILITY_CONTRACT_VERSION == "2"
+    assert "standalone-clone" in loaded.MEASUREMENT_ISOLATION_MODE
+    policy = loaded.measurement_policy()
+    for field in ("GIT_ISOLATION_POLICY", "REMOTE_AUTHORITY_POLICY", "HARNESS_ARTIFACT_POLICY"):
+        assert policy[field]
+    digest_fn = (
+        VERIFIER.read_text(encoding="utf-8")
+        .split("def measurement_policy_digest")[1]
+        .split("\ndef ")[0]
+    )
+    assert "measurement_policy()" in digest_fn
