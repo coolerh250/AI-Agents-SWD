@@ -1244,7 +1244,6 @@ def _measure_tree(
         # Every git log this module produced, whichever node's window it landed in. A module
         # that resolves fixtures from a commit outside the declared namespace has no canonically
         # meaningful assertions at all, so the axis is module-wide by construction.
-        module_revisions = _revisions_from([t for targets in gitlogs.values() for t in targets])
         node_failures = {
             line.split()[1]
             for line in result.stdout.splitlines()
@@ -1253,13 +1252,20 @@ def _measure_tree(
         observed, paths, module_paths, env, gitlogs = parse_trace(
             trace.read_text(encoding="utf-8", errors="replace") if trace.is_file() else ""
         )
+        # Attributed per MODULE: a test module resolves its fixtures at import and caches them, so
+        # the revision request that decides one node's outcome is often made during another node's
+        # window. Computed only after the pytest trace is parsed -- reading `gitlogs` before that
+        # silently used the last verifier's (empty) trace and classified nothing.
+        module_gitlogs: dict[str, list[str]] = {}
+        for attributed_node, targets in gitlogs.items():
+            module_gitlogs.setdefault(attributed_node.split("::")[0], []).extend(targets)
         for node in sorted(node_failures):
             origin = node.split("::")[0]
             accessed = paths.get(node, set()) | paths.get(origin, set())
             attributed = module_paths.get(node, set()) | module_paths.get(origin, set())
             names = env.get(node, set()) | env.get(origin, set())
             raw[f"test:{node}"] = (observed, accessed, attributed, names)
-            requested[f"test:{node}"] = module_revisions
+            requested[f"test:{node}"] = _revisions_from(module_gitlogs.get(origin, []))
             seen_paths |= accessed
         failing |= {f"test:{node}" for node in node_failures}
 
