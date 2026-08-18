@@ -836,7 +836,11 @@ def admissibility(
                 ENVIRONMENT_DEPENDENT,
                 f"depends on {relative}, which this repository declares non-canonical",
             )
-        if relative is None and _under(tree, home, raw):
+    # A separate pass, so the repository-authority reason always wins. Interleaving the two let
+    # whichever path happened to sort first decide the reason, and a module reading BOTH a
+    # non-canonical repository path and a home location was reported only as the latter.
+    for raw in sorted(accessed):
+        if _repo_relative(tree, raw) is None and _under(tree, home, raw):
             # The home the policy grants is an empty scaffold directory nothing else touches, so a
             # read there is always the module reaching for a home or cache location.
             return ENVIRONMENT_DEPENDENT, "reads an ambient home or cache location"
