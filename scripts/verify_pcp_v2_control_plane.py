@@ -926,7 +926,9 @@ def canonical_measurement(commit: str = "", ambient: pathlib.Path | None = None)
     `ambient` exists only so a test can PROVE isolation by seeding non-canonical state into the
     measurement tree. Canonical runs never pass it.
     """
-    commit = commit or git("rev-parse", "HEAD")
+    # Resolved, never the caller's spelling: recording "b21d0b0" for one run and the full
+    # SHA for another makes two records of the SAME measurement look like two measurements.
+    commit = git("rev-parse", commit or "HEAD") or commit
     with tempfile.TemporaryDirectory(
         prefix="pcp-canonical-", ignore_cleanup_errors=True
     ) as scaffold_name:

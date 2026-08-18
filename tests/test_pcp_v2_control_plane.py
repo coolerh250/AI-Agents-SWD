@@ -1104,6 +1104,7 @@ def test_rm4_two_clean_checkouts_produce_identical_exact_results():
     first = measure_probes(loaded)
     second = measure_probes(loaded)
     assert first["commit"] == second["commit"]
+    assert len(first["commit"]) == 40, "the recorded commit is not a resolved full SHA"
     assert first["verifiers"] == second["verifiers"]
     assert first["failures"] == second["failures"]
     assert first["environment_dependent"] == second["environment_dependent"]
