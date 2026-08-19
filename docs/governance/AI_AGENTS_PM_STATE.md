@@ -165,9 +165,10 @@ recording "this checkout was not main" as a known governance failure.
 
 ```text
 RETAKE_REQUIRED_AT:          the AT-M2 canonical merge commit on main
-DO_NOT:                      register the branch-measured failures as canonical debt
-DO_NOT:                      re-record a digest without a canonical measurement behind it
 ```
+
+Two things the retake must not do: register the branch-measured failures as canonical debt, and
+re-record a digest with no canonical measurement behind it.
 
 The measurement is taken in a **disposable clean checkout** of `CANONICAL_MEASURED_COMMIT` under a
 sanitized environment, never in a working tree. It used to run wherever the operator happened to
