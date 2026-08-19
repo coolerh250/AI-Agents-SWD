@@ -36,6 +36,7 @@ from project_api import router as project_router
 from operations_replay_api import router as operations_replay_router
 from operations_resume_api import router as operations_resume_router
 from task_api import router as task_router
+from team_api import router as team_router
 from workroom_api import router as workroom_router
 from workspace_api import router as workspace_router
 from resume_engine import ResumeEngine, ResumeError
@@ -204,6 +205,8 @@ install_metrics_endpoint(app)
 app.include_router(operations_router)
 # Stage 45: project planner & task graph operations API.
 app.include_router(project_router)
+# AT-M2-TEAM-CORE: runtime team roster, conversation and routing decisions.
+app.include_router(team_router)
 # Stage 46: agent discussion & design review operations API.
 app.include_router(design_review_router)
 # Stage 47: real repo workspace operator operations API.

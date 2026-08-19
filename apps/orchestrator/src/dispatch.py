@@ -13,8 +13,13 @@ def build_dispatch_event(
     request: dict,
     source: str,
     trace_id: str = "",
+    team_context: dict | None = None,
 ) -> dict:
-    """Build the task dispatch event the orchestrator publishes to stream.tasks."""
+    """Build the task dispatch event the orchestrator publishes to stream.tasks.
+
+    A ``team_context`` puts the run on the autonomous path: every agent that receives it asks the
+    router who comes next instead of publishing to its compile-time successor.
+    """
     event: dict = {
         "event": "task.created",
         "task_id": task_id,
@@ -23,6 +28,8 @@ def build_dispatch_event(
         "source": source,
         "requested_at": datetime.now(timezone.utc).isoformat(),
     }
+    if team_context:
+        event["team_context"] = dict(team_context)
     inject_trace_context(event, parent_trace_id=trace_id or None)
     return event
 
@@ -33,6 +40,7 @@ async def dispatch_task(
     request: dict,
     source: str,
     trace_id: str = "",
+    team_context: dict | None = None,
 ) -> bool:
     """Publish a task dispatch event to stream.tasks. Returns True on success.
 
@@ -41,7 +49,9 @@ async def dispatch_task(
     trace_id is propagated onto the dispatch event so every downstream stage
     shares one distributed trace.
     """
-    event = build_dispatch_event(task_id, workflow_id, request, source, trace_id=trace_id)
+    event = build_dispatch_event(
+        task_id, workflow_id, request, source, trace_id=trace_id, team_context=team_context
+    )
     bus = RedisStreamEventBus()
     try:
         await bus.publish_event(TASKS_STREAM, event)

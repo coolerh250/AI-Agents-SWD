@@ -38,6 +38,11 @@ import os
 import tempfile
 from typing import Any
 
+from shared.sdk.agent_team.capabilities import (
+    FIX_DEFECTS,
+    PLAN_DEPLOYMENT,
+    VERIFY_QUALITY,
+)
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.code_workspace import CodeWorkspaceStore
@@ -86,6 +91,8 @@ class QAAgent(StreamAgent):
     name = "qa-agent"
     input_stream = "stream.qa"
     output_stream = "stream.deployments"
+    declared_capabilities = (VERIFY_QUALITY,)
+    successor_capability = PLAN_DEPLOYMENT
     group = "qa-agent-group"
     consumer = "qa-agent-1"
 
@@ -569,7 +576,12 @@ class QAAgent(StreamAgent):
                 "attempt_number": attempt_number,
             },
         ):
-            await self.bus.publish_event(AUTO_FIX_REQUEST_STREAM, autofix_msg)
+            # AT-M2: ask the team for whoever can fix defects. On the legacy pipeline that
+            # resolves to the autofix consumer's own stream; on a team it is whoever declares
+            # FIX_DEFECTS, which need not be the agent that wrote the code.
+            await self.publish_for_capability(
+                autofix_msg, FIX_DEFECTS, default_stream=AUTO_FIX_REQUEST_STREAM
+            )
         # Also drop a qa.auto_fix_requested event back onto stream.qa so
         # the workflow consumer can move the workflow stage.
         await self.bus.publish_event(

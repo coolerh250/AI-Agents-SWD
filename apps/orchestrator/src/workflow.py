@@ -4,6 +4,9 @@ from typing import Any, TypedDict
 from langgraph.graph import END, START, StateGraph
 
 from dispatch import dispatch_task
+from shared.sdk.agent_team.capabilities import ANALYZE_REQUIREMENTS
+from shared.sdk.agent_team.context import build_team_context
+from shared.sdk.agent_team.service import TeamService
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
@@ -33,6 +36,11 @@ class WorkflowState(TypedDict):
     audit_refs: list[str]
     risk_level: str
     execution_result: dict[str, Any]
+    # AT-M2-TEAM-CORE. project_id is what makes a run autonomous-path: it names the project
+    # whose TEAM owns the work. Without it the workflow behaves exactly as it did before.
+    project_id: str
+    team_context: dict[str, Any]
+    routing: dict[str, Any]
 
 
 REQUIRED_STATE_FIELDS = [
@@ -51,6 +59,9 @@ REQUIRED_STATE_FIELDS = [
     "audit_refs",
     "risk_level",
     "execution_result",
+    "project_id",
+    "team_context",
+    "routing",
 ]
 
 
@@ -86,6 +97,56 @@ async def requirement_node(state: WorkflowState) -> dict:
     update = {
         "artifacts": state["artifacts"] + [spec],
         "assigned_agents": ["requirement-agent"],
+        "stage": "policy_check",
+    }
+    await _persist(state, update)
+    return update
+
+
+def _team_service() -> TeamService:
+    """Overridable seam so tests and the demo can supply an in-memory team."""
+    return TeamService()
+
+
+async def team_formation_node(state: WorkflowState) -> dict:
+    """Form the project's runtime team, if this run belongs to a project.
+
+    A run with no project has no team, and this node is then a no-op -- the legacy task pipeline
+    is unchanged. When a project IS named, the team is recruited durably here and every later hop
+    carries its context, which is what puts the run on the autonomous path.
+    """
+    project_id = state.get("project_id") or ""
+    if not project_id:
+        update = {"stage": "policy_check"}
+        await _persist(state, update)
+        return update
+    goal_ref = str(state["request"].get("description") or state["request"].get("type") or "goal")
+    with start_span(
+        "workflow.team_formation",
+        **{
+            "service.name": "orchestrator",
+            "task_id": state["task_id"],
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "team_formation",
+            "project_id": project_id,
+        },
+    ):
+        try:
+            formed = await _team_service().form_team(project_id, goal_ref)
+            context = build_team_context(
+                project_id=project_id,
+                goal_ref=goal_ref,
+                thread_id=formed.get("thread_id"),
+                workflow_stage="policy_check",
+            )
+            members = [m.get("functional_role") for m in formed.get("members", [])]
+        except Exception:  # a team that cannot be formed must not break the workflow
+            context = {}
+            members = []
+    update = {
+        "team_context": context,
+        "assigned_agents": state["assigned_agents"] + [r for r in members if r],
         "stage": "policy_check",
     }
     await _persist(state, update)
@@ -194,6 +255,86 @@ async def audit_node(state: WorkflowState) -> dict:
     return update
 
 
+async def route_next_node(state: WorkflowState) -> dict:
+    """Ask the team who takes the first piece of work, and record why.
+
+    This is where the successor stops being a constant. On a run with no team the node records
+    that it did not route and the workflow continues exactly as before; on a team run the answer
+    comes from the members' declared capabilities as they are right now.
+    """
+    context = state.get("team_context") or {}
+    project_id = context.get("project_id") or ""
+    if not project_id:
+        update = {"routing": {"outcome": "not_routed", "reason": "this run has no project team"}}
+        await _persist(state, update)
+        return update
+    with start_span(
+        "workflow.route_next",
+        **{
+            "service.name": "orchestrator",
+            "task_id": state["task_id"],
+            "workflow_id": state["workflow_id"],
+            "agent": "orchestrator",
+            "event_type": "route_next",
+            "project_id": project_id,
+            "capability": ANALYZE_REQUIREMENTS,
+        },
+    ):
+        try:
+            decision, _record = await _team_service().decide_route(
+                project_id=project_id,
+                capability=ANALYZE_REQUIREMENTS,
+                workflow_stage=state["stage"],
+                task_id=state["task_id"],
+                workflow_id=state["workflow_id"],
+            )
+            routing = decision.as_record()
+        except Exception:  # an unreachable router must not silently pick a successor
+            routing = {
+                "outcome": "no_eligible_agent",
+                "requested_capability": ANALYZE_REQUIREMENTS,
+                "reason": "the router could not be reached, so no successor was selected",
+            }
+    update = {"routing": routing}
+    await _persist(state, update)
+    return update
+
+
+def select_route(state: WorkflowState) -> str:
+    """The workflow's first genuine conditional edge.
+
+    Work with a capable owner is dispatched; work with none is parked for a human. Nothing here
+    can reach a compile-time successor.
+    """
+    outcome = str((state.get("routing") or {}).get("outcome") or "not_routed")
+    if outcome in ("selected", "not_routed"):
+        return "dispatch"
+    return "team_blocked"
+
+
+async def team_blocked_node(state: WorkflowState) -> dict:
+    """No team member can take the work. Park it and say so; never fall back to a fixed agent."""
+    routing = state.get("routing") or {}
+    reason = str(routing.get("reason") or "no eligible agent")
+    update = {
+        "stage": "blocked_no_eligible_agent",
+        "execution_result": {
+            "status": "blocked_no_eligible_agent",
+            "production_executed": False,
+            "dispatched": False,
+            "reason": reason,
+        },
+    }
+    WORKFLOW_TOTAL.labels(status="blocked_no_eligible_agent").inc()
+    await _persist(state, update)
+    await send_notification(
+        state["task_id"],
+        "workflow.blocked_no_eligible_agent",
+        f"workflow {state['task_id']} has no eligible agent: {reason}",
+    )
+    return update
+
+
 async def dispatch_node(state: WorkflowState) -> dict:
     """Dispatch the task to the agent pipeline, unless it is blocked on approval.
 
@@ -238,6 +379,7 @@ async def dispatch_node(state: WorkflowState) -> dict:
             dict(state["request"]),
             state["source"],
             trace_id=state.get("trace_id", ""),
+            team_context=state.get("team_context") or None,
         )
         update = {
             "stage": "dispatched",
@@ -260,17 +402,27 @@ def build_workflow():
     graph = StateGraph(WorkflowState)
     graph.add_node("intake", intake_node)
     graph.add_node("requirement", requirement_node)
+    graph.add_node("team_formation", team_formation_node)
     graph.add_node("policy", policy_node)
     graph.add_node("approval", approval_node)
     graph.add_node("audit", audit_node)
+    graph.add_node("route_next", route_next_node)
     graph.add_node("dispatch", dispatch_node)
+    graph.add_node("team_blocked", team_blocked_node)
     graph.add_edge(START, "intake")
     graph.add_edge("intake", "requirement")
-    graph.add_edge("requirement", "policy")
+    graph.add_edge("requirement", "team_formation")
+    graph.add_edge("team_formation", "policy")
     graph.add_edge("policy", "approval")
     graph.add_edge("approval", "audit")
-    graph.add_edge("audit", "dispatch")
+    graph.add_edge("audit", "route_next")
+    # AT-M2-TEAM-CORE: the graph's first conditional edge. Which node runs next is decided at
+    # runtime from the team's capabilities, not fixed when this module is imported.
+    graph.add_conditional_edges(
+        "route_next", select_route, {"dispatch": "dispatch", "team_blocked": "team_blocked"}
+    )
     graph.add_edge("dispatch", END)
+    graph.add_edge("team_blocked", END)
     return graph.compile()
 
 
@@ -296,6 +448,9 @@ def _initial_state(request: dict) -> WorkflowState:
         "audit_refs": [],
         "risk_level": "unknown",
         "execution_result": {},
+        "project_id": str(request.get("project_id") or request.get("request", {}).get("project_id") or ""),
+        "team_context": {},
+        "routing": {},
     }
 
 
@@ -345,4 +500,7 @@ def workflow_state_schema() -> dict:
         "audit_refs": "array - references to emitted audit events",
         "risk_level": "string - low | high | unknown",
         "execution_result": "object - final execution result",
+        "project_id": "string - the project whose team owns this run, when there is one",
+        "team_context": "object - project/goal/thread the runtime team is working on",
+        "routing": "object - the runtime routing decision and why it was made",
     }

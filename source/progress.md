@@ -17700,3 +17700,60 @@ backend, API, database, event, migration, deployment, identity, secret or featur
   SEPARATE AUTHORIZATION.** Step 66D-FE2, BE2..BE4, QA, Step 67POC.0 and RA-2I0 remain **NOT
   AUTHORIZED**. No deployment, no shared database, no secret access, no external action, no
   resume/replay. `production_executed_true_count: 0`.
+
+## Step AT-M2-TEAM-CORE - Runtime Team Formation & Dynamic Delegation (IMPLEMENTED)
+
+- **The successor stopped being a constant.** Before this step every agent's next hop was a class
+  attribute compiled into its own module (`development-agent` published to `stream.qa` because that
+  string was in its source). Now, whenever a message carries a team context,
+  `StreamAgent.resolve_publish_target` asks `shared/sdk/agent_team/router.py` who declares the
+  needed capability, and publishes there. The class attributes are untouched and still serve the
+  legacy task pipeline, so nothing that worked before changed behaviour.
+- **A team is its memberships.** Migration 036 adds eight tables - `actor_principals`,
+  `agent_profiles`, `project_team_memberships`, `conversation_threads`, `team_messages`,
+  `team_decisions`, `agent_handoffs`, `agent_routing_decisions` - additively, altering and dropping
+  nothing. There is deliberately **no** `teams` table: the AT-M1 contract defines a team as the
+  active memberships of a project, and adding an aggregate would have created a second identity
+  model beside the canonical one.
+- **Agents address each other.** `team_messages` requires a recipient - principal, role, or an
+  explicit team broadcast - enforced by a DB CHECK and by the Pydantic model. A reply names its
+  parent. Every message carries an `audit_ref`; a collaboration record that is not attributable is
+  not evidence.
+- **Routing is evidence, not a side effect.** Every decision persists its outcome, its reason and
+  the full candidate set with per-candidate rejection reasons. `no_eligible_agent` is a first-class
+  outcome: when nobody can take the work it is parked on `stream.team.blocked` and the workflow
+  takes its `team_blocked` branch. It is never silently handed to the compile-time successor -
+  that fallback would restore the exact behaviour this step removes, precisely when the team is
+  least able to cope.
+- **The graph has its first conditional edge.** `audit -> route_next -> {dispatch | team_blocked}`,
+  decided at runtime from team capability. `team_formation_node` sits after `requirement`. A run
+  with no `project_id` skips both and behaves exactly as before.
+- **The policy boundary held.** A production-effect capability is never routed to an agent: the
+  router returns `requires_human_approval` and the existing L5 boundary decides. A workflow parked
+  on a human decision routes nothing at all. Routing selects a worker; it has never been able to
+  authorize an act, and `APPROVAL_REQUIRED_CAPABILITIES` is what keeps that true as capabilities
+  are added.
+- **AT-M1's guard was superseded, not weakened.** `verify_at_m1_architecture_reset.py` asked "did
+  AT-M1 introduce implementation?" over `BASELINE...HEAD`, which would have rejected every
+  successor milestone forever. The window now closes at `192ebb7`, the canonical main when AT-D11
+  authorized AT-M2 - and only when the PM snapshot records the supersession, names that exact
+  commit, records the successor as authorized, and the commit is a real descendant of the reviewed
+  stage head and ancestor of HEAD. It fails closed on every one of those. The check count rose from
+  238 to 244. `shared/sdk/tasks/rbac.py` moved from window-scoped to **permanently** protected: a
+  successor inherits the right to write implementation, never the right to make an agent an
+  approver.
+- **The PCP gate moved; it was not waived.** AT-D11 re-sequenced PCP-V2.1 to gate **production
+  authorization**. `PCP_V2_1` state is unchanged, no registered debt was retired, and PCP-V2.1 PASS
+  is **not** claimed. The control plane now accepts an authorized AT-M2 only when the canonical
+  decision record exists and is BINDING, the snapshot names it, and the re-sequenced gate is
+  recorded - and two new checks assert production authorization is still NOT GRANTED and the
+  execution count is still 0.
+- **Verification.** `AT_M1_ARCHITECTURE_RESET_VERIFY: PASS` (244 checks) and
+  `PCP_V2_CONTROL_PLANE_VERIFY: PASS`. 49 new tests across
+  `tests/test_at_m2_team_core.py` and `tests/test_at_m2_team_core_demo.py`, including an executable
+  demo that drives the real orchestrator graph and the real publish path on in-memory persistence.
+  Agent and orchestrator regression suites pass unchanged.
+- **Status.** `AT_M2: AUTHORIZED / IN PROGRESS`, scope `AT-M2-TEAM-CORE` only. AT-M3..AT-M8 remain
+  **NOT AUTHORIZED**. No LLM reasoning, no real code or test execution, no autonomous diagnosis, no
+  production action, no deployment, no external action. **READY FOR AT-M2 VALIDATION 1.**
+  `production_executed_true_count: 0`.

@@ -52,8 +52,19 @@ AT_M1_MERGE_COMMIT_SHORT = "db4e7a7"
 
 # What was reviewed. Never HEAD-relative.
 AT_M1_POSITIVE_RANGE = f"{AT_M1_BASELINE}...{AT_M1_STAGE_HEAD}"
-# What exists now. Never frozen -- a forbidden path added after the stage head must still be seen.
+# What exists now. Never frozen -- a forbidden path added after the stage head must still be seen
+# while AT-M1 is the current milestone. See at_m1_rejection_window() for when that ends.
 AT_M1_CURRENT_RANGE = f"{AT_M1_BASELINE}...HEAD"
+
+# AT-M2-TEAM-CORE lifecycle transition. AT-M1's "no implementation" window is a statement about
+# AT-M1, not about the repository for all time; a HEAD-relative window would make the milestone
+# after AT-M1 unbuildable by construction. The window closes at the canonical main that was HEAD
+# when the Product Owner authorized AT-M2 -- everything AT-M1 could possibly have introduced is
+# inside it, and nothing AT-M2 writes is. The boundary is a literal so it cannot drift with HEAD,
+# and it is honoured only against the canonical record below.
+AT_M1_SUPERSESSION_RECORD = "docs/governance/AI_AGENTS_PM_STATE.md"
+AT_M2_AUTHORIZATION_RECORD = "docs/decisions/at-m2-authorization.md"
+AT_M1_SUPERSESSION_COMMIT = "192ebb74ba600f7a53ddf5967a7254a1f7a72fb8"
 
 ARCH = "docs/architecture/autonomous-team"
 CONTRACTS = "docs/contracts/autonomous-team"
@@ -193,12 +204,21 @@ FORBIDDEN_SCOPE_PREFIXES = (
     ".github/",
 )
 
-FORBIDDEN_EXACT_PATHS = (
+# Stage hygiene: these were not part of AT-M1's change set, so AT-M1 touching them is a scope
+# breach. The question they answer is about AT-M1's window and ends when that window does.
+STAGE_PROTECTED_PATHS = (
     "source/progress.md",
     "requirements.txt",
     "pyproject.toml",
-    RBAC_SOURCE,
 )
+
+# The INV-01 anchor. TASK_ROLES is the boundary between a runtime agent and an authorization
+# subject, so this file stays HEAD-relative for as long as this verifier exists -- a successor
+# milestone inherits the right to write implementation, never the right to make an agent an
+# approver. check30/check31 independently parse the live set; this is the second lock.
+PERMANENTLY_PROTECTED_PATHS = (RBAC_SOURCE,)
+
+FORBIDDEN_EXACT_PATHS = (*STAGE_PROTECTED_PATHS, *PERMANENTLY_PROTECTED_PATHS)
 
 # Identifier-leak patterns, written as regexes with single-character classes so this scanner does
 # not itself contain the literals it forbids -- a scanner exempt from its own check is no scanner.
@@ -255,8 +275,64 @@ def forbidden_scope_offenders(paths: set[str]) -> list[str]:
 
 
 def protected_breaches(paths: set[str]) -> list[str]:
-    """Frozen contract files that may never be modified. Callers must pass the CURRENT set."""
-    return sorted(p for p in paths if p in FORBIDDEN_EXACT_PATHS)
+    """Stage-hygiene files AT-M1 may not modify. Callers must pass the WINDOW set."""
+    return sorted(p for p in paths if p in STAGE_PROTECTED_PATHS)
+
+
+def permanent_breaches(paths: set[str]) -> list[str]:
+    """The INV-01 anchor. Callers must pass the HEAD-relative set, superseded or not."""
+    return sorted(p for p in paths if p in PERMANENTLY_PROTECTED_PATHS)
+
+
+def at_m1_rejection_window() -> tuple[str, str]:
+    """(range, why) for AT-M1's no-implementation checks.
+
+    AT-M1 introduced no implementation, and while AT-M1 is the current milestone that question
+    must be asked HEAD-relative: freezing it at the reviewed stage head would blind it to
+    implementation added afterwards under AT-M1's name.
+
+    Once a successor milestone is CANONICALLY AUTHORIZED, "after AT-M1" stops meaning "AT-M1".
+    Code written under AT-M2's authorization is not an AT-M1 breach, and reading it as one would
+    make every successor milestone impossible -- the guard would have outlived its subject.
+    The window therefore closes at a recorded boundary commit.
+
+    This fails CLOSED in every direction. The boundary is honoured only when the canonical PM
+    snapshot records the supersession, names this exact commit, and records the successor as
+    authorized; and only when that commit is a real ancestor of HEAD and a real descendant of the
+    reviewed stage head, so it can neither be invented nor walked backwards over AT-M1's own
+    commits. If any of that does not hold, the window stays HEAD-relative at full strength.
+    """
+    snapshot = read(AT_M1_SUPERSESSION_RECORD)
+    open_window = (f"{AT_M1_BASELINE}...HEAD", "AT-M1 is not superseded; the window is open")
+    if not snapshot:
+        return open_window
+    if not re.search(r"AT_M1_LIFECYCLE:\s*SUPERSEDED BY AT-M2\b", snapshot):
+        return open_window
+    if not re.search(rf"AT_M1_SUPERSESSION_COMMIT:\s*{AT_M1_SUPERSESSION_COMMIT}\b", snapshot):
+        return open_window
+    if not re.search(r"AT_M2:\s*AUTHORIZED\b", snapshot):
+        return open_window
+    if git("cat-file", "-t", AT_M1_SUPERSESSION_COMMIT) != "commit":
+        return open_window
+    if not is_ancestor(AT_M1_SUPERSESSION_COMMIT, "HEAD"):
+        return open_window
+    if not is_ancestor(AT_M1_STAGE_HEAD, AT_M1_SUPERSESSION_COMMIT):
+        return open_window
+    return (
+        f"{AT_M1_BASELINE}...{AT_M1_SUPERSESSION_COMMIT}",
+        f"AT-M1 was superseded by AT-M2 at {AT_M1_SUPERSESSION_COMMIT[:7]}",
+    )
+
+
+def is_ancestor(earlier: str, later: str) -> bool:
+    result = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", earlier, later],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    return result.returncode == 0
 
 
 def task_roles_from_source() -> set[str]:
@@ -957,8 +1033,11 @@ def main() -> int:  # noqa: PLR0915
     )
     # FROZEN: what AT-M1 was reviewed and accepted to be. Independent of later commits.
     stage_changed = changed_paths(AT_M1_POSITIVE_RANGE)
-    # LIVE: what exists now. Rejection logic below reads this one, never the frozen set.
-    head_changed = changed_paths(AT_M1_CURRENT_RANGE)
+    # LIVE: what exists inside AT-M1's window. Rejection logic below reads this one, never the
+    # frozen set. The window is HEAD-relative until AT-M1 is canonically superseded.
+    rejection_range, window_reason = at_m1_rejection_window()
+    head_changed = changed_paths(rejection_range)
+    superseded = rejection_range != AT_M1_CURRENT_RANGE
     expect(
         stage_changed == AT_M1_EXPECTED_PATHS,
         "check02",
@@ -995,9 +1074,22 @@ def main() -> int:  # noqa: PLR0915
     # HEAD-relative on purpose: freezing these at the stage head would blind them to anything
     # added after the reviewed implementation.
     offenders = forbidden_scope_offenders(head_changed)
-    expect(offenders == [], "check04", f"AT-M1 introduced implementation paths: {offenders}")
+    expect(
+        offenders == [],
+        "check04",
+        f"AT-M1 introduced implementation paths ({window_reason}): {offenders}",
+    )
     breached = protected_breaches(head_changed)
     expect(breached == [], "check05", f"a protected file was modified: {breached}")
+    # The INV-01 anchor is asked HEAD-relative whatever AT-M1's lifecycle state is. A successor
+    # milestone inherits the right to write implementation; it never inherits the right to make a
+    # runtime agent an authorization subject.
+    permanent = permanent_breaches(changed_paths(AT_M1_CURRENT_RANGE))
+    expect(
+        permanent == [],
+        "check05a",
+        f"the TASK_ROLES source was modified after the AT-M1 baseline: {permanent}",
+    )
     expect(
         "source/progress.md" not in head_changed,
         "check06",
@@ -1006,13 +1098,45 @@ def main() -> int:  # noqa: PLR0915
     expect(
         not any(p.endswith(".sql") for p in head_changed),
         "check07",
-        "AT-M1 must create no migration",
+        f"AT-M1 must create no migration ({window_reason})",
     )
     expect(
         not any(p.endswith((".tsx", ".ts", ".jsx", ".css")) for p in head_changed),
         "check08",
-        "AT-M1 must create no frontend source",
+        f"AT-M1 must create no frontend source ({window_reason})",
     )
+    # --- 2a. the supersession mechanism itself (AT-M2-TEAM-CORE) -------------------------------
+    # A closed window is only sound if the boundary is real. These run only when the window is
+    # closed, so an unsuperseded AT-M1 is unaffected by them.
+    if superseded:
+        expect(
+            is_ancestor(AT_M1_SUPERSESSION_COMMIT, "HEAD"),
+            "check08a",
+            "the AT-M1 supersession boundary is not an ancestor of HEAD",
+        )
+        expect(
+            is_ancestor(AT_M1_STAGE_HEAD, AT_M1_SUPERSESSION_COMMIT),
+            "check08b",
+            "the supersession boundary predates the reviewed AT-M1 stage head, which would let "
+            "it be walked backwards over AT-M1's own commits",
+        )
+        expect(
+            AT_M1_SUPERSESSION_COMMIT in read(AT_M2_AUTHORIZATION_RECORD),
+            "check08c",
+            "the Product Owner authorization record does not name this supersession boundary, so "
+            "the window could be slid forward without amending the decision that opened it",
+        )
+        snapshot = read(AT_M1_SUPERSESSION_RECORD)
+        expect(
+            "AT_M1_LIFECYCLE:" in snapshot and "SUPERSEDED BY AT-M2" in snapshot,
+            "check08d",
+            "the canonical PM snapshot does not record the AT-M1 -> AT-M2 supersession",
+        )
+        expect(
+            "AT_M2_AUTHORIZED_BY:" in snapshot,
+            "check08e",
+            "the canonical PM snapshot does not record who authorized AT-M2",
+        )
     expect(
         sorted(p for p in stage_changed if not p.startswith("docs/")) == sorted([VERIFIER, TESTS]),
         "check09",

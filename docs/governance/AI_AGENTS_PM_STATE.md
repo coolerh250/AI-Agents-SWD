@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-18
-RECONCILED_AGAINST_MAIN:     f1ab151838c4bb3cf21337a1c876f92d2e91f9a9
-RECONCILED_BY_STAGE:         PCP-V2.1-RM5
+RECONCILED_ON:               2026-08-19
+RECONCILED_AGAINST_MAIN:     192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
+RECONCILED_BY_STAGE:         AT-M2-TEAM-CORE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -32,13 +32,29 @@ is a conflict.
 ## 2. Position
 
 ```text
-CURRENT_MILESTONE:           AT-M1
-CURRENT_MILESTONE_STATE:     CLOSED / CANONICAL
-PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-F
-CURRENT_GATE:                PCP-V2.1
-CURRENT_STAGE:               PCP-V2.1-RM5
-NEXT_PERMITTED_STAGE:        PCP-V2.1-RM6
+CURRENT_MILESTONE:           AT-M2
+CURRENT_MILESTONE_STATE:     IN PROGRESS / AT-M2-TEAM-CORE
+PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-RM5
+CURRENT_GATE:                AT-M2 VALIDATION
+CURRENT_STAGE:               AT-M2-TEAM-CORE
+NEXT_PERMITTED_STAGE:        AT-M2 VALIDATION 1
 ```
+
+AT-M1 stays `CLOSED / CANONICAL`; it is no longer the *current* milestone because AT-D11
+authorized its successor. Position moved off the PCP remediation chain at the same decision — see
+section 5.
+
+```text
+AT_M1_LIFECYCLE:             SUPERSEDED BY AT-M2
+AT_M1_SUPERSESSION_COMMIT:   192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
+```
+
+Supersession closes AT-M1's **no-implementation window** at the canonical main that was HEAD when
+AT-M2 was authorized, and does nothing else. Every commit AT-M1 could have contributed is inside
+that window and is still checked by `scripts/verify_at_m1_architecture_reset.py`; code written
+after it belongs to AT-M2's authorization and is not an AT-M1 scope breach. INV-01 … INV-09 stay
+live and HEAD-relative, and `shared/sdk/tasks/rbac.py` is now **permanently** protected rather
+than protected only for AT-M1's window.
 
 ## 3. Engineering truth
 
@@ -78,7 +94,9 @@ AT-D09 is an open question, not a decision. Nothing downstream may represent it 
 ## 5. Authorization and safety
 
 ```text
-AT_M2:                       NOT AUTHORIZED
+AT_M2:                       AUTHORIZED / IN PROGRESS
+AT_M2_AUTHORIZED_BY:         AT-D11 / docs/decisions/at-m2-authorization.md
+AT_M2_SCOPE:                 AT-M2-TEAM-CORE only
 AT_M3_TO_AT_M8:              NOT AUTHORIZED
 PCP_V2_1:                    IN PROGRESS / REMEDIATION
 PCP_V2_1_B:                  FAIL / HISTORICAL
@@ -86,11 +104,22 @@ PCP_V2_1_C:                  FAIL / HISTORICAL
 PCP_V2_1_D:                  PASS_WITH_ADVISORY / REMEDIATION REQUIRED
 PCP_V2_1_E:                  FAIL / DEF-PCPE-01 / REMEDIATED BY PCP-V2.1-RM4
 PCP_V2_1_F:                  FAIL / BLK-PCPF-01 + BLK-PCPF-02 / REMEDIATION REQUIRED
-AT_M2_GATE:                  PCP_V2_1 REQUIRED BEFORE AT_M2
-RUNTIME_IMPLEMENTATION:      NOT STARTED
+PCP_V2_1_GATES:              PRODUCTION AUTHORIZATION
+RUNTIME_IMPLEMENTATION:      AT-M2-TEAM-CORE / NON-PRODUCTION
 PRODUCTION_AUTHORIZATION:    NOT GRANTED
 PRODUCTION_EXECUTED_TRUE_COUNT: 0
 ```
+
+`AT_M2` here is the **live** authorization state, and its authority is the AT-D11 decision record,
+not this snapshot. The AT-M1 binding-decisions contract still records `AT_M2: NOT AUTHORIZED`,
+which stays true of AT-M1: a later authorization supersedes an earlier position without falsifying
+the record of it.
+
+`PCP_V2_1_GATES` is the re-sequencing, and it is a **move, not a waiver**. PCP-V2.1's own state
+above is unchanged, no registered debt is retired, and `PCP-V2.1 PASS` is not claimed. The open
+item is a governance measurement reconciliation that reaches no authorization, production-safety,
+security, destructive-action or data-integrity control, so it gates production authorization
+rather than a non-production milestone that cannot cross any of those boundaries.
 
 ## 6. Active HOLD items
 

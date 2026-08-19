@@ -1,3 +1,4 @@
+from shared.sdk.agent_team.capabilities import ANALYZE_REQUIREMENTS
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.observability.metrics import AGENT_DISCUSSIONS_TOTAL
 from shared.sdk.task_execution import TaskExecutionStore
@@ -15,6 +16,8 @@ class IntakeAgent(StreamAgent):
     name = "intake-agent"
     input_stream = "stream.tasks"
     output_stream = "stream.requirements"
+    # AT-M2: intake states the need; the team's router names who fills it.
+    successor_capability = ANALYZE_REQUIREMENTS
     group = "intake-agent-group"
     consumer = "intake-agent-1"
 

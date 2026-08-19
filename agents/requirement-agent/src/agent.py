@@ -30,6 +30,11 @@ from __future__ import annotations
 
 import contextlib
 
+from shared.sdk.agent_team.capabilities import (
+    ANALYZE_REQUIREMENTS,
+    CLARIFY_REQUIREMENTS,
+    GENERATE_CODE,
+)
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.notifications.client import send_notification
 from shared.sdk.project_planning.events import (
@@ -57,6 +62,8 @@ class RequirementAgent(StreamAgent):
     name = "requirement-agent"
     input_stream = "stream.requirements"
     output_stream = "stream.development"
+    declared_capabilities = (ANALYZE_REQUIREMENTS, CLARIFY_REQUIREMENTS)
+    successor_capability = GENERATE_CODE
     group = "requirement-agent-group"
     consumer = "requirement-agent-1"
 

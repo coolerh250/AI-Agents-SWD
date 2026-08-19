@@ -229,3 +229,12 @@ export const getSecurityEvidencePackage = () =>
   apiGet<Record<string, unknown>>(`/operations/security/evidence/package`);
 export const getSecurityReadinessReport = () =>
   apiGet<Record<string, unknown>>(`/operations/security/readiness/report`);
+
+// Step AT-M2-TEAM-CORE -- read-only runtime team surface (GET only; forming a team and changing
+// membership are deliberately NOT exposed as client methods here).
+export const getTeam = (projectId: string) =>
+  apiGet<Record<string, unknown>>(`/teams/${encodeURIComponent(projectId)}`);
+export const getTeamMessages = (projectId: string) =>
+  apiGet<Record<string, unknown>>(`/teams/${encodeURIComponent(projectId)}/messages`);
+export const getTeamRoutingDecisions = (projectId: string) =>
+  apiGet<Record<string, unknown>>(`/teams/${encodeURIComponent(projectId)}/routing-decisions`);

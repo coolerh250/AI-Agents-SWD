@@ -4,6 +4,7 @@ import os
 
 import asyncpg
 
+from shared.sdk.agent_team.capabilities import PLAN_DEPLOYMENT
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.code_workspace import CodeWorkspaceStore
@@ -114,6 +115,7 @@ class DevOpsAgent(StreamAgent):
     name = "devops-agent"
     input_stream = "stream.deployments"
     output_stream = "stream.devops"
+    declared_capabilities = (PLAN_DEPLOYMENT,)
     group = "devops-agent-group"
     consumer = "devops-agent-1"
 

@@ -1,0 +1,126 @@
+{
+  "registry": "at-m2-capability-state",
+  "status": "CANONICAL",
+  "milestone": "AT-M2-TEAM-CORE",
+  "authorized_by": "AT-D11",
+  "canonical_baseline": "192ebb74ba600f7a53ddf5967a7254a1f7a72fb8",
+  "recorded_by": "Claude Code (Step AT-M2-TEAM-CORE)",
+  "recorded_at": "2026-08-19",
+  "production_executed_true_count": 0,
+  "relationship_to_at_m1_registry": [
+    "at-capability-state-registry.json is the AT-M1 BASELINE measurement, pinned to canonical main fa5e5c4. It is not a live dashboard and AT-M2 does not edit it: rewriting a baseline would destroy the only record of what the platform looked like before this milestone.",
+    "This file records the DELTA AT-M2 produced, against that baseline, using the same six allowed states and the same rule that a capability is classified by repository evidence rather than by the existence of a name."
+  ],
+  "allowed_states": [
+    "IMPLEMENTED",
+    "PARTIAL",
+    "MOCK_ONLY",
+    "CONTRACT_ONLY",
+    "NOT_IMPLEMENTED",
+    "DEFERRED"
+  ],
+  "capabilities": [
+    {
+      "capability": "AgentPrincipal",
+      "at_m1_state": "CONTRACT_ONLY",
+      "state": "IMPLEMENTED",
+      "evidence": "migrations/036 creates actor_principals (principal_type/display_name/status) and agent_profiles (principal_id, agent_key, role, capabilities, transport_stream, tool_policy_profile, model_provider_ref). TeamStore.register_agent mints one runtime_agent principal per agent, idempotently by agent_key. Distinct from the task/authorization Actor.principal_id, which is untouched.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Team",
+      "at_m1_state": "CONTRACT_ONLY",
+      "state": "IMPLEMENTED",
+      "evidence": "project_team_memberships with membership_state invited|active|paused|left and historical left_at. TeamService.form_team recruits a team for a project and is exercised end-to-end by tests/test_at_m2_team_core_demo.py. There is deliberately no separate teams table: a team IS its memberships, as the AT-M1 contract defines it.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Delegation",
+      "at_m1_state": "NOT_IMPLEMENTED",
+      "state": "IMPLEMENTED",
+      "evidence": "team_messages carries recipient_principal_id / recipient_role / recipient_team with a DB CHECK that at least one is set, plus parent_message_id threading. StreamAgent.resolve_publish_target consults the router instead of output_stream whenever a team context is present, and publishes to the team blocked stream rather than falling back when nobody is eligible.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Assignment",
+      "at_m1_state": "PARTIAL",
+      "state": "IMPLEMENTED",
+      "evidence": "shared/sdk/agent_team/router.py selects a successor from declared capabilities and current membership, records the eligible set with per-candidate rejection reasons, and refuses production-effect capabilities to the human approval boundary. Withdrawing a capability or a member changes the decision with no operator input (tests/test_at_m2_team_core.py).",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Handoff",
+      "at_m1_state": "NOT_IMPLEMENTED",
+      "state": "PARTIAL",
+      "evidence": "agent_handoffs exists with from/to principal, reason, context_refs and state offered|accepted|declined|withdrawn|expired; ownership moves only on accept (TeamStore.accept_handoff). PARTIAL rather than IMPLEMENTED: no runtime agent offers a handoff on the autonomous path yet -- routing, not handoff, moves work in AT-M2.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Decision",
+      "at_m1_state": "PARTIAL",
+      "state": "PARTIAL",
+      "evidence": "team_decisions now exists with options_considered, selected_option, rationale_summary and dissent_summary, kept free-form so it can never carry a Review Gate Action (INV-03). Still PARTIAL: no runtime agent records one, because that needs proposals AT-M2 does not generate.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "SharedContext",
+      "at_m1_state": "PARTIAL",
+      "state": "PARTIAL",
+      "evidence": "conversation_threads plus team_messages give the team a durable project-scoped record with audit refs. Still PARTIAL: the context is persisted and readable but nothing reasons over it, and there is still no cross-project context.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Replan",
+      "at_m1_state": "NOT_IMPLEMENTED",
+      "state": "PARTIAL",
+      "evidence": "The orchestrator graph is no longer linear: audit -> route_next -> {dispatch | team_blocked} is a real conditional edge decided at runtime from team capability. PARTIAL and not IMPLEMENTED: this is conditional ROUTING, not replanning -- there is no PlanRevision, no back-edge and no plan to revise. AT-M3/AT-M4 own that.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "Discussion",
+      "at_m1_state": "MOCK_ONLY",
+      "state": "MOCK_ONLY",
+      "evidence": "UNCHANGED by AT-M2. shared/sdk/agent_discussion remains a deterministic template fixture. Team messages are addressed and durable but their content is composed by the sending agent, not reasoned: AT-M2 deliberately excludes LLM-authored content.",
+      "poc_blocking": true
+    },
+    {
+      "capability": "LLMReasoning",
+      "at_m1_state": "PARTIAL",
+      "state": "PARTIAL",
+      "evidence": "UNCHANGED by AT-M2. No LLM provider, planner or network call is added; the router is capability matching, not reasoning. Recorded here only so a reader cannot infer that runtime teams implied runtime reasoning.",
+      "poc_blocking": true
+    }
+  ],
+  "unchanged_by_this_milestone": [
+    "Goal",
+    "Planning",
+    "PlanRevision",
+    "Proposal",
+    "Execution",
+    "CodeGeneration",
+    "TestExecution",
+    "QA",
+    "Diagnosis",
+    "Debug",
+    "Retry",
+    "DLQ",
+    "Delivery",
+    "Acceptance",
+    "Identity",
+    "VectorRetrieval",
+    "Audit",
+    "Approvals",
+    "Secrets",
+    "RuntimeDeployment"
+  ],
+  "totals": {
+    "entries": 10,
+    "IMPLEMENTED": 4,
+    "PARTIAL": 5,
+    "MOCK_ONLY": 1,
+    "CONTRACT_ONLY": 0,
+    "NOT_IMPLEMENTED": 0,
+    "DEFERRED": 0,
+    "poc_blocking": 10
+  }
+}

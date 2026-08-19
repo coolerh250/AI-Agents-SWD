@@ -3,6 +3,8 @@ import time
 from abc import abstractmethod
 
 from shared.sdk.agent_execution.store import AgentExecutionStore
+from shared.sdk.agent_team.context import team_context_of, with_team_context
+from shared.sdk.agent_team.events import STREAM_TEAM_BLOCKED
 from shared.sdk.audit.client import AuditClient
 from shared.sdk.base_agent.base import BaseAgent
 from shared.sdk.event_bus.redis_streams import (
@@ -34,7 +36,22 @@ class StreamAgent(BaseAgent):
     group: str = ""
     consumer: str = ""
 
-    def __init__(self, event_bus: RedisStreamEventBus | None = None) -> None:
+    # AT-M2-TEAM-CORE. What this agent can take, and what the NEXT worker must be able to do.
+    # The agent states the NEED; the router decides who fills it. ``output_stream`` above is
+    # transport for the legacy task pipeline and is no longer the routing authority on the
+    # autonomous path.
+    declared_capabilities: tuple[str, ...] = ()
+    successor_capability: str = ""
+    # Class-level so the routing seam is safe on an instance built without __init__.
+    team_service: object | None = None
+    _team_context: dict | None = None
+    last_routing_decision = None
+
+    def __init__(
+        self,
+        event_bus: RedisStreamEventBus | None = None,
+        team_service: object | None = None,
+    ) -> None:
         bus = event_bus or RedisStreamEventBus()
         super().__init__(audit_client=AuditClient(event_bus=bus))
         self.bus = bus
@@ -44,6 +61,9 @@ class StreamAgent(BaseAgent):
         self.dead_letter_count = 0
         self.last_task_id: str | None = None
         self.running = False
+        self.team_service = team_service
+        self._team_context: dict | None = None
+        self.last_routing_decision = None
 
     @staticmethod
     def correlation_ids(payload: dict) -> dict:
@@ -75,26 +95,89 @@ class StreamAgent(BaseAgent):
         artifact_refs, event_type, message, and optional execution_metadata.
         """
 
-    async def publish_next(self, message: dict) -> str:
-        """Publish ``message`` to ``output_stream`` inside an ``agent.publish_next`` span.
+    async def resolve_publish_target(
+        self,
+        message: dict,
+        capability: str = "",
+        default_stream: str | None = None,
+    ) -> tuple[str, dict | None]:
+        """Where this message goes next, and the routing evidence for that choice.
 
-        Concrete handle() implementations use this instead of calling ``bus.publish_event``
-        directly so the per-agent custom span is always emitted.
+        On the AUTONOMOUS path -- a message carrying a team context, with a router available and
+        a stated capability need -- the router decides, from the team's declared capabilities as
+        they are right now. On the legacy task pipeline the compile-time stream is still the
+        transport.
+
+        When the router finds nobody eligible the message goes to the team blocked stream. It is
+        deliberately NOT sent to the compile-time stream instead: silently falling back would
+        restore exactly the behaviour this milestone removes, and would do it precisely when the
+        team is least able to handle the work.
         """
+        fallback = self.output_stream if default_stream is None else default_stream
+        wanted = capability or self.successor_capability
+        context = self._team_context
+        if context is None or self.team_service is None or not wanted:
+            return fallback, None
+        decision, _record = await self.team_service.decide_route(
+            project_id=context["project_id"],
+            capability=wanted,
+            workflow_stage=str(message.get("stage") or context.get("workflow_stage") or ""),
+            work_item_id=context.get("work_item_id"),
+            task_id=str(message.get("task_id") or "") or None,
+            workflow_id=str(message.get("workflow_id") or "") or None,
+        )
+        self.last_routing_decision = decision
+        if decision.selected and decision.selected_stream:
+            return decision.selected_stream, decision.as_record()
+        return STREAM_TEAM_BLOCKED, decision.as_record()
+
+    async def _publish_resolved(
+        self, message: dict, capability: str = "", default_stream: str | None = None
+    ) -> str:
+        stream, routing = await self.resolve_publish_target(
+            message, capability=capability, default_stream=default_stream
+        )
+        if routing is not None:
+            message = {**with_team_context(message, self._team_context), "routing": routing}
         with start_span(
             "agent.publish_next",
             **{
                 "service.name": self.name,
                 "agent": self.name,
-                "stream": self.output_stream,
+                "stream": stream,
                 "task_id": str(message.get("task_id", "")),
                 "workflow_id": str(message.get("workflow_id", "")),
                 "event_type": str(message.get("event", "")),
             },
         ):
-            return await self.bus.publish_event(self.output_stream, message)
+            return await self.bus.publish_event(stream, message)
+
+    async def publish_next(self, message: dict) -> str:
+        """Publish ``message`` to its resolved target inside an ``agent.publish_next`` span.
+
+        Concrete handle() implementations use this instead of calling ``bus.publish_event``
+        directly so the per-agent custom span is always emitted.
+        """
+        return await self._publish_resolved(message)
+
+    async def publish_for_capability(
+        self, message: dict, capability: str, default_stream: str | None = None
+    ) -> str:
+        """Send work that needs a SPECIFIC capability, which may not be this agent's successor.
+
+        The QA repair loop uses this: QA's normal successor handles deployment planning, but a
+        blocking auto-fixable finding needs whoever can fix defects, and on a team that may not
+        be the agent that wrote the code.
+        """
+        return await self._publish_resolved(
+            message, capability=capability, default_stream=default_stream
+        )
 
     async def process(self, payload: dict) -> dict:
+        # The inbound team context, if any, decides whether this hop is on the autonomous path
+        # and is carried forward onto whatever handle() publishes.
+        self._team_context = team_context_of(payload)
+        self.last_routing_decision = None
         task_id = str(payload.get("task_id", "unknown"))
         workflow_id = str(payload.get("workflow_id", ""))
         parent_trace_id = str(payload.get("trace_id", ""))
@@ -205,6 +288,8 @@ class StreamAgent(BaseAgent):
             "running": self.running,
             "input_stream": self.input_stream,
             "output_stream": self.output_stream,
+            "declared_capabilities": list(self.declared_capabilities),
+            "successor_capability": self.successor_capability,
             "group": self.group,
             "processed_count": self.processed_count,
             "failed_count": self.failed_count,

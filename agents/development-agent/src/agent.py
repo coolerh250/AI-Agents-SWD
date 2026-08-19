@@ -42,6 +42,11 @@ from code_generator import (
 )
 from llm_planner import LLMPlannerPipeline, llm_planning_enabled
 
+from shared.sdk.agent_team.capabilities import (
+    FIX_DEFECTS,
+    GENERATE_CODE,
+    VERIFY_QUALITY,
+)
 from shared.sdk.audit.publisher import publish_audit_event
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.code_workspace import (
@@ -146,6 +151,8 @@ class DevelopmentAgent(StreamAgent):
     name = "development-agent"
     input_stream = "stream.development"
     output_stream = "stream.qa"
+    declared_capabilities = (GENERATE_CODE,)
+    successor_capability = VERIFY_QUALITY
     group = "development-agent-group"
     consumer = "development-agent-1"
 
@@ -1067,6 +1074,8 @@ class CodeAutoFixAgent(StreamAgent):
     name = "development-agent-autofix"
     input_stream = AUTO_FIX_REQUEST_STREAM
     output_stream = "stream.qa"
+    declared_capabilities = (FIX_DEFECTS,)
+    successor_capability = VERIFY_QUALITY
     group = "development-agent-autofix-group"
     consumer = "development-agent-autofix-1"
 

@@ -46,6 +46,10 @@ RECOVERY = f"{GOVERNANCE}/pcp-v2-recovery.md"
 # Canonical engineering artifacts the snapshot is reconciled AGAINST.
 BINDING = "docs/contracts/autonomous-team/at-binding-decisions.md"
 MANIFEST = "docs/alignment/66-project-completion/master/canonical-milestone-manifest.md"
+# AT-M2-TEAM-CORE. The LIVE authorization record for AT-M2. The binding contract above still
+# records the position AT-M1 took (NOT AUTHORIZED), which stays true of AT-M1; a later Product
+# Owner authorization supersedes that position rather than falsifying the record of it.
+AT_M2_AUTHORIZATION = "docs/decisions/at-m2-authorization.md"
 
 ACTIVE_DEBT_HEADING = "### Active registered debt"
 HISTORICAL_DEBT_HEADING = "### Historical debt"
@@ -153,6 +157,35 @@ def pm_state_fields(path: str | pathlib.Path = PM_STATE) -> dict[str, str]:
     return registers(read(str(path)))
 
 
+def at_m2_authorization_state(binding: dict[str, str]) -> str:
+    """AT-M2's CURRENT authorization state, and where it is allowed to come from.
+
+    The milestone plan requires each milestone to carry "its own explicit Product Owner
+    authorization". When that record exists and is BINDING it is the authority; otherwise the
+    AT-M1 binding contract still governs, so an unrecorded flip in the PM snapshot remains drift.
+    """
+    decision = registers(read(AT_M2_AUTHORIZATION))
+    if "RESOLVED / BINDING" in decision.get("AT-D11", "") and decision.get("AT_M2", ""):
+        return decision["AT_M2"]
+    return binding.get("AT_M2", "")
+
+
+def at_m2_authorization_is_recorded(pm: dict[str, str]) -> bool:
+    """True only when an AT-M2 authorization is backed by the canonical decision record.
+
+    Fails closed: it is not enough for the snapshot to claim authorization, and not enough for a
+    decision file to merely exist. The decision must be BINDING, the snapshot must name it, and
+    the re-sequenced gate must be recorded -- so no milestone can be authorized by editing one
+    line in one file.
+    """
+    decision = registers(read(AT_M2_AUTHORIZATION))
+    return (
+        "RESOLVED / BINDING" in decision.get("AT-D11", "")
+        and "AT-D11" in pm.get("AT_M2_AUTHORIZED_BY", "").upper()
+        and "PRODUCTION" in pm.get("PCP_V2_1_GATES", "").upper()
+    )
+
+
 def canonical_truth() -> dict[str, str]:
     """Engineering truth, derived from the repository and from git -- never from constants."""
     binding = registers(read(BINDING))
@@ -163,7 +196,7 @@ def canonical_truth() -> dict[str, str]:
         "AT-D09": binding.get("AT-D09", ""),
         "AT-D10": binding.get("AT-D10", ""),
         "AT-D10.1": binding.get("AT-D10.1", ""),
-        "AT_M2": binding.get("AT_M2", ""),
+        "AT_M2": at_m2_authorization_state(binding),
         "PRODUCTION_EXECUTED_TRUE_COUNT": binding.get("PRODUCTION_EXECUTED_TRUE_COUNT", ""),
         "AT_M1": "CLOSED / CANONICAL" if "CLOSED / CANONICAL" in at_m1_entry else "",
         "PR29": "MERGED" if "PR #29 MERGED" in at_m1_entry else "",
@@ -299,10 +332,21 @@ def invariant_violations(
         if "CLOSED / CANONICAL" not in re.sub(r"\s+", " ", read(MANIFEST)):
             violations.append("I6: AT_M1 is CANONICAL but the milestone manifest does not say so")
 
-    # I7 -- roadmap prerequisites. AT-M2 requires PCP-V2.1 to have passed.
+    # I7 -- roadmap prerequisites. AT-M2 needs PCP-V2.1 to have passed, OR a canonical Product
+    # Owner decision that re-sequenced the gate. AT-D11 moved PCP-V2.1 to gate PRODUCTION
+    # authorization: its open item is a measurement reconciliation that reaches no authorization,
+    # production-safety, security or data-integrity control. The gate MOVED; it was not waived,
+    # and PCP_V2_1's own state is unchanged.
     gate_passed = "PASS" in pm.get("PCP_V2_1", "").upper()
-    if "NOT AUTHORIZED" not in pm.get("AT_M2", "").upper() and not gate_passed:
-        violations.append("I7: AT_M2 is not NOT AUTHORIZED while PCP-V2.1 has not passed")
+    if (
+        "NOT AUTHORIZED" not in pm.get("AT_M2", "").upper()
+        and not gate_passed
+        and not at_m2_authorization_is_recorded(pm)
+    ):
+        violations.append(
+            "I7: AT_M2 is authorized while PCP-V2.1 has not passed and no canonical Product "
+            "Owner re-sequencing decision is recorded"
+        )
     return violations
 
 
@@ -1627,9 +1671,24 @@ def main() -> int:
         "the recovery spec does not state that this stage cannot claim PCP-V2.1 PASS",
     )
     expect(
-        "NOT AUTHORIZED" in pm.get("AT_M2", ""),
+        "NOT AUTHORIZED" in pm.get("AT_M2", "") or at_m2_authorization_is_recorded(pm),
         "check14",
-        "AT-M2 must remain NOT AUTHORIZED",
+        "AT-M2 is authorized without a canonical Product Owner authorization record",
+    )
+    # AT-M2-TEAM-CORE. Authorizing a non-production milestone must not move the production
+    # boundary by a millimetre, so the two controls that define it are asserted explicitly here
+    # rather than left implicit in the drift comparison.
+    expect(
+        "NOT GRANTED" in pm.get("PRODUCTION_AUTHORIZATION", "").upper(),
+        "check14a",
+        f"production authorization is no longer NOT GRANTED: "
+        f"{pm.get('PRODUCTION_AUTHORIZATION', '')!r}",
+    )
+    expect(
+        pm.get("PRODUCTION_EXECUTED_TRUE_COUNT", "").strip() == "0",
+        "check14b",
+        f"the production execution count is not 0: "
+        f"{pm.get('PRODUCTION_EXECUTED_TRUE_COUNT', '')!r}",
     )
     expect(
         "DISPOSITION REQUIRED" in pm.get("HAZARD_AT_M1_DENYLIST", "").upper(),

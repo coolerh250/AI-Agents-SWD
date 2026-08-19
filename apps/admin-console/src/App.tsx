@@ -1,4 +1,5 @@
 import { Routes, Route } from "react-router-dom";
+import { TeamRoom } from "./pages/TeamRoom";
 import { Layout } from "./components/Layout";
 import { ExecutiveOverview } from "./pages/ExecutiveOverview";
 import { Projects } from "./pages/Projects";
@@ -77,6 +78,7 @@ export function App() {
         />
         <Route path="/demo-evidence" element={<DemoEvidence />} />
         <Route path="/agent-executions" element={<AgentExecutions />} />
+        <Route path="/team-room" element={<TeamRoom />} />
         <Route path="/approvals" element={<PlaceholderPage title="Approvals" requiredStep="66D" />} />
         <Route path="/dlq-retry" element={<PlaceholderPage title="DLQ / Retry" requiredStep="66D" />} />
         <Route path="/qa-code" element={<QaCode />} />
