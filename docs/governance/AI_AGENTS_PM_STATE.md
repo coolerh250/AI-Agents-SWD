@@ -134,6 +134,7 @@ never be treated as a canonical dependency while it is on hold.
 
 ```text
 BLOCKERS:                    PCP-V2.1-RM5 CANONICAL DEBT NOT RECONCILED
+GOVERNANCE_MEASUREMENT_STATE: STALE / RETAKE REQUIRED AT AT-M2 CANONICAL MERGE
 GOVERNANCE_MEASURED_AT:      f1ab151838c4bb3cf21337a1c876f92d2e91f9a9
 GOVERNANCE_INPUT_DIGEST:     48163467ef93662cbd0f3e48686cf219c5d9f75e765c25940078b3e5ed8e2d83
 GOVERNANCE_DEBT_BASELINE:    2a2facc898aa3738322d4487cbfce591cfbadc46
@@ -143,6 +144,29 @@ MEASUREMENT_POLICY_VERSION:  2
 MEASUREMENT_POLICY_DIGEST:   a36bee95fc078d16cf3ce3292e18290bbee48599303f53e51e16370163739226
 MEASUREMENT_ISOLATION_MODE:  standalone-clone+declared-refs+sanitized-environment
 ADMISSIBILITY_CONTRACT:      2
+```
+
+### Measurement staleness declared by AT-M2-TEAM-CORE
+
+AT-M2 changed governance authority inputs — this snapshot, two verifiers, and new test modules —
+so the recorded measurement no longer describes them. `check18` reports that, correctly, and the
+fields above are **left exactly as measured**: they still describe the last canonical measurement
+truthfully, and overwriting them with a number nobody measured is the failure mode this whole
+control plane exists to prevent.
+
+The retake is deferred to the AT-M2 canonical merge, deliberately. A measurement taken on the
+unmerged AT-M2 branch is **not comparable** to a canonical one: `DECLARED_REFS` is
+`refs/heads/main`, so on a branch commit every stage verifier that asks "is this branch merged
+into main" or "does the diff stay in scope against main" answers a different question than it
+answers on main. A trial retake at the AT-M2 branch head produced 47 measured failures outside the
+active register, dominated by exactly that class. **None of them is registered here.** Registering
+branch-position artifacts as canonical repository debt would repeat DEF-PCPE-01 in a new costume —
+recording "this checkout was not main" as a known governance failure.
+
+```text
+RETAKE_REQUIRED_AT:          the AT-M2 canonical merge commit on main
+DO_NOT:                      register the branch-measured failures as canonical debt
+DO_NOT:                      re-record a digest without a canonical measurement behind it
 ```
 
 The measurement is taken in a **disposable clean checkout** of `CANONICAL_MEASURED_COMMIT` under a

@@ -678,3 +678,50 @@ def test_the_authorization_record_grants_nothing_beyond_at_m2():
     assert re.search(r"Production authorization\s+NOT GRANTED", decision)
     assert "does NOT mark PCP-V2.1 PASS" in decision
     assert "production_executed_true_count: 0" in decision
+
+
+# --- the bounded repair loop, routed ---------------------------------------------------------------
+
+
+async def test_the_qa_repair_loop_is_routed_and_still_terminates():
+    """Acceptance 6. The loop still ends; what changed is who it addresses.
+
+    QA's successor handles deployment planning, so a blocking auto-fixable finding is routed by
+    CAPABILITY rather than by QA's own output stream. The attempt cap is untouched, so routing
+    the loop cannot make it unbounded -- which is the failure mode worth testing for.
+    """
+    from shared.sdk.qa import MAX_AUTO_FIX_ATTEMPTS_DEFAULT
+
+    svc, _, _, _ = service()
+    await svc.form_team(PROJECT, GOAL)
+
+    attempts = 0
+    while attempts < MAX_AUTO_FIX_ATTEMPTS_DEFAULT + 5:
+        repair, _ = await svc.decide_route(project_id=PROJECT, capability=FIX_DEFECTS)
+        assert repair.selected_agent_key == "development-agent-autofix"
+        back, _ = await svc.decide_route(project_id=PROJECT, capability=VERIFY_QUALITY)
+        assert back.selected_agent_key == "qa-agent"
+        attempts += 1
+        if attempts >= MAX_AUTO_FIX_ATTEMPTS_DEFAULT:
+            break
+
+    assert attempts == MAX_AUTO_FIX_ATTEMPTS_DEFAULT
+    assert MAX_AUTO_FIX_ATTEMPTS_DEFAULT > 0
+    history = await svc.routing_history(PROJECT)
+    assert len(history) == 2 * MAX_AUTO_FIX_ATTEMPTS_DEFAULT, "every hop left evidence"
+
+
+async def test_the_repair_loop_escalates_instead_of_looping_when_no_fixer_is_on_the_team():
+    svc, _, _, _ = service()
+    await svc.form_team(PROJECT, GOAL)
+    await svc.set_membership_state(PROJECT, "development-agent-autofix", "left")
+    repair, record = await svc.decide_route(project_id=PROJECT, capability=FIX_DEFECTS)
+    assert repair.outcome == "no_eligible_agent"
+    assert record["selected_stream"] is None
+
+
+def test_qa_asks_for_the_fix_capability_rather_than_publishing_to_a_fixed_stream():
+    source = (ROOT / "agents" / "qa-agent" / "src" / "agent.py").read_text(encoding="utf-8")
+    assert "publish_for_capability(" in source
+    assert "FIX_DEFECTS" in source
+    assert "self.bus.publish_event(AUTO_FIX_REQUEST_STREAM" not in source

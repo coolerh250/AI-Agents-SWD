@@ -146,12 +146,16 @@ CONTRADICTIONS = [
         "C1_pr29_open",
         [("PR29:                        MERGED", "PR29:                        OPEN")],
     ),
+    # Rewritten at AT-M2-TEAM-CORE. AT-M2 is now genuinely authorized, so "the snapshot says
+    # AUTHORIZED" is no longer a contradiction. The contradiction it was protecting against
+    # survives in a sharper form: authorization CLAIMED but not backed by the canonical Product
+    # Owner decision. A snapshot must never be able to authorize a milestone by itself.
     (
-        "C2_at_m2_authorized",
+        "C2_at_m2_authorized_without_a_decision_record",
         [
             (
-                "AT_M2:                       NOT AUTHORIZED",
-                "AT_M2:                       AUTHORIZED",
+                "AT_M2_AUTHORIZED_BY:         AT-D11 / docs/decisions/at-m2-authorization.md",
+                "AT_M2_AUTHORIZED_BY:         (unrecorded)",
             )
         ],
     ),
@@ -230,10 +234,20 @@ def base_fields():
 
 
 def test_i1_a_not_authorized_stage_cannot_be_the_current_position():
+    """AT-M2-TEAM-CORE: both halves are now stated explicitly.
+
+    The test used to lean on AT_M2 happening to be NOT AUTHORIZED in the live snapshot. It is
+    authorized now, so the fixture sets the unauthorized state itself -- which is what the
+    invariant is actually about, and makes the test independent of the current position.
+    """
     loaded = module()
     fields = base_fields()
+    fields["AT_M2"] = "NOT AUTHORIZED"
     fields["CURRENT_MILESTONE"] = "AT_M2"
     assert any(v.startswith("I1:") for v in loaded.invariant_violations(fields))
+
+    fields["AT_M2"] = "AUTHORIZED / IN PROGRESS"
+    assert not any(v.startswith("I1:") for v in loaded.invariant_violations(fields))
 
 
 def test_i2_a_hold_artifact_cannot_be_a_canonical_dependency():
@@ -272,13 +286,30 @@ def test_i6_a_canonical_milestone_needs_ancestry():
     assert any(v.startswith("I6:") for v in loaded.invariant_violations(fields))
 
 
-def test_i7_at_m2_requires_the_pcp_gate_to_have_passed():
+def test_i7_at_m2_requires_the_gate_to_have_passed_or_a_recorded_re_sequencing():
+    """AT-D11 moved the PCP-V2.1 gate to production authorization. I7 now has two legal roads.
+
+    The important half is the third case: a snapshot that claims authorization without naming the
+    canonical decision is still rejected, so nothing can authorize a milestone by editing one
+    field. The rule was re-sequenced; it was not removed.
+    """
     loaded = module()
     fields = base_fields()
     fields["AT_M2"] = "AUTHORIZED"
-    assert any(v.startswith("I7:") for v in loaded.invariant_violations(fields))
-    fields["PCP_V2_1"] = "PASS"
+
+    # Road 1 -- the gate itself passed.
+    passed = {**fields, "PCP_V2_1": "PASS", "AT_M2_AUTHORIZED_BY": "", "PCP_V2_1_GATES": ""}
+    assert not any(v.startswith("I7:") for v in loaded.invariant_violations(passed))
+
+    # Road 2 -- the gate is still open, but a canonical decision re-sequenced it.
+    assert loaded.at_m2_authorization_is_recorded(fields)
     assert not any(v.startswith("I7:") for v in loaded.invariant_violations(fields))
+
+    # Neither -- authorization claimed with nothing behind it. Still a violation.
+    for missing in ("AT_M2_AUTHORIZED_BY", "PCP_V2_1_GATES"):
+        unbacked = {**fields, missing: ""}
+        assert not loaded.at_m2_authorization_is_recorded(unbacked), missing
+        assert any(v.startswith("I7:") for v in loaded.invariant_violations(unbacked)), missing
 
 
 def test_the_canonical_snapshot_violates_no_invariant():

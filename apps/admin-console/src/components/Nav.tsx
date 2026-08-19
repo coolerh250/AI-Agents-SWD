@@ -35,6 +35,7 @@ export const NAV_GROUPS: NavGroupConfig[] = [
     items: [
       { to: "/tasks", label: "Tasks", end: true },
       { to: "/tasks/new", label: "Create Task", end: true },
+      { to: "/team-room", label: "Team Room", badge: "Evidence", end: true },
       { to: "/clarifications", label: "Clarifications", badge: "Soon", end: true },
       { to: "/clarification-reminders", label: "Reminder / Expiry", badge: "Soon", end: true },
     ],
