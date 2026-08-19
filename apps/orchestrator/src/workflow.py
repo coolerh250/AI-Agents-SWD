@@ -7,6 +7,8 @@ from dispatch import dispatch_task
 from shared.sdk.agent_team.capabilities import ANALYZE_REQUIREMENTS
 from shared.sdk.agent_team.context import build_team_context
 from shared.sdk.agent_team.service import TeamService
+from shared.sdk.audit.client import AuditClient
+from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.http_clients.approval_http_client import ApprovalHttpClient
 from shared.sdk.http_clients.audit_http_client import AuditHttpClient
 from shared.sdk.http_clients.policy_http_client import PolicyHttpClient
@@ -104,8 +106,13 @@ async def requirement_node(state: WorkflowState) -> dict:
 
 
 def _team_service() -> TeamService:
-    """Overridable seam so tests and the demo can supply an in-memory team."""
-    return TeamService()
+    """The orchestrator's team runtime. An overridable seam for tests and the demo.
+
+    Team formation and routing publish onto the team stream and the audit stream, so the service
+    is given the same event bus and audit client the agents use rather than being left silent.
+    """
+    bus = RedisStreamEventBus()
+    return TeamService(event_bus=bus, audit_client=AuditClient(event_bus=bus))
 
 
 async def team_formation_node(state: WorkflowState) -> dict:

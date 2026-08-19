@@ -5,6 +5,7 @@ from abc import abstractmethod
 from shared.sdk.agent_execution.store import AgentExecutionStore
 from shared.sdk.agent_team.context import team_context_of, with_team_context
 from shared.sdk.agent_team.events import STREAM_TEAM_BLOCKED
+from shared.sdk.agent_team.service import TeamService
 from shared.sdk.audit.client import AuditClient
 from shared.sdk.base_agent.base import BaseAgent
 from shared.sdk.event_bus.redis_streams import (
@@ -61,7 +62,15 @@ class StreamAgent(BaseAgent):
         self.dead_letter_count = 0
         self.last_task_id: str | None = None
         self.running = False
-        self.team_service = team_service
+        # Deployed agents are constructed with no arguments, so the router has to be the default
+        # rather than something a caller opts into -- otherwise the autonomous path would exist
+        # only in tests. Constructing it opens no connection; like every other store here it
+        # resolves DATABASE_URL lazily and degrades if the database is unreachable.
+        self.team_service = (
+            team_service
+            if team_service is not None
+            else TeamService(event_bus=bus, audit_client=self.audit_client)
+        )
         self._team_context: dict | None = None
         self.last_routing_decision = None
 

@@ -1450,12 +1450,37 @@ def test_m1_a_forbidden_path_added_after_the_stage_head_is_still_caught(path):
     assert module.forbidden_scope_offenders(frozen | {path}) == [path]
 
 
-@pytest.mark.parametrize("path", ["source/progress.md", "shared/sdk/tasks/rbac.py"])
-def test_m1_a_protected_file_touched_after_the_stage_head_is_still_caught(path):
+def test_m1_a_stage_protected_file_touched_inside_the_window_is_still_caught():
+    """(D) Stage hygiene: AT-M1 may not touch these, asked over AT-M1's own window.
+
+    Updated at AT-M2-TEAM-CORE. The question these files answer is about AT-M1's change set, so
+    it is asked over the rejection window rather than over HEAD -- otherwise the successor
+    milestone could never update the progress ledger the project rules require it to maintain.
+    """
+    module = verifier_module()
+    window, _reason = module.at_m1_rejection_window()
+    inside = paths_over(window)
+    for path in module.STAGE_PROTECTED_PATHS:
+        assert path not in inside, f"{path} was touched inside AT-M1's window"
+        assert module.protected_breaches(inside | {path}) == [path]
+
+
+def test_m1_the_task_roles_anchor_is_caught_head_relative_even_once_superseded():
+    """(D2) INV-01 is NOT part of AT-M1's window and never closes.
+
+    A successor milestone inherits the right to write implementation. It does not inherit the
+    right to make a runtime agent an authorization subject, so this one file stays HEAD-relative
+    whatever AT-M1's lifecycle state is -- including right now, with the window closed.
+    """
     module = verifier_module()
     live = head_changed_paths()
-    assert path not in live
-    assert path in module.protected_breaches(live | {path}) or path == "source/progress.md"
+    assert module.at_m1_rejection_window()[0] != f"{AT_M1_BASELINE}...HEAD", (
+        "this test is only meaningful once the window is closed"
+    )
+    assert module.RBAC_SOURCE not in live
+    assert module.permanent_breaches(live | {module.RBAC_SOURCE}) == [module.RBAC_SOURCE]
+    assert module.RBAC_SOURCE not in module.STAGE_PROTECTED_PATHS
+    assert "permanent_breaches(changed_paths(AT_M1_CURRENT_RANGE))" in verifier_source()
 
 
 def test_m1_the_stage_head_pointer_is_pinned_to_the_merge_topology():
