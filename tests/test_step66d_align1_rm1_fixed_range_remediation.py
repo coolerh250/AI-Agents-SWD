@@ -17,6 +17,12 @@ from pathlib import Path
 from types import ModuleType
 
 import pytest
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
@@ -430,7 +436,13 @@ def test_rm1_verifier_passes() -> None:
 
 
 def test_no_runtime_or_infra_path_changed() -> None:
-    changed = [p for p in _git("diff", "--name-only", CANONICAL_MAIN).splitlines() if p]
+    changed = [
+        p
+        for p in _git(
+            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+        ).splitlines()
+        if p
+    ]
     assert [p for p in changed if p.startswith(RUNTIME_PREFIXES)] == []
     assert [p for p in changed if p.endswith((".yaml", ".yml", ".tsx", ".ts", ".sql"))] == []
 

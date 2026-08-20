@@ -13,6 +13,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -79,6 +85,11 @@ def manifest() -> dict:
 
 def block() -> dict:
     return manifest()["review_task_active_state"]
+
+
+def successor_range(baseline: str) -> str:
+    """``baseline``..window end -- HEAD unless an authorized successor took over."""
+    return f"{baseline}..{successor_window_end(baseline)}"
 
 
 def changed_in(rev_range: str) -> set[str]:
@@ -250,7 +261,7 @@ def test_design_m1_frozen_range_survived_the_merge():
 def test_progress_file_untouched_by_this_stage():
     """ADV-DRIFT-PROGRESS-01: three historical suites still diff progress.md against HEAD."""
     assert "source/progress.md" not in changed_in(f"{PRE_MERGE_MAIN}...{CR1_STAGE_HEAD}")
-    assert "source/progress.md" not in changed_in(f"{MERGE_COMMIT}..HEAD")
+    assert "source/progress.md" not in changed_in(successor_range(MERGE_COMMIT))
 
 
 def test_merge_record_tracks_advisories_without_remediating():
@@ -274,7 +285,7 @@ def test_no_be1_implementation_exists():
 
 
 def test_merge_record_commit_touched_no_implementation():
-    changed = changed_in(f"{MERGE_COMMIT}..HEAD")
+    changed = changed_in(successor_range(MERGE_COMMIT))
     forbidden = (
         "apps/",
         "agents/",

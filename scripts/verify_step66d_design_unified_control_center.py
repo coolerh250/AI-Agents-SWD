@@ -33,6 +33,11 @@ import re
 import subprocess
 import sys
 
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY"
 
@@ -474,7 +479,9 @@ def changed_paths() -> list[str] | None:
 
 def current_state_paths() -> list[str] | None:
     """Rejection-only guard input: deliberately HEAD-relative so later commits stay scanned."""
-    return _git_changed(f"{RUNTIME_GUARD_ANCHOR}...HEAD")
+    return _git_changed(
+        f"{RUNTIME_GUARD_ANCHOR}...{successor_window_end(RUNTIME_GUARD_ANCHOR)}"
+    )
 
 
 # ---------------------------------------------------------------- checks

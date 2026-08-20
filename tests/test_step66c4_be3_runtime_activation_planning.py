@@ -14,6 +14,13 @@ import subprocess
 from pathlib import Path
 
 import pytest
+import pathlib
+import sys
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
@@ -193,7 +200,7 @@ def test_no_policy_authority_credentials_provisioned_anywhere() -> None:
 
 def test_no_infra_migrations_or_workflow_paths_changed_by_this_stage() -> None:
     rc = subprocess.run(
-        ["git", "diff", "--name-only", "284d706", "HEAD"],
+        ["git", "diff", "--name-only", "284d706", successor_window_end("284d706")],
         cwd=ROOT,
         capture_output=True,
         text=True,

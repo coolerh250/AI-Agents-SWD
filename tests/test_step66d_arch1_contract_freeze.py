@@ -12,6 +12,12 @@ import sys
 from pathlib import Path
 
 import pytest
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66d_arch1_contract_freeze.py"
@@ -77,7 +83,13 @@ def _enum(doc: Path, heading: str) -> tuple[str, ...]:
 
 
 def _changed() -> list[str]:
-    return [p for p in _git("diff", "--name-only", CANONICAL_MAIN).splitlines() if p]
+    return [
+        p
+        for p in _git(
+            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+        ).splitlines()
+        if p
+    ]
 
 
 # --- verifier -------------------------------------------------------------------------------

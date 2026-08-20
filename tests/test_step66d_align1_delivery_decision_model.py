@@ -12,6 +12,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66d_align1_delivery_decision_model.py"
@@ -270,7 +276,9 @@ def test_legacy_delivery_package_preserved() -> None:
 
 def test_legacy_delivery_package_source_untouched() -> None:
     """Re-derived from Git: no legacy source file may be modified by this stage."""
-    changed = _git("diff", "--name-only", CANONICAL_MAIN).splitlines()
+    changed = _git(
+        "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+    ).splitlines()
     assert [p for p in changed if "delivery_package" in p.lower()] == []
     assert [p for p in changed if "DeliveryPackage" in p] == []
 
@@ -497,7 +505,13 @@ def test_be3_gates_still_default_false() -> None:
 
 
 def _changed() -> list[str]:
-    return [line for line in _git("diff", "--name-only", CANONICAL_MAIN).splitlines() if line]
+    return [
+        line
+        for line in _git(
+            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+        ).splitlines()
+        if line
+    ]
 
 
 def test_no_runtime_backend_or_agent_source_changed() -> None:

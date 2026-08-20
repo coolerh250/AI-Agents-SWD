@@ -17,6 +17,12 @@ import sys
 from pathlib import Path
 
 import pytest
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
@@ -553,7 +559,12 @@ def test_probe_k_series_control_tree_is_restored_exactly(tmp_path):
 # --------------------------------------------------------------------- scope
 def test_scope_no_runtime_or_backend_paths_changed():
     result = subprocess.run(
-        ["git", "diff", "--name-only", f"{DESIGN_BASELINE}...HEAD"],
+        [
+            "git",
+            "diff",
+            "--name-only",
+            f"{DESIGN_BASELINE}...{successor_window_end(DESIGN_BASELINE)}",
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
