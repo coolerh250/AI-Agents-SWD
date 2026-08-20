@@ -14,12 +14,6 @@ import sys
 from pathlib import Path
 
 import pytest
-import pathlib
-
-# AT-M2 remediation: the rejection window ends where an authorized successor milestone
-# takes over; without one this is HEAD, exactly as before.
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
-from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -287,7 +281,7 @@ def test_feature_gate_defaults_false(var: str, path: Path) -> None:
 
 def test_stage_changed_no_runtime_or_infra_file() -> None:
     changed = subprocess.run(
-        ["git", "diff", "--name-only", BASELINE_MAIN, successor_window_end(BASELINE_MAIN)],
+        ["git", "diff", "--name-only", BASELINE_MAIN, "HEAD"],
         cwd=ROOT,
         capture_output=True,
         text=True,

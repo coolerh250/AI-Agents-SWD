@@ -18,7 +18,13 @@ import pathlib
 # AT-M2 remediation: this stage's rejection window ends where an authorized successor
 # milestone takes over. Without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
-from successor_lifecycle import successor_window_end  # noqa: E402
+try:
+    from successor_lifecycle import successor_window_end  # noqa: E402
+except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
+
+    def successor_window_end(_baseline: str = "") -> str:
+        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
+        return "HEAD"
 
 MARKER = "STEP66D_ALIGN1_RM1_FIXED_RANGE_REMEDIATION_VERIFY: PASS"
 
