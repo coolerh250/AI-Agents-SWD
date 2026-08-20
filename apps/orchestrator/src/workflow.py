@@ -42,6 +42,8 @@ class WorkflowState(TypedDict):
     # whose TEAM owns the work. Without it the workflow behaves exactly as it did before.
     project_id: str
     team_context: dict[str, Any]
+    # not_applicable | formed | failed -- a failed team is NOT a project-less run.
+    team_formation: str
     routing: dict[str, Any]
 
 
@@ -63,6 +65,7 @@ REQUIRED_STATE_FIELDS = [
     "execution_result",
     "project_id",
     "team_context",
+    "team_formation",
     "routing",
 ]
 
@@ -115,16 +118,28 @@ def _team_service() -> TeamService:
     return TeamService(event_bus=bus, audit_client=AuditClient(event_bus=bus))
 
 
+TEAM_NOT_APPLICABLE = "not_applicable"
+TEAM_FORMED = "formed"
+TEAM_FAILED = "failed"
+
+
 async def team_formation_node(state: WorkflowState) -> dict:
     """Form the project's runtime team, if this run belongs to a project.
 
-    A run with no project has no team, and this node is then a no-op -- the legacy task pipeline
-    is unchanged. When a project IS named, the team is recruited durably here and every later hop
-    carries its context, which is what puts the run on the autonomous path.
+    Three outcomes, and they must stay distinguishable:
+
+    ``not_applicable``  this run names no project. The legacy task pipeline is unchanged, which
+                        is a legitimate flow and still dispatches.
+    ``formed``          the team exists; every later hop carries its context.
+    ``failed``          a project WAS named and the team could not be formed. This is not the
+                        same thing as having no team, and it must not be treated as one: an
+                        earlier version degraded to ``{}`` here, which made a database outage
+                        indistinguishable from a project-less run and quietly put the work back
+                        on the compile-time pipeline. It now fails closed at ``route_next``.
     """
     project_id = state.get("project_id") or ""
     if not project_id:
-        update = {"stage": "policy_check"}
+        update = {"stage": "policy_check", "team_formation": TEAM_NOT_APPLICABLE}
         await _persist(state, update)
         return update
     goal_ref = str(state["request"].get("description") or state["request"].get("type") or "goal")
@@ -148,11 +163,17 @@ async def team_formation_node(state: WorkflowState) -> dict:
                 workflow_stage="policy_check",
             )
             members = [m.get("functional_role") for m in formed.get("members", [])]
-        except Exception:  # a team that cannot be formed must not break the workflow
+            formation = TEAM_FORMED
+        except Exception as exc:  # recorded, never silently downgraded to the legacy path
             context = {}
             members = []
+            formation = TEAM_FAILED
+            state["artifacts"].append(
+                {"type": "team_formation_failure", "project_id": project_id, "error": str(exc)[:200]}
+            )
     update = {
         "team_context": context,
+        "team_formation": formation,
         "assigned_agents": state["assigned_agents"] + [r for r in members if r],
         "stage": "policy_check",
     }
@@ -269,10 +290,32 @@ async def route_next_node(state: WorkflowState) -> dict:
     that it did not route and the workflow continues exactly as before; on a team run the answer
     comes from the members' declared capabilities as they are right now.
     """
+    formation = state.get("team_formation") or TEAM_NOT_APPLICABLE
+    if formation == TEAM_FAILED:
+        # Fail closed. A project was named and its team could not be formed, so nothing here
+        # knows who should do the work -- and guessing means the compile-time pipeline.
+        update = {
+            "routing": {
+                "outcome": "team_unavailable",
+                "requested_capability": ANALYZE_REQUIREMENTS,
+                "reason": (
+                    f"the runtime team for project {state.get('project_id', '')} could not be "
+                    "formed, so no successor can be selected; this is NOT a project-less run"
+                ),
+            }
+        }
+        await _persist(state, update)
+        return update
+
     context = state.get("team_context") or {}
     project_id = context.get("project_id") or ""
     if not project_id:
-        update = {"routing": {"outcome": "not_routed", "reason": "this run has no project team"}}
+        update = {
+            "routing": {
+                "outcome": "not_routed",
+                "reason": "this run names no project, so it stays on the legacy task pipeline",
+            }
+        }
         await _persist(state, update)
         return update
     with start_span(
@@ -307,37 +350,56 @@ async def route_next_node(state: WorkflowState) -> dict:
     return update
 
 
+# The only outcome that may dispatch without a routing decision behind it: a run that names no
+# project was never on the autonomous path. Everything else must be selected or blocked --
+# listing the permitted values rather than the blocked ones keeps a new outcome fail-closed.
+DISPATCHABLE_ROUTING_OUTCOMES = frozenset({"selected", "not_routed"})
+
+BLOCKED_STAGE_FOR_OUTCOME = {
+    "team_unavailable": "blocked_team_unavailable",
+    "requires_human_approval": "blocked_requires_human_approval",
+}
+
+
 def select_route(state: WorkflowState) -> str:
     """The workflow's first genuine conditional edge.
 
     Work with a capable owner is dispatched; work with none is parked for a human. Nothing here
-    can reach a compile-time successor.
+    can reach a compile-time successor, and an unrecognised outcome parks rather than dispatches.
     """
-    outcome = str((state.get("routing") or {}).get("outcome") or "not_routed")
-    if outcome in ("selected", "not_routed"):
+    outcome = str((state.get("routing") or {}).get("outcome") or "")
+    if outcome in DISPATCHABLE_ROUTING_OUTCOMES:
         return "dispatch"
     return "team_blocked"
 
 
 async def team_blocked_node(state: WorkflowState) -> dict:
-    """No team member can take the work. Park it and say so; never fall back to a fixed agent."""
+    """The work has no owner. Park it and say why; never fall back to a fixed agent.
+
+    The stage distinguishes WHY it parked -- an unavailable team is an infrastructure problem an
+    operator can fix, while no eligible agent is a team-composition decision. Collapsing them
+    would hide an outage behind a staffing message.
+    """
     routing = state.get("routing") or {}
+    outcome = str(routing.get("outcome") or "no_eligible_agent")
     reason = str(routing.get("reason") or "no eligible agent")
+    stage = BLOCKED_STAGE_FOR_OUTCOME.get(outcome, "blocked_no_eligible_agent")
     update = {
-        "stage": "blocked_no_eligible_agent",
+        "stage": stage,
         "execution_result": {
-            "status": "blocked_no_eligible_agent",
+            "status": stage,
             "production_executed": False,
             "dispatched": False,
+            "routing_outcome": outcome,
             "reason": reason,
         },
     }
-    WORKFLOW_TOTAL.labels(status="blocked_no_eligible_agent").inc()
+    WORKFLOW_TOTAL.labels(status=stage).inc()
     await _persist(state, update)
     await send_notification(
         state["task_id"],
-        "workflow.blocked_no_eligible_agent",
-        f"workflow {state['task_id']} has no eligible agent: {reason}",
+        f"workflow.{stage}",
+        f"workflow {state['task_id']} parked ({outcome}): {reason}",
     )
     return update
 
@@ -457,6 +519,7 @@ def _initial_state(request: dict) -> WorkflowState:
         "execution_result": {},
         "project_id": str(request.get("project_id") or request.get("request", {}).get("project_id") or ""),
         "team_context": {},
+        "team_formation": "not_applicable",
         "routing": {},
     }
 
@@ -509,5 +572,6 @@ def workflow_state_schema() -> dict:
         "execution_result": "object - final execution result",
         "project_id": "string - the project whose team owns this run, when there is one",
         "team_context": "object - project/goal/thread the runtime team is working on",
+        "team_formation": "string - not_applicable | formed | failed",
         "routing": "object - the runtime routing decision and why it was made",
     }

@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from shared.sdk.agent_team.capabilities import AgentCapabilityDeclaration
+from shared.sdk.agent_team.models import assert_content_is_safe
 from shared.sdk.agent_team.router import RoutingCandidate, RoutingDecision
 
 
@@ -171,6 +172,9 @@ class InMemoryTeamStore:
         return dict(thread)
 
     async def post_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        # The real store's content prohibition, enforced here too.
+        assert_content_is_safe(message.get("content"), "content")
+        assert_content_is_safe(message.get("artifact_refs"), "artifact_refs")
         # The schema's chk_team_messages_addressed constraint, enforced here too.
         if not (
             message.get("recipient_principal_id")

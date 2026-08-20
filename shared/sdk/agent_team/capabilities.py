@@ -68,6 +68,11 @@ class AgentCapabilityDeclaration:
 # The runtime agents that exist and can be recruited onto a project team. backend-agent and
 # frontend-agent are deliberately absent: their directories hold no runtime, so declaring them
 # would let the router select an agent that cannot receive work.
+#
+# Every capability in KNOWN_CAPABILITIES must appear here (asserted by
+# _assert_every_capability_has_an_owner below). A vocabulary entry nobody serves is worse than
+# no entry at all: it advertises work the router can never place, and turns a missing runtime
+# owner into an indistinguishable "no eligible agent" at dispatch time.
 AGENT_CAPABILITY_SEED: tuple[AgentCapabilityDeclaration, ...] = (
     AgentCapabilityDeclaration(
         agent_key="requirement-agent",
@@ -99,7 +104,48 @@ AGENT_CAPABILITY_SEED: tuple[AgentCapabilityDeclaration, ...] = (
         capabilities=(PLAN_DEPLOYMENT,),
         transport_stream="stream.deployments",
     ),
+    AgentCapabilityDeclaration(
+        agent_key="project-planner-agent",
+        role="planner",
+        capabilities=(PLAN_PROJECT,),
+        transport_stream="stream.project_planning",
+    ),
+    AgentCapabilityDeclaration(
+        agent_key="design-review-agent",
+        role="design_review",
+        capabilities=(REVIEW_DESIGN,),
+        transport_stream="stream.design_review",
+    ),
+    AgentCapabilityDeclaration(
+        agent_key="delivery-package-agent",
+        role="delivery",
+        capabilities=(PACKAGE_DELIVERY,),
+        transport_stream="stream.delivery_package",
+    ),
 )
+
+
+def _assert_every_capability_has_an_owner() -> None:
+    """A capability nobody can serve must not be advertised.
+
+    Enforced at import so the vocabulary and the runtime cannot drift apart silently: adding a
+    capability without an owner fails immediately rather than at the first routing request.
+    """
+    owned: set[str] = set()
+    for declaration in AGENT_CAPABILITY_SEED:
+        owned |= set(declaration.capabilities)
+    unowned = KNOWN_CAPABILITIES - owned
+    if unowned:
+        raise RuntimeError(
+            f"capabilities advertised with no runtime owner: {sorted(unowned)}. "
+            "Declare an owning agent or remove them from KNOWN_CAPABILITIES."
+        )
+    unknown = owned - KNOWN_CAPABILITIES
+    if unknown:
+        raise RuntimeError(f"agents declare capabilities outside the vocabulary: {sorted(unknown)}")
+
+
+_assert_every_capability_has_an_owner()
 
 
 def seed_for(agent_keys: tuple[str, ...] | None = None) -> tuple[AgentCapabilityDeclaration, ...]:

@@ -34,6 +34,7 @@ from shared.sdk.agent_team.capabilities import (
     ANALYZE_REQUIREMENTS,
     CLARIFY_REQUIREMENTS,
     GENERATE_CODE,
+    PLAN_PROJECT,
 )
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.notifications.client import send_notification
@@ -278,18 +279,14 @@ class RequirementAgent(StreamAgent):
                 "project_type": request_type,
                 "produced_by": self.name,
             }
-            with start_span(
-                "agent.publish_next",
-                **{
-                    "service.name": self.name,
-                    "agent": self.name,
-                    "stream": STREAM_PROJECT_PLANNING,
-                    "task_id": task_id,
-                    "workflow_id": workflow_id or "",
-                    "event_type": EVENT_REQUIREMENT_PROJECT_PLANNING_REQUESTED,
-                },
-            ):
-                await self.bus.publish_event(STREAM_PROJECT_PLANNING, planning_message)
+            # AT-M2 remediation: project-scale work asks the team for whoever declares
+            # PLAN_PROJECT. It used to publish straight to the planner's stream, which meant the
+            # most product-natural request types (feature_request / software_project /
+            # build_request) never reached the router at all and left no routing decision behind.
+            # On the legacy task pipeline this still resolves to the planner's own stream.
+            await self.publish_for_capability(
+                planning_message, PLAN_PROJECT, default_stream=STREAM_PROJECT_PLANNING
+            )
             with contextlib.suppress(Exception):
                 await send_notification(
                     task_id,

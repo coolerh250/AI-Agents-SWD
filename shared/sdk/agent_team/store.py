@@ -14,6 +14,7 @@ from typing import Any
 import asyncpg
 
 from shared.sdk.agent_team.capabilities import AgentCapabilityDeclaration
+from shared.sdk.agent_team.models import assert_content_is_safe
 from shared.sdk.agent_team.router import RoutingCandidate, RoutingDecision
 
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
@@ -238,6 +239,10 @@ class TeamStore:
             await conn.close()
 
     async def post_message(self, message: dict[str, Any]) -> dict[str, Any]:
+        # Enforced here too, not just in the DTO: callers build a plain dict, so the model
+        # validator alone would leave the prohibition bypassable by construction.
+        assert_content_is_safe(message.get("content"), "content")
+        assert_content_is_safe(message.get("artifact_refs"), "artifact_refs")
         conn = await self._connect()
         try:
             row = await conn.fetchrow(

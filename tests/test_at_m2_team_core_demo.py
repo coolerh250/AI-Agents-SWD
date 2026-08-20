@@ -23,6 +23,7 @@ import pytest
 import workflow as orchestrator_workflow
 from shared.sdk.agent_team import events as team_events
 from shared.sdk.agent_team.capabilities import (
+    AGENT_CAPABILITY_SEED,
     ANALYZE_REQUIREMENTS,
     FIX_DEFECTS,
     GENERATE_CODE,
@@ -98,7 +99,9 @@ async def test_demo_goal_to_team_to_message_to_route_to_result(team, monkeypatch
     assert result["team_context"]["goal_ref"] == GOAL
 
     roster = await service.roster(PROJECT)
-    assert len(roster) == 5, "a goal must produce a durable team of runtime-agent members"
+    assert len(roster) == len(AGENT_CAPABILITY_SEED), (
+        "a goal must produce a durable team holding every recruitable runtime agent"
+    )
     assert all(m["principal_type"] == "runtime_agent" for m in roster)
     assert all(m["membership_state"] == "active" for m in roster)
     capabilities = {m["agent_key"]: set(m["capabilities"]) for m in roster}

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 
+from shared.sdk.agent_team.capabilities import PACKAGE_DELIVERY
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.delivery_package import (
     DeliveryPackageRequest,
@@ -48,6 +49,7 @@ class DeliveryPackageAgent(StreamAgent):
 
     name = "delivery-package-agent"
     input_stream = STREAM_DELIVERY_PACKAGE
+    declared_capabilities = (PACKAGE_DELIVERY,)
     output_stream = STREAM_DELIVERY_PACKAGE_EVENTS
     group = "delivery-package-agent-group"
     consumer = "delivery-package-agent-1"

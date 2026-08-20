@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import os
 
+from shared.sdk.agent_team.capabilities import PLAN_PROJECT
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.project_planning import (
     PlannerInput,
@@ -48,6 +49,7 @@ class ProjectPlannerAgent(StreamAgent):
 
     name = "project-planner-agent"
     input_stream = STREAM_PROJECT_PLANNING
+    declared_capabilities = (PLAN_PROJECT,)
     output_stream = STREAM_PROJECT_EVENTS
     group = "project-planner-agent-group"
     consumer = "project-planner-agent-1"

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import os
 
+from shared.sdk.agent_team.capabilities import REVIEW_DESIGN
 from shared.sdk.agent_discussion import AgentDiscussionStore
 from shared.sdk.base_agent.stream_agent import StreamAgent
 from shared.sdk.design_review import DesignReviewStore, run_design_review
@@ -47,6 +48,7 @@ class DesignReviewAgent(StreamAgent):
 
     name = "design-review-agent"
     input_stream = STREAM_DESIGN_REVIEW
+    declared_capabilities = (REVIEW_DESIGN,)
     output_stream = STREAM_DESIGN_REVIEW_EVENTS
     group = "design-review-agent-group"
     consumer = "design-review-agent-1"

@@ -49,6 +49,26 @@ AT_M1_LIFECYCLE:             SUPERSEDED BY AT-M2
 AT_M1_SUPERSESSION_COMMIT:   192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
 ```
 
+AT-M1 was not the only stage carrying a "this stage introduced no implementation" guard asked
+from a frozen baseline to HEAD. Fifteen such guards exist across the 66C4-BE3, 66D, 66SYNC1 and
+66UI4 families, and AT-M2 — the first implementation milestone since those baselines — trips
+every one of them. Individually relaxing fifteen guards would be fifteen chances to weaken one by
+accident, so they share **one** mechanism, `scripts/successor_lifecycle.py`, driven by the three
+fields below. It decides only WHERE a stage's rejection window ends; it changes no other
+assertion in any guard and never widens a positive scope.
+
+```text
+SUCCESSOR_IMPLEMENTATION_MILESTONE: AT-M2
+SUCCESSOR_LIFECYCLE_BOUNDARY:       192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
+SUCCESSOR_AUTHORIZATION_RECORD:     docs/decisions/at-m2-authorization.md
+```
+
+The mechanism fails closed on every prerequisite: the snapshot must name the milestone, the
+boundary and the decision record; the milestone must be recorded AUTHORIZED with its authorizing
+decision named; that decision must exist, be `RESOLVED / BINDING`, and name the SAME boundary;
+the boundary must exist and be an ancestor of HEAD; and it must be a DESCENDANT of the calling
+guard's own baseline, so it can never be walked backwards over a stage's own commits.
+
 Supersession closes AT-M1's **no-implementation window** at the canonical main that was HEAD when
 AT-M2 was authorized, and does nothing else. Every commit AT-M1 could have contributed is inside
 that window and is still checked by `scripts/verify_at_m1_architecture_reset.py`; code written
