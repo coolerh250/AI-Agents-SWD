@@ -17757,3 +17757,56 @@ backend, API, database, event, migration, deployment, identity, secret or featur
   **NOT AUTHORIZED**. No LLM reasoning, no real code or test execution, no autonomous diagnosis, no
   production action, no deployment, no external action. **READY FOR AT-M2 VALIDATION 1.**
   `production_executed_true_count: 0`.
+
+## Step AT-M2-TEAM-CORE-R1 - Focused Remediation of Validation 1 Blockers (IMPLEMENTED)
+
+- **The routing bypass is closed.** Validation 1 drove the real requirement-agent and found that
+  `feature_request`, `software_project` and `build_request` - the natural framing of the
+  milestone's own demo goal - left through a hard-coded publish to the planner's stream, never
+  reaching the router and leaving no routing decision behind. They now ask the team for
+  `plan_project`. Re-probed against real PostgreSQL: all four request types produce a durable
+  routing decision (3 x plan_project, 1 x generate_code) where three previously produced none.
+- **The vocabulary no longer advertises what nobody can do.** `plan_project`, `review_design` and
+  `package_delivery` had no owner, which is *why* the bypass existed. project-planner,
+  design-review and delivery-package agents now declare them, and an import-time assertion makes
+  an unowned capability impossible to add: 9 capabilities, 8 seeded agents, 0 unserved.
+- **Team-formation failure fails closed.** It used to produce an empty context, which read as
+  "this run has no project" and put the work back on the compile-time pipeline - a database
+  outage was indistinguishable from a legitimate project-less run. Formation now records
+  `not_applicable | formed | failed`; a failure parks at `blocked_team_unavailable` with its own
+  reason and dispatches nothing, while a genuine project-less run still dispatches under
+  `not_applicable / not_routed`. The dispatchable outcomes are listed rather than the blocked
+  ones, so a future outcome fails closed by default.
+- **Message content is guarded.** `team_messages.content` was free-form JSONB that accepted
+  `private_chain_of_thought` and `api_key`. Forbidden key names are now rejected at both the DTO
+  and the store, recursively and at any depth - rejected rather than scrubbed, because silently
+  stripping a key would let a caller believe it stored something it did not. 16/16 forbidden
+  payloads refused, 6/6 legitimate payloads accepted, verified against real PostgreSQL.
+- **Fifteen legacy guards, one mechanism.** Validation 1 established that AT-M1's guard was one
+  instance of a pattern: a frozen baseline diffed to HEAD asserting no implementation ever
+  appears. Fifteen such guards existed, and all of them rejected AT-M2. They now share
+  `scripts/successor_lifecycle.py`, which answers only where a stage's rejection window ends and
+  returns HEAD unless a successor milestone is canonically authorized. It fails closed on six
+  prerequisites, including that the boundary must be a **descendant** of the calling guard's own
+  baseline. No other assertion in any guard was touched. The cross-stage meta-guard that pinned
+  the literal `HEAD` spelling was restated in terms of the shared call rather than deleted.
+- **Simulated merge: 47 -> 7 attributable failures.** Measured in an isolated clone (a merge
+  simulation must never touch the parent repository's refs - an earlier attempt did, and the
+  stale `origin/main` it left behind silently poisoned three subsequent measurements until it was
+  caught and restored). Three of the original 47 self-resolve on merge+push; 37 are closed by the
+  shared mechanism and the route-inventory updates; 3 are the declared PCP measurement staleness,
+  out of scope here; **7 remain and cannot be closed without breaking a stronger property**.
+- **The residue is a genuine governance conflict, not an oversight.** Two stage families freeze
+  their own artifacts byte-for-byte: 66C4-BE3-RA2M/RA2M2 freeze the RA2 verifier and its test,
+  and 66SYNC1-M1 freezes the Codex frontend evidence document. Those same artifacts carry a
+  HEAD-relative implementation guard and a live route inventory respectively. Updating them to
+  accommodate an authorized successor breaks the immutability contract; not updating them fails
+  the guard. Both files were restored byte-identical to canonical main, and the conflict is
+  reported rather than resolved unilaterally - closing it needs a Product Owner decision.
+- **Verification.** 61 AT-M2 tests pass against a disposable PostgreSQL 16 with all 36 migrations
+  applied. Routing, fail-closed and content-safety probes re-run on the real database. Approval
+  and policy boundaries unchanged; `production_executed` False; count 0; AT-M3..AT-M8 still NOT
+  AUTHORIZED. No PCP debt reconciliation performed and no unrelated pre-existing failure touched.
+- **Status.** `AT_M2: AUTHORIZED / IN PROGRESS`. **READY FOR AT-M2 VALIDATION 2**, with the
+  seven-failure governance residue declared as a decision item, not a hidden condition.
+  `production_executed_true_count: 0`.
