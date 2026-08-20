@@ -80,6 +80,7 @@ All current Admin Console routes inventoried from `apps/admin-console/src/App.ts
 | `/delivery-detail` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/demo-evidence` | `DemoEvidence` | IMPLEMENTED_DIAGNOSTIC_ONLY | PARTIAL |
 | `/agent-executions` | `AgentExecutions` | IMPLEMENTED | PARTIAL |
+| `/team-room` | `TeamRoom` | IMPLEMENTED | PARTIAL |
 | `/approvals` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/dlq-retry` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/qa-code` | `QaCode` | IMPLEMENTED | PARTIAL |

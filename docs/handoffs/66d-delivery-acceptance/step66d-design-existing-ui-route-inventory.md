@@ -16,14 +16,14 @@ SOURCES READ:        apps/admin-console/src/App.tsx
 
 | Count | Value | Source (deterministic) |
 | --- | --- | --- |
-| Routes declared | **44** | regex `<Route\s+path="([^"]+)"` over `App.tsx` |
+| Routes declared | **45** | regex `<Route\s+path="([^"]+)"` over `App.tsx` |
 | Routes rendering `PlaceholderPage` | **12** | per-`<Route>` block split over `App.tsx`, matching blocks containing `PlaceholderPage` |
 | Routes with a real page component | **32** | 44 − 12 (same parser) |
 | Navigation items | **40** | regex `to:\s*"..",\s*label:\s*".."` over `Nav.tsx` |
 | Navigation groups | **7** | regex `id:\s*"..",\n\s*label:\s*".."` over `Nav.tsx` |
 | Nav badges: `Read-only` | **14** | regex `badge:\s*"([\w-]+)"` over `Nav.tsx` |
 | Nav badges: `Soon` | **12** | same |
-| Nav badges: `Evidence` | **8** | same |
+| Nav badges: `Evidence` | **9** | same |
 | Page component files | **33** | `glob apps/admin-console/src/pages/*.tsx` |
 | Shared component files | **16** | `glob apps/admin-console/src/components/*.tsx` |
 | Semantic mutation surfaces (pages) | **5** | per-method write classification + transitive import/call trace (see §1.1) |

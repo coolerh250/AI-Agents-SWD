@@ -464,9 +464,9 @@
   ],
   "route_inventory": {
     "source": "apps/admin-console/src/App.tsx",
-    "total_routes": 44,
+    "total_routes": 45,
     "placeholder_routes": 12,
-    "real_page_routes": 32,
+    "real_page_routes": 33,
     "routes": [
       {
         "path": "/",
@@ -526,6 +526,11 @@
       {
         "path": "/agent-executions",
         "component": "AgentExecutions",
+        "classification": "REAL_PAGE"
+      },
+      {
+        "path": "/team-room",
+        "component": "TeamRoom",
         "classification": "REAL_PAGE"
       },
       {
@@ -702,16 +707,16 @@
   },
   "navigation_inventory": {
     "source": "apps/admin-console/src/components/Nav.tsx",
-    "nav_items": 40,
+    "nav_items": 41,
     "nav_groups": 7,
     "badges": {
       "read_only": 14,
       "soon": 12,
-      "evidence": 8
+      "evidence": 9
     }
   },
   "frontend_inventory": {
-    "page_files": 33,
+    "page_files": 34,
     "component_files": 16,
     "write_clients": {
       "actionClient": [
@@ -949,17 +954,17 @@
   },
   "production_executed_true_count": 0,
   "measured_counts": {
-    "routes_declared": 44,
+    "routes_declared": 45,
     "routes_placeholder": 12,
-    "routes_real_page": 32,
-    "nav_items": 40,
+    "routes_real_page": 33,
+    "nav_items": 41,
     "nav_groups": 7,
     "nav_badges": {
       "read_only": 14,
       "soon": 12,
-      "evidence": 8
+      "evidence": 9
     },
-    "page_files": 33,
+    "page_files": 34,
     "component_files": 16,
     "mutation_surfaces": 5,
     "wireframes": 10,
