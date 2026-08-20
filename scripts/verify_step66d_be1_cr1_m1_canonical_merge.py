@@ -20,6 +20,11 @@ import re
 import subprocess
 import sys
 
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_BE1_CR1_M1_CANONICAL_MERGE_VERIFY"
 
@@ -336,7 +341,10 @@ def main() -> int:
     # --- 11. progress.md untouched by the merge-record commit -----------------------------------
     since_merge = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{MERGE_COMMIT}..HEAD").splitlines()
+        for line in git(
+            "diff", "--name-only",
+            f"{MERGE_COMMIT}..{successor_window_end(MERGE_COMMIT)}"
+        ).splitlines()
         if line.strip()
     }
     expect(

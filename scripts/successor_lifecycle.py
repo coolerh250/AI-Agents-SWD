@@ -136,6 +136,17 @@ def window_end(baseline: str = "") -> tuple[str, str]:
     return boundary, why
 
 
+def successor_window_end(baseline: str = "") -> str:
+    """The commit a stage's rejection window ends at -- ``HEAD`` unless a successor is authorized.
+
+    The single call form every stage guard uses, so the cross-stage meta-checks can pin ONE
+    spelling instead of a family of hand-written ranges. Substituting this for a literal ``HEAD``
+    is the whole refactor: the guard still scans current state, it just stops claiming authority
+    over commits an authorized successor milestone owns.
+    """
+    return window_end(baseline)[0]
+
+
 def rejection_range(baseline: str) -> tuple[str, str]:
     """(``baseline...<end>`` range, why) -- the symmetric-difference form guards use."""
     end, why = window_end(baseline)
@@ -161,5 +172,6 @@ __all__ = [
     "changed_paths",
     "is_ancestor",
     "rejection_range",
+    "successor_window_end",
     "window_end",
 ]

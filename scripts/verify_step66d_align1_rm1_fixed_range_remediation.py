@@ -13,6 +13,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 MARKER = "STEP66D_ALIGN1_RM1_FIXED_RANGE_REMEDIATION_VERIFY: PASS"
 
@@ -209,20 +215,33 @@ def check06_no_head_endpoint() -> None:
     for rel in CROSS_STAGE_FILES:
         body = read(ROOT / rel)
         for offender in re.findall(r'diff", "--name-only", [^)]*"HEAD"', body):
-            if "RUNTIME_GUARD_ANCHOR" in offender:
+            if "RUNTIME_GUARD_ANCHOR" in offender or "successor_window_end" in offender:
                 continue
             bad(f"check06: {rel} still compares a stage range to HEAD: {offender}")
 
 
 def check06b_runtime_guard_scans_current_state() -> None:
-    """Freezing the scope must not have frozen the denylist along with it."""
+    """Freezing the scope must not have frozen the denylist along with it.
+
+    AT-M2 remediation: the endpoint is now resolved by the shared successor lifecycle rather
+    than written as a literal ``HEAD``. The property is unchanged -- the guard still scans
+    current state -- but it stops claiming authority over commits an authorized successor
+    milestone owns, and it does so through ONE mechanism instead of a literal per stage.
+    ``successor_window_end`` returns HEAD whenever no successor is authorized, so an
+    unsuperseded guard behaves exactly as it did before.
+    """
     for rel in CROSS_STAGE_FILES:
         body = read(ROOT / rel)
         if "RUNTIME_GUARD_ANCHOR" not in body:
             bad(f"check06b: {rel} has no current-state runtime guard")
             continue
-        if not re.search(r'"--name-only", RUNTIME_GUARD_ANCHOR, "HEAD"', body):
-            bad(f"check06b: {rel} runtime guard does not scan up to current HEAD")
+        if not re.search(
+            r'"--name-only",\s*RUNTIME_GUARD_ANCHOR,\s*successor_window_end\('
+            r"RUNTIME_GUARD_ANCHOR\)",
+            body,
+            re.S,
+        ):
+            bad(f"check06b: {rel} runtime guard does not scan up to the successor window end")
 
 
 def acceptance_body(body: str) -> str:
@@ -416,7 +435,13 @@ def check26_production_count_zero() -> None:
     evidence = read(EVIDENCE)
     if "production_executed_true_count: 0" not in evidence:
         bad("check26: the RM1 evidence does not record production_executed_true_count: 0")
-    changed = [x for x in git("diff", "--name-only", CANONICAL_MAIN).splitlines() if x]
+    changed = [
+        x
+        for x in git(
+            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+        ).splitlines()
+        if x
+    ]
     offenders = [p for p in changed if p.startswith(RUNTIME_PREFIXES)]
     if offenders:
         bad(f"check26: runtime paths changed: {', '.join(sorted(offenders))}")

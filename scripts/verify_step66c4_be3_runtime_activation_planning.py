@@ -18,6 +18,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTRACT = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
@@ -166,7 +172,13 @@ def main() -> int:  # noqa: C901
 
     # 10. No deployment/shared migration/activation performed by this stage (no infra/migrations
     # file changed on this branch relative to the BE3-M merge commit).
-    changed = [f for f in _git("diff", "--name-only", "284d706", "HEAD").splitlines() if f]
+    changed = [
+        f
+        for f in _git(
+            "diff", "--name-only", "284d706", successor_window_end("284d706")
+        ).splitlines()
+        if f
+    ]
     for f in changed:
         for prefix in ("infra/", "migrations/", ".github/workflows/", "frontend/"):
             if f.startswith(prefix):

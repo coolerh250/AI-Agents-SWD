@@ -11,6 +11,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 MARKER = "STEP66C4_BE3_RA2M_CANONICALIZATION_PREP_VERIFY: PASS"
 
@@ -497,7 +503,10 @@ def check_runtime_guard_current_state() -> None:
     """Reject runtime/frontend/infra paths introduced at any point after this stage's baseline."""
     changed = [
         line
-        for line in git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        for line in git(
+            "diff", "--name-only", RUNTIME_GUARD_ANCHOR,
+            successor_window_end(RUNTIME_GUARD_ANCHOR)
+        ).splitlines()
         if line.strip()
     ]
     offenders = [

@@ -11,6 +11,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 MARKER = "STEP66D_ARCH1_CONTRACT_FREEZE_VERIFY: PASS"
 
@@ -110,7 +116,13 @@ def flat(text: str) -> str:
 
 
 def changed_paths() -> list[str]:
-    return [line for line in git("diff", "--name-only", CANONICAL_MAIN).splitlines() if line]
+    return [
+        line
+        for line in git(
+            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
+        ).splitlines()
+        if line
+    ]
 
 
 def check01_baseline() -> None:

@@ -15,6 +15,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor
+# milestone takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -195,7 +201,7 @@ def main() -> int:  # noqa: C901
             bad(f"check12: {name} contains secret-shaped content: {m.group(0)[:40]!r}")
 
     # 13/14. No runtime authentication/secret code and no infra credential change in this stage.
-    changed = _git("diff", "--name-only", BASELINE_MAIN, "HEAD")
+    changed = _git("diff", "--name-only", BASELINE_MAIN, successor_window_end(BASELINE_MAIN))
     changed_files = [f.strip() for f in changed.splitlines() if f.strip()]
     for f in changed_files:
         if f.startswith("apps/") or f.startswith("shared/"):

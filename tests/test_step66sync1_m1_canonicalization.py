@@ -10,6 +10,12 @@ import re
 import subprocess
 import sys
 from pathlib import Path
+import pathlib
+
+# AT-M2 remediation: the rejection window ends where an authorized successor milestone
+# takes over; without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+from successor_lifecycle import successor_window_end  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66sync1_m1_canonicalization.py"
@@ -823,7 +829,7 @@ def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
     """A runtime path added by any later commit must still be caught."""
     changed = [
         line
-        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD").splitlines()
+        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)).splitlines()
         if line.strip()
     ]
     offenders = [
