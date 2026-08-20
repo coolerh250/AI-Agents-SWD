@@ -172,6 +172,29 @@ def successor_window_end(baseline: str = "") -> str:
     return window_end(baseline)[0]
 
 
+def scans_current_state(body: str, anchor: str) -> bool:
+    """Does a stage guard in ``body`` still resolve its rejection range against current state?
+
+    Several stages carry a cross-stage meta-guard asserting that a LATER stage never froze its
+    runtime denylist along with its positive scope. Those meta-guards were written to match the
+    literal spelling of the range, so converting the guards to the shared window broke them --
+    while the property they protect is entirely intact.
+
+    Four spellings mean the same thing here: the two literal HEAD forms, the bare diff against
+    the working tree, and ``successor_window_end(<anchor>)``, which IS HEAD unless a successor
+    milestone is canonically authorized. What stays rejected is a range pinned to a frozen stage
+    head: a denylist that cannot see commits after it is not a denylist, and catching exactly
+    that is why these meta-guards exist.
+    """
+    accepted = (
+        f'"--name-only", {anchor}, "HEAD"',
+        f'"--name-only", {anchor})',
+        f'f"{{{anchor}}}...HEAD"',
+        f"successor_window_end({anchor})",
+    )
+    return any(form in body for form in accepted)
+
+
 def rejection_range(baseline: str) -> tuple[str, str]:
     """(``baseline...<end>`` range, why) -- the symmetric-difference form guards use."""
     end, why = window_end(baseline)

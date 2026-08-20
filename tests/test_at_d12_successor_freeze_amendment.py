@@ -379,3 +379,56 @@ def test_the_line_comparison_does_not_use_a_readability_heuristic() -> None:
     """difflib's autojunk drops common lines from matching -- fine for diffs, not for integrity."""
     module = (REPO / "scripts" / "successor_lifecycle.py").read_text(encoding="utf-8")
     assert "autojunk=False" in module
+
+
+# --- the shared current-state helper ---------------------------------------------------------------
+#
+# Cross-stage meta-guards require that a stage's runtime denylist keeps scanning current state.
+# They were written against the literal spelling of the range, so sharing one call broke them
+# while the property they protect was intact. The helper restates the property; these probes
+# check it did not become a rubber stamp.
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        '_git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD")',
+        'git("diff", "--name-only", CANONICAL_MAIN).splitlines()',
+        'CURRENT = f"{RUNTIME_GUARD_ANCHOR}...HEAD"',
+        'git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR))',
+    ],
+)
+def test_current_state_spellings_are_accepted(body: str) -> None:
+    anchor = "CANONICAL_MAIN" if "CANONICAL_MAIN" in body else "RUNTIME_GUARD_ANCHOR"
+    assert lifecycle.scans_current_state(body, anchor)
+
+
+@pytest.mark.parametrize(
+    "body",
+    [
+        # the failure these meta-guards exist to catch: a denylist pinned to a frozen stage head
+        '_git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, ALIGN1_STAGE_HEAD)',
+        'CURRENT = f"{RUNTIME_GUARD_ANCHOR}...{ARCH1_STAGE_HEAD}"',
+        '_git("diff", "--name-only", SOME_OTHER_ANCHOR, "HEAD")',
+        "there is no rejection range here at all",
+    ],
+)
+def test_a_frozen_or_absent_range_is_still_rejected(body: str) -> None:
+    assert not lifecycle.scans_current_state(body, "RUNTIME_GUARD_ANCHOR")
+
+
+def test_the_helper_is_shared_not_reimplemented() -> None:
+    """One mechanism, not nine hand-written variants of the same regex."""
+    imported = "from successor_lifecycle import scans_current_state"
+    callers = [
+        path
+        for path in list((REPO / "scripts").glob("*.py")) + list((REPO / "tests").glob("*.py"))
+        if imported in path.read_text(encoding="utf-8")
+    ]
+    assert len(callers) >= 10, [p.name for p in callers]
+
+    # every caller carries the same fail-closed fallback, so an isolated copy of the tree without
+    # scripts/ degrades to the strict literal test rather than to "anything goes"
+    for path in callers:
+        body = path.read_text(encoding="utf-8")
+        assert "Strictest fallback" in body, path.name

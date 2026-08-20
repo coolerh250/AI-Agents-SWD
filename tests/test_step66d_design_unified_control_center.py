@@ -23,12 +23,20 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
 
 ROOT = Path(__file__).resolve().parents[1]
 DESIGN_BASELINE = "9c5210d190b82b76575ba8d456b5d2005c2867d2"
@@ -666,8 +674,8 @@ def test_current_state_rejection_guard_still_scans_current_head():
     """
     source = VERIFIER.read_text(encoding="utf-8")
     assert "RUNTIME_GUARD_ANCHOR" in source, "no current-state rejection anchor is defined"
-    assert (
-        'f"{RUNTIME_GUARD_ANCHOR}...HEAD"' in source
+    assert scans_current_state(
+        source, "RUNTIME_GUARD_ANCHOR"
     ), "the rejection guard no longer scans current HEAD"
     assert "def current_state_paths(" in source, "current_state_paths() helper is missing"
     # The guard must feed the denylist, not the positive assertion.

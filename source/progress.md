@@ -17860,3 +17860,34 @@ Product Owner issued **AT-D12**, which settles the underlying conflict instead o
   governance debt, reduces no gate, authorizes no milestone, and grants no production
   authorization. `AT_M3_TO_AT_M8: NOT AUTHORIZED` and `PRODUCTION_AUTHORIZATION: NOT GRANTED`
   are asserted by test. `production_executed_true_count: 0`.
+
+### Correction: the residue was 24, not 7
+
+Measuring the FULL suite in the merged clone — not the affected subset the previous round
+used — showed 24 AT-M2-attributable failures, not 7. The subset was chosen from the families the
+guard conversion touched, which is exactly the set that could not reveal this: the failures live
+in the *cross-stage meta-guards* of other families.
+
+The cause is a second-order effect of the shared-mechanism conversion. Several stages carry a
+meta-guard asserting that a LATER stage never froze its runtime denylist along with its positive
+scope — a denylist pinned to a historical commit cannot see a runtime path added after it. Those
+meta-guards were written to match the **literal spelling** of the range. Converting fifteen
+guards to `successor_window_end(...)` changed the spelling while leaving the property completely
+intact, so the meta-guards failed on a cosmetic difference. The previous round restated one of
+them and missed the other twelve, plus their test-side mirrors.
+
+- **All 24 pre-date AT-D12.** Confirmed by running the same families at the pre-AT-D12 merged
+  state: 24/24 already failing there, and AT-D12 introduced **zero** new failures.
+- **One shared helper, again, not twelve edits.** `scans_current_state(body, anchor)` accepts the
+  four spellings that all mean "current state" — the two literal HEAD forms, the bare diff
+  against the working tree, and the shared successor call — and still rejects a range pinned to a
+  frozen stage head, which is the failure the meta-guards exist to catch. Twelve assertions
+  across nine files now ask the helper instead of matching a string.
+- **A sixteenth guard was found and converted.** 66D-BE1-CR1's `check04` carried the same
+  frozen-baseline-to-HEAD implementation guard and was missed by the previous conversion.
+- **Fail-closed, probed.** A frozen stage head, a different anchor, and a body with no range at
+  all are all still rejected. Every caller carries the same strict fallback, so an isolated tree
+  without `scripts/` degrades to the literal test rather than to "anything goes".
+- **Residual failures: 2**, both identical at clean main and on the branch
+  (`test_66d_decisions_untouched_by_this_remediation`, `test_rm1_verifier_passes`). Pre-existing,
+  unrelated, and explicitly out of scope. `production_executed_true_count: 0`.

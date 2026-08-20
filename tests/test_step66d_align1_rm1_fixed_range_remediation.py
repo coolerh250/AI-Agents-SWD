@@ -23,12 +23,20 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
@@ -177,7 +185,7 @@ def test_runtime_guard_still_scans_current_state(rel: str) -> None:
     """Freezing the scope must not freeze the denylist: a later runtime path must still fail."""
     body = _read(REPO / rel)
     assert "RUNTIME_GUARD_ANCHOR" in body, f"{rel} has no current-state runtime guard"
-    assert re.search(r'"--name-only", RUNTIME_GUARD_ANCHOR, "HEAD"', body), rel
+    assert scans_current_state(body, "RUNTIME_GUARD_ANCHOR"), rel
 
 
 @pytest.mark.parametrize("rel", CROSS_STAGE_FILES)
@@ -501,4 +509,4 @@ def test_merge_is_non_squash_with_both_commits_preserved() -> None:
 def test_align1_runtime_denylist_stays_current_state() -> None:
     """The scope froze; the denylist must not have frozen with it."""
     body = _read(REPO / "scripts" / "verify_step66d_align1_delivery_decision_model.py")
-    assert 'git("diff", "--name-only", CANONICAL_MAIN).splitlines()' in body
+    assert scans_current_state(body, "CANONICAL_MAIN")

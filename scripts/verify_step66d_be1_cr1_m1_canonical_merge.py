@@ -16,9 +16,24 @@ from __future__ import annotations
 
 import json
 import pathlib
+
 import re
 import subprocess
 import sys
+
+# AT-M2 remediation: the shared call below IS current state unless a successor milestone is
+# canonically authorized, so this guard's property is unchanged and only the spelling is shared.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
+except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
 
 # AT-M2 remediation: this stage's rejection window ends where an authorized successor
 # milestone takes over. Without one this is HEAD, exactly as before.
@@ -30,6 +45,7 @@ except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_BE1_CR1_M1_CANONICAL_MERGE_VERIFY"
@@ -293,7 +309,8 @@ def main() -> int:
         "the CR1 verifier still uses current HEAD as a positive scope endpoint",
     )
     expect(
-        "CR1_RUNTIME_GUARD_ANCHOR" in cr1_src and 'f"{CR1_RUNTIME_GUARD_ANCHOR}...HEAD"' in cr1_src,
+        "CR1_RUNTIME_GUARD_ANCHOR" in cr1_src
+        and scans_current_state(cr1_src, "CR1_RUNTIME_GUARD_ANCHOR"),
         "check30",
         "the current-state rejection guard no longer scans HEAD",
     )
@@ -348,8 +365,7 @@ def main() -> int:
     since_merge = {
         line.strip().replace("\\", "/")
         for line in git(
-            "diff", "--name-only",
-            f"{MERGE_COMMIT}..{successor_window_end(MERGE_COMMIT)}"
+            "diff", "--name-only", f"{MERGE_COMMIT}..{successor_window_end(MERGE_COMMIT)}"
         ).splitlines()
         if line.strip()
     }

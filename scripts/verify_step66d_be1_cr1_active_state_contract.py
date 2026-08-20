@@ -22,6 +22,18 @@ import re
 import subprocess
 import sys
 
+# AT-M2 remediation: this stage's rejection window ends where an authorized successor milestone
+# takes over. Without one this is HEAD, exactly as before.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+try:
+    from successor_lifecycle import successor_window_end  # noqa: E402
+except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
+
+    def successor_window_end(_baseline: str = "") -> str:
+        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
+        return "HEAD"
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_BE1_CR1_ACTIVE_STATE_CONTRACT_VERIFY"
 
@@ -171,7 +183,12 @@ def main() -> int:
     }
     current_state = {
         line.strip().replace("\\", "/")
-        for line in git("diff", "--name-only", f"{CR1_RUNTIME_GUARD_ANCHOR}...HEAD").splitlines()
+        for line in git(
+            "diff",
+            "--name-only",
+            CR1_RUNTIME_GUARD_ANCHOR,
+            successor_window_end(CR1_RUNTIME_GUARD_ANCHOR),
+        ).splitlines()
         if line.strip()
     }
     expect(

@@ -15,6 +15,20 @@ import sys
 from pathlib import Path
 import pathlib
 
+# AT-M2 remediation: the shared call below IS current state unless a successor milestone is
+# canonically authorized, so this guard's property is unchanged and only the spelling is shared.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
+except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
+
 # AT-M2 remediation: the rejection window ends where an authorized successor milestone
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
@@ -25,6 +39,7 @@ except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
 
 ROOT = Path(__file__).resolve().parents[1]
 
@@ -217,7 +232,7 @@ def test_cr1_positive_scope_is_frozen():
 def test_cr1_rejection_guard_still_scans_current_state():
     source = CR1_VERIFIER.read_text(encoding="utf-8")
     assert "CR1_RUNTIME_GUARD_ANCHOR" in source
-    assert 'f"{CR1_RUNTIME_GUARD_ANCHOR}...HEAD"' in source
+    assert scans_current_state(source, "CR1_RUNTIME_GUARD_ANCHOR")
     assert "scanned = current_state or changed" in source
 
 

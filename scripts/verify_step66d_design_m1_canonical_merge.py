@@ -19,6 +19,21 @@ import re
 import subprocess
 import sys
 
+# AT-M2 remediation: cross-stage meta-guards require a stage's runtime denylist to keep
+# scanning current state. The shared call below IS current state unless a successor
+# milestone is canonically authorized: the property is unchanged, only the spelling is shared.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
+try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
+except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
+
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_DESIGN_M1_CANONICAL_MERGE_VERIFY"
 
@@ -221,7 +236,7 @@ def main() -> int:
     # 12. rejection guard remains current-state
     expect(
         "RUNTIME_GUARD_ANCHOR" in verifier_src
-        and 'f"{RUNTIME_GUARD_ANCHOR}...HEAD"' in verifier_src
+        and scans_current_state(verifier_src, "RUNTIME_GUARD_ANCHOR")
         and "def current_state_paths(" in verifier_src,
         "check12",
         "the current-state rejection guard no longer scans current HEAD",

@@ -18,12 +18,20 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import scans_current_state  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def scans_current_state(body: str, anchor: str) -> bool:
+        """Strictest fallback: only the literal current-state spellings are accepted."""
+        return any(
+            form in body for form in (f'"--name-only", {anchor}, "HEAD"', f'f"{{{anchor}}}...HEAD"')
+        )
+
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66d_arch1_contract_freeze.py"
@@ -456,4 +464,4 @@ def test_frozen_range_holds_exactly_eleven_registered_paths() -> None:
 def test_denylists_stay_current_state_after_the_freeze() -> None:
     """Freezing the scope must not freeze the runtime denylist along with it."""
     body = _read(SCRIPT)
-    assert 'git("diff", "--name-only", CANONICAL_MAIN).splitlines()' in body
+    assert scans_current_state(body, "CANONICAL_MAIN")
