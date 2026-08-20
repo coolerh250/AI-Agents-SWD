@@ -17,12 +17,20 @@ import pathlib
 # milestone takes over. Without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import frozen_artifact_is_authorized  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def frozen_artifact_is_authorized(
+        _relpath: str, historical: str, current: str
+    ) -> tuple[bool, str]:
+        """Strictest fallback: with no lifecycle module nothing may diverge at all."""
+        return historical == current, "no freeze-amendment authority is available"
+
 
 MARKER = "STEP66C4_BE3_RA2M2_CANONICAL_MERGE_VERIFY: PASS"
 
@@ -135,6 +143,18 @@ def read(path: Path) -> str:
     return path.read_text(encoding="utf-8")
 
 
+def git_blob_text(commit: str, rel: str) -> str:
+    """A committed blob as UTF-8 text, independent of the console code page."""
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{rel}"],
+        cwd=ROOT,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return result.stdout.decode("utf-8") if result.returncode == 0 else ""
+
+
 def _parents() -> list[str]:
     return git("rev-list", "--parents", "-n", "1", MERGE_COMMIT).split()
 
@@ -199,11 +219,18 @@ def check07_historical_evidence_present() -> None:
             bad(f"check07: historical RA-2 artifact missing from main: {path.name}")
     for rel in HISTORICAL_EVIDENCE:
         source = git("rev-parse", f"{PLANNING_HEAD}:{rel}")
-        current = git("rev-parse", f"HEAD:{rel}")
         if not source:
             bad(f"check07: {rel} not found in planning commit efa396d")
-        elif source != current:
-            bad(f"check07: {rel} on main differs from its planning-commit blob")
+            continue
+        if git("rev-parse", f"HEAD:{rel}") == source:
+            continue
+        # Divergence is a rewrite unless AT-D12 names this exact path as amendable and the
+        # divergence matches the shape it declared. Fail-closed with no such authority.
+        allowed, why = frozen_artifact_is_authorized(
+            rel, git_blob_text(PLANNING_HEAD, rel), git_blob_text("HEAD", rel)
+        )
+        if not allowed:
+            bad(f"check07: {rel} on main differs from its planning-commit blob ({why})")
 
 
 def check08_historical_evidence_not_rewritten() -> None:
@@ -465,8 +492,7 @@ def check_runtime_guard_current_state() -> None:
     changed = [
         line
         for line in git(
-            "diff", "--name-only", RUNTIME_GUARD_ANCHOR,
-            successor_window_end(RUNTIME_GUARD_ANCHOR)
+            "diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)
         ).splitlines()
         if line.strip()
     ]

@@ -16,6 +16,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))  # AT-D12-AMENDED
+try:  # AT-D12-AMENDED
+    from successor_lifecycle import successor_window_end  # noqa: E402  # AT-D12-AMENDED
+except ModuleNotFoundError:  # isolated probe copies lack scripts/  # AT-D12-AMENDED
+    successor_window_end = lambda _b="": "HEAD"  # noqa: E731  # AT-D12-AMENDED
 ROOT = Path(__file__).resolve().parents[1]
 
 CONTRACT = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
@@ -195,7 +200,8 @@ def main() -> int:  # noqa: C901
             bad(f"check12: {name} contains secret-shaped content: {m.group(0)[:40]!r}")
 
     # 13/14. No runtime authentication/secret code and no infra credential change in this stage.
-    changed = _git("diff", "--name-only", BASELINE_MAIN, "HEAD")
+    window_end = successor_window_end(BASELINE_MAIN)  # AT-D12-AMENDED
+    changed = _git("diff", "--name-only", BASELINE_MAIN, window_end)  # AT-D12-AMENDED
     changed_files = [f.strip() for f in changed.splitlines() if f.strip()]
     for f in changed_files:
         if f.startswith("apps/") or f.startswith("shared/"):

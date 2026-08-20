@@ -15,6 +15,11 @@ from pathlib import Path
 
 import pytest
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))  # AT-D12-AMENDED
+try:  # AT-D12-AMENDED
+    from successor_lifecycle import successor_window_end  # noqa: E402  # AT-D12-AMENDED
+except ModuleNotFoundError:  # isolated probe copies lack scripts/  # AT-D12-AMENDED
+    successor_window_end = lambda _b="": "HEAD"  # noqa: E731  # AT-D12-AMENDED
 ROOT = Path(__file__).resolve().parents[1]
 
 CONTRACT = ROOT / "docs" / "contracts" / "66c4-reminder-expiry-controlled-resume"
@@ -280,8 +285,9 @@ def test_feature_gate_defaults_false(var: str, path: Path) -> None:
 
 
 def test_stage_changed_no_runtime_or_infra_file() -> None:
+    window_end = successor_window_end(BASELINE_MAIN)  # AT-D12-AMENDED
     changed = subprocess.run(
-        ["git", "diff", "--name-only", BASELINE_MAIN, "HEAD"],
+        ["git", "diff", "--name-only", BASELINE_MAIN, window_end],  # AT-D12-AMENDED
         cwd=ROOT,
         capture_output=True,
         text=True,

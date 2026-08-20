@@ -80,7 +80,6 @@ All current Admin Console routes inventoried from `apps/admin-console/src/App.ts
 | `/delivery-detail` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/demo-evidence` | `DemoEvidence` | IMPLEMENTED_DIAGNOSTIC_ONLY | PARTIAL |
 | `/agent-executions` | `AgentExecutions` | IMPLEMENTED | PARTIAL |
-| `/team-room` | `TeamRoom` | IMPLEMENTED | PARTIAL |
 | `/approvals` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/dlq-retry` | `PlaceholderPage` | PLANNED_ONLY | NOT_IMPLEMENTED |
 | `/qa-code` | `QaCode` | IMPLEMENTED | PARTIAL |
@@ -269,3 +268,33 @@ addresses, SSH aliases, private hostnames, real tokens, credentials, private URL
 secrets._
 
 <!-- staging-safety: staging-only=false non-production=true production-action=false production-deploy=false production-sync=false production-secret=false external-write=false github-merge=false image-push=false production-ready=false credential-storage=false public-exposure=false live-integrations=disabled -->
+<!-- SUCCESSOR-NOTE-BEGIN: AT-D12 -->
+
+## Successor route addendum — AT-M2 (append-only, AT-D12)
+
+Everything above this marker is the Step 66SYNC.1 Codex reconciliation as it was recorded, byte
+for byte. Nothing above was edited, reinterpreted or recounted, and the verifier proves that by
+comparing the prefix against the original source commit.
+
+This section exists because the route inventory above is not only historical evidence — it is
+also the live inventory that `test_all_routes_from_source_are_inventoried` checks against
+`apps/admin-console/src/App.tsx`. A route added by an authorized successor milestone has to
+appear somewhere in this file or the live check fails; rewriting the historical table to add it
+would falsify what Step 66SYNC.1 measured. AT-D12 resolves that by letting the successor append.
+
+Routes added after the Step 66SYNC.1 measurement, by authorized milestone:
+
+| Route | Component | Implementation | Control-centre coverage | Added by |
+| --- | --- | --- | --- | --- |
+| `/team-room` | `TeamRoom` | IMPLEMENTED | PARTIAL | AT-M2 |
+
+`/team-room` is the AT-M2 read-only team surface: roster, addressed conversation and routing
+decisions for a project. It performs no production action and adds no production path.
+
+```text
+HISTORICAL_MEASUREMENT:   unchanged -- the table above this marker is the 66SYNC.1 record
+SUCCESSOR_MILESTONE:      AT-M2 (authorized by AT-D11)
+AMENDMENT_AUTHORITY:      AT-D12 (docs/decisions/at-d12-successor-freeze-amendment.md)
+AMENDMENT_SHAPE:          appended-note -- byte-exact prefix, zero deletions
+production_executed_true_count=0
+```

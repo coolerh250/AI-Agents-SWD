@@ -16,12 +16,20 @@ import pathlib
 # milestone takes over. Without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import frozen_artifact_is_authorized  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def frozen_artifact_is_authorized(
+        _relpath: str, historical: str, current: str
+    ) -> tuple[bool, str]:
+        """Strictest fallback: with no lifecycle module nothing may diverge at all."""
+        return historical == current, "no freeze-amendment authority is available"
+
 
 MARKER = "STEP66SYNC1_M1_CANONICALIZATION_PREP_VERIFY: PASS"
 
@@ -293,11 +301,21 @@ def check09_historical_artifacts_unchanged() -> None:
     for commit, paths in IMPORTED.items():
         for rel in paths:
             source = git("rev-parse", f"{commit}:{rel}")
-            current = git("rev-parse", f":{rel}")
             if not source:
                 bad(f"check09: {rel} not found in source commit {commit}")
-            elif source != current:
-                bad(f"check09: {rel} was rewritten -- blob differs from source commit {commit}")
+                continue
+            if git("rev-parse", f":{rel}") == source:
+                continue
+            # Divergence is a rewrite unless AT-D12 names this exact path as amendable and the
+            # divergence matches the shape it declared. Fail-closed with no such authority.
+            allowed, why = frozen_artifact_is_authorized(
+                rel, git_blob_text(commit, rel), (ROOT / rel).read_text(encoding="utf-8")
+            )
+            if not allowed:
+                bad(
+                    f"check09: {rel} was rewritten -- blob differs from source commit "
+                    f"{commit} ({why})"
+                )
 
     for commit, paths in TRANSFORMED.items():
         for rel in paths:
@@ -541,8 +559,7 @@ def check_runtime_guard_current_state() -> None:
     changed = [
         line
         for line in git(
-            "diff", "--name-only", RUNTIME_GUARD_ANCHOR,
-            successor_window_end(RUNTIME_GUARD_ANCHOR)
+            "diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)
         ).splitlines()
         if line.strip()
     ]

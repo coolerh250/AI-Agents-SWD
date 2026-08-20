@@ -69,6 +69,22 @@ decision named; that decision must exist, be `RESOLVED / BINDING`, and name the 
 the boundary must exist and be an ancestor of HEAD; and it must be a DESCENDANT of the calling
 guard's own baseline, so it can never be walked backwards over a stage's own commits.
 
+Three artifacts are historical stage evidence and live machinery at the same time — two RA-2
+guards that must still scan current state, and one route inventory that must still describe
+current source. A byte-freeze stops them working; free editing dissolves the freeze contract for
+every stage. AT-D12 resolves that conflict with an exhaustive named set and two amendment shapes
+that keep the historical content provable. The same module enforces it, from these two fields:
+
+```text
+SUCCESSOR_FREEZE_AMENDMENT_DECISION: AT-D12
+SUCCESSOR_FREEZE_AMENDMENT_RECORD:   docs/decisions/at-d12-successor-freeze-amendment.md
+```
+
+This too fails closed: no snapshot fields, no record on disk, a record that is not
+`RESOLVED / BINDING`, a record naming a different successor milestone, or a path the record does
+not list — any one of them and every frozen artifact is immutable again. AT-D12 changes no
+scope, retires no debt, registers no failure as debt, and grants no authorization.
+
 Supersession closes AT-M1's **no-implementation window** at the canonical main that was HEAD when
 AT-M2 was authorized, and does nothing else. Every commit AT-M1 could have contributed is inside
 that window and is still checked by `scripts/verify_at_m1_architecture_reset.py`; code written

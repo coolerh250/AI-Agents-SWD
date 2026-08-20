@@ -17810,3 +17810,53 @@ backend, API, database, event, migration, deployment, identity, secret or featur
 - **Status.** `AT_M2: AUTHORIZED / IN PROGRESS`. **READY FOR AT-M2 VALIDATION 2**, with the
   seven-failure governance residue declared as a decision item, not a hidden condition.
   `production_executed_true_count: 0`.
+
+## Step AT-M2-TEAM-CORE-R2 - AT-D12 Bounded Governance Remediation (IMPLEMENTED)
+
+Closes the seven-failure residue the previous remediation reported rather than resolved. The
+Product Owner issued **AT-D12**, which settles the underlying conflict instead of the symptom.
+
+- **The conflict, stated plainly.** Two rules were each correct and could not both hold. A
+  completed stage's evidence is frozen byte-for-byte so nobody can retroactively rewrite what a
+  stage decided or measured. A live guard must scan current state, and a live inventory must
+  describe current source. Three artifacts are both things at once: two RA-2 guards frozen to
+  planning commit `efa396d` that still carry a HEAD-relative implementation check, and the Codex
+  frontend evidence document frozen to `78aa4ee` that is also the route inventory
+  `test_all_routes_from_source_are_inventoried` checks against `App.tsx`. AT-M2 is the first
+  authorized milestone to add implementation and a route since those stages closed, so it is the
+  first to make the conflict observable.
+- **AT-D12 is canonical and machine-checkable.** `docs/decisions/at-d12-successor-freeze-amendment.md`
+  is `RESOLVED / BINDING`, named by the canonical PM snapshot, and is the **only** place the
+  amendable set is defined - a test asserts that no path is hard-coded into the mechanism. It
+  names exactly three artifacts. Every other frozen artifact of every stage stays absolutely
+  frozen, with no exception path.
+- **Two amendment shapes, both self-evident in the file.** `declared-line`, for executable
+  guards: every line differing from the historical blob carries `# AT-D12-AMENDED`, and a
+  historical line may be replaced but never simply deleted, so a reader sees which lines are not
+  historical without consulting git. `appended-note`, for evidence documents: the historical
+  content must remain a **byte-exact prefix** with zero deletions, everything new going after
+  `<!-- SUCCESSOR-NOTE-BEGIN: AT-D12 -->`. The second shape is the one Step 66D-ALIGN1 already
+  used for its supersession notes; this reuses it rather than inventing a mechanism.
+- **The historical route table was not recounted.** The `/team-room` row was moved out of the
+  66SYNC.1 inventory table and into an append-only successor addendum. The 66SYNC.1 measurement
+  above the marker is byte-identical to `78aa4ee`, and the live route check still passes because
+  it scans the whole document. A test asserts `/team-room` appears **only** below the marker.
+- **Fail-closed in six directions, each probed.** No snapshot fields, no record on disk, a record
+  that is not binding, a record naming a different successor milestone, a path the record does
+  not list, or an unrecognised amendment mode - any one of them and every frozen artifact is
+  immutable again. AT-D12 also cannot stand alone: it rides on AT-D11's successor authorization,
+  so removing that re-freezes everything. Corrupting either shape is refused: an undeclared line,
+  a deletion, a marker used to launder a deletion, an edited prefix, a missing marker.
+- **Unrelated assertions untouched.** The freeze assertions were amended only where they compare
+  a blob to its source commit. `IMPORTED_UNCHANGED` still holds eight paths, `IMPORTED` still
+  holds nineteen, and the count assertions over both are unchanged. The RA-2 decision package
+  still records `PENDING` and `PRODUCT_OWNER_DECISION_REQUIRED`, and the six RA-2 planning
+  documents are asserted byte-identical **and** asserted not amendable.
+- **No check was dropped.** A test re-derives every `checkNN` label from the historical blob of
+  the RA-2 verifier and asserts each one still exists in the amended file. The amendment
+  substituted one call for one literal; the stage's own commits remain inside the window because
+  the boundary is a descendant of the stage baseline and an ancestor of HEAD.
+- **Not registered as debt.** The seven failures are closed, not reclassified. AT-D12 retires no
+  governance debt, reduces no gate, authorizes no milestone, and grants no production
+  authorization. `AT_M3_TO_AT_M8: NOT AUTHORIZED` and `PRODUCTION_AUTHORIZATION: NOT GRANTED`
+  are asserted by test. `production_executed_true_count: 0`.

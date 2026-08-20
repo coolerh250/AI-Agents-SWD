@@ -17,12 +17,20 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
+    from successor_lifecycle import frozen_artifact_is_authorized  # noqa: E402
     from successor_lifecycle import successor_window_end  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
     def successor_window_end(_baseline: str = "") -> str:
         """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
         return "HEAD"
+
+    def frozen_artifact_is_authorized(
+        _relpath: str, historical: str, current: str
+    ) -> tuple[bool, str]:
+        """Strictest fallback: with no lifecycle module nothing may diverge at all."""
+        return historical == current, "no freeze-amendment authority is available"
+
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66c4_be3_ra2m2_canonical_merge.py"
@@ -122,6 +130,17 @@ def _flat(text: str) -> str:
 # --- verifier ---------------------------------------------------------------------------------
 
 
+def _git_blob_text(commit: str, rel: str) -> str:
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{rel}"],
+        cwd=REPO,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    return result.stdout.decode("utf-8") if result.returncode == 0 else ""
+
+
 def test_verifier_script_exists() -> None:
     assert SCRIPT.is_file()
 
@@ -208,8 +227,15 @@ def test_historical_artifacts_present_on_main() -> None:
 
 
 def test_historical_artifacts_byte_identical_to_planning_commit() -> None:
+    """Byte-identical, or an AT-D12 amendment of the declared shape on a named path."""
     for rel in HISTORICAL_EVIDENCE:
-        assert _git("rev-parse", f"{PLANNING_HEAD}:{rel}") == _git("rev-parse", f"HEAD:{rel}"), rel
+        source = _git("rev-parse", f"{PLANNING_HEAD}:{rel}")
+        if _git("rev-parse", f"HEAD:{rel}") == source:
+            continue
+        allowed, why = frozen_artifact_is_authorized(
+            rel, _git_blob_text(PLANNING_HEAD, rel), _git_blob_text("HEAD", rel)
+        )
+        assert allowed, f"{rel}: {why}"
 
 
 def test_pending_wording_preserved() -> None:
@@ -552,7 +578,9 @@ def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
     """A runtime path added by any later commit must still be caught."""
     changed = [
         line
-        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)).splitlines()
+        for line in _git(
+            "diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)
+        ).splitlines()
         if line.strip()
     ]
     offenders = [
