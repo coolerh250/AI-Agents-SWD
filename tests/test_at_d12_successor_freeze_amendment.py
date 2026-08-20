@@ -363,3 +363,19 @@ def test_the_decision_authorizes_no_milestone_and_no_production() -> None:
 def test_the_decision_leaks_no_internal_identifier() -> None:
     forbidden = re.compile(r"10\.0\.1\.(31|32)|aiagent-swd|itadmin|stpadmin", re.IGNORECASE)
     assert forbidden.search(read(RECORD)) is None
+
+
+def test_a_marked_line_cannot_launder_a_net_deletion() -> None:
+    """Replacing many historical lines with one marked line is a deletion, not an amendment."""
+    rel = "tests/test_step66c4_be3_ra2_identity_secret_decision.py"
+    historical = "alpha\nbeta\ngamma\ndelta\n"
+    current = f"alpha\nreplacement  {lifecycle.DECLARED_LINE_MARKER}\n"
+    allowed, why = lifecycle.frozen_artifact_is_authorized(rel, historical, current)
+    assert not allowed
+    assert "only" in why
+
+
+def test_the_line_comparison_does_not_use_a_readability_heuristic() -> None:
+    """difflib's autojunk drops common lines from matching -- fine for diffs, not for integrity."""
+    module = (REPO / "scripts" / "successor_lifecycle.py").read_text(encoding="utf-8")
+    assert "autojunk=False" in module

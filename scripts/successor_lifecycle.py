@@ -234,12 +234,20 @@ def _declared_line_amendment(historical: str, current: str) -> tuple[bool, str]:
     """Every divergent line must declare itself. A historical line may be replaced, not dropped."""
     old = _lf(historical).split("\n")
     new = _lf(current).split("\n")
-    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new).get_opcodes():
+    # autojunk would treat common lines (blanks, closing brackets) as unmatchable in a file this
+    # size, which is a heuristic for readable diffs and wrong for an integrity comparison.
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(
+        None, old, new, autojunk=False
+    ).get_opcodes():
         if tag == "equal":
             continue
         added = new[j1:j2]
         if not added:
             return False, f"deletes {i2 - i1} historical line(s) without a declared replacement"
+        # A marker declares an addition. It must not become a licence to net-delete: replacing
+        # fifty historical lines with one marked line would otherwise read as a legal amendment.
+        if len(added) < (i2 - i1):
+            return False, f"replaces {i2 - i1} historical line(s) with only {len(added)}"
         undeclared = [line for line in added if DECLARED_LINE_MARKER not in line]
         if undeclared:
             return False, f"undeclared divergent line: {undeclared[0].strip()[:70]!r}"
