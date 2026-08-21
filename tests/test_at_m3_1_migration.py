@@ -59,7 +59,9 @@ def test_the_migration_stores_no_prompt_completion_or_hidden_reasoning_field():
 def test_provider_mode_is_constrained_to_the_two_implemented_classes():
     """No live external mode is authorized by this slice -- the CHECK constraint is the proof."""
     sql = _FORWARD.read_text(encoding="utf-8")
-    match = re.search(r"chk_reasoning_invocations_provider_mode CHECK \(provider_mode IN \((.*?)\)\)", sql, re.S)
+    match = re.search(
+        r"chk_reasoning_invocations_provider_mode CHECK \(provider_mode IN \((.*?)\)\)", sql, re.S
+    )
     assert match, "provider_mode CHECK constraint not found"
     modes = set(re.findall(r"'([a-z_]+)'", match.group(1)))
     assert modes == {"mock", "disabled"}

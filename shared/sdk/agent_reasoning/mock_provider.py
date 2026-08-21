@@ -71,9 +71,7 @@ class MockReasoningProvider:
 
     def critique(self, request: ReasoningRequest) -> CritiqueArtifact:
         digest = _digest(request)
-        target = _redacted(
-            request.context.get("proposal_summary"), default="the standing proposal"
-        )
+        target = _redacted(request.context.get("proposal_summary"), default="the standing proposal")
         return CritiqueArtifact(
             summary=f"[mock] critique of: {target}",
             rationale_summary=(
@@ -95,9 +93,7 @@ class MockReasoningProvider:
         options = tuple(
             _redacted(option, limit=200, default="option") for option in raw_options
         ) or ("proceed",)
-        selected = _redacted(
-            request.context.get("selected_option"), limit=200, default=options[0]
-        )
+        selected = _redacted(request.context.get("selected_option"), limit=200, default=options[0])
         return DecisionSummaryArtifact(
             summary=f"[mock] decision summary (digest {digest})",
             rationale_summary="[mock] deterministic summary; no live model was consulted",

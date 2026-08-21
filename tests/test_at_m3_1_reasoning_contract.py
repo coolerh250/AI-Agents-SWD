@@ -22,7 +22,6 @@ from shared.sdk.agent_reasoning.provider import (
     ReasoningProviderError,
     get_reasoning_provider,
 )
-from shared.sdk.agent_reasoning.mock_provider import MockReasoningProvider
 from shared.sdk.agent_reasoning.service import ReasoningService
 from tests.agent_reasoning_fakes import InMemoryReasoningInvocationStore
 from tests.agent_team_fakes import RecordingAuditClient
@@ -142,9 +141,9 @@ async def test_the_invocation_record_carries_metadata_only():
     leaked_fields = set(result.invocation) - _PERMITTED_INVOCATION_FIELDS
     assert leaked_fields == set(), f"unexpected field(s) on the invocation record: {leaked_fields}"
     for field_name in result.invocation:
-        assert not any(marker in field_name.lower() for marker in _FORBIDDEN_FIELD_MARKERS), (
-            field_name
-        )
+        assert not any(
+            marker in field_name.lower() for marker in _FORBIDDEN_FIELD_MARKERS
+        ), field_name
 
 
 # --- 7: forbidden nested content rejected -------------------------------------------------------------
@@ -162,9 +161,7 @@ def test_a_request_context_carrying_a_secret_marker_is_rejected_at_construction(
 
 def test_a_nested_forbidden_key_is_also_rejected():
     with pytest.raises(ValidationError):
-        ReasoningRequest(
-            verb="propose", context={"notes": [{"meta": {"raw_prompt": "leak"}}]}
-        )
+        ReasoningRequest(verb="propose", context={"notes": [{"meta": {"raw_prompt": "leak"}}]})
 
 
 # --- 8: malformed provider output fails closed --------------------------------------------------------

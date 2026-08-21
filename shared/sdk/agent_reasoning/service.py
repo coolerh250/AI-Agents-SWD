@@ -22,7 +22,7 @@ import contextlib
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, cast
 
 from shared.sdk.agent_reasoning import events as reasoning_events
 from shared.sdk.agent_reasoning.models import (
@@ -132,9 +132,7 @@ class ReasoningService:
             else:
                 if not isinstance(raw, expected_type):
                     failure_category = "malformed_output"
-                    failure_reason = (
-                        f"expected {expected_type.__name__}, got {type(raw).__name__}"
-                    )
+                    failure_reason = f"expected {expected_type.__name__}, got {type(raw).__name__}"
                 else:
                     try:
                         raw.as_safe_dict()
@@ -142,7 +140,10 @@ class ReasoningService:
                         failure_category = "content_safety_rejected"
                         failure_reason = str(exc)[:2000]
                     else:
-                        artifact = raw
+                        # isinstance(raw, expected_type) already proved raw is one of the three
+                        # known artifact subtypes; expected_type's static type (type[_StrictArtifact])
+                        # is just too coarse for mypy to narrow ReasoningArtifact from.
+                        artifact = cast(ReasoningArtifact, raw)
                         status = "succeeded"
 
         latency_ms = int((time.monotonic() - clock_start) * 1000)

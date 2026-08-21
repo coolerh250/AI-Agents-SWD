@@ -93,7 +93,9 @@ def get_reasoning_provider(name: str | None = None) -> ReasoningProvider:
     """
     from shared.sdk.agent_reasoning.mock_provider import MockReasoningProvider
 
-    raw = (name or os.environ.get("REASONING_PROVIDER") or DEFAULT_REASONING_PROVIDER).strip().lower()
+    raw = (
+        (name or os.environ.get("REASONING_PROVIDER") or DEFAULT_REASONING_PROVIDER).strip().lower()
+    )
     if raw == "mock":
         return MockReasoningProvider()
     return DisabledReasoningProvider(requested_name=raw or "disabled")

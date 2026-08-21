@@ -100,9 +100,7 @@ class ReasoningInvocationStore:
         finally:
             await conn.close()
 
-    async def list_for_project(
-        self, project_id: str, limit: int = 100
-    ) -> list[dict[str, Any]]:
+    async def list_for_project(self, project_id: str, limit: int = 100) -> list[dict[str, Any]]:
         conn = await self._connect()
         try:
             rows = await conn.fetch(
