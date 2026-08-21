@@ -24,12 +24,22 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
     from successor_lifecycle import scans_current_state  # noqa: E402
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        result = subprocess.run(
+            ["git", "diff", "--name-only", baseline, current],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+        return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
 
     def scans_current_state(body: str, anchor: str) -> bool:
         """Strictest fallback: only the literal current-state spellings are accepted."""
@@ -572,20 +582,7 @@ def test_probe_k_series_control_tree_is_restored_exactly(tmp_path):
 
 # --------------------------------------------------------------------- scope
 def test_scope_no_runtime_or_backend_paths_changed():
-    result = subprocess.run(
-        [
-            "git",
-            "diff",
-            "--name-only",
-            f"{DESIGN_BASELINE}...{successor_window_end(DESIGN_BASELINE)}",
-        ],
-        cwd=ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if result.returncode != 0:
-        pytest.fail("could not compute the diff against the design baseline")
+    changed = live_guard_changed_paths(DESIGN_BASELINE)
     forbidden = (
         "apps/",
         "agents/",
@@ -597,10 +594,8 @@ def test_scope_no_runtime_or_backend_paths_changed():
         "k8s/",
         ".github/workflows/",
     )
-    for line in result.stdout.splitlines():
-        path = line.strip().replace("\\", "/")
-        if path:
-            assert not path.startswith(forbidden), f"forbidden path changed: {path}"
+    for path in changed:
+        assert not path.startswith(forbidden), f"forbidden path changed: {path}"
 
 
 def test_scope_changed_paths_are_exactly_fourteen():

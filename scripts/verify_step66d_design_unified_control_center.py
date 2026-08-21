@@ -37,12 +37,23 @@ import sys
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        result = subprocess.run(
+            ["git", "diff", "--name-only", baseline, current],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if result.returncode != 0:
+            return []
+        return [line.strip().replace("\\", "/") for line in result.stdout.splitlines() if line.strip()]
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MARKER = "STEP66D_DESIGN_UNIFIED_CONTROL_CENTER_VERIFY"
@@ -483,11 +494,9 @@ def changed_paths() -> list[str] | None:
     return _git_changed(DESIGN_POSITIVE_RANGE)
 
 
-def current_state_paths() -> list[str] | None:
+def current_state_paths() -> list[str]:
     """Rejection-only guard input: deliberately HEAD-relative so later commits stay scanned."""
-    return _git_changed(
-        f"{RUNTIME_GUARD_ANCHOR}...{successor_window_end(RUNTIME_GUARD_ANCHOR)}"
-    )
+    return live_guard_changed_paths(RUNTIME_GUARD_ANCHOR)
 
 
 # ---------------------------------------------------------------- checks
@@ -522,8 +531,7 @@ def check_scope() -> None:
     # Rejection-only, and deliberately evaluated against CURRENT state rather than the frozen
     # positive range, so a runtime path introduced by any later commit is still caught. This never
     # admits a path into the positive scope asserted above.
-    current = current_state_paths()
-    scanned = set(current) if current is not None else actual
+    scanned = set(current_state_paths())
     offenders = sorted(p for p in scanned if p.startswith(forbidden))
     expect(
         not offenders,

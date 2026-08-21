@@ -385,8 +385,8 @@ def test_the_line_comparison_does_not_use_a_readability_heuristic() -> None:
 #
 # Cross-stage meta-guards require that a stage's runtime denylist keeps scanning current state.
 # They were written against the literal spelling of the range, so sharing one call broke them
-# while the property they protect was intact. The helper restates the property; these probes
-# check it did not become a rubber stamp.
+# each time the call's spelling changed. The helper restates the property; these probes check it
+# did not become a rubber stamp.
 
 
 @pytest.mark.parametrize(
@@ -395,7 +395,7 @@ def test_the_line_comparison_does_not_use_a_readability_heuristic() -> None:
         '_git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, "HEAD")',
         'git("diff", "--name-only", CANONICAL_MAIN).splitlines()',
         'CURRENT = f"{RUNTIME_GUARD_ANCHOR}...HEAD"',
-        'git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR))',
+        "changed = live_guard_changed_paths(RUNTIME_GUARD_ANCHOR)",
     ],
 )
 def test_current_state_spellings_are_accepted(body: str) -> None:
@@ -411,10 +411,143 @@ def test_current_state_spellings_are_accepted(body: str) -> None:
         'CURRENT = f"{RUNTIME_GUARD_ANCHOR}...{ARCH1_STAGE_HEAD}"',
         '_git("diff", "--name-only", SOME_OTHER_ANCHOR, "HEAD")',
         "there is no rejection range here at all",
+        # the exact failure this rebaseline found live: this spelling reduces to a FROZEN boundary,
+        # not HEAD, the moment any successor is authorized -- so it must never be accepted again.
+        "changed = successor_window_end(RUNTIME_GUARD_ANCHOR)",
+        'git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR))',
     ],
 )
 def test_a_frozen_or_absent_range_is_still_rejected(body: str) -> None:
     assert not lifecycle.scans_current_state(body, "RUNTIME_GUARD_ANCHOR")
+
+
+# --- live guards actually reach HEAD, not just spell it -----------------------------------------
+#
+# scans_current_state above is still a syntax check: it looks at source text, not behaviour. What
+# actually matters is whether live_guard_end/live_guard_changed_paths reach real current HEAD when
+# a successor genuinely IS authorized -- the exact condition this repository is in right now, with
+# AT-M2 authorized and its boundary behind HEAD. These probes call the mechanism, not its spelling.
+
+
+def test_live_guard_end_is_unconditionally_head() -> None:
+    """No argument, no PM-state read -- there is nothing in the signature that could cap this."""
+    assert lifecycle.live_guard_end() == "HEAD"
+
+
+def test_live_guard_ignores_the_authorized_successor_boundary_right_now() -> None:
+    """AT-M2 is authorized and its boundary is behind HEAD in THIS repository, right now.
+
+    window_end (historical) is capped at the boundary for an ancestor baseline, exactly as
+    designed. live_guard_end is not capped by the same live authorization state -- that is the
+    entire property this rebaseline exists to restore.
+    """
+    milestone, boundary, _why = lifecycle.authorized_successor()
+    assert milestone, "this test requires AT-M2 to be the live authorized successor"
+    assert lifecycle.is_ancestor(boundary, "HEAD")
+
+    ancestor_of_boundary = "c1db4cc"  # a real, old commit; ancestor of the boundary
+    historical_end, _why = lifecycle.window_end(ancestor_of_boundary)
+    assert historical_end == boundary, "the historical path must still be capped at the boundary"
+    assert lifecycle.live_guard_end() == "HEAD", "the live path must never be capped"
+
+
+def test_authorized_changeset_end_reads_its_own_field() -> None:
+    """Distinct field from the boundary: this is where AT-M2's own reviewed work stops."""
+    end, why = lifecycle.authorized_changeset_end()
+    assert end, why
+    assert lifecycle._git("cat-file", "-t", end) == "commit"
+    _milestone, boundary, _why = lifecycle.authorized_successor()
+    assert lifecycle.is_ancestor(boundary, end)
+    assert lifecycle.is_ancestor(end, "HEAD")
+
+
+def test_authorized_changeset_end_fails_closed_with_no_field(redact) -> None:
+    redact(
+        SNAPSHOT,
+        lambda text: "\n".join(
+            line
+            for line in text.splitlines()
+            if lifecycle.AUTHORIZED_CHANGESET_END_FIELD not in line
+        ),
+    )
+    assert lifecycle.authorized_changeset_end()[0] == ""
+
+
+def test_authorized_changeset_end_fails_closed_with_an_unreachable_commit(redact) -> None:
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            rf"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}:\s*\S+",
+            f"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}: 0000000000000000000000000000000000000000",
+            text,
+        ),
+    )
+    assert lifecycle.authorized_changeset_end()[0] == ""
+
+
+def test_authorized_changeset_end_fails_closed_with_an_end_predating_the_boundary(redact) -> None:
+    """An end older than the boundary would exempt commits nobody authorized -- refused."""
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            rf"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}:\s*\S+",
+            f"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}: c1db4ccbfd88fa775e4761c932835896b9b980ed",
+            text,
+        ),
+    )
+    end, why = lifecycle.authorized_changeset_end()
+    assert end == "", f"an end predating the boundary must fail closed, got {end!r}: {why}"
+
+
+def test_authorized_changeset_end_fails_closed_with_no_authorized_successor(redact) -> None:
+    """AT-D12's own pattern: the mechanism cannot stand on AT-D11's authorization alone."""
+    redact(
+        SNAPSHOT,
+        lambda text: "\n".join(
+            line for line in text.splitlines() if lifecycle.MILESTONE_FIELD not in line
+        ),
+    )
+    assert lifecycle.authorized_successor()[0] == ""
+    assert lifecycle.authorized_changeset_end()[0] == ""
+
+
+def test_live_guard_does_not_misfire_on_at_m2s_own_authorized_work() -> None:
+    """The exact property acceptance requires: AT-M2's own changes must not trip a live guard.
+
+    RUNTIME_GUARD_ANCHOR predates AT-M2 and AT-M2 genuinely touches apps/, agents/, shared/ and
+    migrations/ -- exactly what a runtime denylist forbids. Without the content-identical
+    exclusion this would misfire on every AT-M2 candidate run; with it, AT-M2's own reviewed work
+    is recognised and excluded, and the offender list is empty.
+    """
+    changed = lifecycle.live_guard_changed_paths("c1db4cc")
+    offenders = [
+        p for p in changed if p.startswith(("apps/", "agents/", "shared/", "migrations/", "infra/"))
+    ]
+    assert offenders == [], f"AT-M2's own authorized work was not excluded: {offenders}"
+
+
+def test_live_guard_would_catch_drift_beyond_a_stale_authorized_end(redact) -> None:
+    """A path is excluded by CONTENT at the recorded end, not by membership in some window.
+
+    Pointing the recorded end at an OLD real commit -- standing in for "the end was never moved
+    forward, or was reused from an earlier milestone" -- must make AT-M2's own real runtime paths
+    show up as offenders again: their content at HEAD no longer matches their content at that
+    stale end. This is the fail-closed direction: understating the end never hides anything,
+    it can only ever widen what a live guard rejects.
+    """
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            rf"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}:\s*\S+",
+            f"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}: 192ebb74ba600f7a53ddf5967a7254a1f7a72fb8",
+            text,
+        ),
+    )
+    changed = lifecycle.live_guard_changed_paths("c1db4cc")
+    offenders = [
+        p for p in changed if p.startswith(("apps/", "agents/", "shared/", "migrations/", "infra/"))
+    ]
+    assert offenders, "with the recorded end pinned before AT-M2, its own paths must reappear"
 
 
 def test_the_helper_is_shared_not_reimplemented() -> None:

@@ -27,6 +27,14 @@ Fail-closed in every direction. The window closes only when:
 
 If any of those does not hold the window stays HEAD-relative at full strength. (6) is per-caller
 and is what stops a boundary being walked backwards over a stage's own commits.
+
+Everything above is for a HISTORICAL claim -- "this closed stage added no implementation" -- and
+closing its window at the boundary is correct: the claim is about a period that ended before the
+successor existed. A runtime denylist is a different claim: "no protected path is ever changed
+except by an explicitly authorized milestone", and that must keep holding after the boundary too,
+forever, not just up to it. Routing a denylist through ``successor_window_end`` blinded it exactly
+like the guards above -- except a denylist is never supposed to stop looking. See
+``live_guard_changed_paths`` below, which a stage's runtime denylist should call instead.
 """
 
 from __future__ import annotations
@@ -177,20 +185,23 @@ def scans_current_state(body: str, anchor: str) -> bool:
 
     Several stages carry a cross-stage meta-guard asserting that a LATER stage never froze its
     runtime denylist along with its positive scope. Those meta-guards were written to match the
-    literal spelling of the range, so converting the guards to the shared window broke them --
-    while the property they protect is entirely intact.
+    literal spelling of the range, so converting the guards to a shared call broke them each time
+    the call's spelling changed -- while the property they protect was meant to stay intact.
 
-    Four spellings mean the same thing here: the two literal HEAD forms, the bare diff against
-    the working tree, and ``successor_window_end(<anchor>)``, which IS HEAD unless a successor
-    milestone is canonically authorized. What stays rejected is a range pinned to a frozen stage
-    head: a denylist that cannot see commits after it is not a denylist, and catching exactly
-    that is why these meta-guards exist.
+    ``successor_window_end(<anchor>)`` USED to belong in this list: before AT-M2 it reduced to
+    HEAD in every real case, because no successor had ever been authorized. It no longer means
+    that -- AT-M2 IS an authorized successor right now, so that spelling resolves to a frozen
+    boundary, not HEAD, which is exactly the failure these meta-guards exist to catch. It is
+    deliberately absent below. The only accepted current-state forms are the two literal HEAD
+    spellings, the bare diff against the working tree, and ``live_guard_changed_paths(<anchor>)``,
+    which ignores the PM snapshot entirely and can never be capped by any successor, present or
+    future.
     """
     accepted = (
         f'"--name-only", {anchor}, "HEAD"',
         f'"--name-only", {anchor})',
         f'f"{{{anchor}}}...HEAD"',
-        f"successor_window_end({anchor})",
+        f"live_guard_changed_paths({anchor})",
     )
     return any(form in body for form in accepted)
 
@@ -209,6 +220,96 @@ def changed_paths(baseline: str) -> list[str]:
         for line in _git("diff", "--name-only", baseline, end).splitlines()
         if line.strip()
     ]
+
+
+# --- live guards: never capped at a successor boundary ------------------------------------------
+#
+# A runtime denylist's whole job is to reject a protected path added by ANY later commit, under
+# ANY later stage's name, forever -- unlike a stage's "no implementation" claim, it is not about a
+# period that closes. AT-D11 says as much directly: architecture invariants "stay live and
+# HEAD-relative"; only the no-implementation window closes. ``live_guard_end`` is the range-end a
+# denylist must use instead of ``successor_window_end`` -- it ignores the PM snapshot entirely, so
+# no authorized successor can ever cap it.
+#
+# The one thing a live guard still has to tolerate is the currently authorized milestone's OWN
+# already-reviewed work, which necessarily touches the paths the denylist protects -- that is the
+# entire content of what AT-D11 authorizes. It is excluded by CONTENT, not by path: a path is
+# exempt only where its blob at HEAD is byte-identical to its blob at the milestone's recorded
+# changeset end, so a later, unauthorized edit to a path the milestone already touched is a new
+# divergence and is caught on its own merits, the same as a path nobody has ever touched before.
+
+AUTHORIZED_CHANGESET_END_FIELD = "SUCCESSOR_AUTHORIZED_CHANGESET_END"
+
+
+def live_guard_end() -> str:
+    """Where a live guard's scan ends: always current HEAD, never a successor boundary.
+
+    Takes no argument and reads no PM-state field -- there is nothing in the mechanism that could
+    cap this, which is the entire point. This is the one call a runtime denylist should make in
+    place of ``successor_window_end``.
+    """
+    return "HEAD"
+
+
+def authorized_changeset_end() -> tuple[str, str]:
+    """(commit, why) the authorized successor milestone's OWN reviewed work ends at.
+
+    Distinct from the successor boundary, which is where a stage's historical window OPENS: this
+    is where the CURRENTLY authorized milestone's own already-reviewed commits stop. Read from the
+    same snapshot, under its own field, so a live guard can tell "the milestone's reviewed
+    commits" from "everything after the boundary, forever".
+
+    Fail-closed in every direction: no authorized successor (see ``authorized_successor``), no
+    recorded end, an end that is not a real commit, one that predates the successor boundary, or
+    one that is not an ancestor of HEAD -- any of those and nothing is exempt from a live guard.
+    """
+    _milestone, boundary, _why = authorized_successor()
+    if not boundary:
+        return "", OPEN_REASON
+    snapshot = _read(SUPERSESSION_RECORD)
+    end = _field(snapshot, AUTHORIZED_CHANGESET_END_FIELD)
+    if not end:
+        return "", "no recorded authorized-changeset end"
+    if _git("cat-file", "-t", end) != "commit":
+        return "", "recorded authorized-changeset end is not a real commit"
+    if not is_ancestor(boundary, end):
+        return "", "recorded end predates the successor boundary"
+    if not is_ancestor(end, "HEAD"):
+        return "", "recorded end is not an ancestor of HEAD"
+    return end, f"authorized milestone's own reviewed work ends at {end[:7]}"
+
+
+def _blob(relpath: str, commit: str) -> str | None:
+    result = subprocess.run(
+        ["git", "show", f"{commit}:{relpath}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+    return result.stdout if result.returncode == 0 else None
+
+
+def live_guard_changed_paths(baseline: str) -> list[str]:
+    """Paths changed since ``baseline``, always through current HEAD -- never a successor boundary.
+
+    A path is excluded only where its content at HEAD is byte-identical to its content at the
+    authorized milestone's recorded changeset end: exactly what that milestone already reviewed,
+    not merely a path it once touched. A further edit to the same path after that end -- by
+    anyone, under any name -- is a new divergence and stays in the result. With no valid
+    authorized-changeset end, nothing is excluded.
+    """
+    changed = [
+        line.strip().replace("\\", "/")
+        for line in _git("diff", "--name-only", baseline, live_guard_end()).splitlines()
+        if line.strip()
+    ]
+    end, _why = authorized_changeset_end()
+    if not end:
+        return changed
+    return [path for path in changed if _blob(path, "HEAD") != _blob(path, end)]
 
 
 def freeze_amendment_authority() -> tuple[dict[str, str], str]:
@@ -314,18 +415,23 @@ def frozen_artifact_is_authorized(relpath: str, historical: str, current: str) -
 __all__ = [
     "APPENDED_NOTE_MARKER",
     "AUTHORIZATION_RECORD_FIELD",
+    "AUTHORIZED_CHANGESET_END_FIELD",
     "BOUNDARY_FIELD",
     "DECLARED_LINE_MARKER",
     "FREEZE_AMENDMENT_DECISION_FIELD",
     "FREEZE_AMENDMENT_RECORD_FIELD",
     "MILESTONE_FIELD",
     "SUPERSESSION_RECORD",
+    "authorized_changeset_end",
     "authorized_successor",
     "changed_paths",
     "freeze_amendment_authority",
     "frozen_artifact_is_authorized",
     "is_ancestor",
+    "live_guard_changed_paths",
+    "live_guard_end",
     "rejection_range",
+    "scans_current_state",
     "successor_window_end",
     "window_end",
 ]

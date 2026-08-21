@@ -24,12 +24,17 @@ import pathlib
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
     from successor_lifecycle import scans_current_state  # noqa: E402
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        return [
+            line.strip().replace("\\", "/")
+            for line in _git("diff", "--name-only", baseline, current).splitlines()
+            if line.strip()
+        ]
 
     def scans_current_state(body: str, anchor: str) -> bool:
         """Strictest fallback: only the literal current-state spellings are accepted."""
@@ -450,13 +455,7 @@ def test_rm1_verifier_passes() -> None:
 
 
 def test_no_runtime_or_infra_path_changed() -> None:
-    changed = [
-        p
-        for p in _git(
-            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-        ).splitlines()
-        if p
-    ]
+    changed = live_guard_changed_paths(CANONICAL_MAIN)
     assert [p for p in changed if p.startswith(RUNTIME_PREFIXES)] == []
     assert [p for p in changed if p.endswith((".yaml", ".yml", ".tsx", ".ts", ".sql"))] == []
 

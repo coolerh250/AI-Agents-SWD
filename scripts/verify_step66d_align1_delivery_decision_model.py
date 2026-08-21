@@ -17,12 +17,17 @@ import pathlib
 # milestone takes over. Without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        return [
+            line.strip().replace("\\", "/")
+            for line in git("diff", "--name-only", baseline, current).splitlines()
+            if line.strip()
+        ]
 
 MARKER = "STEP66D_ALIGN1_DELIVERY_DECISION_MODEL_VERIFY: PASS"
 
@@ -392,9 +397,7 @@ def check15_legacy_delivery_package_preserved() -> None:
     for requirement in ("D04-R1", "D04-R2", "D04-R3", "D04-R4"):
         if requirement not in binding:
             bad(f"check15: {requirement} is missing")
-    changed = git(
-        "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-    ).splitlines()
+    changed = live_guard_changed_paths(CANONICAL_MAIN)
     touched = [p for p in changed if "delivery_package" in p.lower() or "DeliveryPackage" in p]
     if touched:
         bad(f"check15: legacy DeliveryPackage source was modified: {', '.join(touched)}")
@@ -547,13 +550,7 @@ def check26_to_29_stages_not_started() -> None:
 
 
 def check30_no_implementation_change() -> None:
-    changed = [
-        line
-        for line in git(
-            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-        ).splitlines()
-        if line
-    ]
+    changed = live_guard_changed_paths(CANONICAL_MAIN)
     offenders = [p for p in changed if p.startswith(FORBIDDEN_SOURCE_PREFIXES)]
     if offenders:
         bad(f"check30: runtime/source paths changed: {', '.join(sorted(offenders))}")

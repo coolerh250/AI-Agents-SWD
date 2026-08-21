@@ -19,12 +19,17 @@ import pathlib
 # milestone takes over. Without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        return [
+            line.strip().replace("\\", "/")
+            for line in git("diff", "--name-only", baseline, current).splitlines()
+            if line.strip()
+        ]
 
 MARKER = "STEP66D_ALIGN1_RM1_FIXED_RANGE_REMEDIATION_VERIFY: PASS"
 
@@ -229,25 +234,20 @@ def check06_no_head_endpoint() -> None:
 def check06b_runtime_guard_scans_current_state() -> None:
     """Freezing the scope must not have frozen the denylist along with it.
 
-    AT-M2 remediation: the endpoint is now resolved by the shared successor lifecycle rather
-    than written as a literal ``HEAD``. The property is unchanged -- the guard still scans
-    current state -- but it stops claiming authority over commits an authorized successor
-    milestone owns, and it does so through ONE mechanism instead of a literal per stage.
-    ``successor_window_end`` returns HEAD whenever no successor is authorized, so an
-    unsuperseded guard behaves exactly as it did before.
+    AT-M2 remediation, corrected: a denylist's input is resolved by ``live_guard_changed_paths``,
+    which always diffs through current HEAD and ignores the PM snapshot entirely -- unlike
+    ``successor_window_end``, no authorized successor, present or future, can ever cap it back to
+    a frozen boundary. ``successor_window_end`` returning HEAD "whenever no successor is
+    authorized" is exactly the false equivalence this check used to encode: AT-M2 IS an
+    authorized successor right now, so that spelling no longer means current state.
     """
     for rel in CROSS_STAGE_FILES:
         body = read(ROOT / rel)
         if "RUNTIME_GUARD_ANCHOR" not in body:
             bad(f"check06b: {rel} has no current-state runtime guard")
             continue
-        if not re.search(
-            r'"--name-only",\s*RUNTIME_GUARD_ANCHOR,\s*successor_window_end\('
-            r"RUNTIME_GUARD_ANCHOR\)",
-            body,
-            re.S,
-        ):
-            bad(f"check06b: {rel} runtime guard does not scan up to the successor window end")
+        if "live_guard_changed_paths(RUNTIME_GUARD_ANCHOR)" not in body:
+            bad(f"check06b: {rel} runtime guard does not resolve through the live-guard path")
 
 
 def acceptance_body(body: str) -> str:
@@ -441,13 +441,7 @@ def check26_production_count_zero() -> None:
     evidence = read(EVIDENCE)
     if "production_executed_true_count: 0" not in evidence:
         bad("check26: the RM1 evidence does not record production_executed_true_count: 0")
-    changed = [
-        x
-        for x in git(
-            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-        ).splitlines()
-        if x
-    ]
+    changed = live_guard_changed_paths(CANONICAL_MAIN)
     offenders = [p for p in changed if p.startswith(RUNTIME_PREFIXES)]
     if offenders:
         bad(f"check26: runtime paths changed: {', '.join(sorted(offenders))}")

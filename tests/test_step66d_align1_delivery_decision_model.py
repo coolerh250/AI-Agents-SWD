@@ -18,12 +18,17 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        return [
+            line.strip().replace("\\", "/")
+            for line in _git("diff", "--name-only", baseline, current).splitlines()
+            if line.strip()
+        ]
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66d_align1_delivery_decision_model.py"
@@ -282,9 +287,7 @@ def test_legacy_delivery_package_preserved() -> None:
 
 def test_legacy_delivery_package_source_untouched() -> None:
     """Re-derived from Git: no legacy source file may be modified by this stage."""
-    changed = _git(
-        "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-    ).splitlines()
+    changed = live_guard_changed_paths(CANONICAL_MAIN)
     assert [p for p in changed if "delivery_package" in p.lower()] == []
     assert [p for p in changed if "DeliveryPackage" in p] == []
 
@@ -511,13 +514,7 @@ def test_be3_gates_still_default_false() -> None:
 
 
 def _changed() -> list[str]:
-    return [
-        line
-        for line in _git(
-            "diff", "--name-only", CANONICAL_MAIN, successor_window_end(CANONICAL_MAIN)
-        ).splitlines()
-        if line
-    ]
+    return live_guard_changed_paths(CANONICAL_MAIN)
 
 
 def test_no_runtime_backend_or_agent_source_changed() -> None:

@@ -69,6 +69,23 @@ decision named; that decision must exist, be `RESOLVED / BINDING`, and name the 
 the boundary must exist and be an ancestor of HEAD; and it must be a DESCENDANT of the calling
 guard's own baseline, so it can never be walked backwards over a stage's own commits.
 
+A stage's "no implementation" claim is historical and correctly bounded at the field above. A
+runtime denylist is not: it must keep rejecting a protected path forever, not just up to the
+boundary, or an unauthorized change landing after AT-M2 would never be seen again. The only thing
+such a live guard has to tolerate is AT-M2's own already-reviewed work, which is recorded here by
+CONTENT rather than by window, so a later, unauthorized edit to a path AT-M2 already touched is
+still caught:
+
+```text
+SUCCESSOR_AUTHORIZED_CHANGESET_END: a439a641edd33b13eea0b4a18d2c878ef26854a2
+```
+
+This is the currently pushed `at-m2-team-core` candidate tip — not a new authorization, a
+machine-checkable pointer at work AT-D11 already authorizes. A live guard excludes a changed path
+only where its content at HEAD is byte-identical to its content at this commit; anything else,
+including a second edit to the same path, is live-checked and rejected. If AT-M2 gains further
+reviewed commits before merge, this field moves forward with them; it does not move on its own.
+
 Three artifacts are historical stage evidence and live machinery at the same time — two RA-2
 guards that must still scan current state, and one route inventory that must still describe
 current source. A byte-freeze stops them working; free editing dissolves the freeze contract for

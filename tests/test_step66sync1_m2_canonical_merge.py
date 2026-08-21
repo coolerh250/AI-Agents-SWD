@@ -16,12 +16,17 @@ import pathlib
 # takes over; without one this is HEAD, exactly as before.
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[1] / "scripts"))
 try:
-    from successor_lifecycle import successor_window_end  # noqa: E402
+    from successor_lifecycle import live_guard_changed_paths  # noqa: E402
 except ModuleNotFoundError:  # isolated probe copies may not carry scripts/
 
-    def successor_window_end(_baseline: str = "") -> str:
-        """Strictest fallback: with no lifecycle module the window stays HEAD-relative."""
-        return "HEAD"
+    def live_guard_changed_paths(baseline: str) -> list[str]:
+        """Strictest fallback: with no lifecycle module nothing is exempt."""
+        current = "HEAD"
+        return [
+            line.strip().replace("\\", "/")
+            for line in _git("diff", "--name-only", baseline, current).splitlines()
+            if line.strip()
+        ]
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPT = REPO / "scripts" / "verify_step66sync1_m2_canonical_merge.py"
@@ -425,11 +430,7 @@ RUNTIME_GUARD_ANCHOR = "7971ae0c5a5d90a186efd4c52f75988720ce214e"
 
 def test_runtime_guard_scans_current_state_not_only_the_frozen_range() -> None:
     """A runtime path added by any later commit must still be caught."""
-    changed = [
-        line
-        for line in _git("diff", "--name-only", RUNTIME_GUARD_ANCHOR, successor_window_end(RUNTIME_GUARD_ANCHOR)).splitlines()
-        if line.strip()
-    ]
+    changed = live_guard_changed_paths(RUNTIME_GUARD_ANCHOR)
     offenders = [
         path
         for path in changed
