@@ -13,6 +13,7 @@ through real Postgres, not just a Python dict.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
 
 import pytest
 
@@ -51,6 +52,11 @@ async def _project(store: ReasoningInvocationStore) -> str:
 
 
 def _invocation(*, project_id: str | None = None, status: str = "succeeded", **overrides) -> dict:
+    # started_at/completed_at mirror what the real ReasoningService always supplies -- a real
+    # caller never passes an explicit NULL here (that would override the schema's
+    # ``DEFAULT now()`` with NULL rather than falling back to it, which is exactly what
+    # NOT NULL is there to catch).
+    now = datetime.now(timezone.utc)
     data = {
         "project_id": project_id,
         "thread_id": None,
@@ -66,8 +72,8 @@ def _invocation(*, project_id: str | None = None, status: str = "succeeded", **o
         "latency_ms": 5,
         "correlation_id": str(uuid.uuid4()),
         "audit_ref": None,
-        "started_at": None,
-        "completed_at": None,
+        "started_at": now,
+        "completed_at": now,
     }
     data.update(overrides)
     return data
