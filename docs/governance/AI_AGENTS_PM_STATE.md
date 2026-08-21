@@ -77,14 +77,18 @@ CONTENT rather than by window, so a later, unauthorized edit to a path AT-M2 alr
 still caught:
 
 ```text
-SUCCESSOR_AUTHORIZED_CHANGESET_END: a439a641edd33b13eea0b4a18d2c878ef26854a2
+SUCCESSOR_AUTHORIZED_CHANGESET_END: 9c002e06029a682f586013671e8cb30ed1a475f4
 ```
 
-This is the currently pushed `at-m2-team-core` candidate tip — not a new authorization, a
-machine-checkable pointer at work AT-D11 already authorizes. A live guard excludes a changed path
-only where its content at HEAD is byte-identical to its content at this commit; anything else,
-including a second edit to the same path, is live-checked and rejected. If AT-M2 gains further
-reviewed commits before merge, this field moves forward with them; it does not move on its own.
+Not a new authorization, a machine-checkable pointer at work AT-D11 already authorizes: the AT-M2
+candidate tip through the completed live/historical guard-split implementation
+(`fix(governance): split live runtime denylists from the historical successor window`). A live
+guard excludes a changed path only where its content at HEAD is byte-identical to its content at
+this commit; anything else, including a second edit to the same path, is live-checked and
+rejected. This field records reviewed work, not the tip: a later commit that only records this
+field's own value forward does not itself become "reviewed" by that act, and this remediation
+does not move the field to name itself. If AT-M2 gains further reviewed implementation commits
+before merge, this field moves forward again to name them; it does not move on its own.
 
 Three artifacts are historical stage evidence and live machinery at the same time — two RA-2
 guards that must still scan current state, and one route inventory that must still describe
