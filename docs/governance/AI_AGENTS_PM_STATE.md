@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-19
-RECONCILED_AGAINST_MAIN:     192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
-RECONCILED_BY_STAGE:         AT-M2-TEAM-CORE
+RECONCILED_ON:               2026-08-21
+RECONCILED_AGAINST_MAIN:     0986c895e85b426f3ca56239ad7cdb39288a8546
+RECONCILED_BY_STAGE:         AT-M2-TEAM-CORE / CANONICAL MERGE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -33,12 +33,17 @@ is a conflict.
 
 ```text
 CURRENT_MILESTONE:           AT-M2
-CURRENT_MILESTONE_STATE:     IN PROGRESS / AT-M2-TEAM-CORE
-PREVIOUS_COMPLETED_STAGE:    PCP-V2.1-RM5
-CURRENT_GATE:                AT-M2 VALIDATION
-CURRENT_STAGE:               AT-M2-TEAM-CORE
-NEXT_PERMITTED_STAGE:        AT-M2 VALIDATION 1
+CURRENT_MILESTONE_STATE:     MERGED / CLOSED / AT-M2-TEAM-CORE
+PREVIOUS_COMPLETED_STAGE:    AT-M2-TEAM-CORE (canonical merge)
+CURRENT_GATE:                NONE -- AT-M2 canonically merged; no AT-M3 gate open
+CURRENT_STAGE:               NONE -- next stage requires its own Product Owner decision
+NEXT_PERMITTED_STAGE:        AT-M3 PLANNING (implementation NOT authorized until its own decision)
 ```
+
+Canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
+merging the validated candidate and recorded the real Governance Validation 2 result. The merge was
+a fast-forward: `origin/main` `192ebb74…` to `0986c895e85b426f3ca56239ad7cdb39288a8546`, the exact
+validated `at-m2-team-core` tip. No conflict, no rebase, no history rewrite.
 
 AT-M1 stays `CLOSED / CANONICAL`; it is no longer the *current* milestone because AT-D11
 authorized its successor. Position moved off the PCP remediation chain at the same decision — see
@@ -151,9 +156,14 @@ AT-D09 is an open question, not a decision. Nothing downstream may represent it 
 ## 5. Authorization and safety
 
 ```text
-AT_M2:                       AUTHORIZED / IN PROGRESS
+AT_M2:                       AUTHORIZED / MERGED / CLOSED
+AT_M2_IMPLEMENTATION:        COMPLETE
+AT_M2_RUNTIME_TEAM_CORE:     ACCEPTED
+AT_M2_GOVERNANCE_TRANSITION: CLOSED
 AT_M2_AUTHORIZED_BY:         AT-D11 / docs/decisions/at-m2-authorization.md
+AT_M2_MERGE_AUTHORIZED_BY:   AT-D13 / docs/decisions/at-d13-at-m2-merge-authorization.md
 AT_M2_SCOPE:                 AT-M2-TEAM-CORE only
+AT_M2_CANONICAL_MAIN:        0986c895e85b426f3ca56239ad7cdb39288a8546
 AT_M3_TO_AT_M8:              NOT AUTHORIZED
 PCP_V2_1:                    IN PROGRESS / REMEDIATION
 PCP_V2_1_B:                  FAIL / HISTORICAL
@@ -167,10 +177,20 @@ PRODUCTION_AUTHORIZATION:    NOT GRANTED
 PRODUCTION_EXECUTED_TRUE_COUNT: 0
 ```
 
-`AT_M2` here is the **live** authorization state, and its authority is the AT-D11 decision record,
-not this snapshot. The AT-M1 binding-decisions contract still records `AT_M2: NOT AUTHORIZED`,
-which stays true of AT-M1: a later authorization supersedes an earlier position without falsifying
-the record of it.
+`AT_M2` here is the **live** authorization state, and its authority is the AT-D11 (implementation)
+and AT-D13 (merge) decision records, not this snapshot. The AT-M1 binding-decisions contract still
+records `AT_M2: NOT AUTHORIZED`, which stays true of AT-M1: a later authorization supersedes an
+earlier position without falsifying the record of it. `AT_M2` keeps the literal word `AUTHORIZED`
+immediately after the field name even though the milestone is now merged and closed, because
+`scripts/successor_lifecycle.py`'s `authorized_successor()` parses exactly that spelling to decide
+whether a successor is live at all — rewording it would silently reopen every historical guard's
+window and blind every live runtime denylist to AT-M2's own already-reviewed work, which is the
+opposite of what closing the milestone should do.
+
+`AT_M3_TO_AT_M8: NOT AUTHORIZED` is unchanged and stays exact: AT-M3 is the next PLANNING target
+this snapshot's `NEXT_PERMITTED_STAGE` field (section 2) points at, but planning is not
+authorization, and implementation of any of AT-M3 .. AT-M8 remains NOT AUTHORIZED until each gets
+its own Product Owner decision, the same rule AT-D11 and AT-D13 both restate.
 
 `PCP_V2_1_GATES` is the re-sequencing, and it is a **move, not a waiver**. PCP-V2.1's own state
 above is unchanged, no registered debt is retired, and `PCP-V2.1 PASS` is not claimed. The open
