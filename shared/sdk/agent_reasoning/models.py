@@ -20,7 +20,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from shared.sdk.agent_team.models import assert_content_is_safe
+from shared.sdk.agent_team.models import FORBIDDEN_CONTENT_KEY_MARKERS, assert_content_is_safe
+from shared.sdk.llm.prompt_contract import redact_text
 
 ReasoningVerb = Literal["propose", "critique", "summarize_decision"]
 REASONING_VERBS: tuple[str, ...] = ("propose", "critique", "summarize_decision")
@@ -31,7 +32,10 @@ REASONING_VERBS: tuple[str, ...] = ("propose", "critique", "summarize_decision")
 ProviderMode = Literal["mock", "disabled"]
 PROVIDER_MODES: tuple[str, ...] = ("mock", "disabled")
 
-InvocationStatus = Literal["succeeded", "failed"]
+# started: durably claimed, no terminal outcome yet. succeeded/failed: terminal, reachable only
+# from started (shared/sdk/agent_reasoning/store.py::complete_invocation guards the transition).
+InvocationStatus = Literal["started", "succeeded", "failed"]
+INVOCATION_STATUSES: tuple[str, ...] = ("started", "succeeded", "failed")
 
 FailureCategory = Literal[
     "provider_disabled",
@@ -47,6 +51,46 @@ FAILURE_CATEGORIES: tuple[str, ...] = (
     "content_safety_rejected",
     "provider_unavailable",
 )
+
+# What a caller learns about EXECUTION PROVENANCE, distinct from status (the OUTCOME).
+# fresh        this call's own provider invocation produced this outcome just now.
+# replay       a duplicate correlation_id resolved to a PRIOR call's already-terminal row; no
+#              provider was invoked by this caller, and no artifact is fabricated to match it.
+# in_progress  a duplicate correlation_id resolved to a row still 'started'; the original caller
+#              has not reached a terminal outcome yet. No provider was invoked by this caller.
+ExecutionDisposition = Literal["fresh", "replay", "in_progress"]
+EXECUTION_DISPOSITIONS: tuple[str, ...] = ("fresh", "replay", "in_progress")
+
+# Substrings scanned (case-insensitively) against a candidate failure_reason. Reuses the EXISTING
+# AT-M2 marker vocabulary (FORBIDDEN_CONTENT_KEY_MARKERS) rather than defining a second list --
+# free text and dict keys are different shapes, but the prohibited vocabulary is the same one.
+_FAILURE_REASON_MARKER_MATCH = tuple(m.lower() for m in FORBIDDEN_CONTENT_KEY_MARKERS)
+
+
+def sanitize_failure_reason(raw: str | None, *, limit: int = 500) -> str | None:
+    """A bounded, safe-by-construction summary for a free-text failure reason.
+
+    Unlike :func:`assert_content_is_safe` (reject, never scrub -- appropriate for deliberately
+    authored collaboration content), this function DEGRADES rather than raises: a failure_reason
+    is diagnostic telemetry captured automatically from exception handling, not content a caller
+    composed and could be asked to fix and resubmit. Trusting ``str(exception)`` verbatim is not
+    safe -- a misbehaving or adversarial provider's exception can contain anything, including
+    echoed wire content.
+
+    1. Known credential-SHAPED patterns are redacted in place (reuses
+       ``shared.sdk.llm.prompt_contract.redact_text`` -- the same helper the mock provider already
+       uses for caller-supplied text).
+    2. If a forbidden KEYWORD marker (chain_of_thought, raw_prompt, secret, credential, ...) is
+       still present anywhere in the text after that, the entire reason is replaced with a generic,
+       fully safe placeholder -- surgically redacting only the matched span would still require
+       trusting the surrounding text, which is exactly what this function must not do.
+    """
+    if not raw:
+        return None
+    text = redact_text(raw, limit=limit)
+    if any(marker in text.lower() for marker in _FAILURE_REASON_MARKER_MATCH):
+        return "reason_redacted:forbidden_marker_detected"
+    return text
 
 
 class _StrictArtifact(BaseModel):
@@ -141,9 +185,13 @@ class ReasoningInvocation(BaseModel):
     """The durable METADATA record of one reasoning call. Mirrors ``reasoning_invocations``.
 
     Never carries a prompt, a completion, hidden reasoning or a credential (AT-D03 R8 / INV-04,
-    restated for AT-M3). ``mode`` is the field a caller checks before trusting a result: a `mock`
-    invocation must never be mistaken for a `live` one because no third mode exists yet to confuse
-    it with.
+    restated for AT-M3). ``provider_mode`` is the field a caller checks before trusting a result: a
+    `mock` invocation must never be mistaken for a `live` one because no third mode exists yet to
+    confuse it with.
+
+    ``status='started'`` is durable evidence that a call was claimed, written BEFORE the provider
+    ever runs. It is never itself a claim of success or failure -- only ``succeeded``/``failed``
+    are terminal, and only one of them is ever reachable from a given row.
     """
 
     invocation_id: UUID
@@ -172,10 +220,13 @@ class ReasoningInvocation(BaseModel):
 
 __all__ = [
     "ARTIFACT_TYPE_FOR_VERB",
+    "EXECUTION_DISPOSITIONS",
+    "ExecutionDisposition",
     "CritiqueArtifact",
     "DecisionSummaryArtifact",
     "FAILURE_CATEGORIES",
     "FailureCategory",
+    "INVOCATION_STATUSES",
     "InvocationStatus",
     "PROVIDER_MODES",
     "ProposalArtifact",
@@ -184,4 +235,5 @@ __all__ = [
     "ReasoningInvocation",
     "ReasoningRequest",
     "ReasoningVerb",
+    "sanitize_failure_reason",
 ]

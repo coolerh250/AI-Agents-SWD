@@ -86,3 +86,36 @@ def test_forward_references_to_unimplemented_entities_are_absent():
     sql = _FORWARD.read_text(encoding="utf-8")
     assert "goal_id" not in sql.lower()
     assert "plan_revision" not in sql.lower()
+
+
+# --- AT-M3.1-REMEDIATION-1: three-state lifecycle (Validation 1 blocker 1+2) ------------------------
+
+
+def test_status_is_constrained_to_exactly_the_three_lifecycle_states():
+    sql = _FORWARD.read_text(encoding="utf-8")
+    match = re.search(r"chk_reasoning_invocations_status CHECK \(status IN \((.*?)\)\)", sql, re.S)
+    assert match, "status CHECK constraint not found"
+    states = set(re.findall(r"'([a-z]+)'", match.group(1)))
+    assert states == {"started", "succeeded", "failed"}
+
+
+def test_status_consistency_constraint_covers_all_three_states():
+    """started has no completed_at/failure text; succeeded/failed both require completed_at;
+    failed alone requires failure_category. All three branches must be present in the schema,
+    not only enforced by Python -- a direct SQL UPDATE must be unable to bypass any of them."""
+    sql = _FORWARD.read_text(encoding="utf-8")
+    block = sql.split("chk_reasoning_invocations_status_consistency CHECK (")[1].split(
+        "chk_reasoning_invocations_failure_category"
+    )[0]
+    assert "status = 'started'" in block
+    assert "status = 'succeeded'" in block
+    assert "status = 'failed'" in block
+    assert block.count("completed_at IS NOT NULL") == 2, "succeeded and failed both require it"
+    assert "completed_at IS NULL" in block, "started must not have a completion timestamp"
+
+
+def test_status_defaults_to_started():
+    """A row that somehow bypassed an explicit status value must never silently read as a
+    terminal outcome."""
+    sql = _FORWARD.read_text(encoding="utf-8")
+    assert re.search(r"status\s+TEXT NOT NULL DEFAULT 'started'", sql)
