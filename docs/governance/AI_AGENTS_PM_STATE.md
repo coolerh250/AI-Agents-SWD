@@ -252,6 +252,52 @@ summary/refs when an audit client is configured. It does not touch `reasoning_in
 a pre-existing repo-wide audit-construction pattern, and is not registered as debt here — it is a
 candidate for a future observability/audit-hardening slice, not a blocker of anything above.
 
+## 5b. Multi-milestone live-guard changeset registry (AT-D16)
+
+AT-D16 (`docs/decisions/at-d16-multi-milestone-changeset-registry.md`) generalizes the live-guard
+reviewed-content exemption from the single AT-M2-only `SUCCESSOR_AUTHORIZED_CHANGESET_END` scalar
+(section 5) into a multi-milestone registry, and registers AT-M2's and AT-M3.1's own
+already-reviewed content as its first two entries. It is implemented on the
+`at-gov-multi-milestone-registry-1` branch, dispositioning `HAZARD_AT_M3_LIVE_DENYLIST` (section 8):
+the live guard family (`scripts/successor_lifecycle.py::live_guard_changed_paths`) can now
+recognise AT-M3.1's own AT-D14/AT-D15-authorized, Validation-1/2-passed content under `shared/` and
+`migrations/` as reviewed, the same way it already recognised AT-M2's.
+
+```text
+AT_D16_STATUS:                          IMPLEMENTED / AWAITING VALIDATION 1
+AUTHORIZED_CHANGESET_REGISTRY_DECISION: AT-D16
+AUTHORIZED_CHANGESET_REGISTRY_RECORD:   docs/decisions/at-d16-multi-milestone-changeset-registry.md
+AUTHORIZED_CHANGESET_REGISTRY:          2
+
+AUTHORIZED_CHANGESET_1_MILESTONE:            AT-M2
+AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D11
+AUTHORIZED_CHANGESET_1_MERGE_ID:             AT-D13
+AUTHORIZED_CHANGESET_1_BASELINE:             192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
+AUTHORIZED_CHANGESET_1_IMPLEMENTATION_END:   9c002e06029a682f586013671e8cb30ed1a475f4
+
+AUTHORIZED_CHANGESET_2_MILESTONE:            AT-M3.1
+AUTHORIZED_CHANGESET_2_AUTHORIZATION_ID:     AT-D14
+AUTHORIZED_CHANGESET_2_MERGE_ID:             AT-D15
+AUTHORIZED_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d
+AUTHORIZED_CHANGESET_2_IMPLEMENTATION_END:   1ba197a91867e77a9fa2256289b2766317b51b41
+```
+
+`AUTHORIZED_CHANGESET_1` is identical in substance to the `SUCCESSOR_AUTHORIZED_CHANGESET_END`
+scalar in section 5 — that field is preserved exactly where AT-D13 left it, unmoved, as AT-M2-only
+compatibility provenance, and continues to work standalone through `authorized_changeset_end()`.
+The registry is additive: `live_guard_changed_paths()` now checks a changed path's `HEAD` content
+against every valid registry entry's `implementation_end` blob in addition to the legacy scalar,
+and exempts on any match. Each entry validates independently and fails closed on its own — a
+malformed or unauthorized future entry can never widen another entry's exemption, and a milestone
+with no entry (AT-M3.2 and beyond, for now) has no exemption.
+
+`AUTHORIZED_CHANGESET_2_IMPLEMENTATION_END` is AT-D15's `Validated_candidate`
+(`1ba197a91867e77a9fa2256289b2766317b51b41`), not the later merge/reconciliation commits
+(`1e9fe3b…`, `5a04ec1…`) — the same reason `AUTHORIZED_CHANGESET_1`'s end is the AT-M2 guard-split
+implementation commit and not AT-M2's later canonical-merge tip. Bookkeeping commits after an
+implementation_end never move the field and are simply outside every entry's exemption, which is
+correct: they touch no live-guarded path.
+
 ## 6. Active HOLD items
 
 ```text
@@ -462,6 +508,15 @@ AT-M3.1's own reviewed work is required — analogous to what AT-D12 did for AT-
 That decision is not made here**, and this reconciliation deliberately does not move
 `SUCCESSOR_AUTHORIZED_CHANGESET_END` to cover it: that field's job is to record what AT-M2
 specifically reviewed, and moving it to name AT-M3.1's content would misstate that.
+
+```text
+HAZARD_AT_M3_LIVE_DENYLIST_DISPOSITION: AT-D16 (2026-08-24) -- see section 5b
+```
+
+Dispositioned by AT-D16's multi-milestone changeset registry (section 5b), implemented on the
+`at-gov-multi-milestone-registry-1` branch and awaiting Validation 1. The paragraphs above record
+the hazard exactly as it was discovered at the AT-M3.1 canonical merge and stay unedited; this line
+records its disposition without rewriting that discovery.
 
 ## 9. Source-of-truth precedence
 

@@ -534,15 +534,27 @@ def test_live_guard_would_catch_drift_beyond_a_stale_authorized_end(redact) -> N
     show up as offenders again: their content at HEAD no longer matches their content at that
     stale end. This is the fail-closed direction: understating the end never hides anything,
     it can only ever widen what a live guard rejects.
+
+    AT-D16 added an independent, redundant registry entry naming the same AT-M2 changeset this
+    scalar field already named (AT-D16-R01). Staling only the scalar no longer blinds the guard by
+    itself, because the registry entry still correctly authorizes the same exemption -- and,
+    beyond AT-M2's own entry, AT-M3.1's later entry also incidentally covers every AT-M2 path
+    nobody has touched since (an untouched file's content at a later reviewed commit is identical
+    to its content at an earlier one, by construction). This probe therefore disables the registry
+    entirely, isolating the scalar exactly as it stood before AT-D16, to prove the same property:
+    with no valid recognised end left anywhere, AT-M2's real paths reappear as offenders.
     """
     redact(
         SNAPSHOT,
         lambda text: re.sub(
             rf"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}:\s*\S+",
             f"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}: 192ebb74ba600f7a53ddf5967a7254a1f7a72fb8",
-            text,
+            "\n".join(
+                line for line in text.splitlines() if lifecycle.REGISTRY_RECORD_FIELD not in line
+            ),
         ),
     )
+    assert lifecycle.authorized_changesets() == [], "the registry must be disabled for this probe"
     changed = lifecycle.live_guard_changed_paths("c1db4cc")
     offenders = [
         p for p in changed if p.startswith(("apps/", "agents/", "shared/", "migrations/", "infra/"))

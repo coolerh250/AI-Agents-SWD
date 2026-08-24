@@ -240,6 +240,114 @@ def changed_paths(baseline: str) -> list[str]:
 
 AUTHORIZED_CHANGESET_END_FIELD = "SUCCESSOR_AUTHORIZED_CHANGESET_END"
 
+# --- AT-D16 multi-milestone registry -------------------------------------------------------------
+#
+# AUTHORIZED_CHANGESET_END_FIELD above is AT-M2-only provenance: it was never extended to name a
+# second milestone's own reviewed work, because no milestone after AT-M2 had merged new content
+# under a live-guarded path until AT-M3.1. AT-D16 registers AT-M3.1's own reviewed content as a
+# second, independent entry rather than moving or reinterpreting the AT-M2 scalar. Each entry below
+# validates on its own, fails closed on its own, and never widens another entry's exemption.
+
+REGISTRY_COUNT_FIELD = "AUTHORIZED_CHANGESET_REGISTRY"
+REGISTRY_DECISION_FIELD = "AUTHORIZED_CHANGESET_REGISTRY_DECISION"
+REGISTRY_RECORD_FIELD = "AUTHORIZED_CHANGESET_REGISTRY_RECORD"
+
+
+def _entry_field(snapshot: str, index: int, name: str) -> str:
+    return _field(snapshot, f"AUTHORIZED_CHANGESET_{index}_{name}")
+
+
+def _decision_covers(record_path: str, decision_id: str, milestone: str) -> bool:
+    """Is ``record_path`` a RESOLVED / BINDING decision, under ``decision_id``, about ``milestone``?"""
+    text = _read(record_path)
+    if not text:
+        return False
+    if not re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M):
+        return False
+    return milestone in text
+
+
+def authorized_changesets() -> list[dict[str, str]]:
+    """Validated ``{milestone, baseline, implementation_end}`` entries for the live-guard registry.
+
+    Requires the registry's own AT-D16-class authorization record to be RESOLVED / BINDING; with
+    none, the registry is empty and only the legacy AT-M2 scalar (``authorized_changeset_end``)
+    applies. Each entry then independently requires: a named milestone, an implementation
+    authorization decision that is RESOLVED / BINDING and names the milestone, a merge/acceptance
+    decision that is RESOLVED / BINDING and names the milestone, a real ``baseline`` commit, a real
+    ``implementation_end`` commit that is a descendant of ``baseline`` and an ancestor of HEAD.
+    Any one failure drops only that entry -- it never substitutes a wider one and never disturbs
+    any other entry.
+    """
+    snapshot = _read(SUPERSESSION_RECORD)
+    if not snapshot:
+        return []
+
+    registry_decision_id = _field(snapshot, REGISTRY_DECISION_FIELD)
+    registry_record = _field(snapshot, REGISTRY_RECORD_FIELD)
+    if not (registry_decision_id and registry_record):
+        return []
+    registry_text = _read(registry_record)
+    if not registry_text:
+        return []
+    if not re.search(
+        rf"^{re.escape(registry_decision_id)}:\s*RESOLVED / BINDING\b", registry_text, re.M
+    ):
+        return []
+
+    try:
+        count = int(_field(snapshot, REGISTRY_COUNT_FIELD) or "0")
+    except ValueError:
+        return []
+
+    entries: list[dict[str, str]] = []
+    for i in range(1, count + 1):
+        milestone = _entry_field(snapshot, i, "MILESTONE")
+        auth_id = _entry_field(snapshot, i, "AUTHORIZATION_ID")
+        merge_id = _entry_field(snapshot, i, "MERGE_ID")
+        baseline = _entry_field(snapshot, i, "BASELINE")
+        end = _entry_field(snapshot, i, "IMPLEMENTATION_END")
+        if not (milestone and auth_id and merge_id and baseline and end):
+            continue
+
+        auth_record = _decision_record_path(auth_id)
+        merge_record = _decision_record_path(merge_id)
+        if not auth_record or not _decision_covers(auth_record, auth_id, milestone):
+            continue
+        if not merge_record or not _decision_covers(merge_record, merge_id, milestone):
+            continue
+
+        if _git("cat-file", "-t", baseline) != "commit":
+            continue
+        if _git("cat-file", "-t", end) != "commit":
+            continue
+        if not is_ancestor(baseline, end):
+            continue
+        if not is_ancestor(end, "HEAD"):
+            continue
+
+        entries.append({"milestone": milestone, "baseline": baseline, "implementation_end": end})
+
+    return entries
+
+
+# Every decision this mechanism can be asked to verify already lives at a fixed, well-known path.
+# A registry entry names only the decision's short id (AT-D11 .. AT-D16); this is the one place
+# that id is resolved to a file, so a malformed entry can never point the mechanism at an arbitrary
+# path supplied elsewhere in the snapshot.
+_DECISION_RECORD_PATHS = {
+    "AT-D11": "docs/decisions/at-m2-authorization.md",
+    "AT-D12": "docs/decisions/at-d12-successor-freeze-amendment.md",
+    "AT-D13": "docs/decisions/at-d13-at-m2-merge-authorization.md",
+    "AT-D14": "docs/decisions/at-d14-at-m3-live-reasoning-authorization.md",
+    "AT-D15": "docs/decisions/at-d15-at-m3-1-acceptance-and-merge-authorization.md",
+    "AT-D16": "docs/decisions/at-d16-multi-milestone-changeset-registry.md",
+}
+
+
+def _decision_record_path(decision_id: str) -> str:
+    return _DECISION_RECORD_PATHS.get(decision_id, "")
+
 
 def live_guard_end() -> str:
     """Where a live guard's scan ends: always current HEAD, never a successor boundary.
@@ -295,21 +403,36 @@ def _blob(relpath: str, commit: str) -> str | None:
 def live_guard_changed_paths(baseline: str) -> list[str]:
     """Paths changed since ``baseline``, always through current HEAD -- never a successor boundary.
 
-    A path is excluded only where its content at HEAD is byte-identical to its content at the
-    authorized milestone's recorded changeset end: exactly what that milestone already reviewed,
-    not merely a path it once touched. A further edit to the same path after that end -- by
-    anyone, under any name -- is a new divergence and stays in the result. With no valid
-    authorized-changeset end, nothing is excluded.
+    A path is excluded only where its content at HEAD is byte-identical to its content at one of
+    the reviewed changeset ends this mechanism currently recognises: the legacy AT-M2-only scalar
+    (``authorized_changeset_end``) plus every validated AT-D16 registry entry
+    (``authorized_changesets``). Content match against ANY one of them is sufficient -- this is
+    what lets AT-M2's and AT-M3.1's own reviewed versions of the same path both be recognised
+    without either being able to stand in for the other. A further edit to a path past every
+    recognised end -- by anyone, under any name -- is a new divergence and stays in the result.
+    With no valid end anywhere, nothing is excluded.
     """
     changed = [
         line.strip().replace("\\", "/")
         for line in _git("diff", "--name-only", baseline, live_guard_end()).splitlines()
         if line.strip()
     ]
-    end, _why = authorized_changeset_end()
-    if not end:
+
+    ends: list[str] = []
+    legacy_end, _why = authorized_changeset_end()
+    if legacy_end:
+        ends.append(legacy_end)
+    for entry in authorized_changesets():
+        if entry["implementation_end"] not in ends:
+            ends.append(entry["implementation_end"])
+    if not ends:
         return changed
-    return [path for path in changed if _blob(path, "HEAD") != _blob(path, end)]
+
+    def _reviewed(path: str) -> bool:
+        head_blob = _blob(path, "HEAD")
+        return any(_blob(path, end) == head_blob for end in ends)
+
+    return [path for path in changed if not _reviewed(path)]
 
 
 def freeze_amendment_authority() -> tuple[dict[str, str], str]:
@@ -421,8 +544,12 @@ __all__ = [
     "FREEZE_AMENDMENT_DECISION_FIELD",
     "FREEZE_AMENDMENT_RECORD_FIELD",
     "MILESTONE_FIELD",
+    "REGISTRY_COUNT_FIELD",
+    "REGISTRY_DECISION_FIELD",
+    "REGISTRY_RECORD_FIELD",
     "SUPERSESSION_RECORD",
     "authorized_changeset_end",
+    "authorized_changesets",
     "authorized_successor",
     "changed_paths",
     "freeze_amendment_authority",
