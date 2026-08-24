@@ -245,90 +245,26 @@ AUTHORIZED_CHANGESET_END_FIELD = "SUCCESSOR_AUTHORIZED_CHANGESET_END"
 # AUTHORIZED_CHANGESET_END_FIELD above is AT-M2-only provenance: it was never extended to name a
 # second milestone's own reviewed work, because no milestone after AT-M2 had merged new content
 # under a live-guarded path until AT-M3.1. AT-D16 registers AT-M3.1's own reviewed content as a
-# second, independent entry rather than moving or reinterpreting the AT-M2 scalar. Each entry below
-# validates on its own, fails closed on its own, and never widens another entry's exemption.
+# second, independent entry rather than moving or reinterpreting the AT-M2 scalar.
+#
+# AT-D16-REMEDIATION-1 (Multi-Milestone Validation 1) found the first cut of this registry trusted
+# two things it should not have: an entry's exact field VALUES came from the PM snapshot alone
+# (so any ancestry-plausible commit could stand in for the real reviewed one), and a decision's
+# authority over a milestone was decided by searching that decision's prose for the milestone's
+# name as a substring (so AT-D14's incidental mentions of "AT-M2" satisfied an AT-M2 check it never
+# authorized). Both are fixed the same way: AT-D16's OWN structured fields are now the only
+# canonical source of an entry's values and of which decision authorizes which milestone; the PM
+# snapshot is only a mirror that must match AT-D16 EXACTLY, field for field, to be used at all.
 
 REGISTRY_COUNT_FIELD = "AUTHORIZED_CHANGESET_REGISTRY"
 REGISTRY_DECISION_FIELD = "AUTHORIZED_CHANGESET_REGISTRY_DECISION"
 REGISTRY_RECORD_FIELD = "AUTHORIZED_CHANGESET_REGISTRY_RECORD"
 
+CANONICAL_CHANGESET_COUNT_FIELD = "AT_D16_CHANGESET_COUNT"
+CANONICAL_CHANGESET_PREFIX = "AT_D16_CHANGESET_"
+CANONICAL_AUTHORITY_PREFIX = "AT_D16_AUTHORITY_"
 
-def _entry_field(snapshot: str, index: int, name: str) -> str:
-    return _field(snapshot, f"AUTHORIZED_CHANGESET_{index}_{name}")
-
-
-def _decision_covers(record_path: str, decision_id: str, milestone: str) -> bool:
-    """Is ``record_path`` a RESOLVED / BINDING decision, under ``decision_id``, about ``milestone``?"""
-    text = _read(record_path)
-    if not text:
-        return False
-    if not re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M):
-        return False
-    return milestone in text
-
-
-def authorized_changesets() -> list[dict[str, str]]:
-    """Validated ``{milestone, baseline, implementation_end}`` entries for the live-guard registry.
-
-    Requires the registry's own AT-D16-class authorization record to be RESOLVED / BINDING; with
-    none, the registry is empty and only the legacy AT-M2 scalar (``authorized_changeset_end``)
-    applies. Each entry then independently requires: a named milestone, an implementation
-    authorization decision that is RESOLVED / BINDING and names the milestone, a merge/acceptance
-    decision that is RESOLVED / BINDING and names the milestone, a real ``baseline`` commit, a real
-    ``implementation_end`` commit that is a descendant of ``baseline`` and an ancestor of HEAD.
-    Any one failure drops only that entry -- it never substitutes a wider one and never disturbs
-    any other entry.
-    """
-    snapshot = _read(SUPERSESSION_RECORD)
-    if not snapshot:
-        return []
-
-    registry_decision_id = _field(snapshot, REGISTRY_DECISION_FIELD)
-    registry_record = _field(snapshot, REGISTRY_RECORD_FIELD)
-    if not (registry_decision_id and registry_record):
-        return []
-    registry_text = _read(registry_record)
-    if not registry_text:
-        return []
-    if not re.search(
-        rf"^{re.escape(registry_decision_id)}:\s*RESOLVED / BINDING\b", registry_text, re.M
-    ):
-        return []
-
-    try:
-        count = int(_field(snapshot, REGISTRY_COUNT_FIELD) or "0")
-    except ValueError:
-        return []
-
-    entries: list[dict[str, str]] = []
-    for i in range(1, count + 1):
-        milestone = _entry_field(snapshot, i, "MILESTONE")
-        auth_id = _entry_field(snapshot, i, "AUTHORIZATION_ID")
-        merge_id = _entry_field(snapshot, i, "MERGE_ID")
-        baseline = _entry_field(snapshot, i, "BASELINE")
-        end = _entry_field(snapshot, i, "IMPLEMENTATION_END")
-        if not (milestone and auth_id and merge_id and baseline and end):
-            continue
-
-        auth_record = _decision_record_path(auth_id)
-        merge_record = _decision_record_path(merge_id)
-        if not auth_record or not _decision_covers(auth_record, auth_id, milestone):
-            continue
-        if not merge_record or not _decision_covers(merge_record, merge_id, milestone):
-            continue
-
-        if _git("cat-file", "-t", baseline) != "commit":
-            continue
-        if _git("cat-file", "-t", end) != "commit":
-            continue
-        if not is_ancestor(baseline, end):
-            continue
-        if not is_ancestor(end, "HEAD"):
-            continue
-
-        entries.append({"milestone": milestone, "baseline": baseline, "implementation_end": end})
-
-    return entries
+_ENTRY_FIELD_NAMES = ("MILESTONE", "AUTHORIZATION_ID", "MERGE_ID", "BASELINE", "IMPLEMENTATION_END")
 
 
 # Every decision this mechanism can be asked to verify already lives at a fixed, well-known path.
@@ -347,6 +283,137 @@ _DECISION_RECORD_PATHS = {
 
 def _decision_record_path(decision_id: str) -> str:
     return _DECISION_RECORD_PATHS.get(decision_id, "")
+
+
+def _decision_is_binding(decision_id: str) -> bool:
+    text = _read(_decision_record_path(decision_id))
+    if not text:
+        return False
+    return bool(re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M))
+
+
+def _indexed_entries(text: str, count_field: str, prefix: str) -> dict[str, dict[str, str]]:
+    """Parse a ``{prefix}{i}_{FIELD}``-style changeset table out of ``text``, keyed by milestone.
+
+    A milestone named by more than one index collapses harmlessly if every field agrees, and is
+    dropped entirely -- for every index that named it -- if any field disagrees. Registry
+    integrity never resolves a conflict by picking a side, by keeping the first one seen, or by
+    unioning the candidates: an ambiguous milestone gets no entry at all.
+    """
+    try:
+        count = int(_field(text, count_field) or "0")
+    except ValueError:
+        return {}
+
+    raw: list[tuple[str, dict[str, str]]] = []
+    for i in range(1, count + 1):
+        values = {name: _field(text, f"{prefix}{i}_{name}") for name in _ENTRY_FIELD_NAMES}
+        if all(values.values()):
+            milestone = values.pop("MILESTONE")
+            raw.append((milestone, values))
+
+    entries: dict[str, dict[str, str]] = {}
+    conflicted: set[str] = set()
+    for milestone, values in raw:
+        if milestone in entries and entries[milestone] != values:
+            conflicted.add(milestone)
+        else:
+            entries[milestone] = values
+    for milestone in conflicted:
+        entries.pop(milestone, None)
+    return entries
+
+
+def _canonical_changesets() -> dict[str, dict[str, str]]:
+    """AT-D16's own structured changeset table -- the only canonical source of entry values.
+
+    Empty unless AT-D16 itself exists on disk and reads RESOLVED / BINDING; the PM snapshot is
+    never consulted here, so nothing the snapshot claims can manufacture a canonical value.
+    """
+    text = _read(_decision_record_path("AT-D16"))
+    if not text or not re.search(r"^AT-D16:\s*RESOLVED / BINDING\b", text, re.M):
+        return {}
+    return _indexed_entries(text, CANONICAL_CHANGESET_COUNT_FIELD, CANONICAL_CHANGESET_PREFIX)
+
+
+def _decision_authorizes(decision_id: str, milestone: str) -> bool:
+    """Does AT-D16's own authority index say ``decision_id`` authorizes ``milestone``?
+
+    Trust is rooted in AT-D16 itself -- a Product Owner decision, independently RESOLVED /
+    BINDING -- which states this directly, as an exact index entry. ``decision_id``'s own document
+    is checked only for its OWN RESOLVED / BINDING status, never scanned for an incidental mention
+    of the milestone's name: AT-D14's prose mentions "AT-M2" several times without authorizing it,
+    which is exactly the false-authorization this check must not reproduce.
+    """
+    if not _decision_is_binding(decision_id):
+        return False
+    at_d16_text = _read(_decision_record_path("AT-D16"))
+    if not at_d16_text or not re.search(r"^AT-D16:\s*RESOLVED / BINDING\b", at_d16_text, re.M):
+        return False
+    field = _field(at_d16_text, f"{CANONICAL_AUTHORITY_PREFIX}{decision_id.replace('-', '_')}")
+    authorized_milestones = {name.strip() for name in field.split(",") if name.strip()}
+    return milestone in authorized_milestones
+
+
+def authorized_changesets() -> list[dict[str, str]]:
+    """Validated ``{milestone, baseline, implementation_end}`` entries for the live-guard registry.
+
+    AT-D16's own structured table is the only canonical source of an entry's values (see
+    ``_canonical_changesets``); the PM snapshot must independently mirror those exact values,
+    field for field, or that milestone gets no entry -- an ancestry-plausible substitute is not a
+    match. Authority is exact-index lookup against AT-D16's own authority table (see
+    ``_decision_authorizes``), never a substring search of a decision's prose. AT-M2's entry
+    additionally requires the legacy scalar (``AUTHORIZED_CHANGESET_END_FIELD``) to equal its
+    canonical end exactly -- the scalar itself never moves, but a mismatch invalidates the
+    registry's AT-M2 entry specifically. Any one failure drops only that milestone; it never
+    substitutes a wider value and never disturbs another milestone's entry.
+    """
+    canonical = _canonical_changesets()
+    if not canonical:
+        return []
+
+    snapshot = _read(SUPERSESSION_RECORD)
+    if not snapshot:
+        return []
+    registry_decision_id = _field(snapshot, REGISTRY_DECISION_FIELD)
+    registry_record = _field(snapshot, REGISTRY_RECORD_FIELD)
+    if not (registry_decision_id and registry_record):
+        return []
+    if registry_decision_id != "AT-D16" or registry_record != _decision_record_path("AT-D16"):
+        return []
+
+    mirrored = _indexed_entries(snapshot, REGISTRY_COUNT_FIELD, "AUTHORIZED_CHANGESET_")
+
+    entries: list[dict[str, str]] = []
+    for milestone, canon in canonical.items():
+        if mirrored.get(milestone) != canon:
+            continue  # the PM snapshot does not exactly mirror AT-D16's canonical values
+
+        auth_id = canon["AUTHORIZATION_ID"]
+        merge_id = canon["MERGE_ID"]
+        baseline = canon["BASELINE"]
+        end = canon["IMPLEMENTATION_END"]
+
+        if not _decision_authorizes(auth_id, milestone):
+            continue
+        if not _decision_authorizes(merge_id, milestone):
+            continue
+
+        if milestone == "AT-M2" and _field(snapshot, AUTHORIZED_CHANGESET_END_FIELD) != end:
+            continue
+
+        if _git("cat-file", "-t", baseline) != "commit":
+            continue
+        if _git("cat-file", "-t", end) != "commit":
+            continue
+        if not is_ancestor(baseline, end):
+            continue
+        if not is_ancestor(end, "HEAD"):
+            continue
+
+        entries.append({"milestone": milestone, "baseline": baseline, "implementation_end": end})
+
+    return entries
 
 
 def live_guard_end() -> str:

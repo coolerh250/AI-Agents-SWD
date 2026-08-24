@@ -334,3 +334,233 @@ def test_the_registry_is_additive_registering_at_m3_1_did_not_move_at_m2s_field(
         lifecycle._field(snapshot, lifecycle.AUTHORIZED_CHANGESET_END_FIELD)
         == "9c002e06029a682f586013671e8cb30ed1a475f4"
     )
+
+
+# --- AT-D16-REMEDIATION-1: exact provenance binding, not ancestry-plausible substitution -----------
+#
+# Multi-Milestone Governance Validation 1 found the first cut trusted the PM snapshot's field
+# values on their own (an ancestry-valid substitute commit passed as readily as the real reviewed
+# one) and decided a decision's authority over a milestone by searching that decision's prose for
+# the milestone's name (so AT-D14's incidental "AT-M2" mentions satisfied an AT-M2 check). These
+# probes reproduce those exact attacks against the fix: AT-D16's own table is now the sole
+# canonical source of values and of decision authority, and the PM snapshot must mirror it exactly.
+
+AT_D16_RECORD = lifecycle._decision_record_path("AT-D16")
+
+
+def _milestones(entries: list[dict[str, str]]) -> set[str]:
+    return {e["milestone"] for e in entries}
+
+
+def test_a_swapped_but_ancestry_valid_at_m3_1_end_is_rejected(redact) -> None:
+    """Probe A: 1ba197a (the real Validated_candidate) -> 1e9fe3b (AT-D15's own docs commit).
+
+    1e9fe3b is a real commit, a descendant of the AT-M3.1 baseline, and an ancestor of HEAD -- it
+    passes every ancestry check the first cut relied on. It must still be rejected because it does
+    not match AT-D16's own canonical value for AT-M3.1's implementation_end.
+    """
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            r"AUTHORIZED_CHANGESET_2_IMPLEMENTATION_END:\s*\S+",
+            "AUTHORIZED_CHANGESET_2_IMPLEMENTATION_END:   1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96",
+            text,
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
+
+
+def test_a_swapped_but_ancestry_valid_at_m2_end_is_rejected(redact) -> None:
+    """Probe B: 9c002e0 (AT-D13's pinned value) -> 0986c89 (AT-M2's later canonical-merge tip).
+
+    AT-D13 section 5 explicitly states the legacy scalar "stays pinned at 9c002e0" -- 0986c89 is a
+    real, later, ancestry-valid commit that is exactly the kind of substitute AT-D13 forbids.
+    """
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            r"AUTHORIZED_CHANGESET_1_IMPLEMENTATION_END:\s*\S+",
+            "AUTHORIZED_CHANGESET_1_IMPLEMENTATION_END:   0986c895e85b426f3ca56239ad7cdb39288a8546",
+            text,
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M3.1"}
+
+
+def test_a_swapped_but_ancestry_valid_baseline_is_rejected(redact) -> None:
+    """Probe C: 44cdd6f (AT-D14's own Canonical_main_at_decision) -> an arbitrary earlier ancestor."""
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            r"AUTHORIZED_CHANGESET_2_BASELINE:\s*\S+",
+            "AUTHORIZED_CHANGESET_2_BASELINE:             229ac56",
+            text,
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
+
+
+def test_at_d14_cannot_be_reused_as_at_m2_authority(monkeypatch) -> None:
+    """Probe D: the exact false-positive Validation 1 demonstrated concretely.
+
+    AT-D14's prose contains the literal substring "AT-M2" four times without authorizing it. Even
+    when BOTH the PM mirror and AT-D16's own canonical table are mutated to claim AT-D14 authorizes
+    AT-M2's entry, the authority check must still refuse: AT-D16's authority index lists AT-D14
+    against AT-M3.1 only, and prose is never consulted.
+    """
+    assert "AT-M2" in read("docs/decisions/at-d14-at-m3-live-reasoning-authorization.md")
+    real_read = lifecycle._read
+
+    def fake(relpath: str) -> str:
+        text = real_read(relpath)
+        if relpath == SNAPSHOT:
+            text = text.replace(
+                "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
+                "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
+            )
+        elif relpath == AT_D16_RECORD:
+            text = text.replace(
+                "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
+                "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
+            )
+        return text
+
+    monkeypatch.setattr(lifecycle, "_read", fake)
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M3.1"}
+
+
+def test_at_d13_cannot_be_reused_as_at_m3_1_merge_authority() -> None:
+    """The reverse direction: AT-D13 is about AT-M2's merge, never AT-M3.1's."""
+    assert not lifecycle._decision_authorizes("AT-D13", "AT-M3.1")
+
+
+def test_unknown_decision_id_fails_closed() -> None:
+    assert lifecycle._decision_record_path("AT-D99") == ""
+    assert not lifecycle._decision_authorizes("AT-D99", "AT-M2")
+
+
+def _inject_pm_entry(
+    text: str, index: int, milestone: str, auth_id: str, merge_id: str, baseline: str, end: str
+) -> str:
+    text = re.sub(r"(AUTHORIZED_CHANGESET_REGISTRY:\s*)\d+", rf"\g<1>{index}", text)
+    return text + (
+        f"\nAUTHORIZED_CHANGESET_{index}_MILESTONE:            {milestone}\n"
+        f"AUTHORIZED_CHANGESET_{index}_AUTHORIZATION_ID:     {auth_id}\n"
+        f"AUTHORIZED_CHANGESET_{index}_MERGE_ID:             {merge_id}\n"
+        f"AUTHORIZED_CHANGESET_{index}_BASELINE:             {baseline}\n"
+        f"AUTHORIZED_CHANGESET_{index}_IMPLEMENTATION_END:   {end}\n"
+    )
+
+
+def test_duplicate_conflicting_at_m2_entry_invalidates_at_m2_not_at_m3_1(redact) -> None:
+    """Probe E: a genuine entry plus a conflicting one for the SAME milestone -- no union, no pick."""
+    redact(
+        SNAPSHOT,
+        lambda text: _inject_pm_entry(
+            text,
+            3,
+            "AT-M2",
+            "AT-D11",
+            "AT-D13",
+            "192ebb74ba600f7a53ddf5967a7254a1f7a72fb8",
+            "0986c895e85b426f3ca56239ad7cdb39288a8546",  # conflicts with entry 1's real end
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M3.1"}
+
+
+def test_duplicate_conflicting_at_m3_1_entry_invalidates_at_m3_1_not_at_m2(redact) -> None:
+    """Probe F: same as E, mirrored onto AT-M3.1."""
+    redact(
+        SNAPSHOT,
+        lambda text: _inject_pm_entry(
+            text,
+            3,
+            "AT-M3.1",
+            "AT-D14",
+            "AT-D15",
+            "44cdd6f14333915932428d190b0a3e117d033b6d",
+            "1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96",  # conflicts with entry 2's real end
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
+
+
+def test_an_identical_duplicate_entry_collapses_harmlessly(redact) -> None:
+    """A milestone named twice with IDENTICAL values is not a conflict -- it still validates."""
+    redact(
+        SNAPSHOT,
+        lambda text: _inject_pm_entry(
+            text,
+            3,
+            "AT-M2",
+            "AT-D11",
+            "AT-D13",
+            "192ebb74ba600f7a53ddf5967a7254a1f7a72fb8",
+            "9c002e06029a682f586013671e8cb30ed1a475f4",  # identical to entry 1
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2", "AT-M3.1"}
+
+
+def test_extra_unexpected_milestone_with_no_at_d16_authority_is_rejected(redact) -> None:
+    """Probe G: a well-formed PM entry with no corresponding AT-D16 canonical entry at all."""
+    redact(
+        SNAPSHOT,
+        lambda text: _inject_pm_entry(
+            text,
+            3,
+            "AT-M3.2",
+            "AT-D99",
+            "AT-D99",
+            "1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96",
+            "5a04ec1c67453c4d90b525e94402b9515fbec0bf",
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2", "AT-M3.1"}
+
+
+def test_legacy_scalar_mismatch_invalidates_the_at_m2_registry_entry_only(redact) -> None:
+    """Section 6: the registry's AT-M2 entry additionally requires the legacy scalar to match
+    its canonical end exactly. A mismatch invalidates the registry entry -- the legacy scalar
+    mechanism itself (``authorized_changeset_end``) stays completely independent and unaffected.
+    """
+    stale = "192ebb74ba600f7a53ddf5967a7254a1f7a72fb8"
+    redact(
+        SNAPSHOT,
+        lambda text: re.sub(
+            rf"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}:\s*\S+",
+            f"{lifecycle.AUTHORIZED_CHANGESET_END_FIELD}: {stale}",
+            text,
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M3.1"}
+    end, _why = lifecycle.authorized_changeset_end()
+    assert (
+        end == stale
+    ), "authorized_changeset_end() must reflect the (mutated) scalar independently"
+
+
+def test_positive_control_malforming_at_d16s_own_canonical_entry_restores_offenders(redact) -> None:
+    """The ultimate root of trust: corrupt AT-D16's OWN table, not just the PM mirror.
+
+    Confirms the current green state is caused by AT-D16's genuine canonical authority, not by an
+    accidentally weakened denylist -- mutating the PM mirror alone is not sufficient to prove this,
+    since AT-D16 is supposed to be the thing that actually matters.
+    """
+    redact(
+        AT_D16_RECORD,
+        lambda text: text.replace(
+            "AT_D16_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d", ""
+        ),
+    )
+    assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
+    changed = lifecycle.live_guard_changed_paths(OLD_BASELINE)
+    at_m3_1_offenders = [
+        p
+        for p in changed
+        if p.startswith("shared/sdk/agent_reasoning/") or p.startswith("migrations/037_")
+    ]
+    assert (
+        at_m3_1_offenders
+    ), "AT-M3.1's files must reappear as offenders when its authority is gone"

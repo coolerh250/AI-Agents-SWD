@@ -263,8 +263,14 @@ the live guard family (`scripts/successor_lifecycle.py::live_guard_changed_paths
 recognise AT-M3.1's own AT-D14/AT-D15-authorized, Validation-1/2-passed content under `shared/` and
 `migrations/` as reviewed, the same way it already recognised AT-M2's.
 
+This snapshot's copy below must equal AT-D16's own canonical table
+(`docs/decisions/at-d16-multi-milestone-changeset-registry.md` section 5) exactly, field for
+field: `scripts/successor_lifecycle.py` treats AT-D16, not this file, as the sole source of an
+entry's values (AT-D16-R08), and rejects any entry where this copy diverges from it, including a
+copy naming a merely ancestry-plausible substitute commit.
+
 ```text
-AT_D16_STATUS:                          IMPLEMENTED / AWAITING VALIDATION 1
+AT_D16_STATUS:                          IMPLEMENTED / AWAITING VALIDATION 2
 AUTHORIZED_CHANGESET_REGISTRY_DECISION: AT-D16
 AUTHORIZED_CHANGESET_REGISTRY_RECORD:   docs/decisions/at-d16-multi-milestone-changeset-registry.md
 AUTHORIZED_CHANGESET_REGISTRY:          2
@@ -297,6 +303,14 @@ with no entry (AT-M3.2 and beyond, for now) has no exemption.
 implementation commit and not AT-M2's later canonical-merge tip. Bookkeeping commits after an
 implementation_end never move the field and are simply outside every entry's exemption, which is
 correct: they touch no live-guarded path.
+
+Multi-Milestone Governance Validation 1 found this exact-match requirement was not yet enforced:
+the mechanism accepted any ancestry-plausible commit in place of the real reviewed one, and decided
+a decision's authority over a milestone by searching that decision's prose for the milestone's
+name rather than by an exact index. AT-D16-REMEDIATION-1 (AT-D16 section 8) closed both: this
+snapshot's values are unchanged (they already matched), but they are no longer sufficient on their
+own — they must match AT-D16's own table, and authority is now looked up in AT-D16's own
+per-decision index rather than in any decision's prose.
 
 ## 6. Active HOLD items
 

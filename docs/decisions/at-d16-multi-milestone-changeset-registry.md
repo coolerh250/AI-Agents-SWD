@@ -112,28 +112,71 @@ AT-D16-R07  An unrecognised future milestone (e.g. AT-M3.2 and beyond) has no re
             and be RESOLVED / BINDING -- consistent with this being a mechanical generalization,
             not a new authorization -- but recording it is still a bookkeeping act this record does
             not perform in advance.
+
+AT-D16-R08  This record -- not the PM state snapshot, and not any other decision's prose -- is the
+            sole canonical source of an entry's exact field values and of which decision authorizes
+            which milestone. The PM snapshot's copy (section 5b) must match this record's table
+            EXACTLY, value for value; a copy that names a merely ancestry-plausible substitute
+            commit, a different baseline, or a different decision id is not a match and yields no
+            exemption. Authority is looked up as an exact entry in section 5b's authority index
+            below, never by searching a decision's prose for the milestone's name as a substring --
+            a decision's prose may mention a milestone it does not authorize (AT-D14 mentions
+            "AT-M2" several times without authorizing it), and that must never satisfy this check.
+            A milestone named more than once, in either this table or the PM mirror, with
+            disagreeing values is invalid and receives no exemption -- never the first value seen,
+            never a union of the candidates.
 ```
 
 ## 5. Registry entries authorized by this record
 
+This is the canonical, machine-read table: `scripts/successor_lifecycle.py` reads these exact
+fields from this file and requires the PM snapshot's copy
+(`docs/governance/AI_AGENTS_PM_STATE.md` section 5b) to equal them exactly, field for field, before
+either entry is usable. A PM-side value that merely passes its own ancestry checks, without
+matching this table byte-for-byte, is rejected (AT-D16-R08).
+
 ```text
-AUTHORIZED_CHANGESET_REGISTRY: 2
+AT_D16_CHANGESET_COUNT: 2
 
-AUTHORIZED_CHANGESET_1_MILESTONE:            AT-M2
-AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D11
-AUTHORIZED_CHANGESET_1_MERGE_ID:             AT-D13
-AUTHORIZED_CHANGESET_1_BASELINE:             192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
-AUTHORIZED_CHANGESET_1_IMPLEMENTATION_END:   9c002e06029a682f586013671e8cb30ed1a475f4
+AT_D16_CHANGESET_1_MILESTONE:            AT-M2
+AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D11
+AT_D16_CHANGESET_1_MERGE_ID:             AT-D13
+AT_D16_CHANGESET_1_BASELINE:             192ebb74ba600f7a53ddf5967a7254a1f7a72fb8
+AT_D16_CHANGESET_1_IMPLEMENTATION_END:   9c002e06029a682f586013671e8cb30ed1a475f4
 
-AUTHORIZED_CHANGESET_2_MILESTONE:            AT-M3.1
-AUTHORIZED_CHANGESET_2_AUTHORIZATION_ID:     AT-D14
-AUTHORIZED_CHANGESET_2_MERGE_ID:             AT-D15
-AUTHORIZED_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d
-AUTHORIZED_CHANGESET_2_IMPLEMENTATION_END:   1ba197a91867e77a9fa2256289b2766317b51b41
+AT_D16_CHANGESET_2_MILESTONE:            AT-M3.1
+AT_D16_CHANGESET_2_AUTHORIZATION_ID:     AT-D14
+AT_D16_CHANGESET_2_MERGE_ID:             AT-D15
+AT_D16_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d
+AT_D16_CHANGESET_2_IMPLEMENTATION_END:   1ba197a91867e77a9fa2256289b2766317b51b41
 ```
 
-The canonical, machine-read copy of this table lives in `docs/governance/AI_AGENTS_PM_STATE.md`
-section 5b; this copy is the decision-record evidence of what was authorized and must match it.
+`AT_D16_CHANGESET_1_BASELINE` is AT-D11's own `Canonical_main_at_decision` (also
+`SUCCESSOR_LIFECYCLE_BOUNDARY`, the historical-window mechanism's independently-recorded value for
+the same commit); `AT_D16_CHANGESET_2_BASELINE` is AT-D14's own `Canonical_main_at_decision`. Both
+implementation ends are unchanged from the record's original registration -- AT-M2's is the
+guard-split commit AT-D13 pins the legacy scalar to, AT-M3.1's is the `Validated_candidate` AT-D15
+names -- neither is a later docs, merge, or reconciliation commit.
+
+### Authority index
+
+For each decision id this record relies on, the exact set of milestones it authorizes -- read as
+an index, never derived from that decision's own prose:
+
+```text
+AT_D16_AUTHORITY_AT_D11: AT-M2
+AT_D16_AUTHORITY_AT_D13: AT-M2
+AT_D16_AUTHORITY_AT_D14: AT-M3.1
+AT_D16_AUTHORITY_AT_D15: AT-M3.1
+```
+
+`AT_D16_AUTHORITY_AT_D14` names only AT-M3.1 even though AT-D14 itself authorizes the wider
+non-production implementation of M3.1 through M3.6A (section 2 of that record): this index widens
+only when a later milestone is actually registered in the table above under its own decision
+authority, never in advance and never as a blanket grant. Each entry above still independently
+requires the named decision (AT-D11/AT-D13/AT-D14/AT-D15) to exist on disk and read its own
+`RESOLVED / BINDING` line -- this record vouches for WHICH milestone a decision covers, not for
+whether that decision is itself binding.
 
 ## 6. What this decision does NOT do
 
@@ -157,6 +200,19 @@ AT_D16_VALIDATION_ROUNDS_USED:        0
 
 Bounded remediation policy applies: Validation 1 -> at most one remediation -> Validation 2, no
 Validation 3. AT-M3.2 stays paused until this governance implementation is validated.
+
+## 8. AT-D16-REMEDIATION-1
+
+Multi-Milestone Governance Validation 1 found the registry's first cut trusted an entry's exact
+field values from the PM snapshot alone (so an ancestry-plausible substitute commit passed as
+readily as the real reviewed one) and decided a decision's authority over a milestone by searching
+that decision's prose for the milestone's name as a substring (so AT-D14's incidental mentions of
+"AT-M2" satisfied a check it never authorized). Neither is a change to what AT-D14 or any other
+decision actually authorizes; both are corrections to how `scripts/successor_lifecycle.py` reads
+this record. The fix, applied under this same AT-D16 record: section 5's table is now the sole
+canonical source of entry values (AT-D16-R08), and a new authority index (also section 5) replaces
+substring search with an exact, per-decision list of the milestones it covers. Neither the
+registry entries' commit values (section 5) nor the exclusion list (section 3) changed as a result.
 
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
