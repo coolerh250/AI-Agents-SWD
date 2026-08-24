@@ -251,7 +251,7 @@ async def test_the_database_rejects_a_failed_row_with_no_failure_category():
             await conn.execute(
                 "UPDATE reasoning_invocations SET status='failed', completed_at=now() "
                 "WHERE invocation_id=$1",
-                uuid.UUID(row["invocation_id"]),
+                row["invocation_id"],
             )
     finally:
         await conn.close()
@@ -291,7 +291,7 @@ async def test_the_database_rejects_an_unrecognised_status():
         with pytest.raises(asyncpg.PostgresError):
             await conn.execute(
                 "UPDATE reasoning_invocations SET status='queued' WHERE invocation_id=$1",
-                uuid.UUID(row["invocation_id"]),
+                row["invocation_id"],
             )
     finally:
         await conn.close()
