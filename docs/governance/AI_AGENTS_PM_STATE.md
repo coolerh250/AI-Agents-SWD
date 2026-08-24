@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-21
-RECONCILED_AGAINST_MAIN:     0986c895e85b426f3ca56239ad7cdb39288a8546
-RECONCILED_BY_STAGE:         AT-M2-TEAM-CORE / CANONICAL MERGE
+RECONCILED_ON:               2026-08-24
+RECONCILED_AGAINST_MAIN:     1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96
+RECONCILED_BY_STAGE:         AT-M3.1-MERGE-1 / CANONICAL MERGE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -32,18 +32,34 @@ is a conflict.
 ## 2. Position
 
 ```text
-CURRENT_MILESTONE:           AT-M2
-CURRENT_MILESTONE_STATE:     MERGED / CLOSED / AT-M2-TEAM-CORE
-PREVIOUS_COMPLETED_STAGE:    AT-M2-TEAM-CORE (canonical merge)
-CURRENT_GATE:                NONE -- AT-M2 canonically merged; no AT-M3 gate open
-CURRENT_STAGE:               NONE -- next stage requires its own Product Owner decision
-NEXT_PERMITTED_STAGE:        AT-M3 PLANNING (implementation NOT authorized until its own decision)
+CURRENT_MILESTONE:           AT-M3
+CURRENT_MILESTONE_STATE:     IN PROGRESS -- AT-M3.1 MERGED / CLOSED; AT-M3.2 is the next
+                              implementation slice
+PREVIOUS_COMPLETED_STAGE:    AT-M3.1 (canonical merge)
+CURRENT_GATE:                NONE -- AT-M3.1 canonically merged; AT-M3.2 .. AT-M3.6A are already
+                              authorized under AT-D14 (see section 5a), so no new gate is open for
+                              them; AT-M3.6B, production and AT-M4 remain closed
+CURRENT_STAGE:                AT-M3.1-MERGE-1 / CANONICAL MERGE
+NEXT_PERMITTED_STAGE:        AT-M3.2 IMPLEMENTATION -- Goal + immutable PlanRevision. Already
+                              authorized under AT-D14; no new Product Owner decision is required
+                              unless the architecture materially changes, an authorization/security
+                              boundary expands, external network/model use is introduced, or
+                              production becomes involved.
 ```
 
-Canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
+AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
 merging the validated candidate and recorded the real Governance Validation 2 result. The merge was
 a fast-forward: `origin/main` `192ebb74…` to `0986c895e85b426f3ca56239ad7cdb39288a8546`, the exact
 validated `at-m2-team-core` tip. No conflict, no rebase, no history rewrite.
+
+AT-M3.1 (Reasoning Contract & Provider Abstraction) was accepted and canonicalized by AT-D15
+(`docs/decisions/at-d15-at-m3-1-acceptance-and-merge-authorization.md`), which records the
+Validation 1 (FAIL, 3 blockers) → AT-M3.1-REMEDIATION-1 → Validation 2 (PASS) evidence chain and
+authorizes the merge. The merge was a fast-forward: `origin/main` `44cdd6f…` to
+`1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96`, the exact validated candidate tip plus one docs-only
+commit recording AT-D15 itself. No conflict, no rebase, no history rewrite. AT-M3.1's own
+implementation authorization is AT-D14 (`docs/decisions/at-d14-at-m3-live-reasoning-authorization.md`);
+AT-D15 authorizes the merge only, exactly as AT-D13 did for AT-D11/AT-M2. See section 5a.
 
 AT-M1 stays `CLOSED / CANONICAL`; it is no longer the *current* milestone because AT-D11
 authorized its successor. Position moved off the PCP remediation chain at the same decision — see
@@ -187,16 +203,54 @@ whether a successor is live at all — rewording it would silently reopen every 
 window and blind every live runtime denylist to AT-M2's own already-reviewed work, which is the
 opposite of what closing the milestone should do.
 
-`AT_M3_TO_AT_M8: NOT AUTHORIZED` is unchanged and stays exact: AT-M3 is the next PLANNING target
-this snapshot's `NEXT_PERMITTED_STAGE` field (section 2) points at, but planning is not
-authorization, and implementation of any of AT-M3 .. AT-M8 remains NOT AUTHORIZED until each gets
-its own Product Owner decision, the same rule AT-D11 and AT-D13 both restate.
+`AT_M3_TO_AT_M8: NOT AUTHORIZED` is unchanged and stays exact as a record of what AT-D12 itself
+authorized (nothing) — the same "a later authorization supersedes an earlier position without
+falsifying the record of it" rule this file already applies to AT-M1's `AT_M2: NOT AUTHORIZED`
+line applies here too. AT-D14, recorded after this line was first written, narrows it for a named
+subset: non-production, non-external-network implementation of AT-M3.1 through AT-M3.6A is now
+authorized, and AT-D15 has accepted and merged AT-M3.1 specifically — see section 5a for the live
+state. `AT-M3.6B` (a real external model call) and everything beyond AT-M3.6A still require their
+own Product Owner decision, the same rule AT-D11 and AT-D13 restated for AT-M2.
 
 `PCP_V2_1_GATES` is the re-sequencing, and it is a **move, not a waiver**. PCP-V2.1's own state
 above is unchanged, no registered debt is retired, and `PCP-V2.1 PASS` is not claimed. The open
 item is a governance measurement reconciliation that reaches no authorization, production-safety,
 security, destructive-action or data-integrity control, so it gates production authorization
 rather than a non-production milestone that cannot cross any of those boundaries.
+
+## 5a. AT-M3 progress
+
+AT-D14 authorizes non-production, non-external-network implementation and mock/local validation of
+AT-M3.1 through AT-M3.6A (schema evolution included). AT-D15 accepts and merges AT-M3.1
+specifically. Authorization scope and implementation state are different questions; this section
+answers both, and is additive to — never a replacement for — the `AT_M3_TO_AT_M8` line in section 5.
+
+```text
+AT_M3_1:                       AUTHORIZED / MERGED / CLOSED
+AT_M3_1_IMPLEMENTATION:        COMPLETE
+AT_M3_1_VALIDATION:            PASS -- 2 of 2 (Validation 1 FAIL / 3 blockers ->
+                                AT-M3.1-REMEDIATION-1 -> Validation 2 PASS; no Validation 3)
+AT_M3_1_ACCEPTANCE:            PO ACCEPTED
+AT_M3_1_AUTHORIZED_BY:         AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
+AT_M3_1_MERGE_AUTHORIZED_BY:   AT-D15 / docs/decisions/at-d15-at-m3-1-acceptance-and-merge-authorization.md
+AT_M3_1_CANONICAL_MAIN:        1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96
+AT_M3_2_THROUGH_AT_M3_6A:      AUTHORIZED (AT-D14) / NOT YET IMPLEMENTED
+AT_M3_6B:                      NOT AUTHORIZED
+```
+
+`AT_M3_1` keeps the literal word `AUTHORIZED` immediately after the field name for the same reason
+`AT_M2` does (section 5): it is the live authorization state, not a claim that validation is
+still open. `AT_M3_2_THROUGH_AT_M3_6A` records that AT-D14 already authorizes that work; it is not
+itself an implementation-complete claim, and each of those slices still needs its own
+implementation report and its own Validation 1/2 pass before it can read the way `AT_M3_1` does
+here. `AT_M3_6B` names the boundary AT-D14 explicitly did not move: no real external LLM/network
+call is authorized by any record in this file.
+
+One non-blocking observation was carried out of AT-M3.1 Validation 2 as backlog, not remediated:
+an unvalidated, caller-supplied `request.provider_name` can flow into an audit event's
+summary/refs when an audit client is configured. It does not touch `reasoning_invocations`, mirrors
+a pre-existing repo-wide audit-construction pattern, and is not registered as debt here — it is a
+candidate for a future observability/audit-hardening slice, not a blocker of anything above.
 
 ## 6. Active HOLD items
 
@@ -210,7 +264,10 @@ never be treated as a canonical dependency while it is on hold.
 ## 7. Blockers and debt
 
 ```text
-BLOCKERS:                    PCP-V2.1-RM5 CANONICAL DEBT NOT RECONCILED
+BLOCKERS:                    PCP-V2.1-RM5 CANONICAL DEBT NOT RECONCILED; HAZARD_AT_M3_LIVE_DENYLIST
+                              OPEN (see section 8) -- 25 historical stage-guard tests across 10
+                              files newly fail after the AT-M3.1 merge, all one root cause, no
+                              defect in AT-M3.1 itself
 GOVERNANCE_MEASUREMENT_STATE: STALE / RETAKE REQUIRED AT AT-M2 CANONICAL MERGE
 GOVERNANCE_MEASURED_AT:      f1ab151838c4bb3cf21337a1c876f92d2e91f9a9
 GOVERNANCE_INPUT_DIGEST:     48163467ef93662cbd0f3e48686cf219c5d9f75e765c25940078b3e5ed8e2d83
@@ -375,6 +432,36 @@ design, so that a forbidden path landing after the reviewed stage head is still 
 This is not authorization to weaken AT-M1. The rule is: **before the first future authorized
 milestone that legitimately crosses an AT-M1 HEAD-relative denylist boundary, an explicit verifier
 lifecycle and supersession disposition is required.** That decision is not made here.
+
+```text
+HAZARD_AT_M3_LIVE_DENYLIST:  OPEN / DISPOSITION REQUIRED -- DISCOVERED AT AT-M3.1 CANONICAL MERGE
+```
+
+`scripts/successor_lifecycle.py`'s live guard (`live_guard_changed_paths`) is, by design, never
+HEAD-relative-capped: it forever rejects a protected-path change (`apps/`, `agents/`, `shared/`,
+`migrations/`, `infra/` among them) unless that change's content at HEAD is byte-identical to the
+content recorded at `SUCCESSOR_AUTHORIZED_CHANGESET_END` — and that field is scoped to **AT-M2's
+own** reviewed work specifically (`SUCCESSOR_IMPLEMENTATION_MILESTONE: AT-M2`), pinned at
+`9c002e0`. It was never extended to recognise a later milestone's own authorized, validated work
+as reviewed, because no milestone after AT-M2 had merged new content under those paths until now.
+
+AT-M3.1 is that first crossing. Its own files
+(`shared/sdk/agent_reasoning/*`, `migrations/037_at_m3_reasoning_invocations*.sql`) are genuinely
+new, AT-D14/AT-D15-authorized, Validation-1/2-passed content under `shared/` and `migrations/` —
+and the live guard, correctly doing exactly what it is built to do, does not yet have a mechanism
+to recognise them as reviewed. Post-merge verification (this reconciliation) ran the ten
+historical stage-guard test files that route through this mechanism
+(`test_at_d12_successor_freeze_amendment.py` plus the 66C4-BE3/66D/66SYNC1 families) and found 25
+newly-failing tests, all with the identical root cause and an identical offender list — no new,
+independent defect in any of them, and no defect in AT-M3.1 itself.
+
+This is not a defect in AT-M3.1, and it is not authorization to weaken any of those guards. Per
+the same rule the AT-M1 hazard above states: **before this can be called a clean regression state,
+an explicit decision extending (or otherwise dispositioning) the live-guard exemption to cover
+AT-M3.1's own reviewed work is required — analogous to what AT-D12 did for AT-M2's own transition.
+That decision is not made here**, and this reconciliation deliberately does not move
+`SUCCESSOR_AUTHORIZED_CHANGESET_END` to cover it: that field's job is to record what AT-M2
+specifically reviewed, and moving it to name AT-M3.1's content would misstate that.
 
 ## 9. Source-of-truth precedence
 
