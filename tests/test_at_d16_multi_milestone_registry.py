@@ -4,13 +4,31 @@ Offline by design: no container, no database, no network, no secret access. Thes
 read the decision record's prose and take its word for anything. They exercise the mechanism:
 each prerequisite is removed in turn and the exemption must be refused for that entry only, and
 the live guard is run for real against this repository's actual AT-M2/AT-M3.1 history.
+
+Decision authority (AT-D16 and everything it names) is read through a canonical Git ref, not the
+working tree (AT-GOV-DECISION-DISCOVERY-REMEDIATION-1) -- and this branch's own AT-D16 has not yet
+been merged to the real ``origin/main``. Every test below therefore runs under an autouse fixture
+that points ``_canonical_commit`` at a fresh, parentless, unreferenced ("orphan") commit built from
+this branch's own currently-committed tree, so AT-D16's real, current, final content is genuinely
+canonical for the duration of each test -- proving the registry's OWN logic (this file's actual
+concern), not decision-discovery's canonicality bootstrap (covered directly in
+``test_at_d17_decision_discovery.py``). An orphan snapshot, not this branch's own multi-commit tip,
+is used deliberately: AT-D16 was itself legitimately edited in place once, during its own
+Remediation-1 round -- exercising the new immutability check against that real, already-reviewed,
+already-superseded intermediate version would wrongly judge AT-D16's own final content as
+"diverged". Nothing here fakes canonicality by patching ``_read`` with arbitrary text; PM-state
+reads remain working-tree based by design (mirror-only, never mints authority) and are the only
+thing the pre-existing ``redact`` fixture still fakes.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
+import subprocess
 import sys
+import tempfile
 
 import pytest
 
@@ -39,7 +57,10 @@ def _offenders(baseline: str = OLD_BASELINE) -> list[str]:
 
 @pytest.fixture
 def redact(monkeypatch):
-    """Serve a doctored copy of one canonical file to the mechanism, leaving disk untouched."""
+    """Serve a doctored copy of the PM snapshot to the mechanism, leaving disk untouched. PM-state
+    reads remain working-tree based by design (mirror-only, never mints authority) -- unlike
+    decision-content reads, which are now canonical-Git-rooted (see ``as_canonical`` below).
+    """
     real = lifecycle._read
 
     def install(target: str, transform):
@@ -50,6 +71,76 @@ def redact(monkeypatch):
         monkeypatch.setattr(lifecycle, "_read", fake)
 
     return install
+
+
+@pytest.fixture
+def as_canonical(monkeypatch):
+    """Point ``_canonical_commit`` at an explicit commit -- the module's own documented test
+    substitution seam. Every subsequent Git read still runs for real against that commit."""
+
+    def install(commit: str) -> None:
+        monkeypatch.setattr(lifecycle, "_canonical_commit", lambda: commit)
+
+    return install
+
+
+def build_orphan_snapshot(overrides: dict[str, str] | None = None) -> str:
+    """A fresh, parentless, unreferenced commit -- this branch's currently-committed tree, with
+    any given paths' content overridden -- so a doctored value is tested with no real, earlier,
+    undoctored version of the same file anywhere in ITS history to conflict with the new
+    immutability check. Never touches any ref; this repository's real history is unaffected.
+    """
+    head_tree = lifecycle._git("rev-parse", "HEAD^{tree}")
+    with tempfile.TemporaryDirectory() as tmp:
+        env = dict(os.environ, GIT_INDEX_FILE=str(pathlib.Path(tmp) / "index"))
+        subprocess.run(
+            ["git", "read-tree", head_tree],
+            cwd=lifecycle.ROOT,
+            check=True,
+            env=env,
+            capture_output=True,
+        )
+        for relpath, content in (overrides or {}).items():
+            blob_sha = subprocess.run(
+                ["git", "hash-object", "-w", "--stdin"],
+                cwd=lifecycle.ROOT,
+                input=content,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=True,
+                env=env,
+            ).stdout.strip()
+            subprocess.run(
+                ["git", "update-index", "--add", "--cacheinfo", f"100644,{blob_sha},{relpath}"],
+                cwd=lifecycle.ROOT,
+                check=True,
+                env=env,
+                capture_output=True,
+            )
+        tree_sha = subprocess.run(
+            ["git", "write-tree"],
+            cwd=lifecycle.ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            env=env,
+        ).stdout.strip()
+        return subprocess.run(
+            ["git", "commit-tree", tree_sha, "-m", "test-only: orphan snapshot, never referenced"],
+            cwd=lifecycle.ROOT,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            env=env,
+        ).stdout.strip()
+
+
+@pytest.fixture(autouse=True)
+def _simulate_canonical_main(as_canonical) -> None:
+    as_canonical(build_orphan_snapshot())
 
 
 # --- the record exists and is canonical ----------------------------------------------------------
@@ -183,10 +274,14 @@ def test_missing_authorization_decision_removes_that_entry(redact) -> None:
     assert milestones == {"AT-M2"}
 
 
-def test_non_binding_decision_removes_that_entry(redact) -> None:
-    redact(
-        "docs/decisions/at-d14-at-m3-live-reasoning-authorization.md",
-        lambda text: text.replace("AT-D14:                      RESOLVED / BINDING", ""),
+def test_non_binding_decision_removes_that_entry(as_canonical) -> None:
+    doctored = read("docs/decisions/at-d14-at-m3-live-reasoning-authorization.md").replace(
+        "AT-D14:                      RESOLVED / BINDING", ""
+    )
+    as_canonical(
+        build_orphan_snapshot(
+            {"docs/decisions/at-d14-at-m3-live-reasoning-authorization.md": doctored}
+        )
     )
     milestones = {e["milestone"] for e in lifecycle.authorized_changesets()}
     assert milestones == {"AT-M2"}
@@ -345,7 +440,7 @@ def test_the_registry_is_additive_registering_at_m3_1_did_not_move_at_m2s_field(
 # probes reproduce those exact attacks against the fix: AT-D16's own table is now the sole
 # canonical source of values and of decision authority, and the PM snapshot must mirror it exactly.
 
-AT_D16_RECORD = lifecycle._decision_record_path("AT-D16")
+AT_D16_RECORD = RECORD
 
 
 def _milestones(entries: list[dict[str, str]]) -> set[str]:
@@ -400,32 +495,33 @@ def test_a_swapped_but_ancestry_valid_baseline_is_rejected(redact) -> None:
     assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
 
 
-def test_at_d14_cannot_be_reused_as_at_m2_authority(monkeypatch) -> None:
+def test_at_d14_cannot_be_reused_as_at_m2_authority(as_canonical, redact) -> None:
     """Probe D: the exact false-positive Validation 1 demonstrated concretely.
 
     AT-D14's prose contains the literal substring "AT-M2" four times without authorizing it. Even
     when BOTH the PM mirror and AT-D16's own canonical table are mutated to claim AT-D14 authorizes
     AT-M2's entry, the authority check must still refuse: AT-D16's authority index lists AT-D14
     against AT-M3.1 only, and prose is never consulted.
+
+    AT-D16's own table is mutated by building a fresh, self-consistent orphan snapshot (never a
+    later commit layered on top of the real one) -- the new immutability check would otherwise
+    correctly treat an in-place edit to an already-canonical AT-D16 as a divergence and void the
+    WHOLE decision, which is a different (and already separately covered) property than this
+    probe's target: that a decision's own authority index is exact, not a mention of a name.
     """
     assert "AT-M2" in read("docs/decisions/at-d14-at-m3-live-reasoning-authorization.md")
-    real_read = lifecycle._read
-
-    def fake(relpath: str) -> str:
-        text = real_read(relpath)
-        if relpath == SNAPSHOT:
-            text = text.replace(
-                "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
-                "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
-            )
-        elif relpath == AT_D16_RECORD:
-            text = text.replace(
-                "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
-                "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
-            )
-        return text
-
-    monkeypatch.setattr(lifecycle, "_read", fake)
+    doctored_at_d16 = read(AT_D16_RECORD).replace(
+        "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
+        "AT_D16_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
+    )
+    as_canonical(build_orphan_snapshot({AT_D16_RECORD: doctored_at_d16}))
+    redact(
+        SNAPSHOT,
+        lambda text: text.replace(
+            "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D11",
+            "AUTHORIZED_CHANGESET_1_AUTHORIZATION_ID:     AT-D14",
+        ),
+    )
     assert _milestones(lifecycle.authorized_changesets()) == {"AT-M3.1"}
 
 
@@ -541,19 +637,21 @@ def test_legacy_scalar_mismatch_invalidates_the_at_m2_registry_entry_only(redact
     ), "authorized_changeset_end() must reflect the (mutated) scalar independently"
 
 
-def test_positive_control_malforming_at_d16s_own_canonical_entry_restores_offenders(redact) -> None:
+def test_positive_control_malforming_at_d16s_own_canonical_entry_restores_offenders(
+    as_canonical,
+) -> None:
     """The ultimate root of trust: corrupt AT-D16's OWN table, not just the PM mirror.
 
     Confirms the current green state is caused by AT-D16's genuine canonical authority, not by an
     accidentally weakened denylist -- mutating the PM mirror alone is not sufficient to prove this,
-    since AT-D16 is supposed to be the thing that actually matters.
+    since AT-D16 is supposed to be the thing that actually matters. A fresh, self-consistent orphan
+    snapshot is used for the same reason as the AT-D14-reuse probe above: the new immutability
+    check is a different, already-covered property from this positive control's target.
     """
-    redact(
-        AT_D16_RECORD,
-        lambda text: text.replace(
-            "AT_D16_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d", ""
-        ),
+    doctored_at_d16 = read(AT_D16_RECORD).replace(
+        "AT_D16_CHANGESET_2_BASELINE:             44cdd6f14333915932428d190b0a3e117d033b6d", ""
     )
+    as_canonical(build_orphan_snapshot({AT_D16_RECORD: doctored_at_d16}))
     assert _milestones(lifecycle.authorized_changesets()) == {"AT-M2"}
     changed = lifecycle.live_guard_changed_paths(OLD_BASELINE)
     at_m3_1_offenders = [

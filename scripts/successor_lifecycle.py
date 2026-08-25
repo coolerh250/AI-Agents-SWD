@@ -276,35 +276,109 @@ _ENTRY_FIELD_NAMES = ("MILESTONE", "AUTHORIZATION_ID", "MERGE_ID", "BASELINE", "
 # by repository data: the set of docs/decisions/*.md files and their own anchored identity line.
 # Landing a reviewed decision file on canonical main is now itself the act of making it
 # discoverable -- no Python code anywhere in this module names a future decision id.
+#
+# AT-GOV-DECISION-DISCOVERY-VALIDATION-1 found the first cut trusted the working tree for this:
+# ``_read`` is a plain filesystem read with no Git-commit binding at all, so an untracked file, or
+# one that exists only on a feature branch never merged to canonical main, was already fully
+# binding and typed-authoritative merely by sitting on disk in the right shape -- and a later
+# in-place edit to an already-accepted decision took effect immediately, with nothing pinning
+# authority to the version that was actually reviewed. AT-GOV-DECISION-DISCOVERY-REMEDIATION-1
+# closes both: every decision-authority read below is now rooted at a canonical Git ref
+# (``CANONICAL_DECISION_REF``, resolved to a real commit -- never HEAD, never the working tree,
+# never a silent fallback) and further bound to the EARLIEST commit reachable from that ref at
+# which the decision's own authority-bearing fields already read exactly as they do at the
+# canonical tip. If a later commit has changed any of those fields, the two versions disagree and
+# the decision grants no authority at all until a human resolves it -- never the newer text, never
+# a blend of the two.
 
 DECISIONS_DIR = "docs/decisions"
 _DECISION_IDENTITY_LINE = re.compile(r"^(AT-D\d+):\s*(\S.*?)\s*$", re.M)
 
+# The single Git ref decision authority is rooted at. Never HEAD -- a candidate branch's own
+# unreviewed commits must not be able to mint their own authority merely by existing.
+CANONICAL_DECISION_REF = "origin/main"
+
+_AUTHORITY_FIELD_NAMES = ("AUTHORIZES_IMPLEMENTATION", "AUTHORIZES_ACCEPTANCE_MERGE")
+
+
+def _canonical_ref_commit(ref: str = CANONICAL_DECISION_REF) -> str:
+    """The commit ``ref`` resolves to, or "" if it does not resolve to a real commit.
+
+    Fail-closed: an unfetched remote, a renamed branch, or any other reason ``ref`` cannot be
+    resolved yields "", never a fallback to HEAD or to the working tree.
+    """
+    result = subprocess.run(
+        ["git", "rev-parse", "--verify", f"{ref}^{{commit}}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    sha = result.stdout.strip()
+    return sha if result.returncode == 0 and sha else ""
+
+
+def _canonical_commit() -> str:
+    """The one seam every canonical read below goes through -- resolves ``CANONICAL_DECISION_REF``
+    fresh on every call. Tests substitute this directly to simulate a decision's future inclusion
+    on canonical main, using a real commit's real Git tree/blob data -- never faked text."""
+    return _canonical_ref_commit(CANONICAL_DECISION_REF)
+
+
+def _canonical_tree_entries(commit: str, subdir: str) -> list[str]:
+    """Repo-relative paths of the regular files directly inside ``subdir`` at ``commit``.
+
+    Reads the Git tree object, not the filesystem: bounded to exactly one directory (``git
+    ls-tree`` without ``-r`` never descends), and a symlink tree entry (mode ``120000``) is
+    excluded the same way a symlinked file on disk was excluded before. An unresolvable commit or
+    a missing subdirectory yields an empty list, never an exception.
+    """
+    result = subprocess.run(
+        ["git", "ls-tree", f"{commit}:{subdir}"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode != 0:
+        return []
+    entries: list[str] = []
+    for line in result.stdout.splitlines():
+        meta, _, name = line.partition("\t")
+        parts = meta.split()
+        if len(parts) != 3 or not name.endswith(".md"):
+            continue
+        mode, obj_type, _sha = parts
+        if obj_type != "blob" or mode == "120000":
+            continue
+        entries.append(f"{subdir}/{name}")
+    return sorted(entries)
+
 
 def _discovered_decision_paths() -> dict[str, str]:
-    """{decision_id: repo-relative path}, scanned fresh from docs/decisions/*.md every call.
+    """{decision_id: repo-relative path}, scanned fresh from the canonical ref's Git tree, every
+    call -- never the working tree.
 
-    Bounded and content-driven: only regular, non-symlink files directly inside the fixed
-    decisions directory are ever read -- no recursion, and no caller-, PM-, registry- or
-    decision-supplied path ever reaches the filesystem. Identity comes from an anchored
-    ``AT-D<n>: <status>`` line in the file's own text, read through ``_read`` (so it is fakeable
-    in tests the same way every other field in this module is), never from the filename -- AT-D11's
-    own file, ``at-m2-authorization.md``, already breaks any filename convention on purpose. A file
+    Bounded and content-driven: only regular, non-symlink blobs directly inside the fixed
+    decisions directory, AT the canonical commit, are ever read -- no recursion, and no caller-,
+    PM-, registry- or decision-supplied path ever reaches Git. Identity comes from an anchored
+    ``AT-D<n>: <status>`` line in the blob's own text, never from the filename -- AT-D11's own
+    file, ``at-m2-authorization.md``, already breaks any filename convention on purpose. A file
     naming more than one distinct id contributes to none of them; an id claimed by more than one
     (single-id) file resolves to neither. Status is not checked here -- an id can be *discovered*
     whether or not it is currently binding, so ``_decision_is_binding`` can tell "unknown decision"
-    apart from "known decision, not (yet) binding".
+    apart from "known decision, not (yet) binding". No canonical commit resolves -> nothing is
+    discovered.
     """
-    directory = ROOT / DECISIONS_DIR
-    if not directory.is_dir():
+    canonical_commit = _canonical_commit()
+    if not canonical_commit:
         return {}
 
     claims: dict[str, list[str]] = {}
-    for path in sorted(directory.glob("*.md")):
-        if path.is_symlink() or not path.is_file():
-            continue
-        relpath = f"{DECISIONS_DIR}/{path.name}"
-        text = _read(relpath)
+    for relpath in _canonical_tree_entries(canonical_commit, DECISIONS_DIR):
+        text = _blob(relpath, canonical_commit) or ""
         ids_in_file = {match.group(1) for match in _DECISION_IDENTITY_LINE.finditer(text)}
         if len(ids_in_file) != 1:
             continue
@@ -320,11 +394,107 @@ def _decision_record_path(decision_id: str) -> str:
     return _discovered_decision_paths().get(decision_id, "")
 
 
+def _authority_snapshot(text: str, decision_id: str) -> tuple[object, ...]:
+    """The authority-bearing content of ``text`` for ``decision_id`` -- everything a live-guard
+    decision actually relies on, and nothing else: prose, dates, and rationale may differ freely
+    between two versions without tripping the immutability check below.
+    """
+    binding = bool(re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M))
+    typed = tuple(_field(text, name) for name in _AUTHORITY_FIELD_NAMES)
+    registered = tuple(
+        sorted(
+            _indexed_entries(
+                text, REGISTERED_CHANGESET_COUNT_FIELD, REGISTERED_CHANGESET_PREFIX
+            ).items()
+        )
+    )
+    if decision_id == "AT-D16":
+        canonical_table = tuple(
+            sorted(
+                _indexed_entries(
+                    text, CANONICAL_CHANGESET_COUNT_FIELD, CANONICAL_CHANGESET_PREFIX
+                ).items()
+            )
+        )
+        authority_index = tuple(
+            sorted(
+                (name, _field(text, name))
+                for name in re.findall(
+                    rf"^({re.escape(CANONICAL_AUTHORITY_PREFIX)}\S+):", text, re.M
+                )
+            )
+        )
+    else:
+        canonical_table = ()
+        authority_index = ()
+    return (binding, typed, registered, canonical_table, authority_index)
+
+
+def _frozen_binding_commit(decision_id: str, relpath: str, canonical_commit: str) -> str:
+    """The earliest commit reachable from ``canonical_commit`` at which ``relpath`` already read,
+    in isolation, as this exact ``decision_id`` and RESOLVED / BINDING -- the version authority is
+    permanently read through, regardless of anything a later commit says.
+
+    Walks the path's own Git history (oldest first, bounded to ancestors of ``canonical_commit``)
+    rather than the whole repository's, so this stays cheap regardless of unrelated history size.
+    "" if no such commit exists (fail closed) -- callers never fall back to the canonical tip's
+    own text in that case.
+    """
+    result = subprocess.run(
+        ["git", "log", "--reverse", "--format=%H", canonical_commit, "--", relpath],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        check=False,
+    )
+    if result.returncode != 0:
+        return ""
+
+    for commit in result.stdout.split():
+        text = _blob(relpath, commit) or ""
+        ids = {match.group(1) for match in _DECISION_IDENTITY_LINE.finditer(text)}
+        if ids != {decision_id}:
+            continue
+        if re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M):
+            return commit
+    return ""
+
+
+def _binding_frozen_text(decision_id: str) -> str:
+    """``decision_id``'s own text, from the earliest canonical commit its current authority-bearing
+    fields have held unchanged since -- "" if it is not canonically discoverable, not RESOLVED /
+    BINDING at the canonical tip, or if no such stable earlier version exists.
+
+    This is the ONE function every authority check below reads a decision's fields through. It
+    never returns text sourced from the working tree, from HEAD, or from a version whose
+    authority-bearing content has since diverged from what is canonical right now -- a later
+    in-place edit to an already-accepted decision (a new milestone added, a slot widened, a
+    registered end moved) makes this return "" for that decision until the divergence is resolved,
+    never the newer values.
+    """
+    canonical_commit = _canonical_commit()
+    if not canonical_commit:
+        return ""
+    relpath = _discovered_decision_paths().get(decision_id, "")
+    if not relpath:
+        return ""
+    current_text = _blob(relpath, canonical_commit) or ""
+    if not re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", current_text, re.M):
+        return ""
+    frozen_commit = _frozen_binding_commit(decision_id, relpath, canonical_commit)
+    if not frozen_commit:
+        return ""
+    frozen_text = _blob(relpath, frozen_commit) or ""
+    if _authority_snapshot(frozen_text, decision_id) != _authority_snapshot(
+        current_text, decision_id
+    ):
+        return ""
+    return frozen_text
+
+
 def _decision_is_binding(decision_id: str) -> bool:
-    text = _read(_decision_record_path(decision_id))
-    if not text:
-        return False
-    return bool(re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M))
+    return bool(_binding_frozen_text(decision_id))
 
 
 def _milestone_set(field_value: str) -> set[str]:
@@ -377,9 +547,7 @@ def _decision_changeset_entries(decision_id: str) -> list[tuple[str, dict[str, s
     fields it may optionally carry (AT-D17-R06) -- the same field names for any future decision,
     with no per-id branching. Either way the decision must independently read RESOLVED / BINDING.
     """
-    if not _decision_is_binding(decision_id):
-        return []
-    text = _read(_decision_record_path(decision_id))
+    text = _binding_frozen_text(decision_id)
     if not text:
         return []
     if decision_id == "AT-D16":
@@ -424,8 +592,8 @@ def _grandfathered_authorizes(decision_id: str, milestone: str) -> bool:
     -- including AT-D17 itself -- is ever added to it. Trust is rooted in AT-D16 itself, a Product
     Owner decision, independently RESOLVED / BINDING, referenced here by its own fixed id only.
     """
-    at_d16_text = _read(_decision_record_path("AT-D16"))
-    if not at_d16_text or not re.search(r"^AT-D16:\s*RESOLVED / BINDING\b", at_d16_text, re.M):
+    at_d16_text = _binding_frozen_text("AT-D16")
+    if not at_d16_text:
         return False
     field = _field(at_d16_text, f"{CANONICAL_AUTHORITY_PREFIX}{decision_id.replace('-', '_')}")
     return milestone in _milestone_set(field)
@@ -438,7 +606,7 @@ def _typed_authorizes(decision_id: str, milestone: str, slot: str) -> bool:
     ``"ACCEPTANCE_MERGE"``, distinct authorization slots that never satisfy each other. Never
     AT-D16's index, never the other slot's field, never a substring search of the decision's prose.
     """
-    text = _read(_decision_record_path(decision_id))
+    text = _binding_frozen_text(decision_id)
     if not text:
         return False
     return milestone in _milestone_set(_field(text, f"AUTHORIZES_{slot}"))
@@ -713,6 +881,7 @@ __all__ = [
     "AUTHORIZATION_RECORD_FIELD",
     "AUTHORIZED_CHANGESET_END_FIELD",
     "BOUNDARY_FIELD",
+    "CANONICAL_DECISION_REF",
     "DECISIONS_DIR",
     "DECLARED_LINE_MARKER",
     "FREEZE_AMENDMENT_DECISION_FIELD",

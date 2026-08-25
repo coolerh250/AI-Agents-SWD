@@ -1,4 +1,5 @@
 import importlib.util
+import subprocess
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -133,3 +134,116 @@ def qa_agent():
 @pytest.fixture
 def devops_agent():
     return _load_agent_module("devops-agent")
+
+
+class _CanonicalGitRepo:
+    """A real, isolated Git repository for exercising canonical-ref decision discovery against
+    genuine Git tree/blob/log semantics -- never this repository's own history, never faked text.
+
+    Used by ``successor_lifecycle``'s canonical-authority tests: a test writes decision files,
+    commits them for real, and points ``CANONICAL_DECISION_REF`` at whichever commit it wants
+    treated as canonical -- so "not yet canonical" and "now canonical" are both real Git states,
+    not monkeypatched strings.
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self.path.mkdir(parents=True, exist_ok=True)
+        self._run("init", "-q", "-b", "main")
+        self._run("config", "user.email", "test@example.invalid")
+        self._run("config", "user.name", "Test")
+
+    def _run(self, *args: str, env: dict | None = None) -> str:
+        result = subprocess.run(
+            ["git", *args],
+            cwd=self.path,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+            env=env,
+        )
+        return result.stdout.strip()
+
+    def write_decision(self, filename: str, content: str) -> None:
+        target = self.path / "docs" / "decisions" / filename
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    def write(self, relpath: str, content: str) -> None:
+        target = self.path / relpath
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
+    def commit(self, message: str = "commit") -> str:
+        self._run("add", "-A")
+        self._run("commit", "-q", "-m", message, "--allow-empty")
+        return self._run("rev-parse", "HEAD")
+
+    def add_symlink_entry(self, filename: str, target: str) -> None:
+        """Add a real Git symlink TREE ENTRY (mode 120000) without needing OS symlink support --
+        exercises the exact thing discovery must reject, portable to a host with no symlink
+        privilege at all."""
+        blob_sha = subprocess.run(
+            ["git", "hash-object", "-w", "--stdin"],
+            cwd=self.path,
+            input=target,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=True,
+        ).stdout.strip()
+        self._run(
+            "update-index",
+            "--add",
+            "--cacheinfo",
+            f"120000,{blob_sha},docs/decisions/{filename}",
+        )
+        self._run("commit", "-q", "-m", "add symlinked decision entry")
+
+    def set_canonical(self, commit: str) -> None:
+        self._run("update-ref", "refs/remotes/origin/main", commit)
+
+    def head(self) -> str:
+        return self._run("rev-parse", "HEAD")
+
+    def commit_tree_with_extra_files(
+        self, base_commit: str, extra_files: dict[str, str], message: str
+    ) -> str:
+        """A new commit -- ``base_commit``'s tree plus ``extra_files`` layered on top -- created
+        with no ref pointing at it and the real index never touched (a scratch ``GIT_INDEX_FILE``
+        is used instead). Models "an acceptance decision commit landing on top of an already-real
+        implementation commit" without ever creating a real, referenced decision.
+        """
+        import os
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as tmp:
+            env = dict(os.environ, GIT_INDEX_FILE=str(Path(tmp) / "index"))
+            self._run("read-tree", base_commit, env=env)
+            for relpath, content in extra_files.items():
+                blob_sha = subprocess.run(
+                    ["git", "hash-object", "-w", "--stdin"],
+                    cwd=self.path,
+                    input=content,
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=True,
+                    env=env,
+                ).stdout.strip()
+                self._run(
+                    "update-index", "--add", "--cacheinfo", f"100644,{blob_sha},{relpath}", env=env
+                )
+            tree_sha = self._run("write-tree", env=env)
+            return self._run("commit-tree", tree_sha, "-p", base_commit, "-m", message, env=env)
+
+
+@pytest.fixture
+def canonical_git_repo(tmp_path, monkeypatch):
+    sys.path.insert(0, str(_REPO_ROOT / "scripts"))
+    import successor_lifecycle as lifecycle
+
+    repo = _CanonicalGitRepo(tmp_path / "canon")
+    monkeypatch.setattr(lifecycle, "ROOT", repo.path)
+    return repo
