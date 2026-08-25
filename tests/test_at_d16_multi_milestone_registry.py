@@ -431,12 +431,12 @@ def test_at_d14_cannot_be_reused_as_at_m2_authority(monkeypatch) -> None:
 
 def test_at_d13_cannot_be_reused_as_at_m3_1_merge_authority() -> None:
     """The reverse direction: AT-D13 is about AT-M2's merge, never AT-M3.1's."""
-    assert not lifecycle._decision_authorizes("AT-D13", "AT-M3.1")
+    assert not lifecycle._decision_authorizes("AT-D13", "AT-M3.1", "ACCEPTANCE_MERGE")
 
 
 def test_unknown_decision_id_fails_closed() -> None:
     assert lifecycle._decision_record_path("AT-D99") == ""
-    assert not lifecycle._decision_authorizes("AT-D99", "AT-M2")
+    assert not lifecycle._decision_authorizes("AT-D99", "AT-M2", "IMPLEMENTATION")
 
 
 def _inject_pm_entry(

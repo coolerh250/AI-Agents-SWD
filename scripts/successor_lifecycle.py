@@ -267,22 +267,57 @@ CANONICAL_AUTHORITY_PREFIX = "AT_D16_AUTHORITY_"
 _ENTRY_FIELD_NAMES = ("MILESTONE", "AUTHORIZATION_ID", "MERGE_ID", "BASELINE", "IMPLEMENTATION_END")
 
 
-# Every decision this mechanism can be asked to verify already lives at a fixed, well-known path.
-# A registry entry names only the decision's short id (AT-D11 .. AT-D16); this is the one place
-# that id is resolved to a file, so a malformed entry can never point the mechanism at an arbitrary
-# path supplied elsewhere in the snapshot.
-_DECISION_RECORD_PATHS = {
-    "AT-D11": "docs/decisions/at-m2-authorization.md",
-    "AT-D12": "docs/decisions/at-d12-successor-freeze-amendment.md",
-    "AT-D13": "docs/decisions/at-d13-at-m2-merge-authorization.md",
-    "AT-D14": "docs/decisions/at-d14-at-m3-live-reasoning-authorization.md",
-    "AT-D15": "docs/decisions/at-d15-at-m3-1-acceptance-and-merge-authorization.md",
-    "AT-D16": "docs/decisions/at-d16-multi-milestone-changeset-registry.md",
-}
+# --- AT-D17 decision discovery ---------------------------------------------------------------
+#
+# AT-GOV-DECISION-DISCOVERY-REBASELINE-1 found the fixed map this replaced could never scale:
+# every future milestone, authorized under its own freshly-numbered decision by this repository's
+# unbroken convention, would need a code edit here first -- an edit that itself trips a separate
+# historical stage's frozen-scope guard, recursing without bound. Discovery is now driven entirely
+# by repository data: the set of docs/decisions/*.md files and their own anchored identity line.
+# Landing a reviewed decision file on canonical main is now itself the act of making it
+# discoverable -- no Python code anywhere in this module names a future decision id.
+
+DECISIONS_DIR = "docs/decisions"
+_DECISION_IDENTITY_LINE = re.compile(r"^(AT-D\d+):\s*(\S.*?)\s*$", re.M)
+
+
+def _discovered_decision_paths() -> dict[str, str]:
+    """{decision_id: repo-relative path}, scanned fresh from docs/decisions/*.md every call.
+
+    Bounded and content-driven: only regular, non-symlink files directly inside the fixed
+    decisions directory are ever read -- no recursion, and no caller-, PM-, registry- or
+    decision-supplied path ever reaches the filesystem. Identity comes from an anchored
+    ``AT-D<n>: <status>`` line in the file's own text, read through ``_read`` (so it is fakeable
+    in tests the same way every other field in this module is), never from the filename -- AT-D11's
+    own file, ``at-m2-authorization.md``, already breaks any filename convention on purpose. A file
+    naming more than one distinct id contributes to none of them; an id claimed by more than one
+    (single-id) file resolves to neither. Status is not checked here -- an id can be *discovered*
+    whether or not it is currently binding, so ``_decision_is_binding`` can tell "unknown decision"
+    apart from "known decision, not (yet) binding".
+    """
+    directory = ROOT / DECISIONS_DIR
+    if not directory.is_dir():
+        return {}
+
+    claims: dict[str, list[str]] = {}
+    for path in sorted(directory.glob("*.md")):
+        if path.is_symlink() or not path.is_file():
+            continue
+        relpath = f"{DECISIONS_DIR}/{path.name}"
+        text = _read(relpath)
+        ids_in_file = {match.group(1) for match in _DECISION_IDENTITY_LINE.finditer(text)}
+        if len(ids_in_file) != 1:
+            continue
+        (decision_id,) = ids_in_file
+        claims.setdefault(decision_id, []).append(relpath)
+
+    return {decision_id: paths[0] for decision_id, paths in claims.items() if len(paths) == 1}
 
 
 def _decision_record_path(decision_id: str) -> str:
-    return _DECISION_RECORD_PATHS.get(decision_id, "")
+    if not re.fullmatch(r"AT-D\d+", decision_id):
+        return ""
+    return _discovered_decision_paths().get(decision_id, "")
 
 
 def _decision_is_binding(decision_id: str) -> bool:
@@ -290,6 +325,10 @@ def _decision_is_binding(decision_id: str) -> bool:
     if not text:
         return False
     return bool(re.search(rf"^{re.escape(decision_id)}:\s*RESOLVED / BINDING\b", text, re.M))
+
+
+def _milestone_set(field_value: str) -> set[str]:
+    return {name.strip() for name in field_value.split(",") if name.strip()}
 
 
 def _indexed_entries(text: str, count_field: str, prefix: str) -> dict[str, dict[str, str]]:
@@ -324,49 +363,116 @@ def _indexed_entries(text: str, count_field: str, prefix: str) -> dict[str, dict
     return entries
 
 
-def _canonical_changesets() -> dict[str, dict[str, str]]:
-    """AT-D16's own structured changeset table -- the only canonical source of entry values.
-
-    Empty unless AT-D16 itself exists on disk and reads RESOLVED / BINDING; the PM snapshot is
-    never consulted here, so nothing the snapshot claims can manufacture a canonical value.
-    """
-    text = _read(_decision_record_path("AT-D16"))
-    if not text or not re.search(r"^AT-D16:\s*RESOLVED / BINDING\b", text, re.M):
-        return {}
-    return _indexed_entries(text, CANONICAL_CHANGESET_COUNT_FIELD, CANONICAL_CHANGESET_PREFIX)
+REGISTERED_CHANGESET_COUNT_FIELD = "REGISTERED_CHANGESET_COUNT"
+REGISTERED_CHANGESET_PREFIX = "REGISTERED_CHANGESET_"
 
 
-def _decision_authorizes(decision_id: str, milestone: str) -> bool:
-    """Does AT-D16's own authority index say ``decision_id`` authorizes ``milestone``?
+def _decision_changeset_entries(decision_id: str) -> list[tuple[str, dict[str, str]]]:
+    """One binding decision's own reviewed-changeset table, as a flat (milestone, values) list.
 
-    Trust is rooted in AT-D16 itself -- a Product Owner decision, independently RESOLVED /
-    BINDING -- which states this directly, as an exact index entry. ``decision_id``'s own document
-    is checked only for its OWN RESOLVED / BINDING status, never scanned for an incidental mention
-    of the milestone's name: AT-D14's prose mentions "AT-M2" several times without authorizing it,
-    which is exactly the false-authorization this check must not reproduce.
+    AT-D16 -- and only AT-D16, referenced here by its own fixed, already-closed id, never a
+    pattern that would need to grow -- is read through its dedicated, unmodified
+    ``AT_D16_CHANGESET_*`` fields (AT-D17-R01): that table is frozen exactly as AT-D16 recorded
+    it. Every OTHER discovered decision is read through the generic ``REGISTERED_CHANGESET_*``
+    fields it may optionally carry (AT-D17-R06) -- the same field names for any future decision,
+    with no per-id branching. Either way the decision must independently read RESOLVED / BINDING.
     """
     if not _decision_is_binding(decision_id):
-        return False
+        return []
+    text = _read(_decision_record_path(decision_id))
+    if not text:
+        return []
+    if decision_id == "AT-D16":
+        table = _indexed_entries(text, CANONICAL_CHANGESET_COUNT_FIELD, CANONICAL_CHANGESET_PREFIX)
+    else:
+        table = _indexed_entries(
+            text, REGISTERED_CHANGESET_COUNT_FIELD, REGISTERED_CHANGESET_PREFIX
+        )
+    return list(table.items())
+
+
+def _canonical_changesets() -> dict[str, dict[str, str]]:
+    """Every discovered binding decision's reviewed-changeset entries, unioned by milestone.
+
+    AT-D16's own table remains the sole, unmodified source for the AT-M2 and AT-M3.1 entries. Any
+    decision discovered after AT-D16 may additionally register its own milestone(s) the same way,
+    with no code change needed to recognise it. A milestone registered more than once -- across
+    decisions, or twice within one decision's own table -- with disagreeing values is invalid
+    everywhere it was claimed: never a union, never a pick, and an earlier decision's registration
+    is never silently overridden by a later one.
+    """
+    raw: list[tuple[str, dict[str, str]]] = []
+    for decision_id in sorted(_discovered_decision_paths()):
+        raw.extend(_decision_changeset_entries(decision_id))
+
+    entries: dict[str, dict[str, str]] = {}
+    conflicted: set[str] = set()
+    for milestone, values in raw:
+        if milestone in entries and entries[milestone] != values:
+            conflicted.add(milestone)
+        else:
+            entries[milestone] = values
+    for milestone in conflicted:
+        entries.pop(milestone, None)
+    return entries
+
+
+def _grandfathered_authorizes(decision_id: str, milestone: str) -> bool:
+    """AT-D16's own, closed authority index for AT-D11/13/14/15 (AT-D17-R02).
+
+    Frozen exactly as AT-D16 recorded it: it does not grow, and no decision recorded after AT-D16
+    -- including AT-D17 itself -- is ever added to it. Trust is rooted in AT-D16 itself, a Product
+    Owner decision, independently RESOLVED / BINDING, referenced here by its own fixed id only.
+    """
     at_d16_text = _read(_decision_record_path("AT-D16"))
     if not at_d16_text or not re.search(r"^AT-D16:\s*RESOLVED / BINDING\b", at_d16_text, re.M):
         return False
     field = _field(at_d16_text, f"{CANONICAL_AUTHORITY_PREFIX}{decision_id.replace('-', '_')}")
-    authorized_milestones = {name.strip() for name in field.split(",") if name.strip()}
-    return milestone in authorized_milestones
+    return milestone in _milestone_set(field)
+
+
+def _typed_authorizes(decision_id: str, milestone: str, slot: str) -> bool:
+    """A decision discovered after AT-D16 authorizes ``milestone`` for ``slot`` (AT-D17-R05).
+
+    Only through its own typed ``AUTHORIZES_<slot>`` field -- ``slot`` is ``"IMPLEMENTATION"`` or
+    ``"ACCEPTANCE_MERGE"``, distinct authorization slots that never satisfy each other. Never
+    AT-D16's index, never the other slot's field, never a substring search of the decision's prose.
+    """
+    text = _read(_decision_record_path(decision_id))
+    if not text:
+        return False
+    return milestone in _milestone_set(_field(text, f"AUTHORIZES_{slot}"))
+
+
+def _decision_authorizes(decision_id: str, milestone: str, slot: str) -> bool:
+    """Does ``decision_id`` authorize ``milestone`` for ``slot`` ("IMPLEMENTATION" or
+    "ACCEPTANCE_MERGE")?
+
+    ``decision_id``'s own document is checked only for its own RESOLVED / BINDING status, never
+    scanned for an incidental mention of the milestone's name: AT-D14's prose mentions "AT-M2"
+    several times without authorizing it, which is exactly the false-authorization this check must
+    not reproduce. Two exact sources only: AT-D16's frozen grandfather (AT-D11/13/14/15 only), or
+    the decision's own typed field (everything discovered after AT-D16).
+    """
+    if not _decision_is_binding(decision_id):
+        return False
+    return _grandfathered_authorizes(decision_id, milestone) or _typed_authorizes(
+        decision_id, milestone, slot
+    )
 
 
 def authorized_changesets() -> list[dict[str, str]]:
     """Validated ``{milestone, baseline, implementation_end}`` entries for the live-guard registry.
 
-    AT-D16's own structured table is the only canonical source of an entry's values (see
-    ``_canonical_changesets``); the PM snapshot must independently mirror those exact values,
-    field for field, or that milestone gets no entry -- an ancestry-plausible substitute is not a
-    match. Authority is exact-index lookup against AT-D16's own authority table (see
-    ``_decision_authorizes``), never a substring search of a decision's prose. AT-M2's entry
-    additionally requires the legacy scalar (``AUTHORIZED_CHANGESET_END_FIELD``) to equal its
-    canonical end exactly -- the scalar itself never moves, but a mismatch invalidates the
-    registry's AT-M2 entry specifically. Any one failure drops only that milestone; it never
-    substitutes a wider value and never disturbs another milestone's entry.
+    Every discovered binding decision's own structured table is the canonical source of its
+    entries' values (see ``_canonical_changesets``); the PM snapshot must independently mirror
+    those exact values, field for field, or that milestone gets no entry -- an ancestry-plausible
+    substitute is not a match. Authority is exact-field lookup (see ``_decision_authorizes``),
+    never a substring search of a decision's prose. AT-M2's entry additionally requires the legacy
+    scalar (``AUTHORIZED_CHANGESET_END_FIELD``) to equal its canonical end exactly -- the scalar
+    itself never moves, but a mismatch invalidates the registry's AT-M2 entry specifically. Any
+    one failure drops only that milestone; it never substitutes a wider value and never disturbs
+    another milestone's entry.
     """
     canonical = _canonical_changesets()
     if not canonical:
@@ -394,9 +500,9 @@ def authorized_changesets() -> list[dict[str, str]]:
         baseline = canon["BASELINE"]
         end = canon["IMPLEMENTATION_END"]
 
-        if not _decision_authorizes(auth_id, milestone):
+        if not _decision_authorizes(auth_id, milestone, "IMPLEMENTATION"):
             continue
-        if not _decision_authorizes(merge_id, milestone):
+        if not _decision_authorizes(merge_id, milestone, "ACCEPTANCE_MERGE"):
             continue
 
         if milestone == "AT-M2" and _field(snapshot, AUTHORIZED_CHANGESET_END_FIELD) != end:
@@ -607,10 +713,13 @@ __all__ = [
     "AUTHORIZATION_RECORD_FIELD",
     "AUTHORIZED_CHANGESET_END_FIELD",
     "BOUNDARY_FIELD",
+    "DECISIONS_DIR",
     "DECLARED_LINE_MARKER",
     "FREEZE_AMENDMENT_DECISION_FIELD",
     "FREEZE_AMENDMENT_RECORD_FIELD",
     "MILESTONE_FIELD",
+    "REGISTERED_CHANGESET_COUNT_FIELD",
+    "REGISTERED_CHANGESET_PREFIX",
     "REGISTRY_COUNT_FIELD",
     "REGISTRY_DECISION_FIELD",
     "REGISTRY_RECORD_FIELD",
