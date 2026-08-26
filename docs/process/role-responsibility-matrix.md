@@ -52,6 +52,15 @@ product RBAC role, see `shared/sdk/tasks/rbac.py`) with any of the roles below.
 - **Does not decide backend behavior, RBAC, production safety, or deployment** — those are Claude
   Code's architectural responsibility, ultimately gated by the operator's acceptance.
 
+## Governance and blocking authority
+
+This matrix is authoritative for day-to-day delivery ownership. The **governance/blocking** view of
+the same roles — who decides blocker severity, when an implementer must challenge rather than
+implement, and what an independent validator returns when it finds a design-premise defect — is
+recorded once in
+[docs/governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md](../governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md)
+§5. It is additive to this matrix and replaces nothing in it.
+
 ## Cross-cutting rule
 
 Claude Code, Codex, and Claude Design may each report a technical outcome (implementation PASS,

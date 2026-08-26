@@ -463,6 +463,46 @@ That decision is not made here**, and this reconciliation deliberately does not 
 `SUCCESSOR_AUTHORIZED_CHANGESET_END` to cover it: that field's job is to record what AT-M2
 specifically reviewed, and moving it to name AT-M3.1's content would misstate that.
 
+## 8a. Project execution standard and 2026-08-26 postmortem disposition
+
+The binding shared process standard for every partner is
+[AI_AGENTS_PROJECT_EXECUTION_STANDARD.md](AI_AGENTS_PROJECT_EXECUTION_STANDARD.md). It is read
+before any architecture, implementation, validation, roadmap, governance or blocker decision, and
+it is what `CLAUDE.md` at the repository root points every fresh session at. It is process memory
+only: it adds no verifier, no registry, no discovery and no runtime.
+
+```text
+PROJECT_EXECUTION_STANDARD:         ACTIVE / BINDING PROCESS MEMORY
+PROJECT_EXECUTION_STANDARD_RECORD:  docs/governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md
+PROJECT_EXECUTION_STANDARD_ORIGIN:  AT-PROJECT-LOGIC-REVIEW-1 (2026-08-26)
+```
+
+An independent read-only forensic review on 2026-08-26 found that the hazard recorded in section 8
+above had been answered by repeatedly generalizing exemption machinery — successor window, live
+denylist, reviewed-changeset registry, exact authority binding, decision discovery, canonical
+freeze — rather than by retiring assertions that had expired when their stage closed. The chain had
+no finite root of trust and did not terminate. The AT-D16 and AT-D17 branches reached a deadlock in
+which a decision's authority required presence on canonical `main`, presence on `main` required a
+merge, and the merge required the guards the mechanism existed to satisfy.
+
+```text
+AT_D16_AT_D17_DISPOSITION:       FAILED / NONCANONICAL EXPERIMENTS -- NOT FOR MERGE
+GOVERNANCE_RESET_RECOMMENDATION: OPTION B -- MINIMAL GOVERNANCE KERNEL + PRODUCT DECOUPLING
+GOVERNANCE_RESET_STATE:          RECOMMENDED / AWAITING PRODUCT OWNER RESET DECISION
+```
+
+Neither branch is a candidate for further remediation or merge unless a future explicit Product
+Owner reset decision changes this. `HAZARD_AT_M3_LIVE_DENYLIST` in section 8 therefore stays
+`OPEN` and is **not** dispositioned by this entry — the paragraphs above it stay unedited as the
+record of how the hazard was discovered. Under the execution standard's classification the hazard
+is `HISTORICAL_ONLY` in effect and blocks no product milestone by default, but retiring it
+formally is a Product Owner decision this snapshot does not make.
+
+This entry authorizes no milestone, retires no registered debt, reclassifies no recorded decision,
+and grants no production or external authorization. AT-M3.2 remains implementation-authorized under
+AT-D14 exactly as section 5a records; production, AT-M3.6B, AT-M4 and PCP remediation remain
+unauthorized exactly as sections 5 and 5a record. `production_executed_true_count: 0`.
+
 ## 9. Source-of-truth precedence
 
 ```text

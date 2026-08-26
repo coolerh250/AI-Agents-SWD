@@ -17891,3 +17891,40 @@ them and missed the other twelve, plus their test-side mirrors.
 - **Residual failures: 2**, both identical at clean main and on the branch
   (`test_66d_decisions_untouched_by_this_remediation`, `test_rm1_verifier_passes`). Pre-existing,
   unrelated, and explicitly out of scope. `production_executed_true_count: 0`.
+
+## Step AT-PROJECT-MEMORY-INSTALL-CLAUDE-1 - Durable Project Execution Standard (DOCS ONLY)
+
+- **One authoritative standard, not another mechanism.**
+  `docs/governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md` records the 2026-08-26
+  "Governance Deadlock" postmortem conclusions as binding process memory: the Product North Star,
+  the eight-control Minimal Blocking Governance Kernel (PES-K1..K8), the seven non-blocking-by-
+  default classes (PES-N1..N7), the role contract, the execution lifecycle, nine governance-
+  recursion stop rules (PES-S1..S9), and the `GOVERNANCE_DRIFT_ALERT` block. It adds no verifier,
+  no registry, no discovery, no authority resolution and no runtime - the failure mode it exists
+  to prevent.
+- **Reconciled with what already existed, not duplicated.** `docs/process/stop-conditions.md` and
+  `docs/process/role-responsibility-matrix.md` each gained one cross-reference section pointing at
+  the standard for the governance-recursion and blocking-authority views respectively; neither
+  document's existing content was rewritten. `.agents/skills/security-governance/SKILL.md`,
+  `source-of-truth-policy.md` and `partner-handoff-standard.md` are untouched and still
+  authoritative. The standard's section 11 states the relationship for each.
+- **A root `CLAUDE.md` now exists and is a pointer, deliberately.** It names the standard as
+  mandatory preload before any architecture, implementation, validation, roadmap, governance or
+  blocker decision, restates only the two rules most often skipped under time pressure, and lists
+  the other required reading. It is not a copy of the standard, and the standard says so.
+- **The PM snapshot references, and does not reinterpret.** New section 8a names the standard,
+  records the AT-D16/AT-D17 branches as failed noncanonical experiments not for merge, and records
+  the Option B reset recommendation as awaiting a Product Owner decision. Section 8's
+  `HAZARD_AT_M3_LIVE_DENYLIST: OPEN` is left exactly as written - this entry does not disposition
+  it, because retiring it formally is a Product Owner decision, not a snapshot edit.
+- **Branched from canonical main, not from the failed experiments.** `origin/main` `5a04ec1` is the
+  base, so no AT-D16/AT-D17 content is carried forward by this work.
+- **Measured, not asserted.** `verify_pcp_v2_control_plane.py` reports the identical 3 failures
+  (check05, check18, check22) before and after these changes, at `5a04ec1` and at this branch tip -
+  all three pre-existing, all three governance-measurement staleness, none introduced here.
+- **Known gap, explicitly not fixed here.** This ledger is behind: AT-D13, AT-D14, AT-D15, AT-M3.1
+  and the AT-D16/AT-D17 branches have no entry. Backfilling that history is a separate
+  reconciliation and is not attempted under a docs-only process-memory stage.
+- **Scope held.** No runtime, product, schema, test or verifier code changed. No AT-D16/AT-D17
+  remediation. No milestone authorized, no debt retired, no control disabled, no merge to main, no
+  deployment, no external action. `production_executed_true_count: 0`.

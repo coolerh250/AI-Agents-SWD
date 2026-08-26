@@ -44,6 +44,16 @@ not a failure — proceeding past one without reporting it is.
    .agents/skills/security-governance/SKILL.md.
 ```
 
+## Governance-recursion stop rules
+
+The conditions above cover conflicts between prompt, `main`, decisions, authorization and secrets.
+Nine further stop rules (PES-S1 … PES-S9) cover **governance recursion** — a control validating its
+own validator, a fix requiring a change to the authority that legitimizes it, a third meta layer
+over the same root problem, a synthetic fixture diverging from the real Git/runtime lifecycle. They
+are recorded once, in
+[docs/governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md](../governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md)
+§7, and are not restated here. Both sets are in force.
+
 ## What "stop and report" means in practice
 
 - Do not proceed with the ambiguous or unauthorized action.
