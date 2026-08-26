@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-24
-RECONCILED_AGAINST_MAIN:     1e9fe3b445e1ddaefe0c4ed0bdc5be8af4d0ad96
-RECONCILED_BY_STAGE:         AT-M3.1-MERGE-1 / CANONICAL MERGE
+RECONCILED_ON:               2026-08-26
+RECONCILED_AGAINST_MAIN:     5a04ec1c67453c4d90b525e94402b9515fbec0bf
+RECONCILED_BY_STAGE:         AT-RESET-0-CANONICALIZATION-1 / GOVERNANCE RESET
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -39,7 +39,7 @@ PREVIOUS_COMPLETED_STAGE:    AT-M3.1 (canonical merge)
 CURRENT_GATE:                NONE -- AT-M3.1 canonically merged; AT-M3.2 .. AT-M3.6A are already
                               authorized under AT-D14 (see section 5a), so no new gate is open for
                               them; AT-M3.6B, production and AT-M4 remain closed
-CURRENT_STAGE:                AT-M3.1-MERGE-1 / CANONICAL MERGE
+CURRENT_STAGE:                AT-RESET-0-CANONICALIZATION-1 / GOVERNANCE RESET
 NEXT_PERMITTED_STAGE:        AT-M3.2 IMPLEMENTATION -- Goal + immutable PlanRevision. Already
                               authorized under AT-D14; no new Product Owner decision is required
                               unless the architecture materially changes, an authorization/security
@@ -488,8 +488,15 @@ merge, and the merge required the guards the mechanism existed to satisfy.
 ```text
 AT_D16_AT_D17_DISPOSITION:       FAILED / NONCANONICAL EXPERIMENTS -- NOT FOR MERGE
 GOVERNANCE_RESET_RECOMMENDATION: OPTION B -- MINIMAL GOVERNANCE KERNEL + PRODUCT DECOUPLING
-GOVERNANCE_RESET_STATE:          RECOMMENDED / AWAITING PRODUCT OWNER RESET DECISION
+GOVERNANCE_RESET_STATE:          APPROVED / BINDING -- AT-D18 (2026-08-26)
 ```
+
+`GOVERNANCE_RESET_STATE` moved from `RECOMMENDED / AWAITING PRODUCT OWNER RESET DECISION` to
+approved when the Product Owner recorded AT-D18
+(`docs/decisions/at-d18-project-governance-reset.md`). The recommendation line above it is left
+exactly as written — it records what the postmortem recommended, which stays true of the
+postmortem; the decision that followed is recorded in section 8b, not by editing the
+recommendation.
 
 Neither branch is a candidate for further remediation or merge unless a future explicit Product
 Owner reset decision changes this. `HAZARD_AT_M3_LIVE_DENYLIST` in section 8 therefore stays
@@ -502,6 +509,56 @@ This entry authorizes no milestone, retires no registered debt, reclassifies no 
 and grants no production or external authorization. AT-M3.2 remains implementation-authorized under
 AT-D14 exactly as section 5a records; production, AT-M3.6B, AT-M4 and PCP remediation remain
 unauthorized exactly as sections 5 and 5a record. `production_executed_true_count: 0`.
+
+## 8b. Reset-0 — AT-D18 governance reset
+
+AT-D18 (`docs/decisions/at-d18-project-governance-reset.md`) is the Product Owner decision that
+adopts the postmortem's Option B recommendation and restores the product critical path. Reset-0 is
+the canonicalization of that decision together with the shared process memory.
+
+```text
+PROJECT_PROCESS_MEMORY:      ACTIVE / CANONICAL
+GOVERNANCE_RESET:            AT-D18 APPROVED / BINDING
+RESET_OPTION:                OPTION B -- MINIMAL GOVERNANCE KERNEL + PRODUCT/GOVERNANCE DECOUPLING
+RESET_0_STATE:               COMPLETE
+PRODUCT_CRITICAL_PATH:       RESTORED
+NEXT_PRODUCT_STAGE:          AT-M3.2 -- Goal + immutable PlanRevision
+AT_M3_2_STATE:               AUTHORIZED UNDER AT-D14 / NOT YET STARTED
+```
+
+Blocking disposition under AT-D18-R03 and AT-D18-R05. These are classifications of what may stop
+**product** work; they weaken no control and retire no debt:
+
+```text
+PCP_META_GOVERNANCE_DISPOSITION:   PRE-PRODUCTION / NON-BLOCKING unless concrete P0/P1 evidence
+HISTORICAL_GUARD_DISPOSITION:      HISTORICAL / NON-BLOCKING unless concrete P0/P1 evidence
+BLOCKER_JUSTIFICATION_REQUIRED:    PROTECTED_RISK + SEVERITY + FAILURE_IMPACT + WHY_STOP_NOW
+```
+
+Authorization boundaries, restated here because Reset-0 changes none of them:
+
+```text
+PRODUCTION_AT_RESET_0:       NOT AUTHORIZED
+AT_M3_6B_AT_RESET_0:         NOT AUTHORIZED
+AT_M4_AT_RESET_0:            NOT AUTHORIZED unless separately authorized
+PCP_REMEDIATION_AT_RESET_0:  NOT AUTHORIZED
+RESET_0_PRODUCTION_EXECUTED_TRUE_COUNT: 0
+```
+
+Root of trust, as verifiable from the repository at Reset-0 — recorded as measured, never as
+assumed. Establishing these primitives is a later minimal-kernel hardening stage:
+
+```text
+GITHUB_BRANCH_PROTECTION:    UNVERIFIED -- not determinable from the local environment
+REQUIRED_REVIEW:             UNVERIFIED -- not determinable from the local environment
+CI_WORKFLOWS:                NONE -- .github/workflows/ does not exist in this repository
+COMMIT_SIGNING:              NOT IN USE
+```
+
+Reset-0 introduced no verifier, no registry, no decision discovery, no canonical activation and no
+meta-governance runtime. It is documentation and one decision record. The `AT_M2` and `AT_M3_1`
+fields in sections 5 and 5a keep their exact existing spellings, which repository controls parse;
+nothing in this section restates them.
 
 ## 9. Source-of-truth precedence
 

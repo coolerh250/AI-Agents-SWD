@@ -17928,3 +17928,51 @@ them and missed the other twelve, plus their test-side mirrors.
 - **Scope held.** No runtime, product, schema, test or verifier code changed. No AT-D16/AT-D17
   remediation. No milestone authorized, no debt retired, no control disabled, no merge to main, no
   deployment, no external action. `production_executed_true_count: 0`.
+
+## Step AT-RESET-0-CANONICALIZATION-1 - Governance Reset & Process Memory Canonicalization (DOCS ONLY)
+
+- **The reset is a decision, not a mechanism.** `docs/decisions/at-d18-project-governance-reset.md`
+  records AT-D18 as `RESOLVED / BINDING`: Option B adopted, AT-D16/AT-D17 dispositioned as failed
+  noncanonical experiments not for merge, the eight-control Minimal Blocking Governance Kernel,
+  the four-field blocker justification with `NON_BLOCKING` as the default when no P0/P1 risk
+  exists, historical assertions evaluated at their own reviewed stage boundary, the five-phase
+  execution lifecycle, `DESIGN_REVIEW_REQUIRED` for design-premise findings,
+  `GOVERNANCE_DRIFT_ALERT` as the shared coordination signal, and AT-M3.2 remaining
+  implementation-authorized under AT-D14. It adds no verifier, no registry, no discovery and no
+  canonical activation - the recursion it exists to end.
+- **Source of truth verified before it was trusted.** `origin/main` was independently confirmed
+  still at `5a04ec1`, unmoved since the postmortem, so no drift and no rebase. The combined
+  process-memory branch `docs/at-memory2-codex-process-memory` was confirmed at `290c85f` with
+  Claude's `ba8f806` in its ancestry and `origin/main` as a first-parent ancestor, making a
+  fast-forward possible without improvisation.
+- **Codex added a pointer, not a second standard.** `290c85f` touches exactly one file,
+  `AGENTS.md`, 17 lines, pointing at
+  `docs/governance/AI_AGENTS_PROJECT_EXECUTION_STANDARD.md`. That standard is byte-identical to
+  the version installed at `ba8f806`, so the hierarchy holds: one authoritative standard, two thin
+  bootstrap pointers. Combined, the branch touches no path under `shared/ apps/ agents/
+  migrations/ infra/ scripts/ tests/`.
+- **A self-consistency invariant caught a real mistake, and it was fixed properly.** Re-pointing
+  `CURRENT_STAGE` at this stage broke `check17a`, which requires `RECONCILED_BY_STAGE` to name the
+  stage that actually re-recorded the values. The fix was to reconcile the provenance - this stage
+  did re-record them - not to weaken the check. `RECONCILED_ON`, `RECONCILED_AGAINST_MAIN` and
+  `RECONCILED_BY_STAGE` now describe Reset-0 truthfully.
+- **Measured, not asserted.** `verify_pcp_v2_control_plane.py` reports the identical 3 failures
+  (`check05`, `check18`, `check22`) before and after, with a byte-identical
+  `GOVERNANCE_INPUT_DIGEST` of `755f7f27e618` - all three pre-existing governance-measurement
+  staleness, none introduced here. A repeated-key scan of the snapshot returns no conflicts across
+  104 register keys.
+- **Historical failures were classified, not repaired.** Under AT-D18-R03/R05 the historical
+  stage-guard failures and the PCP measurement staleness are `HISTORICAL / NON-BLOCKING` and
+  `PRE-PRODUCTION / NON-BLOCKING` respectively. No product or runtime code was changed to make
+  them green, no registry exemption was added, no historical boundary was moved, no path allowlist
+  was introduced. `HAZARD_AT_M1_DENYLIST` and `HAZARD_AT_M3_LIVE_DENYLIST` stay `OPEN` in section
+  8, unedited - classified, not retired.
+- **Root of trust recorded as measured.** Branch protection and required review are `UNVERIFIED`,
+  not claimed absent and not claimed active, because the local environment cannot determine them.
+  `.github/workflows/` does not exist, which is recorded as factual repository state. Commits are
+  unsigned. Establishing these primitives is a later minimal-kernel hardening stage and was not
+  attempted here.
+- **Scope held.** No runtime, product, schema, test or verifier code changed. No AT-D16/AT-D17
+  remediation and no failed-branch content merged. No milestone authorized, no debt retired, no
+  control disabled, no PCP remediation, no deployment, no external action, and AT-M3.2 not
+  started. `production_executed_true_count: 0`.
