@@ -342,17 +342,26 @@ async def test_project_thread_and_principal_are_all_nullable():
     assert row["requested_by_principal_id"] is None
 
 
-async def test_no_at_m2_table_is_altered_by_this_migration():
-    """team_decisions.resulting_plan_revision_id stays FK-less until M3.2 pre-clears it (AT-D14) --
-    this remediation touches only reasoning_invocations."""
+async def test_migration_037_alters_no_at_m2_table():
+    """Migration 037 itself still adds nothing to any AT-M2 table.
+
+    This assertion originally read "resulting_plan_revision_id stays FK-less", with the FK
+    expected to arrive when M3.2 pre-cleared it under AT-D14 -- which migration 038 has now done.
+    The property 037 actually owns is narrower and unchanged: reasoning_invocations names no
+    column on an AT-M2 table, and 037 introduced no constraint on one. The FK's own existence is
+    asserted by tests/test_at_m3_2_planning_store.py, which is the slice that authorized it.
+    """
     store = await _store_or_skip()
     conn = await store._connect()
     try:
-        fk_count = await conn.fetchval("""
-            SELECT count(*) FROM information_schema.table_constraints
-            WHERE table_name='team_decisions' AND constraint_type='FOREIGN KEY'
-              AND constraint_name LIKE '%resulting_plan_revision%'
+        rows = await conn.fetch("""
+            SELECT tc.constraint_name
+            FROM information_schema.table_constraints tc
+            JOIN information_schema.constraint_column_usage ccu
+              ON tc.constraint_name = ccu.constraint_name
+            WHERE tc.table_name='team_decisions' AND tc.constraint_type='FOREIGN KEY'
+              AND ccu.table_name='reasoning_invocations'
             """)
     finally:
         await conn.close()
-    assert fk_count == 0
+    assert [row["constraint_name"] for row in rows] == []
