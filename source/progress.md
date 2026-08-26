@@ -17976,3 +17976,65 @@ them and missed the other twelve, plus their test-side mirrors.
   remediation and no failed-branch content merged. No milestone authorized, no debt retired, no
   control disabled, no PCP remediation, no deployment, no external action, and AT-M3.2 not
   started. `production_executed_true_count: 0`.
+
+## Step AT-M3.2-GOAL-PLANREVISION-1 - Goal + Immutable PlanRevision (IMPLEMENTED)
+
+- **Goal is intent, not work.** `goals` hangs off the existing `projects` row and carries
+  statement, acceptance criteria, constraints, creating principal and lifecycle status - the
+  architecture contract's section 2 fields exactly. It owns no work item, no run and no owner, so
+  no second Project/WorkItem hierarchy is introduced. `Goal.model_fields` asserts the absence.
+- **A change appends; it never rewrites.** Creating a successor writes exactly ONE row and touches
+  nothing else, so supersession is derived from lineage rather than stored. `superseded` is
+  deliberately absent from the status vocabulary: a revision is superseded exactly when another
+  names it, which the data already says. `test_successor_creation_does_not_mutate_the_predecessor`
+  asserts the predecessor row is byte-identical afterwards.
+- **Immutability is a database guarantee, not a service convention.**
+  `trg_plan_revisions_immutable` rejects any in-place update of a plan-bearing or lineage-bearing
+  column. Proven directly in psql: `UPDATE ... SET plan=...` and `SET status='accepted'` both raise
+  "plan_revisions is append-only", and the row's objective still reads `original` afterwards.
+- **Stale-plan protection is fail-closed in two DB layers.** The service takes `FOR UPDATE` on the
+  predecessor and re-checks currency inside the lock; the partial unique index
+  `uq_plan_revisions_one_successor` independently permits at most one successor per predecessor,
+  so a caller that bypasses the service is still caught. A loser receives
+  `StalePlanRevisionError` naming both revisions and is never silently rebased - a rebased plan is
+  a plan no principal authored.
+- **Eight real connections raced one predecessor; exactly one won.**
+  `test_concurrent_successors_yield_exactly_one_winner` runs eight independent asyncpg
+  connections against real PostgreSQL 16: 1 winner, 7 fail-closed, and exactly 2 rows in the
+  goal's history. A separate psql negative control confirms the constraint is load-bearing rather
+  than incidental - a second successor from the same predecessor is refused by name.
+- **Cross-goal lineage is unrepresentable, not merely checked.** Two composite foreign keys carry
+  it: `(supersedes_revision_id, goal_id)` must reference a revision of the SAME goal, and
+  `(goal_id, project_id)` a goal genuinely in that project. Proven in psql - a cross-goal
+  predecessor violates `fk_plan_revisions_supersedes_same_goal`. Cycles are impossible by
+  construction: the predecessor must already exist, is immutable once written, and admits one
+  successor.
+- **The plan is structured so M3.4 and M3.5 have data, not prose.** Objective, ordered
+  dependency-aware steps, per-step capability requirements, expected outputs, constraints and
+  delegation intent. The diff is computed SERVER-SIDE from the predecessor's stored plan and never
+  accepted from the caller, because a caller-supplied diff can disagree with the plan it claims to
+  describe.
+- **Revision numbering follows repository authority, not intuition.** The contract states twice
+  that `revision_number` is monotonic **per project**, so `UNIQUE (project_id, revision_number)` is
+  the constraint; per-GOAL lineage is a separate guarantee carried by the composite FK. Two goals
+  in one project therefore share one number sequence and have independent chains - both enforced.
+- **The one AT-M2 alteration AT-D14 pre-cleared, and no more.**
+  `team_decisions.resulting_plan_revision_id` becomes a real UUID FK to `plan_revisions`. Every
+  existing row was NULL (no writer ever named the column), and the conversion is written
+  defensively anyway. TeamDecision semantics are unchanged and no approval table is touched. The
+  M3.1 assertion that this FK was absent - whose own docstring named M3.2 as the point it would
+  change - is repointed to the property migration 037 actually owns.
+- **Nothing hidden is persisted.** No column on either table is named for reasoning, a prompt or a
+  credential, asserted by querying `information_schema`. Payloads are key-screened at the service
+  AND store layers, so a direct store caller bypassing Pydantic is still refused. Audit events
+  carry ids, actor, operation, prior/new revision and disposition - a test asserts the plan
+  objective and the rationale text appear nowhere in the emitted event.
+- **Measured on real PostgreSQL 16, not a fake.** 29/29 store tests and 32/32 model tests pass;
+  117/117 M3.1 + AT-M2 regression tests pass; 308 pass locally including the AT-M1 verifier.
+  Migration 038 re-applies cleanly (idempotent). Three `test_at_m1_architecture_reset` failures on
+  the Linux test host are environment-dependent - the verifier shells out to `python`, which that
+  host does not provide - and reproduce identically at clean `origin/main`; they pass locally where
+  `python` exists.
+- **Scope held.** No M3.3 discussion, no M3.4 decomposition, no M3.5 dispatch, no DebugAttempt. No
+  network, subprocess or provider surface exists in the new code. No governance mechanism was
+  added. `production_executed_true_count: 0`; production and M3.6B remain unauthorized.
