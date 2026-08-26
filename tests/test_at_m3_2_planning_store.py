@@ -585,11 +585,11 @@ async def test_team_decision_cannot_name_a_nonexistent_plan_revision():
     try:
         thread_id = await conn.fetchval(
             """
-            INSERT INTO conversation_threads (project_id, thread_type, topic, opened_by)
-            VALUES ($1,'planning','at-m3-2 fk test',$2) RETURNING thread_id
+            INSERT INTO conversation_threads (project_id, goal_ref, thread_type)
+            VALUES ($1,$2,'planning') RETURNING thread_id
             """,
             root["project_id"],
-            uuid.UUID(principal_id),
+            f"goal:{goal_id}",
         )
         with pytest.raises(asyncpg.ForeignKeyViolationError):
             await conn.execute(
@@ -619,7 +619,6 @@ async def test_team_decision_cannot_name_a_nonexistent_plan_revision():
         )
     finally:
         await conn.close()
-    assert goal_id
 
 
 # --- audit / storage prohibition ------------------------------------------------------------------
