@@ -18102,3 +18102,89 @@ them and missed the other twelve, plus their test-side mirrors.
 - **Scope held.** No P2 finding from Validation 1 was pulled in - store-layer key-screen coverage,
   free-text values and raw-SQL leaf delete remain recorded as P2 backlog. No M3.3+ behaviour, no
   external call, no governance mechanism. `production_executed_true_count: 0`.
+
+## Step AT-M3.2-INDEPENDENT-VALIDATION-2 - Final Goal + Immutable PlanRevision Validation (PASS)
+
+- **Validated from a fresh checkout, not the implementer's tree.** A clean clone at exactly
+  `d6442bd` was used for every probe, and a canonical pre-M3.2 database was built by applying the
+  repository's own migration chain 001..037 into an empty PostgreSQL 16.14 - so nothing about the
+  result depended on the state the remediation session left behind.
+- **D1 re-derived from architecture before it was tested.** `planning-and-plan-revision-model.md`
+  section 4 transitions the SAME revision through team acceptance, and
+  `source-of-truth-and-lineage-model.md` calls a PlanRevision "immutable once accepted". So
+  `draft -> accepted` is approved and immutability begins at acceptance. Measured: the transition
+  succeeds; `accepted -> draft/proposed/rejected`, `draft -> proposed/rejected`,
+  `proposed -> accepted`, `rejected -> accepted` and unknown status values all fail closed with
+  SQLSTATE 23001.
+- **The authorized transition cannot be used as a carrier.** All 11 plan/lineage-bearing columns
+  are immutable before AND after acceptance, and all 9 multi-column attempts pairing
+  `status='accepted'` with a forbidden field mutation were blocked, leaving the row still draft.
+  An end-to-end column diff across the lifecycle changed exactly `status` and `audit_ref`.
+- **D2 closed under real load, 5 rounds each.** 8/8 concurrent initial revisions across 8 Goals of
+  ONE project succeeded every round with contiguous unique numbers; 8/8 concurrent independent
+  successors succeeded every round with the correct predecessor and no cross-goal contamination;
+  the same-predecessor race still produced exactly 1 winner and 7 fail-closed with the predecessor
+  byte-identical; and a mixed workload of roots, successors and same-predecessor contenders
+  produced no deadlock and no timeout. Rollback after a forced failure released the project lock
+  every time, leaving no partial row and no skipped revision number.
+- **Errors say what actually happened.** Each constraint maps to its own meaning, verified by
+  reproducing all three separately - the false "goal already has an initial revision" is gone.
+  Over HTTP: duplicate root 409, stale successor 409, allocation conflict 409, and a simulated
+  upstream `PostgresError` 503 carrying no driver text and no DSN. No 500 reachable.
+- **The early-candidate migration question was answered as two separate questions.** Manually
+  re-running the corrected 038 on a database that had applied the pre-remediation candidate
+  rebinds the trigger, drops the old function and preserves existing rows. Separately, the
+  repository's real runner for this migration family (`scripts/k8s_apply_migrations.py`) is
+  forward-only with NO tracking table and re-applies every file, so it would install the
+  correction on its own; the ledger-aware runner covers only 031-035, has no manifest for 038, and
+  would fail closed on a checksum mismatch rather than skip. Canonical main carries no 038 at all,
+  so every database holding the old one is noncanonical test/dev. No migration 039 needed.
+- **TeamDecision conversion re-confirmed data-safe.** Non-UUID text and a dangling UUID each fail
+  the migration closed with full rollback; NULL converts cleanly; blank/empty text becomes NULL,
+  discarding no identifier; and a genuine FK-bearing value survives a re-run byte-identical.
+- **Zero new regressions, measured rather than argued.** Full-suite failure sets were compared
+  across three refs on the same database and interpreter: candidate `d6442bd` (80 failed / 6732
+  passed), pre-remediation `52a7d37` (81 failed) and canonical main `d5880d2` (81 failed / 6636
+  passed). Set-diff candidate vs pre-remediation: no new failures. The single delta passes
+  standalone on both refs - a full-run ordering flake. The ~80 pre-existing failures are the
+  historical governance/meta family and fail identically on canonical main.
+- **Four non-blocking observations carried out, none remediated.** Creation-time non-draft status;
+  a duplicate no-op acceptance audit event; audit emission depending on an injected client; and
+  the inherited store-level key-screen / free-text-value / raw-SQL leaf-delete gaps. Read-only
+  throughout - no code, test, migration or doc was modified by the validation.
+
+## Step AT-M3.2-CANONICALIZATION-1 - Goal + Immutable PlanRevision Acceptance & Merge (DOCS ONLY)
+
+- **Acceptance attaches to a commit, not a branch.**
+  `docs/decisions/at-d19-at-m3-2-acceptance-and-merge-authorization.md` records AT-D19 as
+  `RESOLVED / BINDING`: the AT-M3.2 capability accepted exactly as validated, the exact validated
+  candidate `d6442bd` authorized for canonical merge, and no further AT-M3.2 validation required.
+  `Implementation_end` stays at `d6442bd` and does not follow the tip this acceptance commit
+  creates - moving it would silently claim validation coverage a docs commit never had.
+- **The acceptance boundary is a closed list.** AT-D19 section 2 names the seventeen accepted
+  capabilities and says so explicitly: capability not on the list is not accepted, whether or not
+  code for it happens to exist. Acceptance did not widen during canonicalization.
+- **Source of truth verified before it was trusted.** `origin/main` independently confirmed still
+  at `d5880d2`, the candidate at exactly the validated `d6442bd`, main an ancestor of it, and no
+  unexpected commit after Validation 2 - so a fast-forward was possible without improvisation and
+  without re-validating a moved tip.
+- **Post-validation bytes proven unchanged.** The diff between `d6442bd` and the acceptance tip is
+  documentation only: the AT-D19 record, the PM snapshot and this ledger. Nothing under `shared/`,
+  `apps/`, `agents/`, `migrations/`, `infra/`, `scripts/` or `tests/` changed after the validated
+  SHA, checked before the merge rather than asserted after it.
+- **Four observations recorded so they are not rediscovered as new.** Creation-time non-draft
+  PlanRevision status (revisit in M3.4 so TeamDecision stays the canonical chooser), the duplicate
+  no-op acceptance audit event, injected-client audit completeness, and the inherited store-level
+  gaps. Under AT-D18-R05 all four are `NON-BLOCKING`: none reaches a Minimal Blocking Governance
+  Kernel control, so none blocks acceptance, and none was remediated here.
+- **Bounded reconciliation only.** The PM snapshot moved its own provenance forward, recorded
+  AT-M3.2 as `PO_ACCEPTED / MERGED / CANONICAL / CLOSED` with its implementation end, and set the
+  product critical path to AT-M3.3. `AT_M3_2_THROUGH_AT_M3_6A` became `AT_M3_3_THROUGH_AT_M3_6A`
+  because that is now what AT-D14 still authorizes but nobody has implemented. No other register
+  key was touched.
+- **Scope held.** No product, runtime, schema, test or verifier code changed. AT-D18's Minimal
+  Governance Kernel preserved; AT-D16/AT-D17 not reopened and no content from their branch entered
+  main. No verifier, registry, discovery or canonical-activation mechanism added, no historical
+  exemption, no P2/P3 promotion to blocker, no PCP remediation, no deployment, no external action,
+  and AT-M3.3 not started. Production remains `NOT AUTHORIZED`, AT-M3.6B and AT-M4 remain `NOT
+  AUTHORIZED`, `production_executed_true_count: 0`.
