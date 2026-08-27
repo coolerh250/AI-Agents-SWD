@@ -554,10 +554,17 @@ PROJECT_PROCESS_MEMORY:      ACTIVE / CANONICAL
 GOVERNANCE_RESET:            AT-D18 APPROVED / BINDING
 RESET_OPTION:                OPTION B -- MINIMAL GOVERNANCE KERNEL + PRODUCT/GOVERNANCE DECOUPLING
 RESET_0_STATE:               COMPLETE
-PRODUCT_CRITICAL_PATH:       RESTORED
-NEXT_PRODUCT_STAGE:          AT-M3.2 -- Goal + immutable PlanRevision
-AT_M3_2_STATE:               AUTHORIZED UNDER AT-D14 / NOT YET STARTED
+PRODUCT_CRITICAL_PATH_AT_RESET_0: RESTORED
+NEXT_PRODUCT_STAGE_AT_RESET_0:    AT-M3.2 -- Goal + immutable PlanRevision
+AT_M3_2_STATE_AT_RESET_0:         AUTHORIZED UNDER AT-D14 / NOT YET STARTED
 ```
+
+The last three keys carry the `_AT_RESET_0` suffix this section already uses for its authorization
+boundaries, for the same reason: they record what was true **at Reset-0**, and Reset-0's position
+is history now that AT-D19 has accepted AT-M3.2. Their values are unchanged. The live position is
+`PRODUCT_CRITICAL_PATH` and `NEXT_PRODUCT_STAGE` in section 5a, which is where a register key must
+appear exactly once — two sections holding the same key with different values would make the
+snapshot ambiguous about which one is current.
 
 Blocking disposition under AT-D18-R03 and AT-D18-R05. These are classifications of what may stop
 **product** work; they weaken no control and retire no debt:
