@@ -21,8 +21,13 @@
 -- is a fact about the lineage and needs no write to the predecessor. Storing it as a mutable
 -- status would require an UPDATE on an append-only row to express something the data already
 -- says. The architecture contract lists 'superseded' among the statuses; this implementation keeps
--- that MEANING and derives it, and keeps `status` for the authored lifecycle the author controls
--- (draft/proposed/accepted/rejected).
+-- that MEANING and derives it.
+--
+-- ACCEPTANCE IS A REAL TRANSITION ON THE SAME ROW: `status` covers draft/proposed/accepted/
+-- rejected, and exactly one transition is authorized -- draft -> accepted -- because that is the
+-- one the approved pipeline names (section 4). It is enforced by the lifecycle trigger below, not
+-- by convention. This is the correction AT-M3.2 Validation 1 required: the first cut froze status
+-- from creation, which made the pipeline's own team-acceptance stage unreachable.
 --
 -- REVISION NUMBERING: monotonic PER PROJECT, exactly as the contract specifies twice ("revision
 -- _number 1, 2, 3 ... monotonic per project", "VERSIONED revision_number is monotonic per
@@ -185,11 +190,30 @@ CREATE INDEX IF NOT EXISTS idx_plan_revisions_project
 -- 3. Immutability, enforced by the database.
 --    A revision's plan-bearing and lineage-bearing columns may never be updated in place. This
 --    is what makes "a change is a NEW revision" true for every caller, including one holding a
---    raw psql session. audit_ref is the single exception: it is bookkeeping written once when
---    the audit sink returns, carries no plan content, and may only move from NULL to a value.
+--    raw psql session.
+--
+--    TWO writes are permitted, and only two. Both are narrow, both are one-way, and neither
+--    touches plan content:
+--
+--    1. audit_ref, NULL -> value, once. Bookkeeping written when the audit sink returns.
+--
+--    2. status, 'draft' -> 'accepted', and nothing else. This is the team-acceptance stage the
+--       approved architecture requires on the SAME revision -- planning-and-plan-revision-model.md
+--       section 4 ("PlanRevision (draft) ... team acceptance ... PlanRevision (accepted)", and
+--       "the team records a TeamDecision accepting THE REVISION"), and
+--       source-of-truth-and-lineage-model.md, which states a PlanRevision is "immutable once
+--       accepted". Immutability begins at acceptance; a blanket freeze from creation made that
+--       stage unreachable and is what AT-M3.2 Validation 1 rejected as D1.
+--
+--       No other transition is authorized anywhere in the approved architecture, so no other
+--       transition is permitted here: 'accepted' is terminal, and 'proposed'/'rejected' remain
+--       creation-time values with no authorized transition until a slice's own contract adds one.
+--       Plan content stays immutable in BOTH states -- stricter than "immutable once accepted",
+--       deliberately, because a draft whose plan can be rewritten is not a revision.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION plan_revisions_reject_update() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION plan_revisions_enforce_lifecycle() RETURNS TRIGGER AS $$
 BEGIN
+    -- (a) Plan-bearing and lineage-bearing content: immutable in every status, forever.
     IF NEW.plan_revision_id       IS DISTINCT FROM OLD.plan_revision_id
     OR NEW.project_id             IS DISTINCT FROM OLD.project_id
     OR NEW.goal_id                IS DISTINCT FROM OLD.goal_id
@@ -197,25 +221,48 @@ BEGIN
     OR NEW.created_by             IS DISTINCT FROM OLD.created_by
     OR NEW.reason                 IS DISTINCT FROM OLD.reason
     OR NEW.supersedes_revision_id IS DISTINCT FROM OLD.supersedes_revision_id
-    OR NEW.status                 IS DISTINCT FROM OLD.status
     OR NEW.plan                   IS DISTINCT FROM OLD.plan
     OR NEW.diff                   IS DISTINCT FROM OLD.diff
     OR NEW.trace_ref              IS DISTINCT FROM OLD.trace_ref
-    OR NEW.created_at             IS DISTINCT FROM OLD.created_at
-    OR OLD.audit_ref IS NOT NULL THEN
+    OR NEW.created_at             IS DISTINCT FROM OLD.created_at THEN
         RAISE EXCEPTION
-            'plan_revisions is append-only: revision % may not be updated in place; '
-            'create a successor revision instead', OLD.plan_revision_id
+            'plan_revisions is append-only: revision % may not have its plan or lineage '
+            'updated in place; create a successor revision instead', OLD.plan_revision_id
             USING ERRCODE = 'restrict_violation';
     END IF;
+
+    -- (b) audit_ref is write-once: NULL -> value, never value -> anything.
+    IF NEW.audit_ref IS DISTINCT FROM OLD.audit_ref AND OLD.audit_ref IS NOT NULL THEN
+        RAISE EXCEPTION
+            'plan_revisions.audit_ref is write-once: revision % already carries one',
+            OLD.plan_revision_id
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+
+    -- (c) status: exactly one authorized transition. Everything else -- including
+    --     accepted -> draft, accepted -> rejected, draft -> proposed, and any value the CHECK
+    --     constraint would otherwise still admit -- fails closed here.
+    IF NEW.status IS DISTINCT FROM OLD.status
+       AND NOT (OLD.status = 'draft' AND NEW.status = 'accepted') THEN
+        RAISE EXCEPTION
+            'plan_revisions: % -> % is not an authorized lifecycle transition for revision %; '
+            'the only permitted transition is draft -> accepted',
+            OLD.status, NEW.status, OLD.plan_revision_id
+            USING ERRCODE = 'restrict_violation';
+    END IF;
+
     RETURN NEW;
 END;
 $$ LANGUAGE plpgsql;
 
+-- The pre-remediation function froze status outright. Dropped by name so a database that already
+-- ran the earlier 038 candidate does not keep an orphaned, now-wrong function behind.
+DROP FUNCTION IF EXISTS plan_revisions_reject_update();
+
 DROP TRIGGER IF EXISTS trg_plan_revisions_immutable ON plan_revisions;
 CREATE TRIGGER trg_plan_revisions_immutable
     BEFORE UPDATE ON plan_revisions
-    FOR EACH ROW EXECUTE FUNCTION plan_revisions_reject_update();
+    FOR EACH ROW EXECUTE FUNCTION plan_revisions_enforce_lifecycle();
 
 -- No DELETE trigger is added. Deleting a revision is already prevented for any revision that has
 -- a successor (the self-FK), and cascade-on-project-delete must keep working; a blanket DELETE

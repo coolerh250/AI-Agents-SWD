@@ -215,6 +215,35 @@ class PlanningService:
         )
         return row
 
+    async def accept_revision(self, plan_revision_id: str) -> dict[str, Any] | None:
+        """Record team acceptance of a revision: ``draft -> accepted`` on the same row.
+
+        This is the pipeline's ``plan acceptance`` stage (planning-and-plan-revision-model.md
+        section 4), and the only status transition the approved architecture names. It writes
+        nothing but the status: plan, diff and lineage stay exactly as authored, which is what
+        "immutable once accepted" means in source-of-truth-and-lineage-model.md.
+
+        Deliberately NOT implemented here: choosing WHICH revision the team accepts, and recording
+        the TeamDecision that carries that choice. That orchestration is M3.4's, and the approved
+        linkage it will use -- ``team_decisions.resulting_plan_revision_id`` -- already exists.
+        This slice supplies only the primitive M3.4 needs to call.
+        """
+        row = await self.store.accept_revision(plan_revision_id)
+        if row is None:
+            return None
+        await self._audit(
+            planning_events.AUDIT_PLAN_REVISION_ACCEPTED,
+            f"plan revision {row['plan_revision_id']} accepted for goal {row['goal_id']}",
+            "accepted",
+            {
+                "plan_revision_id": str(row["plan_revision_id"]),
+                "goal_id": str(row["goal_id"]),
+                "revision_number": str(row["revision_number"]),
+                "status": row["status"],
+            },
+        )
+        return row
+
     # --- reads ---------------------------------------------------------------------------------
 
     async def get_current_revision(self, goal_id: str) -> dict[str, Any] | None:

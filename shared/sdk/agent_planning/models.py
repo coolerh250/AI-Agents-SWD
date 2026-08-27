@@ -349,13 +349,35 @@ class PlanLineageError(ValueError):
     """A predecessor that does not exist, or belongs to a different goal."""
 
 
+class PlanRevisionLifecycleError(ValueError):
+    """An unauthorized status transition.
+
+    The approved pipeline names exactly one transition on an existing revision,
+    ``draft -> accepted`` (planning-and-plan-revision-model.md section 4). ``accepted`` is
+    terminal, and ``proposed``/``rejected`` are creation-time values with no authorized
+    transition, so every other move raises this rather than being silently ignored.
+    """
+
+
+class PlanRevisionAllocationError(RuntimeError):
+    """A per-project revision number could not be allocated.
+
+    The project row is locked for the whole numbering critical section, so
+    ``uq_plan_revisions_project_number`` should be unreachable. If it fires anyway the lock was
+    bypassed, and this is raised rather than retried: silently re-allocating would hide the fact
+    that the serialization point stopped working, which is the failure worth knowing about.
+    """
+
+
 __all__ = [
     "Goal",
     "GoalStatus",
     "PlanContent",
     "PlanDiff",
     "PlanLineageError",
+    "PlanRevisionAllocationError",
     "PlanRevision",
+    "PlanRevisionLifecycleError",
     "PlanRevisionReason",
     "PlanRevisionStatus",
     "PlanStep",

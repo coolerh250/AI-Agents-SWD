@@ -14,6 +14,7 @@ from __future__ import annotations
 
 from shared.sdk.agent_planning.events import (
     AUDIT_GOAL_CREATED,
+    AUDIT_PLAN_REVISION_ACCEPTED,
     AUDIT_PLAN_REVISION_CREATED,
     AUDIT_PLAN_REVISION_STALE_REJECTED,
     AUDIT_PLAN_REVISION_SUPERSEDED,
@@ -26,6 +27,8 @@ from shared.sdk.agent_planning.models import (
     PlanDiff,
     PlanLineageError,
     PlanRevision,
+    PlanRevisionAllocationError,
+    PlanRevisionLifecycleError,
     PlanRevisionReason,
     PlanRevisionStatus,
     PlanStep,
@@ -40,6 +43,7 @@ from shared.sdk.agent_planning.store import DEFAULT_DATABASE_URL, PlanningStore
 
 __all__ = [
     "AUDIT_GOAL_CREATED",
+    "AUDIT_PLAN_REVISION_ACCEPTED",
     "AUDIT_PLAN_REVISION_CREATED",
     "AUDIT_PLAN_REVISION_STALE_REJECTED",
     "AUDIT_PLAN_REVISION_SUPERSEDED",
@@ -50,6 +54,8 @@ __all__ = [
     "PlanDiff",
     "PlanLineageError",
     "PlanRevision",
+    "PlanRevisionAllocationError",
+    "PlanRevisionLifecycleError",
     "PlanRevisionReason",
     "PlanRevisionStatus",
     "PlanStep",

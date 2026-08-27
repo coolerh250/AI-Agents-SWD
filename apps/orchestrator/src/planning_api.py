@@ -13,11 +13,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import asyncpg
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from shared.sdk.agent_planning.models import (
     PlanLineageError,
+    PlanRevisionAllocationError,
     PlanStepDraftError,
     StalePlanRevisionError,
 )
@@ -144,8 +146,18 @@ async def create_initial_revision(goal_id: str, payload: CreateInitialRevisionRe
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except PlanLineageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PlanRevisionAllocationError as exc:
+        # A per-project numbering conflict is a concurrency condition, not a server fault.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except asyncpg.PostgresError as exc:
+        # Nothing from the driver reaches the client as a 500: an expected domain conflict is
+        # mapped above, and anything left is an upstream availability problem, not a bug the
+        # caller can act on. AT-M3.2 Validation 1 (D2) found a UniqueViolationError escaping here.
+        raise HTTPException(
+            status_code=503, detail=f"plan revision could not be recorded: {type(exc).__name__}"
+        ) from exc
     return _revision_view(row, is_current=True)
 
 
@@ -182,8 +194,18 @@ async def create_successor_revision(goal_id: str, payload: CreateSuccessorRevisi
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except PlanLineageError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PlanRevisionAllocationError as exc:
+        # A per-project numbering conflict is a concurrency condition, not a server fault.
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except asyncpg.PostgresError as exc:
+        # Nothing from the driver reaches the client as a 500: an expected domain conflict is
+        # mapped above, and anything left is an upstream availability problem, not a bug the
+        # caller can act on. AT-M3.2 Validation 1 (D2) found a UniqueViolationError escaping here.
+        raise HTTPException(
+            status_code=503, detail=f"plan revision could not be recorded: {type(exc).__name__}"
+        ) from exc
     return _revision_view(row, is_current=True)
 
 

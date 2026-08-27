@@ -31,6 +31,7 @@ $$;
 
 DROP TRIGGER IF EXISTS trg_plan_revisions_immutable ON plan_revisions;
 DROP TABLE IF EXISTS plan_revisions;
+DROP FUNCTION IF EXISTS plan_revisions_enforce_lifecycle();
 DROP FUNCTION IF EXISTS plan_revisions_reject_update();
 DROP TABLE IF EXISTS goals;
 

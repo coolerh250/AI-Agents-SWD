@@ -16,6 +16,20 @@ second worker or a raw SQL caller would not share that memory:
   ``uq_plan_revisions_one_successor`` still permits at most one successor per predecessor; a
   losing writer gets a unique violation, which is translated here into
   ``StalePlanRevisionError``. Two layers, both in PostgreSQL.
+* **Per-project revision numbers are allocated under the project row's own lock.** The contract
+  numbers revisions per PROJECT, so two different Goals of one project share a sequence. Computing
+  ``max(revision_number) + 1`` without serialising made independent Goal lineages collide -- AT-M3.2
+  Validation 1's D2. Every allocation now takes ``SELECT ... FROM projects ... FOR UPDATE`` first,
+  so the critical section is exactly the numbering and nothing else, and unrelated projects never
+  serialise against each other.
+
+LOCK ORDER, everywhere in this module: **project row, then predecessor revision.** Both write paths
+take it in that order, which is what stops two callers deadlocking by approaching the same pair
+from opposite ends.
+
+A unique violation is never mapped to a single domain meaning. Each constraint means something
+different, and reporting the wrong one sends the next reader somewhere else entirely -- reporting
+a numbering collision as "this goal already has an initial revision" was the second half of D2.
 """
 
 from __future__ import annotations
@@ -29,6 +43,8 @@ import asyncpg
 
 from shared.sdk.agent_planning.models import (
     PlanLineageError,
+    PlanRevisionAllocationError,
+    PlanRevisionLifecycleError,
     StalePlanRevisionError,
 )
 from shared.sdk.agent_team.models import assert_content_is_safe
@@ -45,9 +61,12 @@ _REVISION_COLUMNS = """
     supersedes_revision_id, status, plan, diff, trace_ref, audit_ref, created_at
 """
 
-#: Raised by uq_plan_revisions_one_successor when a second caller derives from the same
-#: predecessor, and by uq_plan_revisions_one_root_per_goal for a duplicate root.
-_UNIQUE_VIOLATION = "23505"
+#: Every unique constraint on plan_revisions, and the domain fact each one actually reports.
+#: Mapping them all to one meaning is how a numbering collision came to be reported as a
+#: duplicate root (AT-M3.2 Validation 1, D2).
+_ROOT_PER_GOAL = "uq_plan_revisions_one_root_per_goal"
+_ONE_SUCCESSOR = "uq_plan_revisions_one_successor"
+_PROJECT_NUMBER = "uq_plan_revisions_project_number"
 
 
 def _safe_json(payload: Any, field: str) -> str:
@@ -151,7 +170,9 @@ class PlanningStore:
 
         ``uq_plan_revisions_one_root_per_goal`` makes a second root impossible, so calling this
         twice for one goal raises rather than forking the lineage into an unresolvable pair of
-        tips.
+        tips. The project row is locked before the number is computed, so two Goals of the SAME
+        project creating their roots concurrently both succeed with distinct numbers instead of
+        colliding.
         """
         conn = await self._connect()
         try:
@@ -162,6 +183,7 @@ class PlanningStore:
                 )
                 if goal is None:
                     raise PlanLineageError(f"unknown goal {data['goal_id']}")
+                await self._lock_project(conn, goal["project_id"])
                 number = await self._next_revision_number(conn, goal["project_id"])
                 try:
                     row = await conn.fetchrow(
@@ -182,8 +204,8 @@ class PlanningStore:
                         data.get("audit_ref"),
                     )
                 except asyncpg.UniqueViolationError as exc:
-                    raise PlanLineageError(
-                        f"goal {data['goal_id']} already has an initial revision"
+                    raise self._unique_violation_meaning(
+                        exc, goal_id=data["goal_id"], number=number
                     ) from exc
             return _json_row(row)  # type: ignore[return-value]
         finally:
@@ -196,6 +218,11 @@ class PlanningStore:
         different goal, or a predecessor that is no longer current all raise rather than write.
         The predecessor row itself is never modified -- supersession is a fact the successor's own
         row asserts.
+
+        Locks in the module's fixed order: project row first (for the per-project number), then
+        the predecessor (for currency). Independent lineages of the same project contend only for
+        the numbering, so they all succeed; contenders for the SAME predecessor still resolve to
+        exactly one winner.
         """
         expected = _uuid_or_none(data["expected_current_revision_id"])
         goal_id = _uuid_or_none(data["goal_id"])
@@ -203,8 +230,16 @@ class PlanningStore:
         conn = await self._connect()
         try:
             async with conn.transaction():
-                # Lock the predecessor first. Two concurrent successors for the same predecessor
-                # serialise here rather than racing to the unique index.
+                # Identify the owning project before taking any lock, so the lock order below is
+                # always project-then-predecessor. This read decides nothing; every check that
+                # matters happens after both locks are held.
+                project_id = await conn.fetchval(
+                    "SELECT project_id FROM goals WHERE goal_id=$1", goal_id
+                )
+                if project_id is None:
+                    raise PlanLineageError(f"unknown goal {data['goal_id']}")
+                await self._lock_project(conn, project_id)
+
                 predecessor = await conn.fetchrow(
                     """
                     SELECT plan_revision_id, project_id, goal_id, revision_number
@@ -256,15 +291,52 @@ class PlanningStore:
                         data.get("audit_ref"),
                     )
                 except asyncpg.UniqueViolationError as exc:
-                    # The last line of defence, and the one that holds for a caller that never
-                    # took the lock above: uq_plan_revisions_one_successor rejected a second
-                    # successor for this predecessor. Reported as staleness, which is what it is.
-                    if "one_successor" in str(exc):
-                        raise StalePlanRevisionError(
-                            expected=expected, actual=None, goal_id=goal_id
-                        ) from exc
-                    raise
+                    raise self._unique_violation_meaning(
+                        exc, goal_id=goal_id, expected=expected, number=number
+                    ) from exc
             return _json_row(row)  # type: ignore[return-value]
+        finally:
+            await conn.close()
+
+    # --- lifecycle ------------------------------------------------------------------------------
+
+    async def accept_revision(self, plan_revision_id: Any) -> dict[str, Any] | None:
+        """Transition a revision from 'draft' to 'accepted' -- the pipeline's acceptance stage.
+
+        The ONLY write this store ever makes to an existing revision, and the only status
+        transition the approved architecture names. Guarded by ``WHERE status='draft'`` here and
+        by the lifecycle trigger in the database, so neither a lost race nor a direct SQL caller
+        can move a revision anywhere else.
+
+        Already ``accepted`` is a no-op that returns the row: acceptance is a conclusion, and
+        recording the same conclusion twice is not an error. ``proposed``/``rejected`` raise --
+        the architecture authorizes no transition out of them. An unknown id returns ``None``.
+        """
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE plan_revisions SET status='accepted'
+                WHERE plan_revision_id=$1 AND status='draft'
+                RETURNING {_REVISION_COLUMNS}
+                """,
+                _uuid_or_none(plan_revision_id),
+            )
+            if row is not None:
+                return _json_row(row)
+
+            current = await conn.fetchrow(
+                f"SELECT {_REVISION_COLUMNS} FROM plan_revisions WHERE plan_revision_id=$1",
+                _uuid_or_none(plan_revision_id),
+            )
+            if current is None:
+                return None
+            if current["status"] == "accepted":
+                return _json_row(current)
+            raise PlanRevisionLifecycleError(
+                f"revision {plan_revision_id} is '{current['status']}'; the only authorized "
+                "lifecycle transition is draft -> accepted"
+            )
         finally:
             await conn.close()
 
@@ -326,12 +398,44 @@ class PlanningStore:
 
     # --- internals -----------------------------------------------------------------------------
 
+    async def _lock_project(self, conn: asyncpg.Connection, project_id: Any) -> None:
+        """Serialize per-project revision numbering on the project row itself.
+
+        The numbering rule is per PROJECT, so the project row is the natural and smallest
+        serialization point: two Goals of one project queue behind each other for the length of
+        one ``max()`` and one INSERT, and two different projects never contend at all. Held for
+        the rest of the transaction and released by commit or rollback, like any row lock.
+        """
+        await conn.fetchval("SELECT id FROM projects WHERE id=$1 FOR UPDATE", project_id)
+
+    def _unique_violation_meaning(
+        self,
+        exc: asyncpg.UniqueViolationError,
+        *,
+        goal_id: Any,
+        expected: Any = None,
+        number: int | None = None,
+    ) -> Exception:
+        """The domain fact a specific unique constraint reports -- never a blanket meaning."""
+        name = exc.constraint_name or ""
+        if name == _ROOT_PER_GOAL:
+            return PlanLineageError(f"goal {goal_id} already has an initial revision")
+        if name == _ONE_SUCCESSOR:
+            return StalePlanRevisionError(expected=expected, actual=None, goal_id=goal_id)
+        if name == _PROJECT_NUMBER:
+            return PlanRevisionAllocationError(
+                f"revision number {number} was already taken for this project while its row was "
+                "locked; the per-project allocator's serialization point did not hold"
+            )
+        return exc
+
     async def _next_revision_number(self, conn: asyncpg.Connection, project_id: Any) -> int:
         """Monotonic per PROJECT (architecture contract section 3), not per goal.
 
-        A collision between two goals of the same project racing for the same number is caught by
-        ``uq_plan_revisions_project_number`` and surfaces as a unique violation rather than a
-        silently reused number.
+        Callers MUST hold ``_lock_project`` for this project first. Without it two goals of the
+        same project read the same ``max()`` and one of them loses to
+        ``uq_plan_revisions_project_number`` -- which is the defect this lock exists to remove,
+        not a race the constraint is expected to absorb.
         """
         current = await conn.fetchval(
             "SELECT max(revision_number) FROM plan_revisions WHERE project_id=$1", project_id

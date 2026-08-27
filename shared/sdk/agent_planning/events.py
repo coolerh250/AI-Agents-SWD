@@ -13,11 +13,13 @@ from __future__ import annotations
 
 AUDIT_GOAL_CREATED = "goal_created"
 AUDIT_PLAN_REVISION_CREATED = "plan_revision_created"
+AUDIT_PLAN_REVISION_ACCEPTED = "plan_revision_accepted"
 AUDIT_PLAN_REVISION_SUPERSEDED = "plan_revision_superseded"
 AUDIT_PLAN_REVISION_STALE_REJECTED = "plan_revision_stale_rejected"
 
 __all__ = [
     "AUDIT_GOAL_CREATED",
+    "AUDIT_PLAN_REVISION_ACCEPTED",
     "AUDIT_PLAN_REVISION_CREATED",
     "AUDIT_PLAN_REVISION_STALE_REJECTED",
     "AUDIT_PLAN_REVISION_SUPERSEDED",
