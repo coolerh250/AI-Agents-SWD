@@ -18038,3 +18038,67 @@ them and missed the other twelve, plus their test-side mirrors.
 - **Scope held.** No M3.3 discussion, no M3.4 decomposition, no M3.5 dispatch, no DebugAttempt. No
   network, subprocess or provider surface exists in the new code. No governance mechanism was
   added. `production_executed_true_count: 0`; production and M3.6B remain unauthorized.
+
+## Step AT-M3.2-IMPLEMENTATION-REMEDIATION-1 - Controlled Lifecycle + Project-Locked Numbering (IMPLEMENTED)
+
+- **D1: immutability begins at acceptance, not at creation.** Three independent statements in the
+  approved architecture say so - section 4's pipeline transitions the SAME revision
+  `PlanRevision (draft) -> team acceptance -> PlanRevision (accepted)`, section 4's stages say the
+  team "records a TeamDecision accepting THE REVISION", and
+  `source-of-truth-and-lineage-model.md` calls a PlanRevision "immutable once accepted". The first
+  cut froze every column from creation, which made that stage unreachable. `trg_plan_revisions_
+  immutable` now runs `plan_revisions_enforce_lifecycle`, permitting exactly two writes and
+  nothing else: `audit_ref` NULL->value once, and `status` draft->accepted.
+- **Stricter than the contract where it costs nothing.** Plan, diff and lineage stay immutable in
+  BOTH states, not only after acceptance - a draft whose plan can be rewritten is not a revision.
+  Verified over a 2x5 parametrised matrix (before/after acceptance x plan/diff/reason/
+  revision_number/trace_ref).
+- **One transition, because the architecture names one.** `accepted` is terminal; `proposed` and
+  `rejected` stay creation-time values with no authorized transition. Seven unauthorized
+  transitions are rejected from raw SQL, including accepted->draft. `draft -> accepted` is the
+  single permitted status write and is proven to change `status` and nothing else - an
+  independent probe diffed every column before and after and got exactly `['status']`.
+- **No new HTTP endpoint.** The approved contract does not place one in M3.2, so acceptance lands
+  as a store/service primitive (`accept_revision`) for M3.4 to call. Choosing WHICH revision the
+  team accepts, and recording the TeamDecision that carries the choice, stays M3.4's - the
+  approved linkage it will use already exists and is asserted here against an accepted revision.
+- **Supersession is still derived.** No stored mutable `superseded` state was introduced to make
+  a test pass. An accepted predecessor keeps its own status when superseded, and
+  current-revision resolution is unchanged.
+- **D2: the numbering critical section is now the project row.** `revision_number` is monotonic
+  per PROJECT by contract, so two Goals of one project share a sequence; `max()+1` without
+  serialisation made independent lineages collide - measured at 1 of 6 succeeding before the fix.
+  Both write paths now take `SELECT ... FROM projects ... FOR UPDATE` first. Measured after:
+  **8/8 concurrent roots and 8/8 concurrent successors across three rounds each**, all numbers
+  unique. Unrelated projects never contend - eight separate projects each allocate revision 1.
+- **Lock order is fixed module-wide.** Project row, then predecessor. Both paths take it in that
+  order, which is what stops the two of them deadlocking from opposite ends. Rollback releases
+  the project lock - asserted with a failed allocation followed by a timeout-bounded retry.
+- **The same-predecessor invariant is untouched.** 8 contenders, 3 rounds: exactly 1 winner, 7
+  fail-closed, exactly 2 rows, predecessor byte-identical.
+- **Constraints are read by name, never blanket-mapped.** `one_root_per_goal` -> PlanLineageError,
+  `one_successor` -> StalePlanRevisionError, `project_number` -> PlanRevisionAllocationError.
+  The false "goal already has an initial revision" - reported to eight goals that had none - is
+  gone, asserted directly. The allocation conflict is raised rather than retried: the lock makes
+  it unreachable, so if it fires the serialization point stopped working and silently
+  re-allocating would hide precisely that.
+- **Nothing raw reaches the client.** Both write routes map `PlanRevisionAllocationError` to 409
+  and any remaining `asyncpg.PostgresError` to 503. Eight concurrent HTTP creates returned
+  `[200 x8]`, no 500 - the leak Validation 1 found is closed.
+- **A defect the fresh-database path could not have caught.** Re-running 038 on a database that
+  already applied the earlier candidate failed: PostgreSQL refuses to drop a function while a
+  trigger depends on it, so the whole migration rolled back and that database kept the old
+  status-freezing function. Found by exercising the in-place upgrade separately, fixed by
+  dropping the trigger first. Both paths now reach the same end state.
+- **Migration amended, not superseded.** 038 has never been canonical, so no 039 was created.
+  Fresh DB: UP / DOWN / UP / UP all clean; in-place upgrade clean, with the trigger rebound to the
+  new function and the old one gone.
+- **One pre-existing M3.2 assertion corrected, not deleted.**
+  `test_raw_sql_cannot_update_a_revision` parametrised over `status='accepted'`, which asserted
+  the very freeze Validation 1 rejected. It now uses `rejected`, genuinely unauthorized from
+  draft, so the assertion's purpose survives while net coverage increases.
+- **Measured.** 35 new remediation tests, 229 focused tests on real PostgreSQL 16, 320 locally,
+  all passing. No M3.1 test was changed by this remediation.
+- **Scope held.** No P2 finding from Validation 1 was pulled in - store-layer key-screen coverage,
+  free-text values and raw-SQL leaf delete remain recorded as P2 backlog. No M3.3+ behaviour, no
+  external call, no governance mechanism. `production_executed_true_count: 0`.
