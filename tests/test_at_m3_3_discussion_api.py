@@ -62,9 +62,7 @@ def test_no_m34_decision_route_is_exposed():
 def test_no_route_can_edit_a_team_message():
     paths = [p for p, _ in _routes()]
     assert "/discussions/{discussion_id}/messages" in paths
-    message_routes = [
-        (p, ms) for p, ms in _routes() if p.endswith("/messages") or "message" in p
-    ]
+    message_routes = [(p, ms) for p, ms in _routes() if p.endswith("/messages") or "message" in p]
     assert all(ms == ("GET",) for _, ms in message_routes)
 
 

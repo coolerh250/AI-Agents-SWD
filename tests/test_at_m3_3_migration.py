@@ -14,6 +14,7 @@ ROOT = Path(__file__).resolve().parents[1]
 _FORWARD = ROOT / "migrations" / "039_at_m3_3_bounded_team_discussion.sql"
 _DOWN = ROOT / "migrations" / "039_at_m3_3_bounded_team_discussion_down.sql"
 
+
 def _sql_body(path: Path) -> str:
     """The migration's executable SQL, with ``--`` comment lines removed.
 
@@ -22,7 +23,8 @@ def _sql_body(path: Path) -> str:
     at the prose describing their absence.
     """
     return "\n".join(
-        line for line in path.read_text(encoding="utf-8").splitlines()
+        line
+        for line in path.read_text(encoding="utf-8").splitlines()
         if not line.lstrip().startswith("--")
     )
 
