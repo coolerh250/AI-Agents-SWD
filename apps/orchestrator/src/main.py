@@ -34,6 +34,7 @@ from design_review_api import router as design_review_router
 from mini_delivery_api import router as mini_delivery_router
 from project_api import router as project_router
 from planning_api import router as planning_router
+from discussion_api import router as discussion_router
 from operations_replay_api import router as operations_replay_router
 from operations_resume_api import router as operations_resume_router
 from task_api import router as task_router
@@ -210,6 +211,9 @@ app.include_router(project_router)
 app.include_router(team_router)
 # AT-M3.2: Goal and immutable PlanRevision. Append-only -- no update/delete route exists.
 app.include_router(planning_router)
+# AT-M3.3: bounded team discussion. Read and step only -- it records no decision and accepts
+# nothing, which is why no accept/reject route exists here.
+app.include_router(discussion_router)
 # Stage 46: agent discussion & design review operations API.
 app.include_router(design_review_router)
 # Stage 47: real repo workspace operator operations API.

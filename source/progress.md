@@ -18188,3 +18188,71 @@ them and missed the other twelve, plus their test-side mirrors.
   exemption, no P2/P3 promotion to blocker, no PCP remediation, no deployment, no external action,
   and AT-M3.3 not started. Production remains `NOT AUTHORIZED`, AT-M3.6B and AT-M4 remain `NOT
   AUTHORIZED`, `production_executed_true_count: 0`.
+
+## Step AT-M3.3-BOUNDED-TEAM-DISCUSSION-1 - Bounded Team Deliberation Runtime (IMPLEMENTED)
+
+- **Composed, not rebuilt.** The discussion IS a `ConversationThread` (one row, 1:1) and every
+  word a participant says IS a `TeamMessage`. Migration 039 adds three tables and alters nothing:
+  `discussion_sessions` holds the bounded orchestration a thread has no place for,
+  `discussion_participants` records who was selected and why, `discussion_turns` is the turn
+  ledger. Goals, PlanRevisions, principals, agent profiles, memberships and reasoning invocations
+  are all reached by foreign key. `ALTER TABLE` appears nowhere - AT-D14 pre-cleared exactly one
+  alteration of an AT-M2 table and this is not it.
+- **The AT-M2 message vocabulary was not widened.** Widening `chk_team_messages_type` would have
+  been the easy way to carry observation/response/support, and would have spent an authorization
+  this slice does not have. The discussion's eight intents live on the turn ledger, and each
+  message is posted under a type the collaboration contract already defines. In particular the
+  convergence summary is a `message`, never a `decision_summary`: that type "points at a
+  TeamDecision" and changes state, and M3.3 records no TeamDecision.
+- **Participants come from the existing router, not a second registry.** One `route()` call per
+  required capability against the project's CURRENT membership, so the same router that decides
+  who takes a work item decides who is asked about one. An agent covering two capabilities takes
+  one seat and keeps both. Availability is re-read every turn, not trusted from selection time -
+  a member paused mid-flight stops the discussion rather than having words put in its mouth.
+- **Fail closed, and leave evidence.** An uncovered capability, a production-effect capability the
+  router refers to the human approval boundary, or fewer than two viable participants all produce
+  a durable TERMINAL discussion with `insufficient_capability_coverage`. A start request that
+  nobody could answer does not evaporate.
+- **Consensus is never inferred from exhaustion.** Convergence is a function of what was said -
+  whether the standing proposal still carries unresolved concerns or questions - and
+  `evaluate_convergence` takes no round number, so there is no argument through which elapsed
+  rounds could reach it. The database enforces the same separation independently:
+  `chk_discussion_sessions_reason_matches_state` makes `converged` reachable only with
+  `convergence_reached`, and a result reference only exists on a genuinely converged discussion.
+- **The shipped mock provider therefore never converges, and that is correct.** It declares a
+  standing concern on every critique, so a mock-mode discussion runs to its bound and closes
+  `exhausted / round_limit_reached`. Convergence is proven with an injected deterministic
+  provider rather than by special-casing the mock's private marker in product code.
+- **Two independent concurrency guarantees, both in PostgreSQL.** A turn slot is CLAIMED with
+  `INSERT ... ON CONFLICT DO NOTHING` on `(discussion_id, round_index, seat_index)` before any
+  provider call, and the turn's reasoning correlation id is DERIVED from that same slot, so
+  AT-M3.1's own unique constraint independently admits one provider call per turn. Measured:
+  **8 workers racing the same next turn, 5 independent discussions, every round - exactly one
+  canonical turn, one message and one reasoning invocation per slot, no duplicate reply.**
+- **A defect the arbiter hid.** Naming the slot index as the `ON CONFLICT` arbiter made a losing
+  racer raise `uq_discussion_turns_correlation` instead of losing quietly, roughly one race in
+  three, because both constraints describe the same fact and which index reports first is not
+  deterministic. Arbiter-less `DO NOTHING` covers every unique constraint on the table, which is
+  the actual intent: somebody already has this turn.
+- **`advanced` was made honest.** An adversarial probe caught all 8 workers reporting
+  `advanced=true` for the single closure step - the data was correct, the flag was not. Closure is
+  a conditional write, so the service now reports whether THIS caller performed it and returns the
+  real terminal state either way.
+- **Resumable from rows alone.** The cursor, the ledger and all three budget counters are columns.
+  A brand-new service with new stores and new connections continues at the correct next slot and
+  runs the discussion to its bound. A slot claimed but never reasoned is safely taken over; a slot
+  whose reasoning already reached a terminal outcome without a message is unresolvable and fails
+  closed, because AT-M3.1 persists metadata and never artifact content, so nothing can be
+  reconstructed and re-invoking would be a second call for one turn.
+- **No decision, no plan, no dispatch.** Verified on a completed discussion: zero `team_decisions`
+  rows, one `plan_revisions` row, the revision under discussion byte-identical afterwards. No
+  accept/reject/decide route exists, the HTTP surface is GET/POST only, and no route can edit a
+  `TeamMessage`.
+- **Storage prohibition held.** No AT-M3.3 column can hold a prompt, completion, scratchpad, token
+  trace or credential; the assembled reasoning context is bounded deterministically and persisted
+  nowhere; audit events carry identifiers, counters and dispositions only, asserted by checking
+  that no message body appears in any recorded event.
+- **Measured.** 76 new AT-M3.3 tests and 326 focused tests pass on real PostgreSQL 16, covering
+  M3.3, M3.2, M3.1, M2 Team Core, approval and audit. Migration 039 UP / DOWN / UP / UP all clean,
+  with the AT-M2 and AT-M3.2 substrate intact after DOWN. No production action, no external call,
+  `production_executed_true_count: 0`.
