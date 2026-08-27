@@ -243,7 +243,11 @@ async def test_successor_creation_does_not_mutate_the_predecessor():
     "column,value",
     [
         ("plan", '{"objective":"rewritten","steps":[]}'),
-        ("status", "accepted"),
+        # 'rejected', not 'accepted': draft -> accepted is the ONE transition the approved
+        # pipeline authorizes (AT-M3.2-REMEDIATION-1 / Validation 1 D1), and asserting that it
+        # raises would be asserting the defect. Every unauthorized transition, in both
+        # directions, is covered in tests/test_at_m3_2_remediation_lifecycle.py.
+        ("status", "rejected"),
         ("reason", "scope_correction"),
         ("revision_number", 99),
     ],
