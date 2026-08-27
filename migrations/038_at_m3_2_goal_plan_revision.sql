@@ -255,11 +255,16 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- The pre-remediation function froze status outright. Dropped by name so a database that already
--- ran the earlier 038 candidate does not keep an orphaned, now-wrong function behind.
+-- Order matters on a database that already ran the earlier 038 candidate: the trigger there
+-- still points at the old function, and PostgreSQL refuses to drop a function a trigger depends
+-- on. Drop the trigger first, then the superseded function, then rebind the trigger. A fresh
+-- database reaches the same end state through the same statements.
+DROP TRIGGER IF EXISTS trg_plan_revisions_immutable ON plan_revisions;
+
+-- The pre-remediation function froze status outright, which made the approved acceptance stage
+-- unreachable. Dropped by name so no orphaned, now-wrong function is left behind.
 DROP FUNCTION IF EXISTS plan_revisions_reject_update();
 
-DROP TRIGGER IF EXISTS trg_plan_revisions_immutable ON plan_revisions;
 CREATE TRIGGER trg_plan_revisions_immutable
     BEFORE UPDATE ON plan_revisions
     FOR EACH ROW EXECUTE FUNCTION plan_revisions_enforce_lifecycle();
