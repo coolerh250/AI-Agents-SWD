@@ -18320,3 +18320,52 @@ them and missed the other twelve, plus their test-side mirrors.
   remediation tree and on the pre-remediation candidate `46a97ef` under the identical runner:
   failure set byte-identical, zero new and zero resolved, +42 passing. No production action, no
   external call, no secret, `production_executed_true_count: 0`.
+
+## Step AT-M3.3-CANONICALIZATION-1 - Bounded Team Discussion Product Acceptance & Canonical Merge (CLOSED)
+
+**Status: AT-M3.3 PO ACCEPTED, canonically merged, CLOSED. Marker:
+`AT_M3_3_CANONICALIZATION_VERIFY: PASS`.**
+
+- **Source of truth recovered before anything was written.** `origin/main` was `2af3564`, the
+  validated base, unchanged. `origin/at-m3.3-bounded-team-discussion-1` was exactly
+  `4f1003c083b722c3e724f79d9998f910c991ee80` - the SHA Validation 2 passed against, with no commit
+  landed after it. The candidate descends from canonical main through three linear commits, and the
+  working tree was clean. Fast-forward canonicalization was therefore still valid, and no rebase
+  question arose.
+- **AT-D20 records the acceptance.** The decision id was derived from canonical main, not assumed:
+  the highest existing record there is AT-D19, and no AT-D20 existed anywhere in the repository.
+  It names the accepted capability list, the exact `implementation_end`, the full
+  Validation 1 FAIL -> design review -> remediation -> Validation 2 PASS chain, and the six
+  retained non-blocking observations. It also carries forward, unchanged, the M3.4 consumption
+  contract: five preconditions plus the requirement that the safety-critical write use AT-M3.2's
+  compare-and-swap, with a separate `is_current()` pre-read explicitly NOT the safety boundary.
+- **`implementation_end` does not follow the branch tip.** The acceptance and reconciliation commit
+  lands on top of `4f1003c` and is documentation; naming it would claim validation coverage the
+  docs commit never had. Both AT-D20 and the PM state say so in as many words.
+- **PM state reconciled, bounded.** Provenance moved to `4f1003c` under
+  `AT-M3.3-CANONICALIZATION-1`, position advanced to AT-M3.4, and section 5a gained the AT_M3_3
+  block plus `AT_M3_4: NOT YET STARTED`. `AT_M3_3_THROUGH_AT_M3_6A` became
+  `AT_M3_4_THROUGH_AT_M3_6A`. A duplicate-register-key scan was run before and after, as the
+  AT-D19 round taught: 106 keys / 0 conflicts before, 113 keys / 0 conflicts after, and
+  `RECONCILED_BY_STAGE` matches `CURRENT_STAGE`.
+- **Post-validation diff verified docs-only before merging.** `4f1003c` to the acceptance tip
+  touches `docs/decisions/`, `docs/governance/AI_AGENTS_PM_STATE.md` and `source/progress.md` and
+  nothing else. Zero bytes changed under `shared/`, `apps/`, `agents/`, `migrations/`, `infra/`,
+  `scripts/` or `tests/`.
+- **Merge was fast-forward only.** No squash, no rebase, no force, no improvised merge commit.
+- **Bounded post-merge verification on real PostgreSQL 16.** Migration 039 present with
+  `deadline_at NOT NULL`, `timeout_reached` in the stop-reason CHECK and paired only with
+  `exhausted`, both discussion trigger functions installed, the three tables present. Explicit
+  stale-revision open rejected leaving no row and no orphan thread; derived
+  `plan_revision_is_current` / `current_plan_revision_id` correct across a supersession; thread and
+  message reuse intact; reasoning still only through `ReasoningService`; zero `team_decisions`
+  written; planning model section 11 present on main. 141 M3.3 tests and 366 focused
+  M3.3/M3.2/M3.1/M2/approval/audit tests pass on canonical main.
+- **Boundaries held.** No AT-M3.4 runtime, no AT-M3.5 dispatch, no P3 backlog remediation, no PCP
+  work, AT-D16/AT-D17 untouched and still noncanonical, AT-D18 Minimal Governance Kernel preserved.
+  Production `NOT AUTHORIZED`, AT-M3.6B `NOT AUTHORIZED`, AT-M4 `NOT AUTHORIZED`, no external call,
+  `production_executed_true_count: 0`. No verifier, registry, authority mechanism, historical
+  exemption or canonical-activation mechanism was added.
+- **AT-M3.3 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
+  CANONICAL / CLOSED.** The product critical path advances to AT-M3.4 - Proposal / Challenge /
+  TeamDecision Planning Acceptance, which is authorized under AT-D14 and not started here.
