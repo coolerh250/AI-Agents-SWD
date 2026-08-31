@@ -331,10 +331,13 @@ async def test_an_uncovered_capability_fails_closed_with_a_durable_terminal_reco
 
 @pytest.mark.asyncio
 async def test_a_single_viable_participant_is_not_a_discussion():
+    """Covered, but by one agent. The count is what is wrong, and the reason says so."""
     scenario = await _scenario(agent_keys=("qa-agent",))
     session = await _start(scenario, caps=("verify_quality",))
     assert session["state"] == "failed"
-    assert session["stop_reason"] == "insufficient_capability_coverage"
+    # NOT insufficient_capability_coverage: verify_quality WAS covered. Reporting a coverage
+    # failure here would send a reader to look at the roster's skills instead of its size.
+    assert session["stop_reason"] == "insufficient_participants"
 
 
 @pytest.mark.asyncio
@@ -452,8 +455,12 @@ async def test_the_per_participant_turn_cap_is_enforced():
     final = await _service(ContestingProvider()).run(session["discussion_id"])
     assert final["session"]["is_terminal"] if "is_terminal" in final["session"] else True
     assert final["session"]["state"] == "exhausted"
+    # Its OWN bound. max_rounds was 5 and only 1 was used, so reporting round_limit_reached here
+    # would name a limit the discussion never came close to.
+    assert final["session"]["stop_reason"] == "participant_turn_limit_reached"
     participants = await _service().get_participants(session["discussion_id"])
     assert all(p["turns_taken"] <= 1 for p in participants)
+    assert final["session"]["current_round"] < 5
 
 
 @pytest.mark.asyncio
@@ -664,9 +671,10 @@ async def test_a_terminal_discussion_cannot_be_reopened_or_relabelled():
             await conn.execute(
                 "INSERT INTO discussion_sessions (project_id, goal_id, thread_id, opened_by, "
                 "topic, max_rounds, max_messages, max_invocations, max_turns_per_participant, "
-                "state, stop_reason, idempotency_key) "
+                "deadline_at, state, stop_reason, idempotency_key) "
                 "SELECT project_id, goal_id, thread_id, opened_by, topic, max_rounds, "
-                "max_messages, max_invocations, max_turns_per_participant, 'converged', "
+                "max_messages, max_invocations, max_turns_per_participant, "
+                "now() + interval '1 hour', 'converged', "
                 "'round_limit_reached', $2 FROM discussion_sessions WHERE discussion_id=$1",
                 discussion_id,
                 f"probe-{uuid.uuid4().hex}",

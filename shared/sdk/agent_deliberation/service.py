@@ -20,6 +20,18 @@ Four deliberate refusals:
   message is indistinguishable from a real one once it is in the thread.
 * **Nothing decides the next turn from memory.** Every step reads the durable ledger, which is
   what makes the runtime resumable across processes.
+* **The plan binding never moves.** A discussion is permanently about the exact PlanRevision it
+  opened against. A legitimate successor appearing mid-flight does not terminate it, mutate it or
+  rebind it, and produces no stale state and no stale flag; currency is derived at read time from
+  AT-M3.2's lineage. Per AT-M3.3-PLAN-STALENESS-DESIGN-REVIEW-1, the boundary that protects the
+  plan is M3.2's compare-and-swap when a successor is written, not a poll on every turn here.
+
+Five bounds end a discussion: rounds, messages, invocations, per-participant turns and elapsed
+time. Only the last can end one that nobody is advancing, which is why it exists -- and it is
+checked at four points, not one: before a slot is claimed, when a slot someone else holds is
+encountered, before a reasoning result becomes a TeamMessage, and at the round boundary. The
+third is the one that matters most: a provider call is the only step that takes real time, so it
+is the step during which the deadline realistically passes.
 """
 
 from __future__ import annotations
@@ -56,6 +68,14 @@ _PROVISIONAL_INTENT = {
     "critique": "challenge",
     "summarize_decision": "convergence_summary",
 }
+
+#: Closures that are NOT subject to the deadline-precedence guard in :meth:`DiscussionService._close`.
+#:
+#: ``timeout_reached`` is the reason the guard exists to protect, so guarding it against itself
+#: would be circular. ``cancelled`` is an explicit act by whoever opened the discussion rather than
+#: a bound firing, and an operator who cancels a discussion should get ``cancelled`` recorded even
+#: if the wall clock happened to run out first -- what they did is what the record should say.
+_UNGUARDED_CLOSE_REASONS = frozenset({"cancelled", "timeout_reached"})
 
 
 class DiscussionService:
@@ -195,6 +215,20 @@ class DiscussionService:
                 raise DiscussionStateError(
                     f"plan revision {plan_revision_id} is not a revision of goal {goal_id}"
                 )
+            # A revision that is already superseded is stale before the discussion says a word, and
+            # nothing the team concluded about it could ever be consumed by M3.4 -- whose currency
+            # precondition this discussion would fail from the moment it opened. Refuse here, where
+            # it costs nothing, rather than spend a reasoning budget arriving at the same place.
+            #
+            # This is a caller error, not a race, and it is NOT the safety boundary: mid-flight
+            # supersession is legitimate and is deliberately not policed (see the class docstring
+            # and AT-M3.3-PLAN-STALENESS-DESIGN-REVIEW-1). The boundary that actually protects the
+            # plan is M3.2's compare-and-swap at the moment a successor is written.
+            if not await self.planning_store.is_current(plan_revision_id):
+                raise DiscussionStateError(
+                    f"plan revision {plan_revision_id} has already been superseded; a discussion "
+                    "may not open against a revision that is not current"
+                )
         else:
             revision = await self.planning_store.get_current_revision(goal_id)
 
@@ -223,18 +257,25 @@ class DiscussionService:
 
         participants, uncovered = await self.select_participants(project_id, required_capabilities)
         if uncovered or len(participants) < MIN_PARTICIPANTS:
-            session = await self.store.create_failed_session(
-                payload, stop_reason="insufficient_capability_coverage"
+            # Two different failures, and the record says which. An uncovered capability means the
+            # team lacks a skill the topic needs; a covered-but-too-small roster means one agent
+            # answers for everything, which is a monologue rather than a deliberation. The first
+            # is fixed by adding a capability, the second by adding an agent, so reporting either
+            # under the other's name points the reader at the wrong repair.
+            stop_reason = (
+                "insufficient_capability_coverage" if uncovered else "insufficient_participants"
             )
+            session = await self.store.create_failed_session(payload, stop_reason=stop_reason)
             await self._audit(
                 discussion_events.AUDIT_DISCUSSION_CLOSED,
                 f"discussion {session['discussion_id']} could not open for goal {goal_id}",
-                "insufficient_capability_coverage",
+                stop_reason,
                 {
                     "discussion_id": str(session["discussion_id"]),
                     "goal_id": str(goal_id),
                     "uncovered_capabilities": [u["capability"] for u in uncovered],
                     "participants_selected": str(len(participants)),
+                    "minimum_participants": str(MIN_PARTICIPANTS),
                 },
             )
             return session
@@ -288,16 +329,29 @@ class DiscussionService:
         session = await self.store.get_session(discussion_id)
         if session is None:
             raise DiscussionStateError(f"unknown discussion {discussion_id}")
+
+        # PRECEDENCE, in the order STOP_REASON_PRECEDENCE fixes.
+        # 1. An already-terminal discussion is left exactly as it is.
         if session["state"] != "open":
             return self._result(False, session, None, f"discussion is {session['state']}")
+
+        # 2. The wall clock, before anything else is attempted. Checkpoint A of four: no slot is
+        #    claimed and no provider is called after the deadline has passed. This is also the
+        #    check that makes a discussion whose worker died mid-turn terminal at all -- counters
+        #    cannot advance without a worker, so no count bound could ever fire for it.
+        if session["deadline_expired"]:
+            return await self._expire(session)
 
         participants = await self.store.list_participants(discussion_id)
         count = len(participants)
         if count < MIN_PARTICIPANTS:
-            won, current = await self._close(
-                discussion_id, stop_reason="insufficient_capability_coverage"
+            # The capabilities were covered when this opened, or it would never have opened. What
+            # is wrong NOW is the count, and saying "insufficient capability coverage" would send
+            # a reader to look at the roster's skills rather than at its size.
+            won, current = await self._close(discussion_id, stop_reason="insufficient_participants")
+            return self._result(
+                won, current or session, None, f"{count} participant(s) is not a discussion"
             )
-            return self._result(won, current or session, None, "too few participants")
 
         round_index = session["current_round"]
         round_turns = await self.store.list_turns(discussion_id, round_index)
@@ -317,9 +371,17 @@ class DiscussionService:
         seat = min(set(range(count)) - recorded_seats)
         participant = participants[seat]
         if participant["turns_taken"] >= session["max_turns_per_participant"]:
-            won, current = await self._close(discussion_id, stop_reason="round_limit_reached")
+            # Its OWN bound, not the round bound. The discussion may have rounds left; this
+            # participant does not, and that is the fact worth recording.
+            won, current = await self._close(
+                discussion_id, stop_reason="participant_turn_limit_reached"
+            )
             return self._result(
-                won, current or session, None, "a participant reached its per-participant turn cap"
+                won,
+                current or session,
+                None,
+                f"{participant['agent_key']} used all "
+                f"{session['max_turns_per_participant']} of its turns",
             )
 
         available = await self._participant_available(session["project_id"], participant)
@@ -374,11 +436,26 @@ class DiscussionService:
 
     @staticmethod
     def _budget_exceeded(session: dict[str, Any]) -> str | None:
+        """The count bound that prevents the next unit of work, in fixed precedence order."""
         if session["messages_posted"] >= session["max_messages"]:
             return "message_limit_reached"
         if session["invocations_started"] >= session["max_invocations"]:
             return "invocation_limit_reached"
         return None
+
+    async def _expire(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Close a discussion whose deadline has passed. Idempotent, and safe to race.
+
+        The DB re-checks the deadline on the write, so a worker with a fast clock cannot expire a
+        discussion early, and of many workers observing the same expiry exactly one performs the
+        transition while the rest report the same terminal state.
+        """
+        won, current = await self._close(
+            str(session["discussion_id"]), stop_reason="timeout_reached"
+        )
+        return self._result(
+            won, current or session, None, "the discussion's elapsed-time deadline passed"
+        )
 
     async def _participant_available(self, project_id: Any, participant: dict[str, Any]) -> bool:
         """Is this participant still an active member with an active profile?
@@ -406,6 +483,16 @@ class DiscussionService:
         round_index = session["current_round"]
         participant_turns = [t for t in round_turns if t["seat_index"] < len(participants)]
         verdict = evaluate_convergence(participant_turns)
+
+        # Checkpoint D. A round boundary is reached after N provider calls, so this is the second
+        # place elapsed time realistically runs out. Converging here would write a summary message
+        # and a result reference after the discussion's own bound expired -- an outcome produced
+        # outside the window the team was given, presented as if it had been produced inside it.
+        latest = await self.store.get_session(discussion_id) or session
+        if latest["state"] != "open":
+            return self._result(False, latest, None, f"discussion is {latest['state']}")
+        if latest["deadline_expired"]:
+            return await self._expire(latest)
 
         if verdict.converged:
             return await self._converge(session, participants, round_index)
@@ -471,14 +558,34 @@ class DiscussionService:
         closure race changed nothing, and saying otherwise would make the flag useless for
         deciding whether anything actually happened. The session returned is always the current
         one, so the loser still reports the real terminal state.
+
+        Deadline precedence is enforced HERE, in the write, rather than by the order of the checks
+        in :meth:`advance`. Every reason but the two in ``_UNGUARDED_CLOSE_REASONS`` is written
+        under ``now() < deadline_at``, so a verdict this worker reached before the wall clock ran
+        out but is writing after it cannot land. When that guard refuses, the deadline is the fact
+        that is actually true and the discussion closes as a timeout -- which is what makes the
+        precedence in ``STOP_REASON_PRECEDENCE`` a property of the database rather than a property
+        of whichever worker happened to get there first.
         """
+        guarded = stop_reason not in _UNGUARDED_CLOSE_REASONS
         closed = await self.store.close_session(
-            discussion_id, stop_reason=stop_reason, result_message_id=result_message_id
+            discussion_id,
+            stop_reason=stop_reason,
+            result_message_id=result_message_id,
+            require_open_deadline=guarded,
         )
         if closed is not None:
             await self._audit_close(closed, stop_reason)
             return True, closed
+
         current = await self.store.get_session(discussion_id)
+        if (
+            guarded
+            and current is not None
+            and current["state"] == "open"
+            and current["deadline_expired"]
+        ):
+            return await self._close(discussion_id, stop_reason="timeout_reached")
         return False, current or {}
 
     async def _audit_close(self, session: dict[str, Any], stop_reason: str) -> None:
@@ -580,6 +687,18 @@ class DiscussionService:
         if status is None:
             return None
         if status == "started":
+            # Checkpoint B. "Another worker is resolving this turn" is true right up until that
+            # worker dies, and a STARTED invocation whose owner is gone never becomes anything
+            # else: AT-M3.1 will not re-issue it under the same correlation id, and no counter on
+            # this discussion can move without it. Before this check the discussion stayed open
+            # forever -- the exact Validation-1 failure. The deadline is re-read rather than taken
+            # from the session this call started with, because the wait for the other worker is
+            # itself elapsed time and may have crossed the boundary.
+            latest = await self.store.get_session(discussion_id) or session
+            if latest["state"] != "open":
+                return self._result(False, latest, turn, f"discussion is {latest['state']}")
+            if latest["deadline_expired"]:
+                return await self._expire(latest)
             return self._result(False, session, turn, "another worker is resolving this turn")
 
         await self.store.fail_turn(turn["turn_id"])
@@ -646,6 +765,35 @@ class DiscussionService:
                 f"/{result.invocation.get('failure_category')}"
             )
             return self._result(won, current or session, turn, detail)
+
+        # Checkpoint C, and the one that decides whether the timeout bound means anything. The
+        # provider call is the only step here that can take real time, so the deadline can pass
+        # while it runs -- and by the time it returns another worker may already have closed this
+        # discussion. Re-read before writing ANYTHING: a TeamMessage posted after the discussion
+        # ended would be a participant speaking after the room closed, and a thread that can gain
+        # messages after its terminal state is not evidence of what the team said.
+        #
+        # The invocation itself is left exactly as AT-M3.1 recorded it. It truthfully says a
+        # provider was called and what came back; deleting it to tidy up would destroy the only
+        # record of a call that really happened. What is refused is the discussion CONSUMING it.
+        latest = await self.store.get_session(discussion_id) or session
+        if latest["state"] != "open" or latest["deadline_expired"]:
+            await self.store.fail_turn(
+                turn["turn_id"], reasoning_invocation_id=result.invocation.get("invocation_id")
+            )
+            if latest["state"] != "open":
+                return self._result(
+                    False,
+                    latest,
+                    turn,
+                    f"reasoning returned after the discussion closed ({latest['stop_reason']}); "
+                    "its result was not posted",
+                )
+            outcome = await self._expire(latest)
+            outcome["detail"] = (
+                "reasoning returned after the deadline passed; its result was not posted"
+            )
+            return outcome
 
         intent, concern_count = classify_intent(
             reasoning_verb=reasoning_verb,
@@ -746,6 +894,36 @@ class DiscussionService:
 
     async def get_discussion(self, discussion_id: str) -> dict[str, Any] | None:
         return await self.store.get_session(discussion_id)
+
+    async def plan_currency(self, session: dict[str, Any]) -> dict[str, Any]:
+        """Whether the revision this discussion is bound to is still the Goal's current one.
+
+        DERIVED on every read and stored nowhere. AT-M3.2 keeps currency as a property of lineage
+        -- the tip is the revision nothing supersedes -- with no status column and no UPDATE on a
+        predecessor, and a cached copy here would be this project's first denormalised answer to a
+        question the lineage already answers exactly. It would also need a writer, a race story and
+        a repair path, none of which exist while the fact stays computed.
+
+        The binding itself never moves: ``plan_revision_id`` is immutable by trigger, and a
+        discussion is permanently about the exact revision it opened against. What this reports is
+        the world moving around it.
+
+        A discussion bound to NO revision -- legitimate, since deciding what the first plan should
+        be is itself a discussion -- is current exactly while the Goal still has no plan. That is
+        the same statement as the bound case, not a special case: the premise the team deliberated
+        under either still holds or it does not.
+        """
+        current = await self.planning_store.get_current_revision(session["goal_id"])
+        current_id = current["plan_revision_id"] if current else None
+        bound = session.get("plan_revision_id")
+        if bound is None:
+            is_current = current_id is None
+        else:
+            is_current = await self.planning_store.is_current(bound)
+        return {
+            "plan_revision_is_current": is_current,
+            "current_plan_revision_id": str(current_id) if current_id else None,
+        }
 
     async def get_participants(self, discussion_id: str) -> list[dict[str, Any]]:
         return await self.store.list_participants(discussion_id)

@@ -30,6 +30,15 @@
 -- rounds can therefore never be recorded as consensus, which is the specific failure this
 -- constraint exists to make unrepresentable.
 --
+-- FIVE INDEPENDENT BOUNDS, FIVE DISTINCT REASONS: rounds, messages, invocations, per-participant
+-- turns, and elapsed time. Each closes the discussion with its own stop_reason and none is
+-- reported under another's name, because the reason is the only forensic record of WHY a
+-- deliberation stopped -- and "ran out of rounds" pointing at a per-participant cap, or at a
+-- wall-clock expiry, is a record that misleads precisely the person reading it to find out.
+-- deadline_at is the only bound not expressed as a counter, and it is the one that makes a
+-- discussion whose worker died recoverable at all: counters cannot advance without a worker, so
+-- without an absolute instant a crashed discussion stays open forever.
+--
 -- CONCURRENCY: uq_discussion_turns_slot is the execution-ownership authority. Advancing a
 -- discussion claims (discussion_id, round_index, seat_index) with INSERT ... ON CONFLICT DO
 -- NOTHING BEFORE any provider call, exactly as AT-M3.1's correlation_id claim does for a
@@ -51,6 +60,33 @@
 -- external provider. Idempotent / re-runnable; a matching *_down.sql reverses it.
 
 BEGIN;
+
+-- ---------------------------------------------------------------------
+-- 0. Refuse to run over an EARLIER draft of this same migration.
+--
+--    The repository's runner for this family (scripts/k8s_apply_migrations.py) is forward-only
+--    with no tracking table: it re-runs every file every time. Every statement below is
+--    IF NOT EXISTS, which makes re-running THIS file a no-op -- correct, and exactly what that
+--    runner needs. But a database that already holds an EARLIER draft of 039 gets the same no-op,
+--    silently keeping a discussion_sessions without deadline_at while the runner reports success.
+--    The failure would then surface much later, as a NOT NULL violation from the runtime.
+--
+--    039 is still unmerged, so an earlier draft only exists on a dev/test database. The remedy is
+--    the matching *_down.sql followed by this file. Failing loudly here is what makes that remedy
+--    discoverable instead of leaving a database that looks migrated and is not.
+-- ---------------------------------------------------------------------
+DO $$
+BEGIN
+    IF to_regclass('public.discussion_sessions') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'discussion_sessions' AND column_name = 'deadline_at'
+       ) THEN
+        RAISE EXCEPTION
+            'discussion_sessions exists from an earlier draft of migration 039 and has no '
+            'deadline_at column; run 039_at_m3_3_bounded_team_discussion_down.sql first';
+    END IF;
+END $$;
 
 -- ---------------------------------------------------------------------
 -- 1. discussion_sessions -- one bounded deliberation.
@@ -83,6 +119,14 @@ CREATE TABLE IF NOT EXISTS discussion_sessions (
     max_messages              INT NOT NULL,
     max_invocations           INT NOT NULL,
     max_turns_per_participant INT NOT NULL,
+    -- The elapsed-time bound AT-D14 section 2 requires alongside rounds and budgets. Stored as an
+    -- ABSOLUTE INSTANT computed from the DATABASE clock at INSERT -- not as a duration a later
+    -- reader re-interprets against its own clock, and emphatically not as an in-memory timer: a
+    -- process that dies mid-turn takes its timer with it, and a discussion whose only bound is a
+    -- timer that no longer exists is unbounded. Every worker on every host therefore agrees on
+    -- when this discussion expired, because they all ask the same clock. Immutable once set,
+    -- exactly like the four count bounds above.
+    deadline_at               TIMESTAMPTZ NOT NULL,
 
     -- Cursor and budget consumption.
     current_round             INT NOT NULL DEFAULT 1,
@@ -113,15 +157,23 @@ CREATE TABLE IF NOT EXISTS discussion_sessions (
     CONSTRAINT chk_discussion_sessions_state CHECK (state IN (
         'open', 'converged', 'exhausted', 'failed', 'cancelled'
     )),
+    -- Every bound has its OWN reason. Two of these exist because reporting an approximately
+    -- correct reason destroys the forensic value of recording one at all: "this participant used
+    -- up its turns" and "the discussion ran out of rounds" are different facts about different
+    -- limits, and so are "nobody on the team has this capability" and "the capabilities were
+    -- covered but by too few distinct agents to hold a discussion".
     CONSTRAINT chk_discussion_sessions_stop_reason CHECK (stop_reason IS NULL OR stop_reason IN (
         'convergence_reached',
         'round_limit_reached',
         'message_limit_reached',
         'invocation_limit_reached',
+        'participant_turn_limit_reached',
+        'timeout_reached',
         'participant_unavailable',
         'reasoning_provider_failure',
         'cancelled',
-        'insufficient_capability_coverage'
+        'insufficient_capability_coverage',
+        'insufficient_participants'
     )),
     -- Open iff no stop reason. A terminal row always says why it stopped.
     CONSTRAINT chk_discussion_sessions_terminal CHECK (
@@ -133,10 +185,11 @@ CREATE TABLE IF NOT EXISTS discussion_sessions (
         stop_reason IS NULL
         OR (state = 'converged' AND stop_reason = 'convergence_reached')
         OR (state = 'exhausted' AND stop_reason IN (
-                'round_limit_reached', 'message_limit_reached', 'invocation_limit_reached'))
+                'round_limit_reached', 'message_limit_reached', 'invocation_limit_reached',
+                'participant_turn_limit_reached', 'timeout_reached'))
         OR (state = 'failed' AND stop_reason IN (
                 'participant_unavailable', 'reasoning_provider_failure',
-                'insufficient_capability_coverage'))
+                'insufficient_capability_coverage', 'insufficient_participants'))
         OR (state = 'cancelled' AND stop_reason = 'cancelled')
     ),
     -- Only a converged discussion carries a result for M3.4 to consume.
@@ -148,6 +201,11 @@ CREATE TABLE IF NOT EXISTS discussion_sessions (
         AND max_messages BETWEEN 1 AND 200
         AND max_invocations BETWEEN 1 AND 200
         AND max_turns_per_participant BETWEEN 1 AND 20
+    ),
+    -- A deadline in the past at creation would be a discussion that was never allowed to speak,
+    -- and one 30 days out would not be a bound. Both are unrepresentable.
+    CONSTRAINT chk_discussion_sessions_deadline CHECK (
+        deadline_at > created_at AND deadline_at <= created_at + interval '24 hours'
     ),
     CONSTRAINT chk_discussion_sessions_counters CHECK (
         current_round >= 1 AND turns_taken >= 0 AND messages_posted >= 0
@@ -286,11 +344,14 @@ BEGIN
         END IF;
     END IF;
 
-    -- Bounds are set once, at open. Raising a limit mid-flight would make "bounded" meaningless.
+    -- Bounds are set once, at open. Raising a limit mid-flight would make "bounded" meaningless,
+    -- and pushing deadline_at out as it approaches is the specific way an elapsed-time bound gets
+    -- defeated: a discussion that can always buy another hour has no deadline at all.
     IF NEW.max_rounds                IS DISTINCT FROM OLD.max_rounds
     OR NEW.max_messages              IS DISTINCT FROM OLD.max_messages
     OR NEW.max_invocations           IS DISTINCT FROM OLD.max_invocations
-    OR NEW.max_turns_per_participant IS DISTINCT FROM OLD.max_turns_per_participant THEN
+    OR NEW.max_turns_per_participant IS DISTINCT FROM OLD.max_turns_per_participant
+    OR NEW.deadline_at               IS DISTINCT FROM OLD.deadline_at THEN
         RAISE EXCEPTION
             'discussion % may not have its bounds changed after it was opened', OLD.discussion_id
             USING ERRCODE = 'restrict_violation';

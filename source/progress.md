@@ -18256,3 +18256,67 @@ them and missed the other twelve, plus their test-side mirrors.
   M3.3, M3.2, M3.1, M2 Team Core, approval and audit. Migration 039 UP / DOWN / UP / UP all clean,
   with the AT-M2 and AT-M3.2 substrate intact after DOWN. No production action, no external call,
   `production_executed_true_count: 0`.
+
+## Step AT-M3.3-IMPLEMENTATION-REMEDIATION-1 - Deadline Bound, Exact Stop Reasons, Exact-Revision Semantics (IMPLEMENTED)
+
+**Status: implementation complete, awaiting Validation 2 (final). Branch
+`at-m3.3-bounded-team-discussion-1`, not merged. `origin/main` unchanged at `2af3564`.**
+
+- **B1 - the discussion now has a wall clock.** `discussion_sessions.deadline_at TIMESTAMPTZ NOT
+  NULL` is computed by PostgreSQL at insert (`now() + make_interval(...)`) and is immutable by
+  trigger, alongside the four count bounds. It is the only bound that can end a discussion nobody
+  is advancing: counters move only when a worker moves them, so a discussion whose worker died
+  mid-turn could previously never reach any bound and stayed `open` forever. Every session read
+  carries `(now() >= deadline_at) AS deadline_expired`, computed by the database, so every worker
+  on every host asks the same clock.
+- **Four checkpoints, not one.** Expiry is enforced before a turn slot is claimed; when a slot
+  another worker holds is encountered; before a reasoning result becomes a TeamMessage; and at the
+  round boundary. The third is the load-bearing one - the provider call is the only step that
+  takes real time, so it is the step during which the deadline realistically passes.
+- **The Validation-1 failure is closed.** A claimed turn whose `ReasoningInvocation` stays
+  `started` forever now closes `exhausted / timeout_reached` instead of holding the discussion open
+  permanently. The abandoned invocation row is preserved, never re-invoked and never deleted, and
+  no message is invented in place of the reply that never arrived.
+- **A late provider return cannot speak after the room closed.** A call started inside the window
+  and landing outside it writes no TeamMessage, records no convergence and cannot reopen a terminal
+  discussion. The `ReasoningInvocation` truthfully records `succeeded` - the call really happened;
+  what is refused is the discussion consuming it.
+- **B2 - one bound, one reason.** `participant_turn_limit_reached` replaces the misreported
+  `round_limit_reached` for a per-participant cap, and `insufficient_participants` replaces the
+  misreported `insufficient_capability_coverage` when coverage was complete but the roster was too
+  small. Capability coverage and participant cardinality are different facts with different
+  repairs, and the CHECK constraint now enforces all five bounds as five distinct reasons.
+- **Precedence is a database property, not a statement order.** Every non-timeout closure is
+  written under `now() < deadline_at`; when that guard refuses, the discussion closes as a timeout
+  instead. A `timeout_reached` write is itself guarded by `now() >= deadline_at`, so a worker with
+  a fast clock cannot expire a discussion early. Two workers reaching a boundary microseconds apart
+  can no longer record different forensic reasons.
+- **D1 - exact-revision discussion semantics.** Implements
+  AT-M3.3-PLAN-STALENESS-DESIGN-REVIEW-1. A discussion is permanently about the exact PlanRevision
+  it opened against; a legitimate successor appearing mid-flight does not terminate, mutate, rebind
+  or flag it. Currency is DERIVED at read time from AT-M3.2 lineage and stored nowhere - no stale
+  column, no plan-current cache, no version registry. Opening explicitly against an
+  already-superseded revision is refused with a 409 before anything is written, leaving no
+  discussion row, no participant and no orphan thread.
+- **The M3.4 contract is documented, not implemented.**
+  `docs/architecture/autonomous-team/planning-and-plan-revision-model.md` section 11 records the
+  four consumption preconditions and the requirement that the safety-critical write use M3.2's
+  compare-and-swap (`expected_current_revision_id = discussion.plan_revision_id`). A separate
+  `is_current()` pre-read improves the error message and is explicitly NOT the safety boundary.
+  Proven today against the M3.2 primitive: a stale discussion's convergence raises
+  `StalePlanRevisionError` and writes no successor; the still-current control succeeds; four
+  racing consumers produce exactly one successor.
+- **Concurrency preserved.** Eight workers racing the same next turn still produce exactly one
+  canonical turn, one message and one reasoning invocation. Eight workers observing the same expiry
+  produce exactly one terminal transition, all reporting the same state and reason, with no
+  duplicate terminal evidence.
+- **Migration 039 amended in place** - it is unmerged, so no 040 was created. It also now refuses
+  to run over an earlier draft of itself: the repository's forward-only runner re-runs every file,
+  and `CREATE TABLE IF NOT EXISTS` would silently leave a `discussion_sessions` with no
+  `deadline_at` while reporting success. The remedy (down, then up) is verified.
+- **Measured.** 141 AT-M3.3 tests and 366 focused tests pass on real PostgreSQL 16 (M3.3, M3.2,
+  M3.1, M2 Team Core, approval, audit). Migration 039 UP / DOWN / UP / UP clean on the canonical
+  001-038 chain, with AT-M2 and AT-M3.2 substrate intact after DOWN. Full suite run on the
+  remediation tree and on the pre-remediation candidate `46a97ef` under the identical runner:
+  failure set byte-identical, zero new and zero resolved, +42 passing. No production action, no
+  external call, no secret, `production_executed_true_count: 0`.

@@ -208,6 +208,87 @@ Slices      AT-M3-BE1 (Goal + PlanRevision), AT-M3-BE2 (decomposition), AT-M3-BE
 Status      CONTRACT_ONLY / NOT IMPLEMENTED
 ```
 
+## 11. Discussion staleness and the M3.4 consumption contract
+
+Records AT-M3.3-PLAN-STALENESS-DESIGN-REVIEW-1, an architect-level clarification of semantics
+AT-D14 already authorizes for M3.3/M3.4. It adds no entity, no state and no mechanism.
+
+The gap it closes: an AT-M3.3 discussion binds to a PlanRevision when it opens, but a legitimate
+successor may appear while it is still running. Nothing said what that means.
+
+### 11a. Canonical semantic
+
+```text
+A discussion is about an EXACT, IMMUTABLE PlanRevision, permanently.
+```
+
+A successor appearing mid-discussion does NOT terminate it, mutate it, rebind it, or give it a
+stale terminal state or a stale flag. It continues under its own bounds and may converge honestly
+about the revision it opened against.
+
+This is the same posture section 7 already takes toward in-flight work overtaken by a replan —
+carried forward and marked, never destroyed — and it keeps collaboration lineage parallel to
+execution lineage as `source-of-truth-and-lineage-model.md` R5 requires, rather than subordinate
+to it. It also mirrors the revision itself: revision N does not change when N+1 appears, it stops
+being *current*, which is a fact about the lineage and not about N.
+
+### 11b. Staleness is derived, never stored
+
+```text
+stale  ==  a revision exists whose supersedes_revision_id names this discussion's plan_revision_id
+```
+
+Answered by `PlanningStore.is_current()` / `get_current_revision()`, which read lineage. No stale
+column, no plan-current cache, no synchronization writer and no version registry: currency has no
+stored form anywhere in this model (section 3), and a copy of it here would be the first — needing
+a writer, a race story and a repair path that the derived form does not.
+
+### 11c. What M3.4 must check before consuming a discussion outcome
+
+```text
+1  discussion.state = 'converged' AND stop_reason = 'convergence_reached'
+2  discussion.result_message_id IS NOT NULL
+3  discussion.goal_id is the Goal being planned
+4  discussion.plan_revision_id is still that Goal's CURRENT revision
+   (or is NULL and the Goal still has no revision)
+```
+
+### 11d. The currency check is a compare-and-swap, not a pre-read
+
+The safety-critical write must carry the discussion's bound revision as the CAS token:
+
+```text
+create_successor_revision(
+    goal_id                      = discussion.goal_id,
+    expected_current_revision_id = discussion.plan_revision_id,
+    reason                       = 'team_decision',
+    trace_ref                    = discussion.result_message_id )
+```
+
+`create_successor_revision` locks the predecessor and re-checks currency inside that lock, and
+`uq_plan_revisions_one_successor` permits at most one successor per predecessor even for a caller
+that bypasses the store. A stale discussion's convergence therefore *cannot* become a successor:
+the attempt raises `StalePlanRevisionError` from PostgreSQL, not from an application check someone
+could forget to write. Where the discussion is bound to no revision, `create_initial_revision` and
+`uq_plan_revisions_one_root_per_goal` give the same guarantee.
+
+```text
+A separate is_current() pre-read is worth doing for a clear error message.
+It is NOT the safety boundary. The CAS is.
+```
+
+This is what removes the check-then-write window entirely: the check IS the write. Two consumers
+holding converged discussions bound to the same revision resolve to exactly one successor, and the
+loser learns it is stale rather than writing a second one.
+
+### 11e. What a stale discussion is still good for
+
+It is not discarded, not rewritten and not hidden. It remains queryable and citable as evidence
+about the revision it deliberated — collaboration lineage, intact. What it may not do is stand in
+as evidence about a revision it never discussed. Reusing its conclusions against the new current
+revision requires a NEW discussion bound to that revision; rebinding is forbidden and is prevented
+by trigger.
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment

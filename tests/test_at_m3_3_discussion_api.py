@@ -20,8 +20,11 @@ if str(ROOT / "apps" / "orchestrator" / "src") not in sys.path:
 
 import discussion_api  # noqa: E402
 
+from shared.sdk.agent_planning.store import PlanningStore  # noqa: E402
+
 from tests.test_at_m3_3_deliberation_store import (  # noqa: E402
     CAPS,
+    PLAN,
     ContestingProvider,
     _scenario,
     _service,
@@ -203,6 +206,127 @@ async def test_a_goal_from_another_project_is_a_409_not_a_500():
     )
     assert response.status_code == 409
     assert response.status_code != 500
+
+
+@pytest.mark.asyncio
+async def test_the_read_surface_reports_the_deadline_and_derived_plan_currency():
+    """Both new read facts, and the fact that neither is stored on the discussion."""
+    scenario = await _scenario()
+    client = _client()
+    created = client.post(
+        "/discussions",
+        json={
+            "project_id": scenario["project_id"],
+            "goal_id": scenario["goal_id"],
+            "opened_by": scenario["opened_by"],
+            "topic": "t",
+            "required_capabilities": list(CAPS),
+            "timeout_seconds": 300,
+        },
+    ).json()
+    discussion_id = created["discussion_id"]
+
+    assert created["bounds"]["deadline_at"] is not None
+    assert created["deadline_expired"] is False
+    assert created["plan_revision_is_current"] is True
+    assert created["current_plan_revision_id"] == created["plan_revision_id"]
+
+    # A legitimate replan lands. The discussion does not move; the derived answer does.
+    successor = await PlanningStore().create_successor_revision(
+        {
+            "goal_id": scenario["goal_id"],
+            "expected_current_revision_id": scenario["plan_revision_id"],
+            "created_by": scenario["opened_by"],
+            "reason": "team_decision",
+            "plan": PLAN,
+        }
+    )
+    after = client.get(f"/discussions/{discussion_id}").json()
+    assert after["plan_revision_id"] == created["plan_revision_id"], "the binding never moves"
+    assert after["state"] == "open" and after["stop_reason"] is None
+    assert after["plan_revision_is_current"] is False
+    assert after["current_plan_revision_id"] == str(successor["plan_revision_id"])
+
+    # The state route carries the same two derived fields, because that is where a future M3.4
+    # consumer polls and having to join lineage by hand is how the check gets skipped.
+    state = client.get(f"/discussions/{discussion_id}/state").json()
+    assert state["plan_revision_is_current"] is False
+    assert state["current_plan_revision_id"] == str(successor["plan_revision_id"])
+    assert state["deadline_expired"] is False
+
+
+@pytest.mark.asyncio
+async def test_opening_against_a_superseded_revision_is_a_409():
+    scenario = await _scenario()
+    await PlanningStore().create_successor_revision(
+        {
+            "goal_id": scenario["goal_id"],
+            "expected_current_revision_id": scenario["plan_revision_id"],
+            "created_by": scenario["opened_by"],
+            "reason": "team_decision",
+            "plan": PLAN,
+        }
+    )
+    response = _client().post(
+        "/discussions",
+        json={
+            "project_id": scenario["project_id"],
+            "goal_id": scenario["goal_id"],
+            "opened_by": scenario["opened_by"],
+            "topic": "t",
+            "required_capabilities": list(CAPS),
+            "plan_revision_id": scenario["plan_revision_id"],
+        },
+    )
+    assert response.status_code == 409
+    assert "superseded" in response.json()["detail"]
+
+
+def test_the_timeout_bound_is_part_of_the_request_and_is_range_checked():
+    assert (
+        discussion_api.StartDiscussionRequest(
+            project_id="p",
+            goal_id="g",
+            opened_by="o",
+            topic="t",
+            required_capabilities=["plan_project"],
+            timeout_seconds=30,
+        )
+        .bounds()
+        .timeout_seconds
+        == 30
+    )
+    for bad in (0, -1, 86401):
+        with pytest.raises(Exception):
+            discussion_api.StartDiscussionRequest(
+                project_id="p",
+                goal_id="g",
+                opened_by="o",
+                topic="t",
+                required_capabilities=["plan_project"],
+                timeout_seconds=bad,
+            )
+
+
+@pytest.mark.asyncio
+async def test_a_covered_but_too_small_team_reports_the_participant_count_reason():
+    scenario = await _scenario(agent_keys=("qa-agent",))
+    body = (
+        _client()
+        .post(
+            "/discussions",
+            json={
+                "project_id": scenario["project_id"],
+                "goal_id": scenario["goal_id"],
+                "opened_by": scenario["opened_by"],
+                "topic": "t",
+                "required_capabilities": ["verify_quality"],
+            },
+        )
+        .json()
+    )
+    assert body["state"] == "failed"
+    assert body["stop_reason"] == "insufficient_participants"
 
 
 @pytest.mark.asyncio

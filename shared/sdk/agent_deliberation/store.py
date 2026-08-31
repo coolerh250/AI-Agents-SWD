@@ -36,9 +36,15 @@ from shared.sdk.agent_deliberation.models import STATE_FOR_STOP_REASON
 
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
 
+#: ``deadline_expired`` is computed by PostgreSQL on every read rather than stored, and rather than
+#: left for the caller to work out. Two reasons it belongs here and not in the service: the
+#: database clock is the only one every worker shares, and a discussion whose expiry depended on
+#: whichever host happened to read it would expire at a different instant for each worker -- which
+#: is exactly the race a deadline exists to remove.
 _SESSION_COLUMNS = """
     discussion_id, project_id, goal_id, plan_revision_id, thread_id, opened_by, topic,
     required_capabilities, max_rounds, max_messages, max_invocations, max_turns_per_participant,
+    deadline_at, (now() >= deadline_at) AS deadline_expired,
     current_round, turns_taken, messages_posted, invocations_started, state, stop_reason,
     result_message_id, idempotency_key, audit_ref, created_at, closed_at
 """
@@ -117,8 +123,10 @@ class DeliberationStore:
                         INSERT INTO discussion_sessions
                           (project_id, goal_id, plan_revision_id, thread_id, opened_by, topic,
                            required_capabilities, max_rounds, max_messages, max_invocations,
-                           max_turns_per_participant, state, idempotency_key)
-                        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,'open',$12)
+                           max_turns_per_participant, deadline_at, state, idempotency_key)
+                        VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,
+                                now() + make_interval(secs => $12::double precision),
+                                'open',$13)
                         ON CONFLICT (idempotency_key) DO NOTHING
                         RETURNING {_SESSION_COLUMNS}
                         """,
@@ -133,6 +141,7 @@ class DeliberationStore:
                         data["max_messages"],
                         data["max_invocations"],
                         data["max_turns_per_participant"],
+                        float(data["timeout_seconds"]),
                         data["idempotency_key"],
                     )
                     if row is None:
@@ -218,6 +227,7 @@ class DeliberationStore:
         *,
         stop_reason: str,
         result_message_id: Any = None,
+        require_open_deadline: bool = False,
     ) -> dict[str, Any] | None:
         """Close an open discussion with a reason. Returns ``None`` if it was already terminal.
 
@@ -225,8 +235,25 @@ class DeliberationStore:
         ``round_limit_reached`` can never be recorded as ``converged``. Migration 039's
         ``chk_discussion_sessions_reason_matches_state`` enforces the same mapping independently,
         for a caller that bypasses this store.
+
+        Two additional guards, both in the WHERE clause rather than in the caller:
+
+        * ``timeout_reached`` is written only when the DATABASE agrees the deadline has passed. A
+          worker that read ``deadline_expired`` a moment ago and a worker whose clock simply runs
+          fast are indistinguishable from here, so the claim is re-checked against the same clock
+          that produced ``deadline_at``.
+        * ``require_open_deadline`` closes only while the deadline has NOT passed, which is what a
+          caller wanting to record some other reason needs: once the wall clock is out, the
+          discussion's honest reason is the timeout, and no later-arriving verdict may overwrite it.
+          Returning ``None`` sends that caller back to re-read and close as a timeout instead.
         """
         state = STATE_FOR_STOP_REASON[stop_reason]
+        if stop_reason == "timeout_reached":
+            guard = " AND now() >= deadline_at"
+        elif require_open_deadline:
+            guard = " AND now() < deadline_at"
+        else:
+            guard = ""
         conn = await self._connect()
         try:
             return _json_row(
@@ -235,7 +262,7 @@ class DeliberationStore:
                     UPDATE discussion_sessions
                        SET state=$2, stop_reason=$3, result_message_id=$4, closed_at=now(),
                            updated_at=now()
-                     WHERE discussion_id=$1 AND state='open'
+                     WHERE discussion_id=$1 AND state='open'{guard}
                     RETURNING {_SESSION_COLUMNS}
                     """,
                     _uuid_or_none(discussion_id),
@@ -273,8 +300,11 @@ class DeliberationStore:
                     INSERT INTO discussion_sessions
                       (project_id, goal_id, plan_revision_id, thread_id, opened_by, topic,
                        required_capabilities, max_rounds, max_messages, max_invocations,
-                       max_turns_per_participant, state, stop_reason, closed_at, idempotency_key)
-                    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,$12,$13,now(),$14)
+                       max_turns_per_participant, deadline_at, state, stop_reason, closed_at,
+                       idempotency_key)
+                    VALUES ($1,$2,$3,$4,$5,$6,$7::jsonb,$8,$9,$10,$11,
+                            now() + make_interval(secs => $12::double precision),
+                            $13,$14,now(),$15)
                     ON CONFLICT (idempotency_key) DO NOTHING
                     RETURNING {_SESSION_COLUMNS}
                     """,
@@ -289,6 +319,7 @@ class DeliberationStore:
                     data["max_messages"],
                     data["max_invocations"],
                     data["max_turns_per_participant"],
+                    float(data["timeout_seconds"]),
                     state,
                     stop_reason,
                     data["idempotency_key"],

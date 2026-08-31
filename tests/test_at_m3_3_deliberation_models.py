@@ -12,7 +12,10 @@ import pytest
 from shared.sdk.agent_deliberation.models import (
     MESSAGE_TYPE_FOR_INTENT,
     MIN_PARTICIPANTS,
+    BOUND_STOP_REASONS,
     STATE_FOR_STOP_REASON,
+    STOP_REASON_FOR_BOUND,
+    STOP_REASON_PRECEDENCE,
     UNRESOLVED_INTENTS,
     DiscussionBounds,
     DiscussionParticipantError,
@@ -248,6 +251,8 @@ def test_running_out_of_rounds_can_never_be_recorded_as_converged():
     assert STATE_FOR_STOP_REASON["round_limit_reached"] == "exhausted"
     assert STATE_FOR_STOP_REASON["message_limit_reached"] == "exhausted"
     assert STATE_FOR_STOP_REASON["invocation_limit_reached"] == "exhausted"
+    assert STATE_FOR_STOP_REASON["participant_turn_limit_reached"] == "exhausted"
+    assert STATE_FOR_STOP_REASON["timeout_reached"] == "exhausted"
     assert STATE_FOR_STOP_REASON["convergence_reached"] == "converged"
 
 
@@ -256,8 +261,58 @@ def test_every_failure_reason_lands_in_a_failed_state():
         "participant_unavailable",
         "reasoning_provider_failure",
         "insufficient_capability_coverage",
+        "insufficient_participants",
     ):
         assert STATE_FOR_STOP_REASON[reason] == "failed"
+
+
+def test_each_of_the_five_bounds_has_its_own_stop_reason():
+    """One bound, one reason. A reason shared between two bounds is a reason that misleads."""
+    assert set(STOP_REASON_FOR_BOUND) == {
+        "max_rounds",
+        "max_messages",
+        "max_invocations",
+        "max_turns_per_participant",
+        "deadline_at",
+    }
+    assert len(set(STOP_REASON_FOR_BOUND.values())) == len(STOP_REASON_FOR_BOUND)
+    # The two the remediation separated out, named explicitly so a future merge cannot quietly
+    # collapse them back into their neighbours.
+    assert STOP_REASON_FOR_BOUND["max_turns_per_participant"] == "participant_turn_limit_reached"
+    assert STOP_REASON_FOR_BOUND["deadline_at"] == "timeout_reached"
+    assert STOP_REASON_FOR_BOUND["max_rounds"] == "round_limit_reached"
+
+
+def test_a_participant_count_failure_is_not_a_capability_failure():
+    """Different facts, different repairs: add a capability, or add an agent."""
+    assert "insufficient_participants" in STATE_FOR_STOP_REASON
+    assert "insufficient_capability_coverage" in STATE_FOR_STOP_REASON
+    assert (
+        STATE_FOR_STOP_REASON["insufficient_participants"]
+        != "exhausted"  # both are failures, not exhaustion
+    )
+
+
+def test_the_wall_clock_outranks_every_count_bound():
+    """Precedence is declared, not left to whichever check happens to run first."""
+    assert STOP_REASON_PRECEDENCE[0] == "timeout_reached"
+    assert set(STOP_REASON_PRECEDENCE) <= set(STATE_FOR_STOP_REASON)
+    assert len(set(STOP_REASON_PRECEDENCE)) == len(STOP_REASON_PRECEDENCE)
+    # Every count bound appears, so no bound can fire without a declared position.
+    assert set(BOUND_STOP_REASONS) <= set(STOP_REASON_PRECEDENCE)
+
+
+def test_the_timeout_bound_is_persisted_alongside_the_counts():
+    bounds = DiscussionBounds()
+    assert bounds.timeout_seconds > 0
+    assert "timeout_seconds" in bounds.model_dump()
+    with pytest.raises(Exception):
+        DiscussionBounds(timeout_seconds=0)
+    with pytest.raises(Exception):
+        DiscussionBounds(timeout_seconds=86401)
+    # Fractional, so a test can bound a discussion in under a second without a second notion of
+    # "how long" existing in the runtime.
+    assert DiscussionBounds(timeout_seconds=0.25).timeout_seconds == 0.25
 
 
 def test_only_convergence_maps_to_converged():

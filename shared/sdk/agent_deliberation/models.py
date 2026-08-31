@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import uuid
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -47,10 +48,13 @@ StopReason = Literal[
     "round_limit_reached",
     "message_limit_reached",
     "invocation_limit_reached",
+    "participant_turn_limit_reached",
+    "timeout_reached",
     "participant_unavailable",
     "reasoning_provider_failure",
     "cancelled",
     "insufficient_capability_coverage",
+    "insufficient_participants",
 ]
 
 #: The state each stop reason implies. Mirrors migration 039's
@@ -61,11 +65,47 @@ STATE_FOR_STOP_REASON: dict[str, DiscussionState] = {
     "round_limit_reached": "exhausted",
     "message_limit_reached": "exhausted",
     "invocation_limit_reached": "exhausted",
+    "participant_turn_limit_reached": "exhausted",
+    "timeout_reached": "exhausted",
     "participant_unavailable": "failed",
     "reasoning_provider_failure": "failed",
     "insufficient_capability_coverage": "failed",
+    "insufficient_participants": "failed",
     "cancelled": "cancelled",
 }
+
+#: The five bounds, and the reason each one emits. One bound, one reason: a stop reason is the only
+#: durable record of WHY a deliberation ended, so a bound reported under a neighbour's name is
+#: worse than no record -- it sends the reader looking at the wrong limit.
+STOP_REASON_FOR_BOUND: dict[str, str] = {
+    "max_rounds": "round_limit_reached",
+    "max_messages": "message_limit_reached",
+    "max_invocations": "invocation_limit_reached",
+    "max_turns_per_participant": "participant_turn_limit_reached",
+    "deadline_at": "timeout_reached",
+}
+
+#: Which stop reasons mean "a bound stopped it" rather than "something went wrong". Both close the
+#: discussion; only the first group means the runtime behaved exactly as configured.
+BOUND_STOP_REASONS: frozenset[str] = frozenset(STOP_REASON_FOR_BOUND.values())
+
+#: Deterministic precedence when several stop conditions are true at the same moment.
+#:
+#: Read top to bottom, it says: a discussion that is already terminal stays as it is; a discussion
+#: whose wall clock ran out before this step began stopped for THAT reason regardless of what else
+#: became true; and otherwise the specific count bound that prevents the next unit of work names
+#: itself. The order is fixed here rather than falling out of statement order in
+#: :meth:`DiscussionService.advance`, because a forensic reason that depends on which check
+#: happened to run first is a reason two workers can disagree about.
+STOP_REASON_PRECEDENCE: tuple[str, ...] = (
+    "timeout_reached",
+    "insufficient_participants",
+    "message_limit_reached",
+    "invocation_limit_reached",
+    "participant_turn_limit_reached",
+    "participant_unavailable",
+    "round_limit_reached",
+)
 
 TurnIntent = Literal[
     "proposal",
@@ -166,6 +206,12 @@ class DiscussionBounds(BaseModel):
 
     A resumed process must enforce the limits the OPENING process was given, so these are read
     back from the database rather than recomputed from defaults that may since have changed.
+
+    ``timeout_seconds`` is the only one that is not a counter, and it is the only one that can end
+    a discussion nobody is advancing. The four counts move only when a worker moves them, so a
+    discussion whose worker died mid-turn can never reach any of them; the elapsed-time bound is
+    what makes that discussion terminal instead of permanently open. It is converted to an absolute
+    ``deadline_at`` by the DATABASE at insert time and never travels as a duration afterwards.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -174,6 +220,10 @@ class DiscussionBounds(BaseModel):
     max_messages: int = Field(default=24, ge=1, le=200)
     max_invocations: int = Field(default=24, ge=1, le=200)
     max_turns_per_participant: int = Field(default=3, ge=1, le=20)
+    #: Float, so a test can bound a discussion in fractions of a second without the runtime
+    #: needing a second, differently-typed notion of "how long". The upper bound matches migration
+    #: 039's ``chk_discussion_sessions_deadline``.
+    timeout_seconds: float = Field(default=900.0, gt=0, le=86400)
 
 
 # --- durable shapes -----------------------------------------------------------------------------
@@ -227,6 +277,10 @@ class DiscussionSession(BaseModel):
     max_messages: int = Field(ge=1)
     max_invocations: int = Field(ge=1)
     max_turns_per_participant: int = Field(ge=1)
+    deadline_at: datetime
+    #: Derived by the database at read time from ``now() >= deadline_at``, never stored. Carried on
+    #: every session read so no caller has to consult its own clock to find out.
+    deadline_expired: bool = False
     current_round: int = Field(ge=1)
     turns_taken: int = Field(ge=0)
     messages_posted: int = Field(ge=0)
@@ -485,11 +539,14 @@ def build_turn_context(
 
 
 __all__ = [
+    "BOUND_STOP_REASONS",
     "DISCUSSION_STATES",
     "MAX_CONTEXT_MESSAGES",
     "MESSAGE_TYPE_FOR_INTENT",
     "MIN_PARTICIPANTS",
     "STATE_FOR_STOP_REASON",
+    "STOP_REASON_FOR_BOUND",
+    "STOP_REASON_PRECEDENCE",
     "UNRESOLVED_INTENTS",
     "ConvergenceVerdict",
     "DiscussionBounds",

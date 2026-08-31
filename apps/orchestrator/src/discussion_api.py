@@ -53,6 +53,9 @@ class StartDiscussionRequest(BaseModel):
     max_messages: int | None = Field(default=None, ge=1, le=200)
     max_invocations: int | None = Field(default=None, ge=1, le=200)
     max_turns_per_participant: int | None = Field(default=None, ge=1, le=20)
+    #: The elapsed-time bound. Converted to an absolute deadline by the database at open, so it is
+    #: enforced identically by every worker and survives the process that opened the discussion.
+    timeout_seconds: float | None = Field(default=None, gt=0, le=86400)
     #: Supply to make a repeated start explicitly idempotent. Absent, a key is derived from the
     #: project, goal, revision and topic, so an accidental double start resolves to one discussion.
     idempotency_key: str | None = Field(default=None, max_length=200)
@@ -65,14 +68,21 @@ class StartDiscussionRequest(BaseModel):
                 ("max_messages", self.max_messages),
                 ("max_invocations", self.max_invocations),
                 ("max_turns_per_participant", self.max_turns_per_participant),
+                ("timeout_seconds", self.timeout_seconds),
             )
             if value is not None
         }
         return DiscussionBounds(**supplied)
 
 
-def _session_view(row: dict[str, Any]) -> dict[str, Any]:
-    return {
+def _session_view(row: dict[str, Any], currency: dict[str, Any] | None = None) -> dict[str, Any]:
+    """The discussion as a caller sees it.
+
+    ``currency`` carries the two DERIVED plan-staleness fields. They are computed per read and
+    stored nowhere, so they are passed in rather than looked up here -- a view function that
+    quietly issued its own queries would make it much easier to start caching the answer.
+    """
+    view = {
         "discussion_id": str(row["discussion_id"]),
         "project_id": str(row["project_id"]),
         "goal_id": str(row["goal_id"]),
@@ -86,7 +96,11 @@ def _session_view(row: dict[str, Any]) -> dict[str, Any]:
             "max_messages": row["max_messages"],
             "max_invocations": row["max_invocations"],
             "max_turns_per_participant": row["max_turns_per_participant"],
+            # An absolute instant, not a duration: the caller polling this discussion and the
+            # worker advancing it must agree on when it expires.
+            "deadline_at": row.get("deadline_at"),
         },
+        "deadline_expired": row.get("deadline_expired", False),
         "current_round": row["current_round"],
         "turns_taken": row["turns_taken"],
         "messages_posted": row["messages_posted"],
@@ -101,6 +115,9 @@ def _session_view(row: dict[str, Any]) -> dict[str, Any]:
         "created_at": row.get("created_at"),
         "closed_at": row.get("closed_at"),
     }
+    if currency is not None:
+        view.update(currency)
+    return view
 
 
 def _participant_view(row: dict[str, Any]) -> dict[str, Any]:
@@ -159,8 +176,9 @@ async def start_discussion(payload: StartDiscussionRequest) -> dict:
     rather than opening a second one. A team that cannot cover the required capabilities still
     produces a durable, terminal discussion saying so -- 201-shaped success, not a silent nothing.
     """
+    service = _service()
     try:
-        row = await _service().start_discussion(
+        row = await service.start_discussion(
             project_id=payload.project_id,
             goal_id=payload.goal_id,
             topic=payload.topic,
@@ -182,21 +200,29 @@ async def start_discussion(payload: StartDiscussionRequest) -> dict:
         raise HTTPException(
             status_code=503, detail=f"discussion could not be opened: {type(exc).__name__}"
         ) from exc
-    return _session_view(row)
+    return _session_view(row, await service.plan_currency(row))
 
 
 @router.get("/{discussion_id}")
 async def get_discussion(discussion_id: str) -> dict:
-    row = await _service().get_discussion(discussion_id)
+    service = _service()
+    row = await service.get_discussion(discussion_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown discussion {discussion_id}")
-    return _session_view(row)
+    return _session_view(row, await service.plan_currency(row))
 
 
 @router.get("/{discussion_id}/state")
 async def get_discussion_state(discussion_id: str) -> dict:
-    """The terminal/stop state alone, for a caller polling a discussion it started."""
-    row = await _service().get_discussion(discussion_id)
+    """The terminal/stop state alone, for a caller polling a discussion it started.
+
+    Carries the two derived plan-currency fields as well, because they are what a future M3.4
+    consumer must check before treating a convergence as evidence about the CURRENT plan --
+    and having to join lineage by hand is how that check gets skipped. Derived here, never stored:
+    ``plan_revision_is_current`` can change without this discussion changing at all.
+    """
+    service = _service()
+    row = await service.get_discussion(discussion_id)
     if row is None:
         raise HTTPException(status_code=404, detail=f"unknown discussion {discussion_id}")
     return {
@@ -206,9 +232,13 @@ async def get_discussion_state(discussion_id: str) -> dict:
         "is_terminal": row["state"] != "open",
         "current_round": row["current_round"],
         "turns_taken": row["turns_taken"],
+        "deadline_at": row.get("deadline_at"),
+        "deadline_expired": row.get("deadline_expired", False),
+        "plan_revision_id": (str(row["plan_revision_id"]) if row.get("plan_revision_id") else None),
         "result_message_id": (
             str(row["result_message_id"]) if row.get("result_message_id") else None
         ),
+        **await service.plan_currency(row),
     }
 
 
@@ -220,8 +250,9 @@ async def advance_discussion(discussion_id: str) -> dict:
     nothing -- because the discussion is already terminal, or because another worker holds the
     turn -- which is an outcome, not an error, and is reported as 200 with a reason.
     """
+    service = _service()
     try:
-        outcome = await _service().advance(discussion_id)
+        outcome = await service.advance(discussion_id)
     except DiscussionStateError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
@@ -234,7 +265,9 @@ async def advance_discussion(discussion_id: str) -> dict:
         "advanced": outcome["advanced"],
         "detail": outcome["detail"],
         "turn": _turn_view(outcome["turn"]) if outcome["turn"] else None,
-        "discussion": _session_view(outcome["session"]),
+        "discussion": _session_view(
+            outcome["session"], await service.plan_currency(outcome["session"])
+        ),
     }
 
 

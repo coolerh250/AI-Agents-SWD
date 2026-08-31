@@ -137,8 +137,89 @@ def test_exhaustion_can_never_be_recorded_as_convergence():
     body = constraint.group(1)
     assert "state = 'converged' AND stop_reason = 'convergence_reached'" in body
     assert "'round_limit_reached'" in body and "state = 'exhausted'" in body
+    # An elapsed-time expiry is exhaustion, never convergence -- the specific confusion a deadline
+    # makes newly possible, since it is the one bound that fires with nobody watching.
+    assert "'timeout_reached'" in body
+    assert "state = 'converged' AND stop_reason = 'timeout_reached'" not in body
     # And a result for M3.4 only exists on a genuinely converged discussion.
     assert "result_message_id IS NULL OR state = 'converged'" in sql
+
+
+def test_every_bound_has_a_distinct_stop_reason_in_the_schema():
+    """The five bounds are five reasons in the CHECK, not three reasons doing five jobs."""
+    sql = _FORWARD.read_text(encoding="utf-8")
+    constraint = re.search(
+        r"CONSTRAINT chk_discussion_sessions_stop_reason CHECK \((.*?)\n    \)\),", sql, re.S
+    )
+    assert constraint, "the stop-reason vocabulary constraint is missing"
+    body = constraint.group(1)
+    for reason in (
+        "round_limit_reached",
+        "message_limit_reached",
+        "invocation_limit_reached",
+        "participant_turn_limit_reached",
+        "timeout_reached",
+        "insufficient_capability_coverage",
+        "insufficient_participants",
+    ):
+        assert f"'{reason}'" in body, reason
+
+
+def test_the_participant_count_reason_is_a_failure_not_an_exhaustion():
+    sql = _FORWARD.read_text(encoding="utf-8")
+    pairing = re.search(
+        r"CONSTRAINT chk_discussion_sessions_reason_matches_state CHECK \((.*?)\n    \),",
+        sql,
+        re.S,
+    )
+    assert pairing
+    exhausted = re.search(
+        r"state = 'exhausted' AND stop_reason IN \((.*?)\)\)", pairing.group(1), re.S
+    )
+    failed = re.search(r"state = 'failed' AND stop_reason IN \((.*?)\)\)", pairing.group(1), re.S)
+    assert exhausted and failed
+    assert "participant_turn_limit_reached" in exhausted.group(1)
+    assert "timeout_reached" in exhausted.group(1)
+    # A roster too small to hold a discussion is a failure to convene, not a bound being spent.
+    assert "insufficient_participants" in failed.group(1)
+    assert "insufficient_participants" not in exhausted.group(1)
+
+
+def test_the_elapsed_time_bound_is_a_persisted_absolute_instant():
+    """Not a duration a reader re-interprets, and not a timer that dies with its worker."""
+    sql = _FORWARD.read_text(encoding="utf-8")
+    assert re.search(r"^\s+deadline_at\s+TIMESTAMPTZ NOT NULL,", sql, re.M)
+    assert "chk_discussion_sessions_deadline" in sql
+    # A deadline already past at creation, and one far enough out to be no bound at all, are both
+    # unrepresentable rather than merely unwritten.
+    assert "deadline_at > created_at" in sql
+    assert "deadline_at <= created_at + interval" in sql
+
+
+def test_the_migration_refuses_to_run_over_an_earlier_draft_of_itself():
+    """The repository's runner re-runs every file, and IF NOT EXISTS would hide a stale schema.
+
+    039 is unmerged, so a database holding an earlier draft is a dev/test database, and the remedy
+    is the down migration. What must not happen is the runner reporting success over a
+    discussion_sessions that has no deadline_at -- a database that looks migrated and is not.
+    """
+    sql = _FORWARD.read_text(encoding="utf-8")
+    assert "to_regclass('public.discussion_sessions')" in sql
+    assert "column_name = 'deadline_at'" in sql
+    assert "RAISE EXCEPTION" in sql
+    assert "_down.sql first" in sql
+
+
+def test_the_deadline_cannot_be_pushed_out_after_the_discussion_opened():
+    """A discussion that can always buy another hour has no deadline."""
+    sql = _FORWARD.read_text(encoding="utf-8")
+    guard = re.search(
+        r"Bounds are set once.*?may not have its bounds changed after it was opened",
+        sql,
+        re.S,
+    )
+    assert guard, "the bounds-immutability guard is missing"
+    assert "NEW.deadline_at" in guard.group(0)
 
 
 def test_the_turn_slot_is_unique_which_is_what_makes_one_reply_canonical():
@@ -173,6 +254,8 @@ def test_bounds_are_required_columns_not_optional_hints():
     ):
         assert re.search(rf"^\s+{bound}\s+INT NOT NULL,", sql, re.M), bound
     assert "chk_discussion_sessions_bounds" in sql
+    # The fifth bound, and the only one that can end a discussion nobody is advancing.
+    assert re.search(r"^\s+deadline_at\s+TIMESTAMPTZ NOT NULL,", sql, re.M)
 
 
 def test_no_m34_or_m35_column_appears():
