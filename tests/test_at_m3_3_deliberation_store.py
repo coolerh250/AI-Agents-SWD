@@ -43,7 +43,7 @@ _DB_SKIP = "no reachable PostgreSQL with migration 039 applied; skipping discuss
 
 PLAN = {
     "objective": "deliver the reporting slice",
-    "steps": [{"step_id": "s1", "title": "define the contract", "depends_on": []}],
+    "steps": [{"step_key": "s1", "title": "define the contract", "depends_on": []}],
     "constraints": [],
     "acceptance_criteria": ["a reviewer can read one report"],
 }

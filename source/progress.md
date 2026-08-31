@@ -18369,3 +18369,66 @@ them and missed the other twelve, plus their test-side mirrors.
 - **AT-M3.3 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
   CANONICAL / CLOSED.** The product critical path advances to AT-M3.4 - Proposal / Challenge /
   TeamDecision Planning Acceptance, which is authorized under AT-D14 and not started here.
+
+## Step AT-M3.4-PROPOSAL-CHALLENGE-TEAM-DECISION-1 - Formal Planning Decision & Accepted PlanRevision (IMPLEMENTED)
+
+**Status: implementation complete, awaiting Independent Validation 1. Branch
+`at-m3.4-proposal-challenge-team-decision-1`, not merged. `origin/main` unchanged at `83ae97f`.**
+
+- **No Proposal table and no Challenge table, on the architecture's own authority.** The lineage
+  matrix in `source-of-truth-and-lineage-model.md` section 2 enumerates every entity in this model
+  and contains neither. `collaboration-and-workroom-model.md` section 6 defines propose / challenge
+  / converge as MESSAGE TYPES over ConversationThread/TeamMessage, and section 7 puts the formal
+  record of alternatives and dissent inside TeamDecision itself. A proposal is therefore already
+  durable and already structured - a TeamMessage of type `proposal` plus the AT-M3.3 turn-ledger
+  entry that produced it - and inventing tables for them would give one deliberation two competing
+  records. The evidence read surfaces both from where they already live.
+- **One decision entity, reused.** The formal decision IS an AT-M2 `team_decisions` row.
+  `TeamStore.record_decision` remains the only writer of that table; it gained the ability to write
+  `resulting_plan_revision_id` (a column that has existed since migration 036 and became a real FK
+  in 038, which no writer had ever populated) and an optional connection.
+- **Atomicity is a transaction, not a mechanism.** The successor PlanRevision, the TeamDecision,
+  the draft -> accepted transition and the ledger row are written in ONE PostgreSQL transaction.
+  Crash windows A, B and C are therefore unreachable rather than recovered from, and no
+  reconciliation daemon, repair registry or compensating workflow exists in this slice.
+- **The CAS is reused, not copied.** `PlanningStore.create_successor_revision`,
+  `create_initial_revision` and `accept_revision` gained an optional connection so AT-M3.2's own
+  `FOR UPDATE` currency re-check runs inside that transaction. A second implementation of a
+  stale-protection rule is a rule that eventually disagrees with itself. M3.2's 64 focused tests
+  pass unchanged after the refactor.
+- **The pre-read is explicitly not the safety boundary.** Admissibility checks currency for a clear
+  error; the compare-and-swap checks it again under the predecessor's lock at the moment of writing,
+  and that is what holds. A successor landing between the two aborts the whole transaction.
+- **Exactly once, in three layers, none of them a Python lock.**
+  `uq_planning_decisions_discussion` (new), plus AT-M3.2's existing `uq_plan_revisions_one_successor`
+  and `uq_plan_revisions_one_root_per_goal`. The new one is what makes a retry after success replay
+  the canonical decision instead of failing closed as stale - without it the two are
+  indistinguishable, which is why the ledger exists at all.
+- **The revision is born draft and accepted by the decision.** Never created directly as `accepted`,
+  which closes the AT-M3.2 backlog concern on the autonomous path. A SQL invariant check finds zero
+  accepted revisions on this path without a planning decision naming them.
+- **M3.4 does not author plan content.** No AT-M3.1 reasoning verb produces a plan - `propose`,
+  `critique` and `summarize_decision` are the three that exist - so generating one would extend that
+  contract under its own authorization. The caller supplies structured content validated through
+  M3.2's own `PlanContent`; prose is refused. The diff is computed server-side by
+  `compute_plan_diff` and is never caller-supplied.
+- **No provider call at all.** The convergence summary is a `DecisionSummaryArtifact` whose
+  `options_considered` / `selected_option` / `dissent_summary` are exactly the three fields the
+  TeamDecision contract names, so formalization is deterministic.
+- **One outcome, because the gate admits one situation.** `plan_accepted`. The architecture permits
+  a decision that changes no plan (`resulting_plan_revision_id` is nullable), but no admissible
+  M3.4 input reaches it, so neither the code nor migration 040's CHECK pretends otherwise.
+- **A fixture defect found and corrected.** The AT-M3.3 test plan used `step_id`, which is not a
+  `PlanStep` field, so the fixture's stored plan never parsed as `PlanContent`. Corrected, and
+  `_diff_against` now degrades to an empty diff rather than raising when a predecessor's stored
+  plan will not parse - `PlanningStore` accepts raw JSON, so such a row is reachable, and the diff
+  is advisory metadata while the lineage is not.
+- **Measured.** 53 AT-M3.4 tests and 419 focused tests pass on real PostgreSQL 16 (M3.4, M3.3, M3.2,
+  M3.1, M2 Team Core, approval, audit); the 2 failures are the pre-existing AT-M1 window guards,
+  identical on canonical main. Migration 040 UP / DOWN / UP / UP clean on the canonical 001-039
+  chain with the AT-M2/M3.2/M3.3 substrate intact after DOWN. An independent probe outside the repo
+  suite: 3 rounds of 8 workers each produced exactly one decision, one accepted successor and zero
+  orphan accepted revisions; two discussions on one predecessor produced one successor with both
+  deliberations preserved; the stale race failed closed with the predecessor byte-identical; and no
+  approval, policy or work-item row changed. No production action, no external call, no secret,
+  `production_executed_true_count: 0`.
