@@ -1,0 +1,97 @@
+"""Step AT-M3.5 -- plan-driven delegation / dynamic dispatch.
+
+Consumes the accepted, current PlanRevision AT-M3.4 produces and turns it into a durable,
+dependency-aware, capability-routed execution graph under the Goal's single primary Work Item.
+
+It answers WHAT should execute, WHEN it becomes ready and WHO receives it. It never answers HOW:
+no code runs here, no shell, no test, no Git or GitHub operation, no deployment, no external call.
+That is AT-M4, and it is not authorized.
+"""
+
+from shared.sdk.plan_delegation.events import (
+    AUDIT_GRAPH_MATERIALIZED,
+    AUDIT_UNIT_ASSIGNED,
+    AUDIT_UNIT_DISPATCHED,
+    AUDIT_UNIT_RESULT,
+    EVENT_GRAPH_MATERIALIZED,
+    EVENT_UNIT_ASSIGNED,
+    EVENT_UNIT_COMPLETED,
+    EVENT_UNIT_DISPATCHED,
+    EVENT_UNIT_READY,
+    EVENT_UNIT_UNASSIGNABLE,
+    STREAM_PLAN_DELEGATION,
+)
+from shared.sdk.plan_delegation.models import (
+    DEPENDENCY_SATISFIED_STATES,
+    DISPOSITION_FAILED,
+    DISPOSITION_SUCCEEDED,
+    DISPOSITIONS,
+    TERMINAL_UNIT_STATES,
+    UNAVAILABLE_NO_ELIGIBLE_AGENT,
+    UNAVAILABLE_REQUIRES_HUMAN_APPROVAL,
+    UNIT_ASSIGNED,
+    UNIT_BLOCKED,
+    UNIT_CANCELLED,
+    UNIT_COMPLETED,
+    UNIT_DISPATCHED,
+    UNIT_FAILED,
+    UNIT_READY,
+    UNIT_STATES,
+    DispatchLineageError,
+    ExecutionLineageCancelledError,
+    ExecutionUnitStateError,
+    PlanGraphInvalidError,
+    PlanRevisionNotDispatchableError,
+    build_dispatch_envelope,
+    plan_dependency_edges,
+    resolve_step_assignment,
+    root_step_keys,
+    unavailable_reason_for,
+    validate_plan_graph,
+    work_item_status_for,
+)
+from shared.sdk.plan_delegation.service import PlanDelegationService
+from shared.sdk.plan_delegation.store import PlanDelegationStore
+
+__all__ = [
+    "AUDIT_GRAPH_MATERIALIZED",
+    "AUDIT_UNIT_ASSIGNED",
+    "AUDIT_UNIT_DISPATCHED",
+    "AUDIT_UNIT_RESULT",
+    "DEPENDENCY_SATISFIED_STATES",
+    "DISPOSITIONS",
+    "DISPOSITION_FAILED",
+    "DISPOSITION_SUCCEEDED",
+    "DispatchLineageError",
+    "EVENT_GRAPH_MATERIALIZED",
+    "EVENT_UNIT_ASSIGNED",
+    "EVENT_UNIT_COMPLETED",
+    "EVENT_UNIT_DISPATCHED",
+    "EVENT_UNIT_READY",
+    "EVENT_UNIT_UNASSIGNABLE",
+    "ExecutionLineageCancelledError",
+    "ExecutionUnitStateError",
+    "PlanDelegationService",
+    "PlanDelegationStore",
+    "PlanGraphInvalidError",
+    "PlanRevisionNotDispatchableError",
+    "STREAM_PLAN_DELEGATION",
+    "TERMINAL_UNIT_STATES",
+    "UNAVAILABLE_NO_ELIGIBLE_AGENT",
+    "UNAVAILABLE_REQUIRES_HUMAN_APPROVAL",
+    "UNIT_ASSIGNED",
+    "UNIT_BLOCKED",
+    "UNIT_CANCELLED",
+    "UNIT_COMPLETED",
+    "UNIT_DISPATCHED",
+    "UNIT_FAILED",
+    "UNIT_READY",
+    "UNIT_STATES",
+    "build_dispatch_envelope",
+    "plan_dependency_edges",
+    "resolve_step_assignment",
+    "root_step_keys",
+    "unavailable_reason_for",
+    "validate_plan_graph",
+    "work_item_status_for",
+]

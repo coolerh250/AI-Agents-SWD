@@ -420,8 +420,19 @@ class TeamStore:
         task_id: str | None = None,
         workflow_id: str | None = None,
         audit_ref: str | None = None,
+        conn: asyncpg.Connection | None = None,
     ) -> dict[str, Any]:
-        conn = await self._connect()
+        """Persist one routing decision and its evidence.
+
+        ``conn`` lets a caller record the decision inside a transaction it already owns, so an
+        assignment and the evidence for it commit together or not at all. AT-M3.5 needs exactly
+        that: without it, a scheduler that lost the assignment race would still have written a
+        routing decision, and the row would say the team chose someone who was never assigned.
+        This is the same composability ``PlanningStore._session`` exists for, and the alternative
+        is a second copy of this INSERT living in the caller.
+        """
+        own = conn is None
+        conn = conn if conn is not None else await self._connect()
         try:
             row = await conn.fetchrow(
                 """
@@ -452,7 +463,8 @@ class TeamStore:
             record["candidates_considered"] = _json(record.get("candidates_considered"))
             return record
         finally:
-            await conn.close()
+            if own:
+                await conn.close()
 
     async def list_routing_decisions(
         self, project_id: str, limit: int = 100

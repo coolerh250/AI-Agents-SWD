@@ -36,6 +36,7 @@ from project_api import router as project_router
 from planning_api import router as planning_router
 from discussion_api import router as discussion_router
 from planning_decision_api import router as planning_decision_router
+from plan_delegation_api import router as plan_delegation_router
 from operations_replay_api import router as operations_replay_router
 from operations_resume_api import router as operations_resume_router
 from task_api import router as task_router
@@ -218,6 +219,10 @@ app.include_router(discussion_router)
 # AT-M3.4: one command turns a converged discussion into one TeamDecision and one accepted
 # PlanRevision. Read-only otherwise; it dispatches nothing and creates no Approval.
 app.include_router(planning_decision_router)
+# AT-M3.5: the accepted PlanRevision becomes a durable, dependency-aware, capability-routed
+# execution graph under the Goal's single primary Work Item. It decides what executes, when it is
+# ready and who receives it; it executes nothing itself (that is AT-M4, and it is not authorized).
+app.include_router(plan_delegation_router)
 # Stage 46: agent discussion & design review operations API.
 app.include_router(design_review_router)
 # Stage 47: real repo workspace operator operations API.
