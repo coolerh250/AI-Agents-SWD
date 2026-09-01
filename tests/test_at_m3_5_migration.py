@@ -40,13 +40,21 @@ def test_both_migration_files_exist_and_are_transactional():
 
 
 def test_the_numbering_is_derived_from_canonical_main():
+    """Canonical main ended at 041 (AT-M3.4), so this slice is 042, once.
+
+    Deliberately NOT ``numbers[-1] == 42``: that would say "no migration after 042 exists", which
+    is a claim about the whole repository rather than about this slice, and it would fail the
+    moment AT-M3.6 adds its first migration. AT-M3.4's equivalent assertion had exactly that shape
+    and AT-M3.5 is what broke it.
+    """
     numbers = sorted(
         int(p.name[:3])
         for p in (ROOT / "migrations").glob("*.sql")
         if p.name[:3].isdigit() and not p.name.endswith("_down.sql")
     )
-    assert numbers[-1] == 42
+    assert numbers.count(41) == 1, "the base this slice derived from must still be there, once"
     assert numbers.count(42) == 1
+    assert _FORWARD.name.startswith("042_") and _DOWN.name.startswith("042_")
 
 
 def test_it_creates_exactly_the_four_tables_this_slice_needs():

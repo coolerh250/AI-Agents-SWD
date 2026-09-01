@@ -53,15 +53,25 @@ def test_every_migration_file_exists_and_is_transactional():
 
 
 def test_the_numbering_is_derived_from_canonical_main_not_from_the_failed_lineage():
-    """canonical main ends at 039, so this slice starts at 040. The failed branch's own 040/041
-    are not history this lineage has."""
+    """canonical main ended at 039, so this slice starts at 040. The failed branch's own 040/041
+    are not history this lineage has.
+
+    Amended by AT-M3.5, which adds 042. The original also asserted ``numbers[-1] == 41``, which
+    said "no migration after 041 exists anywhere in the repository" -- true when written, and never
+    what this test was about. That clause made every future slice's first migration fail an AT-M3.4
+    test, which is a numbering claim about the whole repository living inside a slice-scoped file.
+    What the test actually defends is that AT-M3.4 owns 040 and 041, each exactly once, directly
+    after the 039 it derived from, and that is what is asserted now. No AT-M3.4 contract, schema,
+    constraint or behaviour is touched.
+    """
     numbers = sorted(
         int(p.name[:3])
         for p in (ROOT / "migrations").glob("*.sql")
         if p.name[:3].isdigit() and not p.name.endswith("_down.sql")
     )
-    assert numbers[-1] == 41
+    assert numbers.count(39) == 1, "the base this slice derived from must still be there, once"
     assert numbers.count(40) == 1 and numbers.count(41) == 1
+    assert _DURABLE.name.startswith("040_") and _FORWARD.name.startswith("041_")
 
 
 # --- 040: the durable reasoning artifact ------------------------------------------------------
