@@ -18537,3 +18537,65 @@ stranding defect came to be written. Attempts are counted and audited separately
 
 - **AT-M3.4 Independent Validation 1** on branch `at-m3.4-durable-reasoning-planning-decision-1`.
   Not merged, not deployed, no production action. `origin/main` remains `83ae97f`.
+
+## Step AT-M3.4-CANONICALIZATION-1 - Durable Reasoning + Planning Decision Product Acceptance & Canonical Merge (CLOSED)
+
+**Status: AT-M3.4 PO ACCEPTED, canonically merged, CLOSED. Marker:
+`AT_M3_4_CANONICALIZATION_VERIFY: PASS`.**
+
+- **Source of truth recovered before anything was written.** `origin/main` was `83ae97f`, the
+  validated base, unchanged. `origin/at-m3.4-durable-reasoning-planning-decision-1` was exactly
+  `35b2b8618fc649a2a1073aae7d574ef2a494e0fe` - the SHA AT-M3.4-INDEPENDENT-VALIDATION-1 passed
+  against, with no commit landed after it. The candidate descends from canonical main through one
+  linear commit, and the working tree was clean. Fast-forward canonicalization was therefore still
+  valid, and no rebase question arose. Both prior failed-lineage commits, `157b5cf` and its
+  predecessor `28bdf43`, were independently re-confirmed as non-ancestors of the candidate.
+- **AT-D21 records the acceptance.** The decision id was derived from canonical main, not assumed:
+  the highest existing record there is AT-D20, and no AT-D21 existed anywhere in the repository.
+  It names the accepted capability list, the exact `implementation_end`, and the full validation
+  chain across both lineages - the prior lineage's Validation 1 design finding
+  (caller-substitutable plan) -> `AT-M3.4-PLAN-AUTHORSHIP-DECISION-DESIGN-REVIEW-1` DESIGN_RESOLVED
+  -> remediation -> Validation 2 FAIL (the durable-artifact/lease stranding defect) ->
+  FAILED_VALIDATION_2 / NONCANONICAL closure, then the rebaseline directly onto canonical main and
+  the rebaselined lineage's own AT-M3.4-INDEPENDENT-VALIDATION-1 PASS. It explicitly does not
+  relabel `157b5cf` / `28bdf43` as accepted, reviewed, or a candidate for future merge, and records
+  the two retained non-blocking observations (artifact JSONB size bound, PlanContent step-count
+  bound) as `PRE-M3.6B` / `PRODUCT_HARDENING` / `NON_BLOCKING`.
+- **`implementation_end` does not follow the branch tip.** The acceptance and reconciliation commit
+  lands on top of `35b2b86` and is documentation; naming it would claim validation coverage the
+  docs commit never had. Both AT-D21 and the PM state say so in as many words.
+- **PM state reconciled, bounded.** Provenance moved to `35b2b86` under
+  `AT-M3.4-CANONICALIZATION-1`, position advanced to AT-M3.5, and section 5a gained the AT_M3_4
+  block plus its own `AT_M3_4_IMPLEMENTATION_END`. `AT_M3_4_THROUGH_AT_M3_6A` became
+  `AT_M3_5_THROUGH_AT_M3_6A`, the same rename pattern `AT_M3_3_THROUGH_AT_M3_6A` underwent at the
+  AT-M3.3 canonicalization. A duplicate-register-key scan was run before and after: 113 keys / 0
+  conflicts before, 119 keys / 0 conflicts after, and `RECONCILED_BY_STAGE` matches `CURRENT_STAGE`.
+- **Post-validation diff verified docs-only before merging.** `35b2b86` to the acceptance tip
+  touches `docs/decisions/`, `docs/governance/AI_AGENTS_PM_STATE.md` and `source/progress.md` and
+  nothing else. Zero bytes changed under `shared/`, `apps/`, `agents/`, `migrations/`, `infra/`,
+  `scripts/` or `tests/`.
+- **Merge was fast-forward only.** No squash, no rebase, no force, no improvised merge commit.
+- **Bounded post-merge verification.** Migrations 040/041 canonical and 001-039 byte-identical;
+  `reasoning_invocations` carries `artifact_type` / `artifact` / `attempt` / `attempt_token` /
+  `lease_expires_at`; `chk_reasoning_invocations_success_artifact` and
+  `trg_reasoning_invocations_terminal` present; `decompose_plan` registered in the verb CHECK;
+  succeeded replay returns the durable typed artifact with no provider recall; a nonparticipant
+  planner fallback is absent and `PlannerUnavailableError` is raised before any reasoning call; the
+  candidate TeamMessage stays `proposal`, never `replan`, and is linked to its exact reasoning
+  invocation and to `planning_decisions` by non-cascading FK; `chk_planning_decisions_outcome` /
+  `chk_planning_decisions_outcome_shape` present; AT-M3.2's compare-and-swap is reused, not copied;
+  all four outcome branches (initial, changed, current-draft, no_change) present and correct; the
+  planning-decisions API exposes exactly one write route, `POST /planning-decisions`, plus
+  read-only routes; no M3.5 dispatch runtime, no live provider/network path, and no `team_decisions`
+  written outside a formal finalization. 115 AT-M3.4 tests and a 1,040-test focused
+  M3.4/M3.3/M3.2/M3.1/M2/approval/audit selection pass, with the same 4 pre-existing environmental
+  failures reproduced identically on canonical main.
+- **Boundaries held.** No AT-M3.5 runtime, no AT-M3.6B, no AT-M4, no P3 backlog remediation, no
+  artifact-size/step-count hardening, no PCP work, AT-D16/AT-D17 untouched and still noncanonical,
+  AT-D18 Minimal Governance Kernel preserved. Production `NOT AUTHORIZED`, AT-M3.6B
+  `NOT AUTHORIZED`, AT-M4 `NOT AUTHORIZED`, no external call, `production_executed_true_count: 0`.
+  No verifier, registry, authority mechanism, historical exemption or canonical-activation
+  mechanism was added.
+- **AT-M3.4 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
+  CANONICAL / CLOSED.** The product critical path advances to AT-M3.5 - Plan-driven Delegation /
+  Dynamic Dispatch, which is authorized under AT-D14 and not started here.

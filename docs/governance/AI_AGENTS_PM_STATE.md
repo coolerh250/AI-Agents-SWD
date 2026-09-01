@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-08-31
-RECONCILED_AGAINST_MAIN:     4f1003c083b722c3e724f79d9998f910c991ee80
-RECONCILED_BY_STAGE:         AT-M3.3-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_ON:               2026-09-01
+RECONCILED_AGAINST_MAIN:     35b2b8618fc649a2a1073aae7d574ef2a494e0fe
+RECONCILED_BY_STAGE:         AT-M3.4-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -33,18 +33,18 @@ is a conflict.
 
 ```text
 CURRENT_MILESTONE:           AT-M3
-CURRENT_MILESTONE_STATE:     IN PROGRESS -- AT-M3.1, AT-M3.2 and AT-M3.3 MERGED / CLOSED; AT-M3.4
-                              is the next implementation slice
-PREVIOUS_COMPLETED_STAGE:    AT-M3.3 (canonical merge)
-CURRENT_GATE:                NONE -- AT-M3.3 canonically merged; AT-M3.4 .. AT-M3.6A are already
+CURRENT_MILESTONE_STATE:     IN PROGRESS -- AT-M3.1, AT-M3.2, AT-M3.3 and AT-M3.4 MERGED / CLOSED;
+                              AT-M3.5 is the next implementation slice
+PREVIOUS_COMPLETED_STAGE:    AT-M3.4 (canonical merge)
+CURRENT_GATE:                NONE -- AT-M3.4 canonically merged; AT-M3.5 and AT-M3.6A are already
                               authorized under AT-D14 (see section 5a), so no new gate is open for
                               them; AT-M3.6B, production and AT-M4 remain closed
-CURRENT_STAGE:                AT-M3.3-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        AT-M3.4 IMPLEMENTATION -- Proposal / Challenge / TeamDecision
-                              planning acceptance. Already authorized under AT-D14; no new Product
-                              Owner decision is required unless the architecture materially
-                              changes, an authorization/security boundary expands, external
-                              network/model use is introduced, or production becomes involved.
+CURRENT_STAGE:                AT-M3.4-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+NEXT_PERMITTED_STAGE:        AT-M3.5 IMPLEMENTATION -- Plan-driven Delegation / Dynamic Dispatch.
+                              Already authorized under AT-D14; no new Product Owner decision is
+                              required unless the architecture materially changes, an
+                              authorization/security boundary expands, external network/model use
+                              is introduced, or production becomes involved.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -69,6 +69,18 @@ evidence chain and authorizes the merge. The merge was a fast-forward from `orig
 docs-only commit recording AT-D19 and this reconciliation. No conflict, no rebase, no history
 rewrite. `AT_M3_2_IMPLEMENTATION_END` stays at the validated commit and does not follow the
 branch tip. See section 5a.
+
+AT-M3.4 (durable reasoning artifacts, lease/takeover recovery, and a formal planning decision) was
+accepted and canonicalized by AT-D21
+(`docs/decisions/at-d21-at-m3-4-acceptance-and-merge-authorization.md`), which records the prior
+lineage's Validation 1 design finding → design review → remediation → Validation 2 FAIL →
+NONCANONICAL closure, the rebaseline onto canonical main, and the rebaselined lineage's Independent
+Validation 1 PASS, and authorizes the merge. The merge was a fast-forward from `origin/main`
+`83ae97f…` to the exact validated candidate `35b2b8618fc649a2a1073aae7d574ef2a494e0fe`, plus one
+docs-only commit recording AT-D21 and this reconciliation. No conflict, no rebase, no history
+rewrite. `AT_M3_4_IMPLEMENTATION_END` stays at the validated commit and does not follow the branch
+tip. AT-M3.3 (bounded team discussion) remains accepted and canonicalized by AT-D20, unchanged by
+this entry. See section 5a.
 
 AT-M1 stays `CLOSED / CANONICAL`; it is no longer the *current* milestone because AT-D11
 authorized its successor. Position moved off the PCP remediation chain at the same decision — see
@@ -265,24 +277,38 @@ AT_M3_3_ACCEPTANCE:            PO ACCEPTED
 AT_M3_3_AUTHORIZED_BY:         AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
 AT_M3_3_MERGE_AUTHORIZED_BY:   AT-D20 / docs/decisions/at-d20-at-m3-3-acceptance-and-merge-authorization.md
 AT_M3_3_IMPLEMENTATION_END:    4f1003c083b722c3e724f79d9998f910c991ee80
-AT_M3_4:                       NOT YET STARTED
-AT_M3_4_THROUGH_AT_M3_6A:      AUTHORIZED (AT-D14) / NOT YET IMPLEMENTED
-PRODUCT_CRITICAL_PATH:         AT-M3.4
-NEXT_PRODUCT_STAGE:            AT-M3.4 -- Proposal / Challenge / TeamDecision Planning Acceptance
+AT_M3_4:                       AUTHORIZED / VALIDATED / PO_ACCEPTED / MERGED / CANONICAL / CLOSED
+AT_M3_4_IMPLEMENTATION:        COMPLETE
+AT_M3_4_VALIDATION:            PASS / COMPLETE -- 1 of 1 on the rebaselined lineage (Independent
+                                Validation 1 PASS; no Validation 2 required). The PRIOR lineage
+                                (157b5cf, predecessor 28bdf43) exhausted its own budget --
+                                Validation 1 DESIGN FINDING -> AT-M3.4-PLAN-AUTHORSHIP-DECISION-
+                                DESIGN-REVIEW-1 DESIGN_RESOLVED -> remediation -> Validation 2 FAIL
+                                -- and closed FAILED_VALIDATION_2 / NONCANONICAL / DO_NOT_MERGE,
+                                never merged and not an ancestor of this lineage or of main
+AT_M3_4_ACCEPTANCE:            PO ACCEPTED
+AT_M3_4_AUTHORIZED_BY:         AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
+AT_M3_4_MERGE_AUTHORIZED_BY:   AT-D21 / docs/decisions/at-d21-at-m3-4-acceptance-and-merge-authorization.md
+AT_M3_4_IMPLEMENTATION_END:    35b2b8618fc649a2a1073aae7d574ef2a494e0fe
+AT_M3_5_THROUGH_AT_M3_6A:      AUTHORIZED (AT-D14) / NOT YET IMPLEMENTED
+PRODUCT_CRITICAL_PATH:         AT-M3.5
+NEXT_PRODUCT_STAGE:            AT-M3.5 -- Plan-driven Delegation / Dynamic Dispatch
 AT_M3_6B:                      NOT AUTHORIZED
 ```
 
-`AT_M3_1`, `AT_M3_2` and `AT_M3_3` keep the literal word `AUTHORIZED` immediately after the field
-name for the same reason `AT_M2` does (section 5): it is the live authorization state, not a claim
-that validation is still open. `AT_M3_4_THROUGH_AT_M3_6A` records that AT-D14 already authorizes
-that work; it is not itself an implementation-complete claim, and each of those slices still needs
-its own implementation report and its own Validation 1/2 pass before it can read the way `AT_M3_1`,
-`AT_M3_2` and `AT_M3_3` do here. `AT_M3_2_IMPLEMENTATION_END` and `AT_M3_3_IMPLEMENTATION_END` are
-the exact independently validated commits and do not follow the branch tip: the acceptance and
-reconciliation commit that lands on top of each is documentation, and moving the field to name it
-would silently claim validation coverage the docs commit never had. `AT_M3_6B` names the boundary
-AT-D14 explicitly did not move: no real external LLM/network call is authorized by any record in
-this file.
+`AT_M3_1`, `AT_M3_2`, `AT_M3_3` and `AT_M3_4` keep the literal word `AUTHORIZED` immediately after
+the field name for the same reason `AT_M2` does (section 5): it is the live authorization state,
+not a claim that validation is still open. `AT_M3_5_THROUGH_AT_M3_6A` (renamed from
+`AT_M3_4_THROUGH_AT_M3_6A` now that AT-M3.4 has its own implementation-complete block, the same
+rename `AT_M3_3_THROUGH_AT_M3_6A` underwent at the AT-M3.3 canonicalization) records that AT-D14
+already authorizes that work; it is not itself an implementation-complete claim, and AT-M3.5 still
+needs its own implementation report and its own Validation 1/2 pass before it can read the way
+`AT_M3_1` through `AT_M3_4` do here. `AT_M3_2_IMPLEMENTATION_END`, `AT_M3_3_IMPLEMENTATION_END` and
+`AT_M3_4_IMPLEMENTATION_END` are the exact independently validated commits and do not follow the
+branch tip: the acceptance and reconciliation commit that lands on top of each is documentation,
+and moving the field to name it would silently claim validation coverage the docs commit never
+had. `AT_M3_6B` names the boundary AT-D14 explicitly did not move: no real external LLM/network
+call is authorized by any record in this file.
 
 Six non-blocking observations were carried out of AT-M3.3 Validation 2 as backlog, not remediated,
 and are recorded in full in AT-D20 section 7: a residual TOCTOU between the post-provider deadline
@@ -307,6 +333,14 @@ an unvalidated, caller-supplied `request.provider_name` can flow into an audit e
 summary/refs when an audit client is configured. It does not touch `reasoning_invocations`, mirrors
 a pre-existing repo-wide audit-construction pattern, and is not registered as debt here — it is a
 candidate for a future observability/audit-hardening slice, not a blocker of anything above.
+
+Two non-blocking observations were carried out of the AT-M3.4 rebaselined lineage's Independent
+Validation 1 as backlog, not remediated, and are recorded in full in AT-D21 section 6:
+`reasoning_invocations.artifact` (JSONB) has no explicit size bound, and `PlanContent` still has no
+global step-count bound (inherited from AT-M3.2, unchanged here). Under AT-D18-R05 both are
+`NON-BLOCKING` — neither reaches a Minimal Blocking Governance Kernel control — and both are
+additionally `PRE-M3.6B` / `PRODUCT_HARDENING`, worth closing before a live provider is authorized
+but gating no non-production milestone; neither is registered as debt here.
 
 ## 6. Active HOLD items
 
