@@ -18599,3 +18599,190 @@ stranding defect came to be written. Attempts are counted and audited separately
 - **AT-M3.4 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
   CANONICAL / CLOSED.** The product critical path advances to AT-M3.5 - Plan-driven Delegation /
   Dynamic Dispatch, which is authorized under AT-D14 and not started here.
+
+## Step AT-M3.5-PLAN-DRIVEN-DELEGATION-1 - Accepted PlanRevision -> Durable Work Graph -> Capability-Based Dynamic Dispatch (IMPLEMENTED)
+
+**Status: implementation complete, awaiting Independent Validation 1. Branch
+`at-m3.5-plan-driven-delegation-1`, branched from exact canonical main `c9f6001`, not merged.
+`origin/main` unchanged at `c9f6001`.**
+
+- **What this slice decides, and what it deliberately cannot.** It answers WHAT should execute,
+  WHEN it becomes ready and WHO receives it. It answers no part of HOW: no code, shell, test, Git,
+  GitHub, deployment or external call exists anywhere in the diff, and the schema carries no column
+  that could hold a command, a patch or an external target. That is AT-M4 and it is not authorized.
+
+### Execution lineage - populated, not extended
+
+- **A plan step becomes a CHILD `project_work_items` row.** No Task is written, read or required
+  (asserted against a real database by counting `tasks` before and after a full materialize ->
+  schedule pass). `source-of-truth-and-lineage-model.md` R6 and AT-M1's L3 entity list both put
+  WorkItem here; a subordinate-Task mapping would have made the lineage depend on a Task to
+  advance, which R6 forbids.
+- **One execution root per Goal, enforced by a PRIMARY KEY.** `goal_execution_lineage` has
+  `goal_id` as its PK and `primary_work_item_id` UNIQUE, so "which work item is this Goal's
+  autonomous execution lineage" has exactly one answer and cannot acquire a second. Every step of
+  every revision hangs under it via the existing `parent_work_item_id`. A trigger refuses
+  re-rooting.
+- **No Workflow/Run is created, and none is invented.** R3 puts a Run under a Work Item and AT-M1
+  puts Workflow/Run in L4; `plan_execution_graphs` is the L3 materialization record. Calling it a
+  Run would claim execution that has not happened, and a `PlanRevisionRun` would be the second
+  execution instance the architecture forbids. `workflow_states` is keyed on `task_id` and is
+  deliberately untouched: binding the plan graph to it would subordinate execution lineage to a
+  Task.
+
+### Data model / migration
+
+- **`migrations/042_at_m3_5_plan_execution_graph.sql`** - four tables, each with one
+  responsibility: `goal_execution_lineage` (the Goal's single execution root),
+  `plan_execution_graphs` (one materialization of one accepted PlanRevision),
+  `plan_execution_units` (the plan-step to work-item mapping, its runtime state and its current
+  assignment), `plan_execution_dispatches` (the append-only canonical dispatch ledger). Numbering
+  derived from canonical main, which ends at 041.
+- **It adds no column to, and drops nothing from, any existing table.** `project_work_items`,
+  `project_work_item_dependencies`, `agent_routing_decisions`, `work_item_events`, `plan_revisions`
+  and `actor_principals` are referenced, never replaced. No second work-item model, task authority,
+  workflow model, routing table, capability registry or dependency-edge table exists.
+- **The load-bearing uniqueness is PostgreSQL's:** `uq_peg_plan_revision` (one graph per accepted
+  revision), `uq_peu_revision_step` (exact step identity, per revision), `uq_peu_work_item`, and
+  `plan_execution_dispatches.execution_unit_id` as PRIMARY KEY (one canonical dispatch per unit).
+  Composite FKs make a graph claiming another Goal's revision, or a unit moving between revisions'
+  graphs, unrepresentable rather than merely checked.
+- **`dispatch_generation` was considered and rejected.** The slice authorizes no re-dispatch, so a
+  generation column could only ever hold 1 - a promise the code does not keep. The prompt's own
+  alternative, `execution_unit_id`, is what is used. Adding re-dispatch later is a migration and a
+  decision, which is the correct cost.
+- **Currency has no stored form**, exactly as `planning-and-plan-revision-model.md` 11b requires.
+  There is no stale column, no supersession sweeper and no reconciliation daemon; `is_current` is
+  derived on read and enforced on write by AT-M3.2's own compare-and-swap.
+- **UP / DOWN / UP / UP verified** on the test host against PostgreSQL 16. The down migration drops
+  only this slice's four tables and leaves the child work items, their dependency edges and the
+  routing evidence alone - they belong to the project's lineage, not to this ledger, the same
+  posture 041's down migration takes.
+
+### Runtime
+
+- **`shared/sdk/plan_delegation/`** - `models.py` (pure: graph validation, capability resolution,
+  dispatch envelope), `store.py` (asyncpg, all transactions), `service.py` (three commands),
+  `events.py` (names only).
+- **Three commands and no more:** `materialize_accepted_plan`, `schedule_ready_work`,
+  `record_step_result`. There is no `set_ready`, `assign_principal`, `mark_dispatched` or
+  `rebind_revision` at any layer a caller can reach - each would turn a guarantee into a
+  convention.
+- **Materialization takes no plan.** It reads the plan from the revision row. A caller cannot
+  supply steps, dependencies, capabilities or an owner - the AT-M3.4 Validation 1 lesson (remove
+  the input rather than check it) applied one slice later.
+- **Plan validation reuses the existing dependency validator** rather than adding a second one.
+  Cycles are the genuinely new check: `PlanContent` validates existence and self-dependency but
+  never looked for a cycle, and a cyclic plan satisfies every one of its rules while producing a
+  graph in which nothing can ever be ready. An invalid plan writes nothing at all.
+- **Assignment reuses the AT-M2 router unchanged** and adds only the two things a
+  single-capability router cannot express: the conjunction a step requires (an agent covering one
+  of two required capabilities is not eligible) and the production-effect boundary applied across
+  the whole set. Every candidate still appears in
+  `agent_routing_decisions.candidates_considered` with the capability it was missing.
+  `TeamStore.record_routing_decision` gained one optional `conn` parameter so the assignment and
+  its evidence commit together; without it a scheduler that lost the race would still have written
+  a decision saying the team chose someone never assigned.
+- **Plan ownership intent travels as `preferred_role`** - it can influence which ELIGIBLE principal
+  is chosen and can never invent one. A role hint matching nobody eligible is ignored, and one
+  pointing at someone who cannot do the work does not get them the work.
+- **A step nobody can take stays `ready` with `capability_unavailable`** and is not dispatched. It
+  is not a new state: the step genuinely is ready, the team is what is missing. Re-running the same
+  schedule command after the roster changes assigns it - no polling daemon and no timer.
+
+### Concurrency, verified against real PostgreSQL
+
+- **Eight concurrent materializations produce one graph, three units, three child work items, zero
+  duplicates.** The seven losers roll back whole and replay the winner's graph.
+- **Eight concurrent schedulers produce one canonical assignment, one routing-decision row and one
+  canonical dispatch.** Repeated over multiple rounds.
+- **The stale-plan race is closed at the transaction boundary, not by a pre-read.** Materialization
+  and every new-work path call `PlanningStore.confirm_current_revision` on their own transaction's
+  connection, which takes `FOR UPDATE` on the revision and re-checks for a successor inside that
+  lock. Racing a materialization against a successor creation resolves to at most one loser and
+  never to an authoritative graph for a revision that is no longer current.
+- **Lock order is fixed module-wide** - project row, then plan revision, then primary work item,
+  then execution unit, with dependent units taken in `execution_unit_id` order. `PlanningStore`
+  documents project-then-predecessor for its own writes and this module extends the same chain
+  rather than approaching it from the other end.
+
+### The transport guarantee, stated honestly
+
+- **Exactly-once is a property of the DURABLE state; the stream is at-least-once.** The dispatch
+  row commits first and the publish follows, because a Redis `XADD` cannot join a PostgreSQL
+  transaction. A publish failure leaves `published_at` NULL and the next pass re-publishes THAT
+  SAME row with the same correlation id, never a second one.
+- **The eight-worker race initially asserted that exactly one worker put the command on the wire.
+  Against a real database it is three**, because workers that lose the assignment race read the
+  canonical dispatch before the winner stamps `published_at`. That is the design working: the
+  assertion was corrected to what Redis can actually give - one canonical row, one correlation id,
+  one execution unit, one assignee, however many copies of the same command reach the stream.
+  Serialising the publish would mean holding a row lock across a network call, which AT-M3.4
+  refused for the same reason.
+
+### Dependency unlock and completion
+
+- A to B to C unlocks one step at a time and readiness is not transitive. A fan-in step stays
+  blocked until its LAST dependency completes, and two dependencies completing simultaneously
+  promote it exactly once. A FAILED dependency does not unlock its dependent.
+- **A result must come through the unit's own canonical dispatch** - correlation id and reporting
+  principal both checked against the ledger row. A caller that never received the dispatch cannot
+  produce that pair. Reporting the same disposition twice replays; reporting a different one for a
+  terminal unit is refused.
+- **Completion deliberately does NOT check currency or cancellation.** Work already handed to a
+  principal may finish and be recorded truthfully after a successor appears -
+  `planning-and-plan-revision-model.md` section 7 carries in-flight work forward and never destroys
+  its history. What supersession stops is NEW dispatch, enforced where new dispatch happens.
+
+### Stale plan and cancellation
+
+- **Approved semantic B, derived rather than invented:** existing dispatched work finishes;
+  not-yet-dispatched units of a superseded revision stop authorizing new work; historical evidence
+  is never rewritten; every dispatch stays permanently bound to the exact revision that issued it
+  (the binding columns are frozen by trigger, verified by attempting the UPDATE). A successor
+  materializes its OWN graph with its own units and work items under the same primary work item -
+  same step keys, no identity collision, nothing rebound.
+- **Cancellation authority stays the existing work item.** A cancelled primary work item refuses
+  every new assignment and dispatch; no second PlanGraph cancellation model was created.
+
+### Tests
+
+- 119 AT-M3.5 tests pass against a real PostgreSQL 16 and an actual local Redis on the test host,
+  from a fresh database with all migrations applied in order.
+- The focused regression selection (`at_m3 | at_m2 | agent_team | approval | audit | work_item |
+  project_planning | task_graph | dispatch`) is **1249 passed, 27 skipped, 2 failed**, and both
+  failures reproduce identically on canonical main under the same selection and the same database:
+  `test_at_d12_successor_freeze_amendment` and `test_audit_timeline`. The set failing here but
+  passing on canonical main is empty.
+- One combined run also failed
+  `test_at_m3_1_reasoning_store::test_ten_concurrent_service_invoke_calls_on_real_postgres_call_the_provider_once`.
+  It did not reproduce: it passes in isolation three times out of three, passes in its own file,
+  and passed on both subsequent full-selection runs. Recorded as observed rather than dismissed.
+
+### One governance drift, surfaced and amended
+
+- **`GOVERNANCE_DRIFT_ALERT` - a merged AT-M3.4 test expectation that forbade every later
+  migration.** `test_at_m3_4_migration.py::test_the_numbering_is_derived_from_canonical_main_not_from_the_failed_lineage`
+  asserted `numbers[-1] == 41`, i.e. "no migration after 041 exists anywhere in the repository".
+  True when written, and never what the test was about - its subject is that AT-M3.4 derived
+  040/041 from canonical main instead of inheriting the failed lineage's numbering. As written it
+  made every future slice's first migration fail an AT-M3.4 test. RISK_CLASS P3, RECOMMENDATION
+  CONTINUE. Amended to assert the meaning (039 present once; 040 and 041 present exactly once and
+  belonging to this slice's own files); no AT-M3.4 contract, schema, constraint, trigger or
+  behaviour is touched, and the failed lineage is still excluded. AT-M3.5's own numbering test is
+  written the same way from the start so it does not hand AT-M3.6 the identical failure.
+
+### Boundaries held
+
+- No AT-M4 execution capability: no code, shell, test-as-action, Git, GitHub, deployment or
+  external call, and no schema column that could carry one. No external network and no live LLM
+  provider. No HumanApproval created, read or bypassed - `approval_requests` count is asserted
+  unchanged across a full materialize -> dispatch -> complete cycle, and a production-effect
+  capability is referred to the human boundary rather than routed. No AT-M3.4 / AT-M3.3 / AT-M3.2 /
+  AT-M3.1 contract reopened. No verifier, registry, authority mechanism, exemption or
+  canonical-activation layer added. `production_executed_true_count: 0`.
+
+### Next
+
+- **AT-M3.5 Independent Validation 1** on branch `at-m3.5-plan-driven-delegation-1`. Not merged,
+  not deployed, no production action. `origin/main` remains `c9f6001`.
