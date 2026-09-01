@@ -238,14 +238,24 @@ class TeamStore:
         finally:
             await conn.close()
 
-    async def post_message(self, message: dict[str, Any]) -> dict[str, Any]:
+    async def post_message(
+        self, message: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        """Append one message. Optionally on a caller's connection.
+
+        The connection parameter exists for the same reason ``record_decision``'s does: AT-M3.4
+        writes the planner's candidate plan while holding a lock on the discussion it belongs to,
+        so that eight workers finalizing one discussion produce one candidate rather than eight.
+        Nothing about what a message MEANS changes with it.
+        """
         # Enforced here too, not just in the DTO: callers build a plain dict, so the model
         # validator alone would leave the prohibition bypassable by construction.
         assert_content_is_safe(message.get("content"), "content")
         assert_content_is_safe(message.get("artifact_refs"), "artifact_refs")
-        conn = await self._connect()
+        own = conn is None
+        connection = await self._connect() if own else conn
         try:
-            row = await conn.fetchrow(
+            row = await connection.fetchrow(
                 """
                 INSERT INTO team_messages
                   (thread_id, project_id, sender_principal_id, recipient_principal_id,
@@ -276,7 +286,8 @@ class TeamStore:
             )
             return self._message_row(row)
         finally:
-            await conn.close()
+            if own:
+                await connection.close()
 
     async def list_messages(
         self, project_id: str, thread_id: str | None = None, limit: int = 200
@@ -304,18 +315,36 @@ class TeamStore:
         finally:
             await conn.close()
 
-    async def record_decision(self, decision: dict[str, Any]) -> dict[str, Any]:
-        conn = await self._connect()
+    async def record_decision(
+        self, decision: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        """Record one TeamDecision. The only writer of ``team_decisions`` in the codebase.
+
+        Two additions AT-M3.4 needs, and neither changes what a TeamDecision means:
+
+        * ``resulting_plan_revision_id`` is now written. The column has existed since migration 036
+          and became a real FK in 038 (the one alteration of an AT-M2 table AT-D14 pre-cleared);
+          until now no writer populated it, which is why a decision could not say which plan it
+          produced.
+        * an optional connection, so a caller can record the decision in the SAME transaction as
+          the revision it selects. That is what makes "an accepted revision without its decision"
+          unrepresentable rather than merely unlikely.
+
+        A TeamDecision remains a team coordination artifact. It is not a human Approval and not a
+        ProductOwnerDecision (AT-ADR-06 / INV-03), and nothing here touches an approval record.
+        """
+        own = conn is None
+        connection = await self._connect() if own else conn
         try:
-            row = await conn.fetchrow(
+            row = await connection.fetchrow(
                 """
                 INSERT INTO team_decisions
                   (project_id, thread_id, proposed_by, options_considered, selected_option,
-                   rationale_summary, dissent_summary, audit_ref)
-                VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8)
+                   rationale_summary, dissent_summary, resulting_plan_revision_id, audit_ref)
+                VALUES ($1,$2,$3,$4::jsonb,$5,$6,$7,$8,$9)
                 RETURNING decision_id, project_id, thread_id, proposed_by, options_considered,
-                          selected_option, rationale_summary, dissent_summary, audit_ref,
-                          created_at
+                          selected_option, rationale_summary, dissent_summary,
+                          resulting_plan_revision_id, audit_ref, created_at
                 """,
                 _uuid(decision["project_id"]),
                 _uuid(decision["thread_id"]),
@@ -324,13 +353,17 @@ class TeamStore:
                 decision["selected_option"],
                 decision["rationale_summary"],
                 decision.get("dissent_summary"),
+                _uuid(decision["resulting_plan_revision_id"])
+                if decision.get("resulting_plan_revision_id")
+                else None,
                 decision.get("audit_ref"),
             )
             record = dict(row)
             record["options_considered"] = _json(record.get("options_considered"))
             return record
         finally:
-            await conn.close()
+            if own:
+                await connection.close()
 
     async def offer_handoff(self, handoff: dict[str, Any]) -> dict[str, Any]:
         conn = await self._connect()

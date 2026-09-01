@@ -1,8 +1,8 @@
 """Step AT-M3.1 -- in-memory fake ReasoningInvocationStore for unit tests.
 
-Implements the same async surface ReasoningService uses (try_begin_invocation /
-complete_invocation), backed by a dict keyed on ``correlation_id``. No DB, no asyncpg. Follows the
-existing ``tests/agent_team_fakes.py`` convention.
+Implements the same async surface ReasoningService uses, backed by a dict keyed on
+``correlation_id``. No DB, no asyncpg. Follows the existing ``tests/agent_team_fakes.py``
+convention.
 
 Mirrors the real store's ownership semantics: ``try_begin_invocation`` returns ``owned=True`` only
 for the first caller to claim a given ``correlation_id`` (a 'started' row is inserted immediately,
@@ -12,15 +12,30 @@ transitions a row that is still 'started' -- exactly like the real store's
 ``UPDATE ... WHERE status='started'`` guard -- and also runs the SAME
 ``sanitize_failure_reason`` defense-in-depth the real store applies, so a test exercising the fake
 observes identical failure_reason sanitization behaviour.
+
+AT-M3.4 (rebaselined) added three behaviours this fake has to mirror or it would let a test pass
+against semantics the database would refuse:
+
+* a succeeded row CARRIES ITS ARTIFACT, written in the same transition as the status. The real
+  schema makes the alternative unrepresentable (migration 040's success-artifact CHECK), so the
+  fake refuses it too rather than quietly permitting a state no real database would hold;
+* ownership is LEASED, and an expired lease is takeable exactly once per takeover;
+* ``complete_invocation`` is guarded on ``attempt_token``, so a superseded attempt cannot write.
+
+The lease clock here is ``expire_lease()``, driven by the test rather than by wall time. Sleeping
+through a real TTL would make the suite slow and flaky, and what these tests need to establish is
+the BEHAVIOUR at expiry, not that a timer works. The real timing is exercised against PostgreSQL's
+own clock in the store tests, which is the only place it can be exercised honestly.
 """
 
 from __future__ import annotations
 
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from shared.sdk.agent_reasoning.models import sanitize_failure_reason
+from shared.sdk.agent_reasoning.store import DEFAULT_LEASE_TTL_SECONDS, DEFAULT_MAX_ATTEMPTS
 
 
 def _now() -> datetime:
@@ -28,10 +43,26 @@ def _now() -> datetime:
 
 
 class InMemoryReasoningInvocationStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        lease_ttl_seconds: int = DEFAULT_LEASE_TTL_SECONDS,
+        max_attempts: int = DEFAULT_MAX_ATTEMPTS,
+    ) -> None:
         self.rows_by_correlation: dict[str, dict[str, Any]] = {}
         self.rows_by_invocation: dict[str, dict[str, Any]] = {}
         self.order: list[str] = []
+        self.lease_ttl_seconds = lease_ttl_seconds
+        self.max_attempts = max_attempts
+
+    # --- test control ---------------------------------------------------------------------
+
+    def expire_lease(self, correlation_id: str) -> None:
+        """Make the current owner's lease expired, as if the worker holding it had died."""
+        row = self.rows_by_correlation[str(correlation_id)]
+        row["lease_expires_at"] = _now() - timedelta(seconds=1)
+
+    # --- lifecycle -------------------------------------------------------------------------
 
     async def try_begin_invocation(self, data: dict[str, Any]) -> tuple[bool, dict[str, Any]]:
         correlation_id = str(data["correlation_id"])
@@ -51,6 +82,11 @@ class InMemoryReasoningInvocationStore:
             "status": "started",
             "failure_category": None,
             "failure_reason": None,
+            "artifact_type": None,
+            "artifact": None,
+            "attempt": 1,
+            "attempt_token": str(uuid.uuid4()),
+            "lease_expires_at": _now() + timedelta(seconds=self.lease_ttl_seconds),
             "outcome_ref": None,
             "input_tokens": None,
             "output_tokens": None,
@@ -67,8 +103,23 @@ class InMemoryReasoningInvocationStore:
         self.order.append(correlation_id)
         return True, dict(row)
 
+    async def try_take_over_invocation(self, correlation_id: Any) -> dict[str, Any] | None:
+        row = self.rows_by_correlation.get(str(correlation_id))
+        if row is None or row["status"] != "started":
+            return None
+        lease = row.get("lease_expires_at")
+        if lease is not None and _now() < lease:
+            return None
+        if row["attempt"] >= self.max_attempts:
+            return None
+        row["attempt"] += 1
+        row["attempt_token"] = str(uuid.uuid4())
+        row["started_at"] = _now()
+        row["lease_expires_at"] = _now() + timedelta(seconds=self.lease_ttl_seconds)
+        return dict(row)
+
     async def complete_invocation(
-        self, invocation_id: Any, *, terminal: dict[str, Any]
+        self, invocation_id: Any, *, attempt_token: Any, terminal: dict[str, Any]
     ) -> dict[str, Any] | None:
         row = self.rows_by_invocation.get(str(invocation_id))
         if row is None:
@@ -76,13 +127,47 @@ class InMemoryReasoningInvocationStore:
         if row["status"] != "started":
             # Already terminal -- the guard the real store's WHERE status='started' enforces.
             return dict(row)
-        row["status"] = terminal["status"]
+        if str(row["attempt_token"]) != str(attempt_token):
+            # Superseded: this attempt lost its lease while the provider was running.
+            return dict(row)
+        status = terminal["status"]
+        artifact = terminal.get("artifact")
+        if status == "succeeded" and (artifact is None or terminal.get("artifact_type") is None):
+            raise AssertionError(
+                "a succeeded invocation must carry its artifact and artifact_type -- migration "
+                "040's chk_reasoning_invocations_success_artifact makes the alternative "
+                "unrepresentable, so this fake refuses it too"
+            )
+        row["status"] = status
         row["failure_category"] = terminal.get("failure_category")
         row["failure_reason"] = sanitize_failure_reason(terminal.get("failure_reason"))
+        row["artifact_type"] = terminal.get("artifact_type") if status == "succeeded" else None
+        row["artifact"] = artifact if status == "succeeded" else None
         row["latency_ms"] = terminal.get("latency_ms")
         row["audit_ref"] = terminal.get("audit_ref")
         row["completed_at"] = terminal.get("completed_at") or _now()
+        row["lease_expires_at"] = None
         return dict(row)
+
+    async def fail_exhausted_invocation(
+        self, invocation_id: Any, *, terminal: dict[str, Any]
+    ) -> dict[str, Any] | None:
+        row = self.rows_by_invocation.get(str(invocation_id))
+        if row is None:
+            return None
+        if row["status"] != "started":
+            return dict(row)
+        lease = row.get("lease_expires_at")
+        if lease is not None and _now() < lease:
+            return dict(row)
+        row["status"] = "failed"
+        row["failure_category"] = terminal.get("failure_category", "provider_unavailable")
+        row["failure_reason"] = sanitize_failure_reason(terminal.get("failure_reason"))
+        row["completed_at"] = terminal.get("completed_at") or _now()
+        row["lease_expires_at"] = None
+        return dict(row)
+
+    # --- read-only -------------------------------------------------------------------------
 
     async def get_by_correlation_id(self, correlation_id: str) -> dict[str, Any] | None:
         row = self.rows_by_correlation.get(str(correlation_id))

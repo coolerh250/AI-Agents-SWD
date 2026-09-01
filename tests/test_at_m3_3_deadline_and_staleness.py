@@ -217,6 +217,12 @@ async def test_a_stuck_started_invocation_can_no_longer_hold_a_discussion_open_f
     advances them, and the worker that owned this turn is dead. Before the deadline bound existed
     the discussion stayed ``open`` permanently. Now the wall clock ends it, and the forensic
     evidence of the abandoned call is left exactly where AT-M3.1 put it.
+
+    The abandoned invocation is given a LIVE lease deliberately. AT-M3.4's rebaseline added
+    lease-based takeover, so an expired lease would let a later worker recover the reasoning call
+    and the discussion would never reach the state under test. What this asserts is that the
+    DISCUSSION's own deadline bounds it regardless -- the two bounds are independent, and this one
+    was AT-M3.3's answer before the other existed.
     """
     scenario = await _scenario()
     session = await _bounded(scenario, seconds=SHORT)
@@ -242,8 +248,10 @@ async def test_a_stuck_started_invocation_can_no_longer_hold_a_discussion_open_f
             """
             INSERT INTO reasoning_invocations
               (project_id, thread_id, requested_by_principal_id, reasoning_verb,
-               requested_provider_name, provider_mode, round_number, status, correlation_id)
-            VALUES ($1,$2,$3,'propose','mock','mock',1,'started',$4)
+               requested_provider_name, provider_mode, round_number, status, correlation_id,
+               attempt_token, lease_expires_at)
+            VALUES ($1,$2,$3,'propose','mock','mock',1,'started',$4,
+                    gen_random_uuid(), now() + interval '1 hour')
             RETURNING invocation_id
             """,
             uuid.UUID(scenario["project_id"]),

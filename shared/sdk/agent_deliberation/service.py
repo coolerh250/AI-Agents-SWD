@@ -739,21 +739,27 @@ class DiscussionService:
         )
         result = await self.reasoning.invoke(request, provider=self.provider)
 
+        # Only THIS worker's own provider call may become this turn's message. Any other
+        # disposition means AT-M3.1 resolved this correlation id to someone else's attempt --
+        # 'in_progress' while they are still working, 'replay' once they finished -- and this
+        # worker did not earn the right to speak for the turn. If that other attempt genuinely
+        # died without writing its message, the NEXT advance sees a claimed turn against a
+        # terminal invocation and fails the discussion closed there.
+        #
+        # This check used to sit inside `if result.artifact is None`, which was equivalent only
+        # while a replay could never carry an artifact. AT-M3.4's durable-artifact rebaseline made
+        # replays carry one, so leaving it nested would have let all eight racers on a turn post a
+        # reply from the same recovered artifact. Hoisting it restores exactly the previous
+        # behaviour under the new contract; it does not change what a discussion does.
+        if result.disposition != "fresh":
+            return self._result(
+                False,
+                session,
+                turn,
+                f"another worker owns this reasoning call ({result.disposition})",
+            )
+
         if result.artifact is None:
-            # Only a FRESH call with no artifact is this worker's provider failure. Any other
-            # disposition means AT-M3.1 resolved this correlation id to someone else's attempt --
-            # 'in_progress' while they are still working, 'replay' once they finished -- and
-            # neither is a fault of the discussion. Treating a replay as a failure here would let
-            # a losing racer close a discussion whose turn actually succeeded. If that other
-            # attempt genuinely died without writing its message, the NEXT advance sees a claimed
-            # turn against a terminal invocation and fails the discussion closed there.
-            if result.disposition != "fresh":
-                return self._result(
-                    False,
-                    session,
-                    turn,
-                    f"another worker owns this reasoning call ({result.disposition})",
-                )
             await self.store.fail_turn(
                 turn["turn_id"], reasoning_invocation_id=result.invocation.get("invocation_id")
             )

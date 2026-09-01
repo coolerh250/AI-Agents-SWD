@@ -18369,3 +18369,171 @@ them and missed the other twelve, plus their test-side mirrors.
 - **AT-M3.3 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
   CANONICAL / CLOSED.** The product critical path advances to AT-M3.4 - Proposal / Challenge /
   TeamDecision Planning Acceptance, which is authorized under AT-D14 and not started here.
+
+## Step AT-M3.4-REBASELINED-IMPLEMENTATION-1 - Durable Reasoning Artifact + Lease Recovery + Formal Planning Decision (IMPLEMENTED)
+
+**Status: implementation complete on a NEW lineage, awaiting Independent Validation 1. Branch
+`at-m3.4-durable-reasoning-planning-decision-1`, branched from exact canonical main `83ae97f`, not
+merged. `origin/main` unchanged at `83ae97f`.**
+
+- **The prior AT-M3.4 lineage is FAILED_VALIDATION_2 / NONCANONICAL / DO_NOT_MERGE.** `157b5cf` and
+  its predecessor `28bdf43` remain on the remote as evidence and were read, not continued. This is
+  not a patch to them. The next validation on this lineage is **Independent Validation 1**, not
+  "Validation 3" - a new implementation lineage starts a new validation budget.
+
+- **What Validation 2 actually found, confirmed here from code and schema.** `complete_invocation`
+  committed `status='succeeded'` on its own connection while the structured artifact existed only
+  as a Python object returned to the caller. `try_begin_invocation` is
+  `INSERT ... ON CONFLICT DO NOTHING`, so a terminal correlation id is never re-invoked; the row
+  held no artifact, so a replay returned `None`. Any death between the reasoning commit and the
+  downstream write - crash, dropped connection, or merely the caller's own transaction rolling back
+  - stranded a converged discussion permanently. Two corrections to the reported framing: it was
+  **not crash-only** (the failed candidate's reasoning call ran outside its candidate transaction,
+  so an ordinary rollback reached the same state), and it was **not new to M3.4** - AT-M3.3's
+  `_resolve_unowned_turn` had already documented the same wall and escaped it by failing the whole
+  discussion closed, an escape M3.4 does not have because its input discussion is already terminal.
+
+- **A second, independent strand existed on the same table and is also closed.** Migration 037 said
+  in as many words that no lease or takeover recovery was implemented, so a worker that died before
+  its terminal write owned its correlation id forever and every later caller was told
+  `in_progress` in perpetuity. AT-M3.3 escapes that through its own discussion deadline; AT-M3.4
+  has none. Fixing only the succeeded window would have left this one.
+
+### Data model / migration
+
+- **`migrations/040_at_m3_4_durable_reasoning_artifact.sql`** - alters exactly one table,
+  `reasoning_invocations`. Adds `artifact_type`, `artifact` (JSONB), `attempt`, `attempt_token`,
+  `lease_expires_at`; widens the verb CHECK to admit `decompose_plan`; adds
+  `chk_reasoning_invocations_success_artifact` (succeeded implies both artifact columns present,
+  non-succeeded implies neither), an artifact-is-an-object CHECK, an explicit per-verb
+  `artifact_type` CHECK mirroring `ARTIFACT_TYPE_FOR_VERB`, `attempt >= 1`, and a lease CHECK
+  pairing ownership to `started`. Plus `trg_reasoning_invocations_terminal`, which freezes a
+  terminal row's outcome, artifact, provider identity and attempt ownership against raw SQL - a
+  successful artifact can never be replaced by another valid one.
+- **Numbering is derived from canonical main**, which ends at 039. 040 is the durability migration,
+  041 the ledger. The failed lineage numbered them the other way round; inheriting its numbers
+  would have meant inheriting a base this lineage does not have.
+- **`migrations/041_at_m3_4_planning_decisions.sql`** - the ledger, carried forward in substance
+  from the validated design: `discussion_id` UNIQUE, `team_decision_id` UNIQUE NOT NULL,
+  `candidate_plan_message_id` NOT NULL with a **non-cascading** FK, nullable-but-UNIQUE
+  `resulting_plan_revision_id`, `idempotency_key` UNIQUE, the `plan_accepted | no_change` outcome
+  pairing, and an append-only trigger. Its `section 0` guard against an earlier draft of itself was
+  dropped - irrelevant on a lineage where the file has no earlier draft.
+- **Legacy strategy, stated rather than hidden.** Canonical main may hold metadata-only succeeded
+  rows written under the AT-M3.1 contract. They are truthful evidence of calls that happened, so
+  040 does not fabricate artifacts for them, rewrite them as failed, or delete them. The two
+  constraints they could violate are added **NOT VALID**: PostgreSQL still enforces them on every
+  new INSERT and UPDATE and skips only the retroactive scan. A migration-time NOTICE reports how
+  many such rows were inherited. This is a compatibility choice, not an exemption mechanism -
+  nothing here can be invoked to excuse a future row. A `decompose_plan` invocation can never be
+  legacy, because the verb did not exist on canonical main.
+- **Down migrations refuse rather than destroy.** 040's down raises if any row carries an artifact,
+  if any `decompose_plan` invocation exists, or if any invocation records more than one attempt.
+  Verified: with evidence present it refuses and the evidence survives; with none it reverses
+  cleanly. Canonical migrations 001-039 are byte-identical.
+
+### Runtime result
+
+- **`shared/sdk/agent_reasoning/store.py`** - `complete_invocation` writes the artifact and the
+  terminal status in the SAME `UPDATE` to the SAME row, and is guarded on **both**
+  `status='started'` and `attempt_token`. New `try_take_over_invocation` (one CAS: started, lease
+  expired on the DB clock, attempt under budget) and `fail_exhausted_invocation` (the one
+  non-token-guarded write, because by definition its owner is gone - still `status='started'`
+  guarded, still writes a failure, so it can neither overwrite a terminal outcome nor fabricate a
+  result).
+- **`shared/sdk/agent_reasoning/service.py`** - a terminal `succeeded` replay rehydrates the
+  artifact through the model its verb declares; an expired lease is taken over and genuinely
+  re-run, reported as `fresh` with `attempt > 1`; a superseded attempt learns it lost and returns
+  the canonical row rather than its own discarded result. Dispositions stay **three** so AT-M3.3's
+  `disposition != "fresh"` contract is untouched. A stored artifact that no longer parses raises
+  rather than degrading to `None` - degrading would recreate the exact stranding this removes while
+  hiding a real defect behind it.
+- **Planner provenance has no fallback.** The planner must be a seated participant of THIS
+  discussion whose stored `matched_capabilities` include `plan_project`; lowest `seat_index` wins
+  deterministically; capabilities are read as matched at open time, never re-derived from current
+  membership. The failed lineage's capability-router fallback is **removed**: what it produced was
+  a false attribution - a principal who had never seen the discussion recorded as the author of the
+  plan that discussion selected, indistinguishable afterwards from a plan its author argued for.
+  No seated planner means `PlannerUnavailableError`, raised **before** any reasoning call.
+- **The reasoning call moved out of the discussion row lock.** The failed lineage held it across
+  the provider call because a losing worker had no way to obtain the artifact. With a durable
+  artifact every worker recovers the same plan independently, so the lock covers only the candidate
+  message INSERT. This also resolves the caveat the previous remediation had to defer to a future
+  live-provider slice.
+- **AT-M3.3, one line.** `_reason_and_record`'s `disposition != "fresh"` guard sat INSIDE
+  `if result.artifact is None`, which was equivalent only while a replay could never carry an
+  artifact. Hoisting it restores M3.3's exact prior behaviour under the new contract - without it,
+  all eight racers on a turn posted a reply from the same recovered artifact. This is a preserving
+  change, not a widening one; no M3.3 product semantics were reopened and M3.3 needs no migration.
+
+### Honest guarantees
+
+```text
+exactly one canonical durable artifact per correlation id     guaranteed
+exactly one durable outcome per correlation id                guaranteed
+exactly one provider call per correlation id                  NOT guaranteed
+```
+
+At-least-once provider attempts with an exactly-once canonical result. A process can always die
+after the wire response and before the local commit; assuming the stronger property is how the
+stranding defect came to be written. Attempts are counted and audited separately
+(`reasoning_attempt_started`, `reasoning_attempt_superseded`, `reasoning_invoked`,
+`reasoning_replayed`), so a replay never inflates the count of provider calls on record.
+
+### Test result
+
+- **New:** `tests/test_at_m3_4_reasoning_durability.py` (the success invariant against raw SQL,
+  terminal immutability, the lease, takeover CAS, zombie safety, replay, legacy handling, the
+  attempt budget, 8-way concurrency). Crash matrix C4 (the exact Validation-2 window: succeeded
+  invocation, candidate write lost, recovered with the byte-identical artifact and **no** second
+  provider call) and C5 (candidate survives a lost decision) in
+  `tests/test_at_m3_4_planning_decision.py`, alongside the seated-planner provenance group.
+- **Updated, and each change is a consequence of the new contract rather than a weakening:** the
+  M3.1 assertions that a replay carries no artifact now assert it carries the WINNER'S artifact
+  (attribution is exact, not merely un-mismatched); the M3.1 metadata-only field allowlist admits
+  the five new columns while the forbidden-marker scan is unchanged; three M3.3 fixtures that
+  manufactured now-unrepresentable rows were updated to current shapes; and M3.3's
+  storage-prohibition test now asserts the sharper property - the request CONTEXT reaches no
+  column, and the artifact appears in exactly the one declared for it.
+- **Test host `10.0.1.31`, PostgreSQL 16, fresh databases per run.** AT-M3.4 suite: **115 passed**.
+  AT-M2/M3/approval selection: **598 passed, 4 failed**. Full suite: **6714 passed**.
+- **Zero regressions, established by differencing rather than asserted.** The full suite was run on
+  canonical main `83ae97f` and on this branch against equivalent databases: both fail exactly the
+  same 349 tests, and the set of tests that fail here but pass on canonical main is **empty**. The
+  349 are pre-existing and environmental (git-history-dependent tests run against a `.git`-less
+  container copy). This branch adds 117 passing tests.
+- **Migration rehearsal.** A 001-039 database with three legacy rows (started / failed /
+  metadata-only succeeded) was upgraded with 040: all three preserved unchanged, the NOTICE
+  reported them, and new writes were then proven still rejected - a bare-success INSERT and a
+  legacy-row UPDATE into a bare success both refused, a proper claim and a well-formed success both
+  accepted, the legacy succeeded row still present and still artifact-free.
+  UP / DOWN 041 / DOWN 040 / UP / UP verified, including a second idempotent re-run.
+
+### Safety
+
+- Mock/local only. `provider_mode` remains `mock | disabled`; a database-wide invariant asserts no
+  invocation ever reached a live provider. No external call, no network, no credential, no
+  production action, `production_executed` count 0. HumanApproval untouched; a TeamDecision is
+  still not an Approval. No M3.5 dispatch, no M3.6B, no M4.
+- The persisted artifact is exactly `_StrictArtifact.as_safe_dict()` - a closed-schema,
+  content-safety-screened payload AT-M3.3 already writes into `team_messages.content`. No new class
+  of persisted data; what is new is the ROLE (a recovery copy, never a second product authority).
+  `ReasoningRequest.context` remains in memory and reaches no column.
+
+### Documentation
+
+- `docs/architecture/autonomous-team/planning-and-plan-revision-model.md` gains section 12
+  (durable reasoning outcomes, replay, the lease, honest delivery semantics, seated-planner
+  provenance, the M3.4 candidate flow). No new governance document, no registry, no verifier.
+
+### Known non-blocking follow-on
+
+- `artifact` JSONB has no explicit size limit and `PlanContent` has no global step-count bound.
+  Harmless with a deterministic mock; worth a decision before a live provider writes into the
+  column. **PRE-M3.6B / PRODUCT_HARDENING / NON_BLOCKING** - deliberately not solved here, and not
+  to be solved by reopening AT-M3.2's schema on this lineage.
+
+### Next
+
+- **AT-M3.4 Independent Validation 1** on branch `at-m3.4-durable-reasoning-planning-decision-1`.
+  Not merged, not deployed, no production action. `origin/main` remains `83ae97f`.

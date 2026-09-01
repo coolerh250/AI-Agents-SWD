@@ -71,6 +71,20 @@ def _begin_data(*, project_id: str | None = None, correlation_id: str | None = N
     }
 
 
+#: A minimal valid ProposalArtifact payload. `propose` is what _begin_data claims, and migration
+#: 040 constrains artifact_type to agree with the verb, so this pair is not interchangeable.
+_ARTIFACT = {
+    "summary": "a bounded option",
+    "rationale_summary": "because it is the smallest thing that works",
+    "confidence": None,
+    "assumptions": [],
+    "constraints": [],
+    "risks": [],
+    "questions": [],
+    "recommendation": "do the boring thing",
+}
+
+
 def _terminal(*, status: str = "succeeded", **overrides) -> dict:
     data = {
         "status": status,
@@ -79,6 +93,10 @@ def _terminal(*, status: str = "succeeded", **overrides) -> dict:
         "latency_ms": 5,
         "audit_ref": None,
         "completed_at": datetime.now(timezone.utc),
+        # AT-M3.4 (rebaselined): a succeeded invocation carries the artifact it produced, written
+        # by the same UPDATE. chk_reasoning_invocations_success_artifact refuses the alternative.
+        "artifact_type": "ProposalArtifact" if status == "succeeded" else None,
+        "artifact": dict(_ARTIFACT) if status == "succeeded" else None,
     }
     data.update(overrides)
     return data
@@ -102,7 +120,9 @@ async def test_complete_invocation_transitions_started_to_succeeded():
     project = await _project(store)
     _owned, row = await store.try_begin_invocation(_begin_data(project_id=project))
     completed = await store.complete_invocation(
-        row["invocation_id"], terminal=_terminal(status="succeeded")
+        row["invocation_id"],
+        attempt_token=row["attempt_token"],
+        terminal=_terminal(status="succeeded"),
     )
     assert completed["status"] == "succeeded"
     assert completed["completed_at"] is not None
@@ -114,7 +134,9 @@ async def test_complete_invocation_transitions_started_to_failed():
     project = await _project(store)
     _owned, row = await store.try_begin_invocation(_begin_data(project_id=project))
     completed = await store.complete_invocation(
-        row["invocation_id"], terminal=_terminal(status="failed")
+        row["invocation_id"],
+        attempt_token=row["attempt_token"],
+        terminal=_terminal(status="failed"),
     )
     assert completed["status"] == "failed"
     assert completed["failure_category"] == "malformed_output"
@@ -126,10 +148,14 @@ async def test_a_second_complete_invocation_call_cannot_overwrite_a_terminal_row
     project = await _project(store)
     _owned, row = await store.try_begin_invocation(_begin_data(project_id=project))
     first = await store.complete_invocation(
-        row["invocation_id"], terminal=_terminal(status="succeeded")
+        row["invocation_id"],
+        attempt_token=row["attempt_token"],
+        terminal=_terminal(status="succeeded"),
     )
     second = await store.complete_invocation(
-        row["invocation_id"], terminal=_terminal(status="failed")
+        row["invocation_id"],
+        attempt_token=row["attempt_token"],
+        terminal=_terminal(status="failed"),
     )
     assert first["status"] == "succeeded"
     assert second["status"] == "succeeded", "the original terminal outcome must not be overwritten"
@@ -230,9 +256,16 @@ async def test_ten_concurrent_service_invoke_calls_on_real_postgres_call_the_pro
     others = [r for r in results if r.disposition != "fresh"]
     assert len(fresh) == 1
     assert len(others) == 9
-    assert all(r.artifact is None for r in others), "no losing caller may receive an artifact"
     winning_id = fresh[0].invocation["invocation_id"]
     assert all(r.invocation["invocation_id"] == winning_id for r in others)
+    # AT-M3.4 (rebaselined): a losing caller still invokes nothing, but it no longer walks away
+    # empty-handed. It receives the WINNER'S artifact, read back from the durable row -- which is
+    # what makes a crashed worker's result recoverable instead of stranded. What must never happen
+    # is a loser holding an artifact of its OWN, and that is asserted by the provider call count
+    # above plus this equality.
+    assert all(r.artifact == fresh[0].artifact for r in others), (
+        "every caller sees the one canonical artifact, not a self-computed one"
+    )
 
 
 # --- schema constraints ----------------------------------------------------------------------------
@@ -306,6 +339,7 @@ async def test_the_store_sanitizes_an_unsafe_failure_reason_on_real_postgres():
     _owned, row = await store.try_begin_invocation(_begin_data(project_id=project))
     completed = await store.complete_invocation(
         row["invocation_id"],
+        attempt_token=row["attempt_token"],
         terminal=_terminal(
             status="failed",
             failure_reason="chain_of_thought: leaked reasoning; api_key=sk-ant-abcdef123456",
@@ -323,11 +357,17 @@ async def test_list_for_project_returns_only_that_projects_rows_newest_first():
     project_a = await _project(store)
     project_b = await _project(store)
     _o1, first = await store.try_begin_invocation(_begin_data(project_id=project_a))
-    await store.complete_invocation(first["invocation_id"], terminal=_terminal())
+    await store.complete_invocation(
+        first["invocation_id"], attempt_token=first["attempt_token"], terminal=_terminal()
+    )
     _o2, second = await store.try_begin_invocation(_begin_data(project_id=project_a))
-    await store.complete_invocation(second["invocation_id"], terminal=_terminal())
+    await store.complete_invocation(
+        second["invocation_id"], attempt_token=second["attempt_token"], terminal=_terminal()
+    )
     _o3, other = await store.try_begin_invocation(_begin_data(project_id=project_b))
-    await store.complete_invocation(other["invocation_id"], terminal=_terminal())
+    await store.complete_invocation(
+        other["invocation_id"], attempt_token=other["attempt_token"], terminal=_terminal()
+    )
     rows = await store.list_for_project(project_a)
     assert [r["invocation_id"] for r in rows] == [second["invocation_id"], first["invocation_id"]]
 

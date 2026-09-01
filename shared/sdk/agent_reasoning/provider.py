@@ -26,6 +26,7 @@ from typing import Protocol, runtime_checkable
 from shared.sdk.agent_reasoning.models import (
     CritiqueArtifact,
     DecisionSummaryArtifact,
+    PlanDraftArtifact,
     ProposalArtifact,
     ReasoningRequest,
 )
@@ -52,6 +53,8 @@ class ReasoningProvider(Protocol):
     def critique(self, request: ReasoningRequest) -> CritiqueArtifact: ...
 
     def summarize_decision(self, request: ReasoningRequest) -> DecisionSummaryArtifact: ...
+
+    def decompose_plan(self, request: ReasoningRequest) -> PlanDraftArtifact: ...
 
 
 class DisabledReasoningProvider:
@@ -81,6 +84,10 @@ class DisabledReasoningProvider:
 
     def summarize_decision(self, request: ReasoningRequest) -> DecisionSummaryArtifact:
         self._refuse("summarize_decision")
+        raise ReasoningProviderError("unreachable")  # pragma: no cover
+
+    def decompose_plan(self, request: ReasoningRequest) -> PlanDraftArtifact:
+        self._refuse("decompose_plan")
         raise ReasoningProviderError("unreachable")  # pragma: no cover
 
 

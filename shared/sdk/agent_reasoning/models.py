@@ -20,11 +20,21 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from shared.sdk.agent_planning.models import PlanContent
 from shared.sdk.agent_team.models import FORBIDDEN_CONTENT_KEY_MARKERS, assert_content_is_safe
 from shared.sdk.llm.prompt_contract import redact_text
 
-ReasoningVerb = Literal["propose", "critique", "summarize_decision"]
-REASONING_VERBS: tuple[str, ...] = ("propose", "critique", "summarize_decision")
+ReasoningVerb = Literal["propose", "critique", "summarize_decision", "decompose_plan"]
+REASONING_VERBS: tuple[str, ...] = (
+    "propose",
+    "critique",
+    "summarize_decision",
+    # AT-M3.4. The verb that gives AT-D14 section 2 -- "the planner producing a draft
+    # PlanRevision's work items and dependencies from a Goal and a discussion outcome" -- a
+    # runtime meaning. Until it existed, no verb produced a plan, so the plan had to come from
+    # a caller, and a caller-supplied plan is not evidence of what the team chose.
+    "decompose_plan",
+)
 
 # The provider CLASSES this slice implements. A future live adapter adds new modes; it never
 # repurposes these two to mean something else (migration 037's CHECK constraint enforces this at
@@ -143,10 +153,27 @@ class DecisionSummaryArtifact(_StrictArtifact):
     dissent_summary: str | None = Field(default=None, max_length=2000)
 
 
+class PlanDraftArtifact(_StrictArtifact):
+    """What ``decompose_plan`` returns: a structured candidate plan, not prose about one.
+
+    ``plan`` is AT-M3.2's own ``PlanContent``, reused verbatim rather than mirrored. That single
+    choice is what makes the artifact usable as the plan a PlanRevision carries: step-key
+    uniqueness, dependency existence, self-dependency and the forbidden-key screen are the
+    validation M3.2 already performs, so a draft that parses here is a plan that can be stored
+    there without a second schema disagreeing with the first.
+
+    The artifact is a reasoning OUTPUT. Producing one decides nothing and accepts nothing -- the
+    same separation ``DecisionSummaryArtifact`` keeps from ``TeamDecision``.
+    """
+
+    plan: PlanContent
+
+
 ARTIFACT_TYPE_FOR_VERB: dict[str, type[_StrictArtifact]] = {
     "propose": ProposalArtifact,
     "critique": CritiqueArtifact,
     "summarize_decision": DecisionSummaryArtifact,
+    "decompose_plan": PlanDraftArtifact,
 }
 
 
@@ -182,7 +209,7 @@ class ReasoningRequest(BaseModel):
 
 
 class ReasoningInvocation(BaseModel):
-    """The durable METADATA record of one reasoning call. Mirrors ``reasoning_invocations``.
+    """The durable record of one reasoning call. Mirrors ``reasoning_invocations``.
 
     Never carries a prompt, a completion, hidden reasoning or a credential (AT-D03 R8 / INV-04,
     restated for AT-M3). ``provider_mode`` is the field a caller checks before trusting a result: a
@@ -192,6 +219,13 @@ class ReasoningInvocation(BaseModel):
     ``status='started'`` is durable evidence that a call was claimed, written BEFORE the provider
     ever runs. It is never itself a claim of success or failure -- only ``succeeded``/``failed``
     are terminal, and only one of them is ever reachable from a given row.
+
+    AT-M3.4 (rebaselined) added the durable ``artifact``. This row used to be metadata ONLY, which
+    meant a succeeded call whose caller crashed before using the result left the outcome terminal
+    and the result unrecoverable -- permanently, since a terminal correlation_id is never
+    re-invoked. ``succeeded`` now carries the safe artifact that produced it, written by the same
+    UPDATE, so replay can return the real thing instead of ``None``. What is stored is exactly
+    what a TeamMessage already stores: a closed-schema, content-screened business artifact.
     """
 
     invocation_id: UUID
@@ -206,6 +240,22 @@ class ReasoningInvocation(BaseModel):
     status: InvocationStatus
     failure_category: FailureCategory | None = None
     failure_reason: str | None = Field(default=None, max_length=2000)
+    #: The artifact class this row's ``artifact`` should be rebuilt through. Agrees with
+    #: ``reasoning_verb`` by database constraint, so the two can never disagree about what is
+    #: stored here.
+    artifact_type: str | None = None
+    #: The RECOVERY COPY of the validated safe artifact (``_StrictArtifact.as_safe_dict()``),
+    #: written by the same UPDATE that made this row terminal. Present on every succeeded row
+    #: written under the AT-M3.4 contract; absent only on a legacy row that predates it.
+    #: It is not a second product authority -- the artifact the team can see is the TeamMessage.
+    artifact: dict[str, Any] | None = None
+    #: 1 for the original claim, incremented once per takeover of an expired lease. Truthfully
+    #: records how many times a provider was actually asked for this correlation_id.
+    attempt: int = Field(default=1, ge=1)
+    #: The current attempt's owner. A worker whose lease was taken over cannot terminalize.
+    attempt_token: UUID | None = None
+    #: Database-clock ownership bound. NULL when terminal, or on a legacy pre-contract row.
+    lease_expires_at: Any = None
     outcome_ref: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
@@ -229,6 +279,7 @@ __all__ = [
     "INVOCATION_STATUSES",
     "InvocationStatus",
     "PROVIDER_MODES",
+    "PlanDraftArtifact",
     "ProposalArtifact",
     "ProviderMode",
     "REASONING_VERBS",

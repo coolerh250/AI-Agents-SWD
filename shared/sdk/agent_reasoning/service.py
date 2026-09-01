@@ -1,22 +1,34 @@
 """Step AT-M3.1 -- the reasoning service: request -> durable claim -> provider -> safety -> outcome.
 
 The layer that turns the vendor-neutral provider protocol and the plain store into one call a
-future discussion loop (AT-M3.3) can use without knowing which provider answered, how the result
-got persisted, or whether this particular call was the first to use its correlation_id.
+discussion loop (AT-M3.3) or a planner (AT-M3.4) can use without knowing which provider answered,
+how the result got persisted, or whether this particular call was the first to use its
+correlation_id.
 
-Pipeline (AT-M3.1-REMEDIATION-1, Validation 1 blocker 1+2 fix):
+Pipeline:
 
-    request -> resolve provider -> ATOMICALLY CLAIM correlation_id (durable 'started' row,
-    BEFORE any provider call) -> [only the claim's owner reaches further] invoke verb ->
-    validate artifact type -> content-safety check -> atomically persist terminal outcome
-    -> return (artifact, invocation, disposition)
+    request -> resolve provider -> ATOMICALLY CLAIM correlation_id (durable 'started' row with an
+    ownership lease, BEFORE any provider call) -> [only the claim's owner reaches further] invoke
+    verb -> validate artifact type -> content-safety check -> atomically persist terminal outcome
+    AND ITS ARTIFACT -> return (artifact, invocation, disposition)
 
-The claim is what closes the two blockers Validation 1 found: a provider is never invoked by a
-caller that did not win the claim (closes duplicate/concurrent provider invocation and
-artifact/evidence misattribution), and the 'started' row exists BEFORE the provider ever runs
-(closes the "invocation occurred, zero durable evidence" gap -- if the terminal write later fails,
-the 'started' row is already durable; nothing is silently lost, and the artifact is never returned
-as an authoritative success by a call whose terminal outcome could not be persisted).
+The claim is what stops a provider being invoked by a caller that did not win it. AT-M3.4's
+rebaseline added the two things the claim alone could not provide:
+
+**A succeeded call is replayable.** The terminal outcome and the structured artifact are written
+by one UPDATE to one row, so a caller arriving later gets the real artifact back instead of
+``None``. Before this, an invocation could be durably 'succeeded' while its artifact existed only
+in the memory of a process that had since died -- terminal, so never re-invokable, and empty, so
+never recoverable. That is the defect this module was rebaselined around.
+
+**A dead owner does not own forever.** Ownership is bounded by a database-clock lease. A caller
+that finds an expired lease takes it over and makes a genuine new attempt, rather than being told
+'in_progress' by a worker that will never return.
+
+WHAT A CALLER IS PROMISED. Exactly one canonical artifact per correlation_id. NOT exactly one
+provider call: a process can die after the wire response and before the commit, so an external
+provider may be asked twice for one correlation_id. At-least-once attempts, exactly-once canonical
+result -- said plainly, because the alternative is the guarantee that was assumed and was not true.
 """
 
 from __future__ import annotations
@@ -32,6 +44,7 @@ from shared.sdk.agent_reasoning.models import (
     CritiqueArtifact,
     DecisionSummaryArtifact,
     ExecutionDisposition,
+    PlanDraftArtifact,
     ProposalArtifact,
     ReasoningRequest,
 )
@@ -40,9 +53,11 @@ from shared.sdk.agent_reasoning.provider import (
     ReasoningProviderError,
     get_reasoning_provider,
 )
-from shared.sdk.agent_reasoning.store import ReasoningInvocationStore
+from shared.sdk.agent_reasoning.store import DEFAULT_MAX_ATTEMPTS, ReasoningInvocationStore
 
-ReasoningArtifact = ProposalArtifact | CritiqueArtifact | DecisionSummaryArtifact
+ReasoningArtifact = (
+    ProposalArtifact | CritiqueArtifact | DecisionSummaryArtifact | PlanDraftArtifact
+)
 
 # Provider modes for which a model identity is meaningful. Neither mode this slice implements
 # (mock, disabled) ever uses a real model, so model_name is nulled out server-side regardless of
@@ -58,9 +73,11 @@ class ReasoningPersistenceError(RuntimeError):
     A durable 'started' row already exists for this correlation_id -- inserted BEFORE the provider
     was called -- so the attempt is not evidence-less; it is left non-terminal. The artifact is
     deliberately NOT attached to this exception and NOT returned to the caller as a successful
-    result: a persistence failure must never look like success, and the caller must not silently
-    re-invoke the provider for the same correlation_id (a fresh call would be rejected by the
-    still-'started' row anyway, per ``try_begin_invocation``).
+    result: a persistence failure must never look like success.
+
+    Unlike the pre-rebaseline contract, this is now RECOVERABLE rather than final. The row's lease
+    will expire, a later caller will take the attempt over, and the provider will be asked again.
+    Nothing is stranded by it.
     """
 
     def __init__(self, *, invocation_id: str, correlation_id: str, cause: Exception) -> None:
@@ -69,20 +86,38 @@ class ReasoningPersistenceError(RuntimeError):
         super().__init__(
             f"reasoning invocation {invocation_id} (correlation_id={correlation_id}) ran but its "
             f"terminal outcome could not be persisted: {type(cause).__name__}. A durable "
-            "'started' row exists for this correlation_id and was not lost."
+            "'started' row exists for this correlation_id and its lease is recoverable."
         )
+
+
+class ReasoningArtifactCorruptError(RuntimeError):
+    """A stored artifact exists but no longer parses as the type its verb declares.
+
+    Raised rather than degraded to "no artifact", deliberately. Returning ``None`` here would
+    reproduce exactly the state this rebaseline removed -- a succeeded invocation that hands back
+    nothing -- while hiding a real schema or data defect behind it. Unreachable through normal
+    writes: migration 040 constrains ``artifact_type`` to agree with ``reasoning_verb`` and the
+    payload to be a JSON object, and the artifact is validated before it is ever stored.
+    """
 
 
 @dataclass
 class ReasoningResult:
     """One call's outcome, plus the execution provenance a caller MUST check before trusting it.
 
-    ``artifact`` is populated if and only if ``disposition == "fresh"`` AND
-    ``invocation["status"] == "succeeded"``. A ``"replay"`` or ``"in_progress"`` disposition NEVER
-    carries an artifact -- artifact CONTENT is never persisted, only call metadata is, so there is
-    nothing to reconstruct. Checking ``.succeeded`` alone is not sufficient to know whether
-    ``artifact`` is present: a replay of a prior success is ``succeeded=True`` with
-    ``artifact=None`` by design, and ``disposition`` is what tells the two apart.
+    ``artifact`` is populated whenever the invocation is terminally succeeded AND its durable
+    artifact is present -- which, after AT-M3.4's rebaseline, is every succeeded invocation
+    written under the current contract, whether this caller produced it (``fresh``) or recovered
+    it (``replay``). Two cases still carry no artifact, and both are honest:
+
+    * ``in_progress`` -- somebody else holds a live lease; there is no outcome yet.
+    * a LEGACY succeeded row written before migration 040, which recorded metadata only. There is
+      genuinely nothing to return, and fabricating something would be worse than saying so.
+
+    ``disposition`` remains the provenance answer -- did THIS call invoke a provider -- and is no
+    longer a proxy for "is there an artifact". Callers that need to know whether a provider ran
+    (for cost, rate limiting or attempt accounting) read ``disposition``; callers that need the
+    result read ``artifact``.
     """
 
     artifact: ReasoningArtifact | None
@@ -92,9 +127,13 @@ class ReasoningResult:
     @property
     def succeeded(self) -> bool:
         """The underlying invocation's recorded OUTCOME -- NOT whether ``artifact`` is populated.
-        Use ``disposition == "fresh"`` (equivalently, ``artifact is not None``) to know whether
-        this call is the one that produced a newly-authoritative artifact."""
+        A legacy pre-040 replay is ``succeeded=True`` with ``artifact=None``."""
         return self.invocation.get("status") == "succeeded"
+
+    @property
+    def attempt(self) -> int:
+        """How many attempts this correlation_id has taken, including this one."""
+        return int(self.invocation.get("attempt") or 1)
 
 
 class ReasoningService:
@@ -123,16 +162,108 @@ class ReasoningService:
         except Exception:
             return None
 
+    # --- recovery ---------------------------------------------------------------------------
+
+    @staticmethod
+    def rehydrate(row: dict[str, Any]) -> ReasoningArtifact | None:
+        """The durable artifact of a terminal row, rebuilt through the model its verb declares.
+
+        Parsed rather than trusted: the payload goes back through the same Pydantic model that
+        validated it on the way in, so a caller receives a typed artifact with the same guarantees
+        a fresh one has -- closed schema included.
+        """
+        if row.get("status") != "succeeded":
+            return None
+        payload = row.get("artifact")
+        if not payload:
+            return None  # a legacy pre-040 metadata-only success
+        artifact_type = ARTIFACT_TYPE_FOR_VERB.get(str(row.get("reasoning_verb")))
+        if artifact_type is None:
+            raise ReasoningArtifactCorruptError(
+                f"invocation {row.get('invocation_id')} records verb "
+                f"{row.get('reasoning_verb')!r}, which has no artifact type"
+            )
+        try:
+            return cast(ReasoningArtifact, artifact_type.model_validate(payload))
+        except Exception as exc:
+            raise ReasoningArtifactCorruptError(
+                f"invocation {row.get('invocation_id')} carries an artifact that no longer parses "
+                f"as {artifact_type.__name__}: {type(exc).__name__}"
+            ) from exc
+
+    def _settled(self, row: dict[str, Any]) -> ReasoningResult:
+        """Describe a row this caller does not own."""
+        if row.get("status") == "started":
+            return ReasoningResult(artifact=None, invocation=row, disposition="in_progress")
+        return ReasoningResult(artifact=self.rehydrate(row), invocation=row, disposition="replay")
+
+    async def _recover(self, row: dict[str, Any]) -> dict[str, Any] | ReasoningResult:
+        """Resolve a correlation_id this caller did not claim.
+
+        Returns a row when this caller successfully TOOK OVER an expired attempt and may now
+        invoke the provider; returns a finished :class:`ReasoningResult` otherwise.
+        """
+        if row.get("status") != "started":
+            return self._settled(row)
+
+        taken = await self.store.try_take_over_invocation(row["correlation_id"])
+        if taken is not None:
+            await self._audit(
+                reasoning_events.AUDIT_REASONING_ATTEMPT_SUPERSEDED,
+                f"attempt {row.get('attempt')} lease expired; attempt {taken.get('attempt')} "
+                f"took over invocation {taken.get('invocation_id')}",
+                "superseded",
+                {
+                    "correlation_id": str(row.get("correlation_id")),
+                    "invocation_id": str(row.get("invocation_id")),
+                    "superseded_attempt": row.get("attempt"),
+                    "attempt": taken.get("attempt"),
+                },
+            )
+            return taken
+
+        # Takeover did not happen. Three different reasons, distinguished from the row itself
+        # rather than from a local clock -- ownership is the database's answer, not ours.
+        current = await self.store.get_by_correlation_id(str(row["correlation_id"])) or row
+        if current.get("status") != "started":
+            return self._settled(current)
+
+        max_attempts = getattr(self.store, "max_attempts", DEFAULT_MAX_ATTEMPTS)
+        if int(current.get("attempt") or 1) >= max_attempts:
+            # The budget is spent and the lease is expired: every owner this attempt ever had is
+            # gone. Terminalize it as a truthful failure instead of leaving it 'started' forever,
+            # which is the state migration 040 exists to make unreachable. fail_exhausted_invocation
+            # re-checks lease expiry in SQL, so a row that was re-leased in the meantime is
+            # untouched and simply reports back as in_progress.
+            exhausted = await self.store.fail_exhausted_invocation(
+                current["invocation_id"],
+                terminal={
+                    "failure_category": "provider_unavailable",
+                    "failure_reason": (
+                        f"attempt budget exhausted after {current.get('attempt')} attempt(s); "
+                        "every owner's lease expired without a terminal outcome"
+                    ),
+                    "completed_at": datetime.now(timezone.utc),
+                },
+            )
+            return self._settled(exhausted or current)
+
+        # Somebody else took it over first, or the lease is still live. Either way this caller
+        # invokes nothing.
+        return ReasoningResult(artifact=None, invocation=current, disposition="in_progress")
+
+    # --- the call ------------------------------------------------------------------------------
+
     async def invoke(
         self,
         request: ReasoningRequest,
         provider: ReasoningProvider | None = None,
     ) -> ReasoningResult:
-        """Run one reasoning call under an atomically-claimed durable invocation.
+        """Run one reasoning call under an atomically-claimed, lease-bounded durable invocation.
 
         Raises :class:`ReasoningPersistenceError` if the provider produced a terminal outcome that
-        could not be durably recorded -- callers must treat that as "unknown, needs investigation
-        for this correlation_id", never as a completed call.
+        could not be durably recorded. Unlike before the rebaseline, that is recoverable: the
+        row's lease expires and a later caller re-attempts it.
         """
         resolved_provider = (
             provider if provider is not None else get_reasoning_provider(request.provider_name)
@@ -161,20 +292,52 @@ class ReasoningService:
                 "started_at": started_at,
             }
         )
+
         if not owned:
-            # Another caller (this attempt's real owner) already claimed this correlation_id --
-            # no provider call happens here, and no artifact is fabricated to go with it.
-            disposition: ExecutionDisposition = (
-                "in_progress" if row.get("status") == "started" else "replay"
-            )
-            return ReasoningResult(artifact=None, invocation=row, disposition=disposition)
+            recovered = await self._recover(row)
+            if isinstance(recovered, ReasoningResult):
+                if recovered.disposition == "replay":
+                    await self._audit(
+                        reasoning_events.AUDIT_REASONING_REPLAYED,
+                        f"{request.verb}: replayed the terminal outcome of invocation "
+                        f"{recovered.invocation.get('invocation_id')}",
+                        str(recovered.invocation.get("status")),
+                        {
+                            "verb": request.verb,
+                            "correlation_id": str(request.correlation_id),
+                            "invocation_id": str(recovered.invocation.get("invocation_id")),
+                            "attempt": recovered.invocation.get("attempt"),
+                            "artifact_recovered": recovered.artifact is not None,
+                        },
+                    )
+                return recovered
+            # A takeover: this caller now owns a genuine new attempt of the same invocation.
+            row = recovered
+            clock_start = time.monotonic()
 
         invocation_id = row["invocation_id"]
+        attempt_token = row["attempt_token"]
+
+        await self._audit(
+            reasoning_events.AUDIT_REASONING_ATTEMPT_STARTED,
+            f"{request.verb} via {resolved_provider.name} ({resolved_provider.mode}): attempt "
+            f"{row.get('attempt')} claimed",
+            "started",
+            {
+                "verb": request.verb,
+                "provider_name": resolved_provider.name,
+                "provider_mode": resolved_provider.mode,
+                "correlation_id": str(request.correlation_id),
+                "invocation_id": str(invocation_id),
+                "attempt": row.get("attempt"),
+            },
+        )
 
         status = "failed"
         failure_category: str | None = None
         failure_reason: str | None = None
         artifact: ReasoningArtifact | None = None
+        artifact_payload: dict[str, Any] | None = None
 
         verb_method = getattr(resolved_provider, request.verb, None)
         if verb_method is None:
@@ -207,14 +370,16 @@ class ReasoningService:
                     failure_reason = f"expected {expected_type.__name__}, got {type(raw).__name__}"
                 else:
                     try:
-                        raw.as_safe_dict()
+                        # The same screen a TeamMessage passes -- and now also the exact payload
+                        # that gets stored, so nothing can be persisted that was not screened.
+                        artifact_payload = raw.as_safe_dict()
                     except ValueError as exc:
                         failure_category = "content_safety_rejected"
                         failure_reason = str(exc)
                     else:
-                        # isinstance(raw, expected_type) already proved raw is one of the three
-                        # known artifact subtypes; expected_type's static type
-                        # (type[_StrictArtifact]) is just too coarse for mypy to narrow from.
+                        # isinstance(raw, expected_type) already proved raw is one of the known
+                        # artifact subtypes; expected_type's static type is just too coarse for
+                        # mypy to narrow from.
                         artifact = cast(ReasoningArtifact, raw)
                         status = "succeeded"
 
@@ -234,12 +399,16 @@ class ReasoningService:
                 "round_number": request.round_number,
                 "failure_category": failure_category,
                 "correlation_id": request.correlation_id,
+                "invocation_id": str(invocation_id),
+                "attempt": row.get("attempt"),
+                "artifact_type": expected_type.__name__ if status == "succeeded" else None,
             },
         )
 
         try:
             completed = await self.store.complete_invocation(
                 invocation_id,
+                attempt_token=attempt_token,
                 terminal={
                     "status": status,
                     "failure_category": failure_category,
@@ -247,12 +416,15 @@ class ReasoningService:
                     "latency_ms": latency_ms,
                     "audit_ref": audit_ref,
                     "completed_at": completed_at,
+                    "artifact_type": expected_type.__name__ if status == "succeeded" else None,
+                    "artifact": artifact_payload if status == "succeeded" else None,
                 },
             )
         except Exception as exc:
             # The provider already ran; the durable 'started' row (inserted before the provider
             # was called) already exists. Only the terminal write failed -- never substitute the
-            # artifact as an authoritative success, and never silently retry here.
+            # artifact as an authoritative success, and never silently retry here. The lease is
+            # what makes this recoverable rather than terminal.
             raise ReasoningPersistenceError(
                 invocation_id=str(invocation_id),
                 correlation_id=str(request.correlation_id),
@@ -268,7 +440,34 @@ class ReasoningService:
                 cause=RuntimeError("complete_invocation returned no row for a known invocation_id"),
             )
 
+        if str(completed.get("attempt_token")) != str(attempt_token):
+            # ZOMBIE. This attempt's lease expired while the provider was running, another worker
+            # took the invocation over, and the token guard refused this write. This attempt's
+            # result is discarded -- not because it is wrong, but because exactly one artifact can
+            # be canonical and this one did not win. The canonical row is returned instead, so the
+            # caller still gets the real answer rather than an error.
+            await self._audit(
+                reasoning_events.AUDIT_REASONING_ATTEMPT_SUPERSEDED,
+                f"{request.verb}: this attempt's result was discarded; invocation "
+                f"{invocation_id} is owned by a later attempt",
+                "superseded",
+                {
+                    "verb": request.verb,
+                    "correlation_id": str(request.correlation_id),
+                    "invocation_id": str(invocation_id),
+                    "attempt": row.get("attempt"),
+                    "current_attempt": completed.get("attempt"),
+                },
+            )
+            return self._settled(completed)
+
         return ReasoningResult(artifact=artifact, invocation=completed, disposition="fresh")
 
 
-__all__ = ["ReasoningArtifact", "ReasoningPersistenceError", "ReasoningResult", "ReasoningService"]
+__all__ = [
+    "ReasoningArtifact",
+    "ReasoningArtifactCorruptError",
+    "ReasoningPersistenceError",
+    "ReasoningResult",
+    "ReasoningService",
+]

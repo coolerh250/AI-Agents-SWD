@@ -289,6 +289,144 @@ as evidence about a revision it never discussed. Reusing its conclusions against
 revision requires a NEW discussion bound to that revision; rebinding is forbidden and is prevented
 by trigger.
 
+## 12. Durable reasoning outcomes and planner provenance (AT-M3.4)
+
+AT-M3.4 needed one thing from AT-M3.1 that AT-M3.1 never promised: that a successful reasoning
+call could be **replayed**. It could not, and the gap only became load-bearing here.
+
+### 12a. The failure this section exists to close
+
+`reasoning_invocations` recorded call metadata. The structured artifact was returned to the caller
+in memory and stored nowhere. So an invocation could commit `status='succeeded'` while the only
+copy of what it produced lived in a process that then died — or merely rolled back its own
+downstream transaction. The correlation id was now terminal, so no retry could re-invoke it; the
+row held no artifact, so no replay could return one. A converged discussion whose planner call
+landed in that window was stranded permanently: no plan, no decision, and no path to either.
+
+AT-M3.3 had already met the same wall and worked around it at the product level — a turn whose
+provider had run but whose message was lost fails the whole discussion closed
+(`_resolve_unowned_turn`). M3.4 has no equivalent escape, because the discussion it consumes is
+already terminal before M3.4 begins.
+
+### 12b. The invariant
+
+```text
+An invocation for a verb that produces a structured artifact MUST NOT become durably
+'succeeded' unless that validated artifact is durably stored in the SAME atomic write.
+```
+
+The terminal status and the artifact are set by one `UPDATE` on one row, so no ordering exists
+between them and there is no window to crash inside. `chk_reasoning_invocations_success_artifact`
+makes the alternative unrepresentable even for a caller that bypasses the service, and a
+`BEFORE UPDATE` trigger freezes a terminal row — a successful artifact can never be replaced by a
+different, equally well-formed one.
+
+The artifact lives on the invocation row rather than in a second table because "a succeeded row
+implies a row over there" is not something a `CHECK` can say, and every mechanism that can say it
+buys a weaker guarantee with more moving parts.
+
+### 12c. What is stored, and what is still forbidden
+
+Exactly `_StrictArtifact.as_safe_dict()`: a closed-schema (`extra="forbid"`) business artifact that
+has already passed the same content-safety screen a `TeamMessage` passes. No prompt, no completion,
+no chain-of-thought, no scratchpad, no token trace, no credential — and `ReasoningRequest.context`,
+the *input*, remains in memory and reaches no column at all.
+
+This adds no new **class** of persisted data: AT-M3.3 already writes these identical payloads into
+`team_messages.content` on every turn. What is new is the **role**. The invocation's copy is a
+*recovery* copy, read only to rebuild what a crashed worker was holding. The `TeamMessage` remains
+the copy the team can see and the only one the product cites. The duplication is deliberate and is
+the fix itself: if either copy could be derived from the other, the crash window would not exist.
+
+### 12d. Replay
+
+A caller that arrives at an already-terminal invocation gets `disposition='replay'` and, for a
+success, the artifact — reparsed through the model its verb declares, so it carries the same
+guarantees a fresh one does. `disposition` still answers *did THIS call invoke a provider*; it is
+no longer a proxy for *is there an artifact*. Two cases still carry none, and both are honest:
+`in_progress` (nobody has finished yet) and a legacy pre-migration-040 success, which genuinely
+stored nothing and says so rather than fabricating something plausible.
+
+### 12e. Ownership is leased, not permanent
+
+Migration 037 deferred recovery of a stranded `started` row explicitly, which left a second,
+independent way to strand work: a worker that dies before its terminal write owns its correlation
+id forever and every later caller is told `in_progress` in perpetuity. AT-M3.3 escapes this through
+its own discussion deadline; AT-M3.4 has no deadline and would not.
+
+Ownership is now bounded by `lease_expires_at` on the **database** clock — never an application
+clock, which a paused or skewed worker could use to extend its own ownership. An expired lease is
+claimable by exactly one contender through a compare-and-swap that also advances `attempt`.
+`complete_invocation` is guarded on `attempt_token`, so a zombie that wakes up after its lease was
+taken over learns it lost instead of silently committing a result nobody is waiting for. Takeover
+is bounded by `attempt`; past the bound the invocation terminalizes as a truthful failure rather
+than staying `started` forever. Nothing polls, retries in the background, or runs on a timer —
+takeover happens only when a caller asks again.
+
+A `started` row with a NULL lease predates this contract. It is read as *unowned* rather than
+*owned forever*, which lets a legacy stranded attempt finally make progress without anyone editing
+history to achieve it.
+
+### 12f. What is honestly guaranteed
+
+```text
+exactly one canonical durable artifact per correlation id     — guaranteed
+exactly one durable outcome per correlation id                — guaranteed
+exactly one provider call per correlation id                  — NOT guaranteed
+```
+
+A process can always die after the wire response and before the local commit, so a real external
+provider may be asked twice for one correlation id. This is **at-least-once provider attempts with
+an exactly-once canonical result**, and it is stated plainly because assuming the stronger property
+is how the stranding defect came to be written. Each attempt is counted and audited, so "how many
+times was a provider actually asked" is answerable from the record rather than inferred. When a
+live provider is authorized (M3.6B, still unauthorized), it must supply the provider an idempotency
+token derived from `(correlation_id, attempt)` where the vendor supports one; that is what would
+upgrade at-least-once to effectively-once at the wire.
+
+### 12g. Who authors the plan
+
+```text
+The planner MUST be a seated participant of THIS discussion whose stored matched_capabilities
+include plan_project. There is no fallback.
+```
+
+Deterministic when several qualify: lowest `seat_index`, so a replay attributes the plan to the
+same principal rather than merely a valid one. Capabilities are read as the router matched them
+**at open time**, not re-derived at decision time — a discussion is a record of who was in the
+room, and re-deriving membership later would let a roster change rewrite the authorship of a
+decision already reached.
+
+An earlier implementation fell back to the capability router over current project membership when
+no seated planner existed. That fallback is removed. What it produced was a false attribution: a
+principal who had never seen the discussion recorded as the author of the plan that discussion
+selected, indistinguishable afterwards from a plan its author had argued for. It is the same class
+of defect as accepting `decided_by` from the request.
+
+A discussion with no seated planner is refused — before any reasoning call, so the refusal is also
+cheap. A discussion intended to produce a planning decision should therefore name `plan_project`
+among its `required_capabilities` when it is opened; AT-M3.3 already fails closed at open time if
+the roster cannot cover a required capability, which is the only moment that guarantee can honestly
+be given. Legacy converged discussions without one are refused, never reopened, reseated or
+rebound.
+
+### 12h. The M3.4 candidate flow
+
+1. Read the ledger. An already-finalized discussion replays its canonical result.
+2. Admit the discussion; resolve the seated planner, or fail closed.
+3. `decompose_plan`, **outside every lock and transaction**. Fresh or replayed, the artifact is the
+   same one; `uq_reasoning_invocations_correlation` over a discussion-derived correlation id makes
+   "one planner call per discussion" a database fact.
+4. A short transaction: lock the discussion row, re-check the ledger, re-scan for a candidate,
+   insert one if absent.
+5. The decision transaction, unchanged.
+
+The reasoning call used to happen *inside* the discussion row lock, because a worker that lost the
+race had no way to obtain the artifact and had to wait for the winner to write the message. A
+durable artifact removes that need — every worker recovers the same plan independently — so the
+lock shrank to the message `INSERT`, which is also what makes this shape safe for a live provider,
+where holding a database lock across a network call would not be.
+
 ---
 _Non-production only. No production action. No production data. Do not include internal IP
 addresses, SSH aliases, private hostnames, real tokens, credentials, private URLs, or environment

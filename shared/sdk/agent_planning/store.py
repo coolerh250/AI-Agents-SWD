@@ -37,6 +37,8 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from typing import Any
 
 import asyncpg
@@ -107,6 +109,29 @@ class PlanningStore:
     def __init__(self, database_url: str | None = None) -> None:
         self.database_url = database_url or os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
 
+    @asynccontextmanager
+    async def _session(self, conn: asyncpg.Connection | None) -> AsyncIterator[asyncpg.Connection]:
+        """Run on the caller's connection when one is given, otherwise on our own.
+
+        Composability, not convenience. AT-M3.4 has to write a successor revision, a TeamDecision
+        and the draft -> accepted transition in ONE transaction, and it has to use THIS module's
+        compare-and-swap while doing it. Letting a caller pass its connection in is what makes that
+        reuse possible; the alternative is a second copy of the stale-protection rule living in the
+        caller, and a rule with two implementations is a rule that eventually disagrees with itself.
+
+        Every write below keeps its own ``conn.transaction()``. On our own connection that is the
+        transaction; on a caller's it is a savepoint inside theirs, so a fail-closed raise still
+        undoes exactly this method's writes and still propagates to abort the caller's.
+        """
+        if conn is not None:
+            yield conn
+            return
+        own = await self._connect()
+        try:
+            yield own
+        finally:
+            await own.close()
+
     async def _connect(self) -> asyncpg.Connection:
         return await asyncpg.connect(dsn=self.database_url, timeout=5)
 
@@ -165,7 +190,9 @@ class PlanningStore:
 
     # --- plan revisions ------------------------------------------------------------------------
 
-    async def create_initial_revision(self, data: dict[str, Any]) -> dict[str, Any]:
+    async def create_initial_revision(
+        self, data: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
         """The root revision for a goal. ``reason`` is always 'initial' (DB-enforced).
 
         ``uq_plan_revisions_one_root_per_goal`` makes a second root impossible, so calling this
@@ -174,19 +201,18 @@ class PlanningStore:
         project creating their roots concurrently both succeed with distinct numbers instead of
         colliding.
         """
-        conn = await self._connect()
-        try:
-            async with conn.transaction():
-                goal = await conn.fetchrow(
+        async with self._session(conn) as connection:
+            async with connection.transaction():
+                goal = await connection.fetchrow(
                     "SELECT goal_id, project_id FROM goals WHERE goal_id=$1",
                     _uuid_or_none(data["goal_id"]),
                 )
                 if goal is None:
                     raise PlanLineageError(f"unknown goal {data['goal_id']}")
-                await self._lock_project(conn, goal["project_id"])
-                number = await self._next_revision_number(conn, goal["project_id"])
+                await self._lock_project(connection, goal["project_id"])
+                number = await self._next_revision_number(connection, goal["project_id"])
                 try:
-                    row = await conn.fetchrow(
+                    row = await connection.fetchrow(
                         f"""
                         INSERT INTO plan_revisions
                           (project_id, goal_id, revision_number, created_by, reason,
@@ -208,10 +234,10 @@ class PlanningStore:
                         exc, goal_id=data["goal_id"], number=number
                     ) from exc
             return _json_row(row)  # type: ignore[return-value]
-        finally:
-            await conn.close()
 
-    async def create_successor_revision(self, data: dict[str, Any]) -> dict[str, Any]:
+    async def create_successor_revision(
+        self, data: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
         """Append revision N+1, superseding ``data["expected_current_revision_id"]``.
 
         Fail-closed in every direction: an unknown predecessor, a predecessor belonging to a
@@ -227,20 +253,19 @@ class PlanningStore:
         expected = _uuid_or_none(data["expected_current_revision_id"])
         goal_id = _uuid_or_none(data["goal_id"])
 
-        conn = await self._connect()
-        try:
-            async with conn.transaction():
+        async with self._session(conn) as connection:
+            async with connection.transaction():
                 # Identify the owning project before taking any lock, so the lock order below is
                 # always project-then-predecessor. This read decides nothing; every check that
                 # matters happens after both locks are held.
-                project_id = await conn.fetchval(
+                project_id = await connection.fetchval(
                     "SELECT project_id FROM goals WHERE goal_id=$1", goal_id
                 )
                 if project_id is None:
                     raise PlanLineageError(f"unknown goal {data['goal_id']}")
-                await self._lock_project(conn, project_id)
+                await self._lock_project(connection, project_id)
 
-                predecessor = await conn.fetchrow(
+                predecessor = await connection.fetchrow(
                     """
                     SELECT plan_revision_id, project_id, goal_id, revision_number
                     FROM plan_revisions WHERE plan_revision_id=$1 FOR UPDATE
@@ -257,20 +282,20 @@ class PlanningStore:
 
                 # Currency, re-read inside the lock. The winner of a race commits its successor
                 # before the loser's SELECT runs, so the loser sees it here.
-                successor_id = await conn.fetchval(
+                successor_id = await connection.fetchval(
                     "SELECT plan_revision_id FROM plan_revisions WHERE supersedes_revision_id=$1",
                     expected,
                 )
                 if successor_id is not None:
                     raise StalePlanRevisionError(
                         expected=expected,
-                        actual=await self._current_revision_id(conn, goal_id),
+                        actual=await self._current_revision_id(connection, goal_id),
                         goal_id=goal_id,
                     )
 
-                number = await self._next_revision_number(conn, predecessor["project_id"])
+                number = await self._next_revision_number(connection, predecessor["project_id"])
                 try:
-                    row = await conn.fetchrow(
+                    row = await connection.fetchrow(
                         f"""
                         INSERT INTO plan_revisions
                           (project_id, goal_id, revision_number, created_by, reason,
@@ -295,12 +320,12 @@ class PlanningStore:
                         exc, goal_id=goal_id, expected=expected, number=number
                     ) from exc
             return _json_row(row)  # type: ignore[return-value]
-        finally:
-            await conn.close()
 
     # --- lifecycle ------------------------------------------------------------------------------
 
-    async def accept_revision(self, plan_revision_id: Any) -> dict[str, Any] | None:
+    async def accept_revision(
+        self, plan_revision_id: Any, *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any] | None:
         """Transition a revision from 'draft' to 'accepted' -- the pipeline's acceptance stage.
 
         The ONLY write this store ever makes to an existing revision, and the only status
@@ -312,9 +337,8 @@ class PlanningStore:
         recording the same conclusion twice is not an error. ``proposed``/``rejected`` raise --
         the architecture authorizes no transition out of them. An unknown id returns ``None``.
         """
-        conn = await self._connect()
-        try:
-            row = await conn.fetchrow(
+        async with self._session(conn) as connection:
+            row = await connection.fetchrow(
                 f"""
                 UPDATE plan_revisions SET status='accepted'
                 WHERE plan_revision_id=$1 AND status='draft'
@@ -325,7 +349,7 @@ class PlanningStore:
             if row is not None:
                 return _json_row(row)
 
-            current = await conn.fetchrow(
+            current = await connection.fetchrow(
                 f"SELECT {_REVISION_COLUMNS} FROM plan_revisions WHERE plan_revision_id=$1",
                 _uuid_or_none(plan_revision_id),
             )
@@ -337,8 +361,6 @@ class PlanningStore:
                 f"revision {plan_revision_id} is '{current['status']}'; the only authorized "
                 "lifecycle transition is draft -> accepted"
             )
-        finally:
-            await conn.close()
 
     # --- derived lineage reads -----------------------------------------------------------------
 
@@ -380,6 +402,51 @@ class PlanningStore:
             return [_json_row(row) for row in rows]  # type: ignore[misc]
         finally:
             await conn.close()
+
+    async def confirm_current_revision(
+        self, goal_id: Any, expected_revision_id: Any, *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        """Hold ``expected_revision_id`` still and prove it is the goal's tip, or raise.
+
+        The read-only half of :meth:`create_successor_revision`: same ``FOR UPDATE`` on the
+        predecessor, same successor re-check inside that lock, same ``StalePlanRevisionError`` --
+        and then no INSERT. AT-M3.4 needs it for a decision that changes nothing, where there is a
+        currency claim to defend but no row to write. Without it that decision would have to trust
+        an ``is_current()`` pre-read, which can stop being true between the check and the commit.
+
+        Deliberately NOT a new currency mechanism: it holds the same lock the writing path holds,
+        so a concurrent successor either loses the lock race and then fails on
+        ``uq_plan_revisions_one_successor``, or wins it and is visible to the re-check here.
+        Currency still has no stored form anywhere (planning-and-plan-revision-model.md 11b).
+        """
+        expected = _uuid_or_none(expected_revision_id)
+        goal = _uuid_or_none(goal_id)
+        async with self._session(conn) as connection:
+            row = await connection.fetchrow(
+                f"""
+                SELECT {_REVISION_COLUMNS} FROM plan_revisions
+                WHERE plan_revision_id=$1 FOR UPDATE
+                """,
+                expected,
+            )
+            if row is None:
+                raise PlanLineageError(f"unknown revision {expected_revision_id}")
+            if str(row["goal_id"]) != str(goal):
+                raise PlanLineageError(
+                    f"revision {expected_revision_id} belongs to goal {row['goal_id']}, "
+                    f"not {goal_id}"
+                )
+            successor_id = await connection.fetchval(
+                "SELECT plan_revision_id FROM plan_revisions WHERE supersedes_revision_id=$1",
+                expected,
+            )
+            if successor_id is not None:
+                raise StalePlanRevisionError(
+                    expected=expected,
+                    actual=await self._current_revision_id(connection, goal),
+                    goal_id=goal,
+                )
+            return _json_row(row)  # type: ignore[return-value]
 
     async def is_current(self, plan_revision_id: Any) -> bool:
         conn = await self._connect()

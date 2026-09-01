@@ -17,6 +17,7 @@ These are the assertions an in-memory fake cannot make honestly:
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import asyncpg
@@ -43,7 +44,7 @@ _DB_SKIP = "no reachable PostgreSQL with migration 039 applied; skipping discuss
 
 PLAN = {
     "objective": "deliver the reporting slice",
-    "steps": [{"step_id": "s1", "title": "define the contract", "depends_on": []}],
+    "steps": [{"step_key": "s1", "title": "define the contract", "depends_on": []}],
     "constraints": [],
     "acceptance_criteria": ["a reviewer can read one report"],
 }
@@ -905,8 +906,17 @@ async def test_a_turn_claimed_but_never_reasoned_is_safely_taken_over():
 
 @pytest.mark.asyncio
 async def test_a_turn_whose_reasoning_finished_without_a_message_fails_closed():
-    # The crash-after-the-provider case. AT-M3.1 persists metadata and never artifact content, so
-    # nothing can be reconstructed and re-invoking would be a second provider call for one turn.
+    # The crash-after-the-provider case: the provider ran for this turn and the worker died before
+    # writing the message. Re-invoking would be a second provider call for one turn, so the
+    # discussion fails closed instead.
+    #
+    # AT-M3.4's rebaseline made the invocation's artifact durable, so the fixture below now writes
+    # one -- a succeeded invocation without one is no longer a state the schema can hold. That
+    # changes what could be RECOVERED, not what this test asserts: _resolve_unowned_turn decides
+    # from the invocation's STATUS alone and never reads the artifact, so the fail-closed branch
+    # is reached identically. Making M3.3 recover such a turn is a real possibility this opens and
+    # deliberately not taken here -- reopening an accepted milestone to make an already-safe path
+    # less pessimistic is not this slice's business.
     scenario = await _scenario()
     session = await _start(scenario, provider=ContestingProvider())
     discussion_id = str(session["discussion_id"])
@@ -930,10 +940,24 @@ async def test_a_turn_whose_reasoning_finished_without_a_message_fails_closed():
         await conn.execute(
             "INSERT INTO reasoning_invocations (project_id, thread_id, reasoning_verb, "
             "requested_provider_name, provider_mode, status, correlation_id, started_at, "
-            "completed_at) VALUES ($1,$2,'propose','mock','mock','succeeded',$3,now(),now())",
+            "completed_at, artifact_type, artifact) "
+            "VALUES ($1,$2,'propose','mock','mock','succeeded',$3,now(),now(),"
+            "'ProposalArtifact',$4::jsonb)",
             uuid.UUID(scenario["project_id"]),
             session["thread_id"],
             uuid.UUID(correlation),
+            json.dumps(
+                {
+                    "summary": "a proposal whose message was never written",
+                    "rationale_summary": "the worker died after the provider returned",
+                    "confidence": None,
+                    "assumptions": [],
+                    "constraints": [],
+                    "risks": [],
+                    "questions": [],
+                    "recommendation": "irrelevant to this turn's outcome",
+                }
+            ),
         )
     finally:
         await conn.close()
@@ -1015,21 +1039,61 @@ async def test_audit_events_carry_identifiers_and_dispositions_only():
 
 @pytest.mark.asyncio
 async def test_the_discussion_writes_no_reasoning_context_anywhere():
+    """The INPUT to a reasoning call is never persisted. The output artifact now is.
+
+    AT-M3.4's rebaseline changed one half of this and not the other, and the distinction is the
+    whole safety argument. ``ReasoningRequest.context`` -- the goal statement, the plan, the
+    transcript the provider was shown -- remains in memory and reaches no column. What became
+    durable is the ARTIFACT: a closed-schema conclusion that has already passed the same
+    content-safety screen a TeamMessage passes, and which this very discussion writes into
+    ``team_messages.content`` anyway. Storing it twice adds no class of data; it adds a recovery
+    copy of data the team can already see.
+
+    So the assertion sharpens rather than relaxes: the context must be absent from every column,
+    and the artifact must be present in exactly one -- the one declared for it.
+    """
     scenario = await _scenario()
     session = await _start(scenario, provider=ConvergingProvider())
     await _service(ConvergingProvider()).run(session["discussion_id"])
     conn = await scenario["store"]._connect()
     try:
-        # reasoning_invocations is metadata only; the goal statement never appears in it.
         rows = await conn.fetch(
             "SELECT * FROM reasoning_invocations WHERE thread_id=$1", session["thread_id"]
         )
     finally:
         await conn.close()
     assert rows
-    blob = str([dict(r) for r in rows]).lower()
-    assert "deliver a reporting slice" not in blob
-    assert "acceptance criteria" not in blob
+
+    for row in rows:
+        record = dict(row)
+        artifact = record.pop("artifact")
+        # Every column EXCEPT the artifact is metadata, exactly as before.
+        metadata = str(record).lower()
+        assert "deliver a reporting slice" not in metadata, "the goal statement is context"
+        assert "acceptance criteria" not in metadata
+        for marker in ("chain_of_thought", "scratchpad", "raw_prompt", "completion", "api_key"):
+            assert marker not in metadata, marker
+
+        if artifact is None:
+            continue
+        # And the artifact carries only its own declared fields -- no smuggled context key.
+        payload = json.loads(artifact)
+        assert set(payload) <= {
+            "summary",
+            "rationale_summary",
+            "confidence",
+            "assumptions",
+            "constraints",
+            "risks",
+            "questions",
+            "recommendation",
+            "concerns",
+            "options_considered",
+            "selected_option",
+            "dissent_summary",
+            "plan",
+        }, sorted(payload)
+        assert "chain_of_thought" not in str(payload).lower()
 
 
 @pytest.mark.parametrize("attempt", range(3))

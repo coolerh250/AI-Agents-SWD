@@ -41,6 +41,17 @@ _PERMITTED_INVOCATION_FIELDS = {
     "status",
     "failure_category",
     "failure_reason",
+    # AT-M3.4 (rebaselined). The record is no longer metadata-ONLY, and that is a deliberate,
+    # bounded widening rather than a leak: `artifact` holds the SAME closed-schema, content-safety
+    # screened payload a TeamMessage already carries, and holds it so that a succeeded call whose
+    # caller died can be recovered instead of stranded. The forbidden-marker scan below is
+    # unchanged and still applies -- no prompt, completion or hidden-reasoning field is admitted
+    # by this list, and none could pass the artifact models' extra="forbid" anyway.
+    "artifact_type",
+    "artifact",
+    "attempt",
+    "attempt_token",
+    "lease_expires_at",
     "outcome_ref",
     "input_tokens",
     "output_tokens",
@@ -142,9 +153,9 @@ async def test_the_invocation_record_carries_metadata_only():
     leaked_fields = set(result.invocation) - _PERMITTED_INVOCATION_FIELDS
     assert leaked_fields == set(), f"unexpected field(s) on the invocation record: {leaked_fields}"
     for field_name in result.invocation:
-        assert not any(
-            marker in field_name.lower() for marker in _FORBIDDEN_FIELD_MARKERS
-        ), field_name
+        assert not any(marker in field_name.lower() for marker in _FORBIDDEN_FIELD_MARKERS), (
+            field_name
+        )
 
 
 # --- 7: forbidden nested content rejected -------------------------------------------------------------
@@ -281,9 +292,16 @@ async def test_a_replayed_correlation_id_resolves_to_the_original_row_only():
     assert first.disposition == "fresh"
     assert second.disposition == "replay"
     assert first.invocation["invocation_id"] == second.invocation["invocation_id"]
-    assert second.artifact is None, "a replay must not re-derive artifact content"
     assert second.succeeded, "the replayed row's recorded OUTCOME is still 'succeeded'"
     assert len(store.rows_by_correlation) == 1
+
+    # AT-M3.4 (rebaselined) changed this line's meaning, and the change is the point. A replay
+    # used to return artifact=None because artifact CONTENT was never persisted -- which is
+    # exactly how a succeeded call whose caller died became permanently unrecoverable. The
+    # artifact is now RECOVERED from the durable row: same content, still no second provider call.
+    assert second.artifact is not None, "a replay must recover the artifact, not lose it"
+    assert second.artifact == first.artifact
+    assert second.disposition == "replay", "recovering it is not the same as invoking again"
 
 
 async def test_two_distinct_calls_get_two_distinct_rows():
@@ -356,7 +374,25 @@ async def test_a_missing_audit_client_never_breaks_a_call():
 async def test_every_successful_call_is_audited_when_a_client_is_present():
     service, _, audit = _service()
     await service.invoke(ReasoningRequest(verb="propose", context={}))
-    assert audit.decision_types() == ["reasoning_invoked"]
+    # One attempt, one terminal outcome. AT-M3.4 (rebaselined) split these because an invocation
+    # can now be attempted more than once, and "how many times was a provider actually asked" has
+    # to be answerable from the audit trail rather than assumed to be one.
+    assert audit.decision_types() == ["reasoning_attempt_started", "reasoning_invoked"]
+
+
+async def test_a_replay_is_never_audited_as_another_successful_invocation():
+    """A recovered result is not a second reasoning call, and the audit trail must not imply it
+    was -- otherwise every crash recovery would inflate the number of provider calls on record."""
+    service, _, audit = _service()
+    request = ReasoningRequest(verb="propose", context={})
+    await service.invoke(request)
+    await service.invoke(request)
+    assert audit.decision_types() == [
+        "reasoning_attempt_started",
+        "reasoning_invoked",
+        "reasoning_replayed",
+    ]
+    assert audit.decision_types().count("reasoning_invoked") == 1
 
 
 # --- AT-M3.1-REMEDIATION-1: durability under terminal-persistence failure (Validation 1 blocker 1) ---
@@ -374,7 +410,7 @@ class _StartedThenCrashingStore:
     async def try_begin_invocation(self, data):
         return await self.backing.try_begin_invocation(data)
 
-    async def complete_invocation(self, invocation_id, *, terminal):
+    async def complete_invocation(self, invocation_id, *, attempt_token, terminal):
         self.complete_invocation_calls += 1
         raise ConnectionResetError("simulated: DB connection dropped mid-write")
 
@@ -457,8 +493,12 @@ async def test_concurrent_duplicate_correlation_invokes_the_provider_at_most_onc
 async def test_losing_callers_never_receive_an_artifact_attributed_to_a_different_invocation():
     """Validation 1's most severe finding: racing callers each received a genuinely different,
     self-computed artifact paired with the SAME (winning) invocation_id -- an attribution
-    mismatch. Under the new contract, a losing caller never calls the provider and never receives
-    an artifact at all."""
+    mismatch. Under the new contract, a losing caller never calls the provider.
+
+    AT-M3.4 (rebaselined) sharpened what it then receives. It used to receive nothing, which was
+    safe but unrecoverable. It now receives the WINNER'S OWN artifact, read back from the durable
+    row -- so attribution is not merely un-mismatched, it is exact: every caller of one
+    correlation_id sees byte-identical content produced by exactly one provider call."""
     store = InMemoryReasoningInvocationStore()
     service = ReasoningService(store=store, audit_client=None)
     correlation_id = "44444444-4444-4444-4444-444444444444"
@@ -472,9 +512,10 @@ async def test_losing_callers_never_receive_an_artifact_attributed_to_a_differen
 
     for _ in range(5):
         loser = await service.invoke(request)
-        assert loser.disposition == "replay"
-        assert loser.artifact is None, "a losing/replaying caller must never receive an artifact"
+        assert loser.disposition == "replay", "a loser never invokes the provider"
         assert loser.invocation["invocation_id"] == first.invocation["invocation_id"]
+        assert loser.artifact == first.artifact, "the recovered artifact is the winner's own"
+        assert loser.invocation["attempt"] == 1, "no loser caused a second attempt"
 
 
 # --- AT-M3.1-REMEDIATION-1: failure_reason cannot carry forbidden/secret content (blocker 3) ----------
@@ -530,6 +571,7 @@ async def test_direct_store_use_cannot_persist_an_unsafe_failure_reason():
     assert owned
     completed = await store.complete_invocation(
         row["invocation_id"],
+        attempt_token=row["attempt_token"],
         terminal={
             "status": "failed",
             "failure_category": "provider_unavailable",
@@ -559,6 +601,7 @@ async def test_a_credential_shaped_failure_reason_is_redacted_not_just_keyword_m
     )
     completed = await store.complete_invocation(
         row["invocation_id"],
+        attempt_token=row["attempt_token"],
         terminal={
             "status": "failed",
             "failure_category": "provider_unavailable",
@@ -587,6 +630,7 @@ async def test_ordinary_failure_reasons_survive_sanitization_unremarkably():
     )
     completed = await store.complete_invocation(
         row["invocation_id"],
+        attempt_token=row["attempt_token"],
         terminal={
             "status": "failed",
             "failure_category": "provider_unavailable",

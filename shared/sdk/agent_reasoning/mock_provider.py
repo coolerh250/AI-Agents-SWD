@@ -15,15 +15,22 @@ from __future__ import annotations
 
 import json
 
+from shared.sdk.agent_planning.models import PlanContent, PlanStep
 from shared.sdk.agent_reasoning.models import (
     CritiqueArtifact,
     DecisionSummaryArtifact,
+    PlanDraftArtifact,
     ProposalArtifact,
     ReasoningRequest,
 )
 from shared.sdk.llm.prompt_contract import hash_text, redact_text
 
 _MOCK_ASSUMPTION = "mock_provider_no_live_model"
+
+#: Rotated across the mock plan's steps so a generated plan exercises capability matching
+#: without pretending to have reasoned about who should do what.
+_MOCK_STEP_CAPABILITIES = ("plan_project", "build_software", "verify_quality")
+_MOCK_STEP_LIMIT = 8
 
 
 def _digest(request: ReasoningRequest) -> str:
@@ -101,6 +108,62 @@ class MockReasoningProvider:
             selected_option=selected,
             dissent_summary=None,
             confidence=0.5,
+        )
+
+    def decompose_plan(self, request: ReasoningRequest) -> PlanDraftArtifact:
+        """A structured candidate plan, derived deterministically from the Goal it serves.
+
+        Deterministic in the strong sense the AT-M3.4 proofs need: the same Goal and the same
+        convergence outcome always yield a byte-identical ``PlanContent``, which is what makes
+        "the accepted revision equals the candidate" and "an unchanged plan produces a no-change
+        decision" testable without a live model.
+
+        It decomposes the Goal's acceptance criteria, because those are the part of a Goal that
+        states what has to become true. A mock cannot judge scope, so it does not pretend to: one
+        step per criterion, in the order the requester wrote them, chained.
+        """
+        digest = _digest(request)
+        objective = _redacted(
+            request.context.get("goal_statement") or request.context.get("selected_option"),
+            limit=400,
+            default="deliver the goal as stated",
+        )
+        raw_criteria = request.context.get("acceptance_criteria") or []
+        criteria = tuple(
+            _redacted(item, limit=280, default="an unstated criterion")
+            for item in list(raw_criteria)[:_MOCK_STEP_LIMIT]
+        )
+        constraints = tuple(
+            _redacted(item, limit=280, default="an unstated constraint")
+            for item in list(request.context.get("goal_constraints") or [])[:_MOCK_STEP_LIMIT]
+        )
+
+        titles = criteria or ("satisfy the goal as stated",)
+        steps = tuple(
+            PlanStep(
+                step_key=f"s{index + 1}",
+                title=title[:300],
+                description=f"[mock] step {index + 1} of {len(titles)}, derived from the goal",
+                required_capabilities=(_MOCK_STEP_CAPABILITIES[index % 3],),
+                expected_outputs=(f"evidence that step s{index + 1} is done",),
+                depends_on=((f"s{index}",) if index else ()),
+            )
+            for index, title in enumerate(titles)
+        )
+
+        return PlanDraftArtifact(
+            summary=f"[mock] candidate plan for: {objective}"[:2000],
+            rationale_summary=(
+                f"[mock] deterministic decomposition derived from input digest {digest}; "
+                "no live model was consulted"
+            ),
+            confidence=0.5,
+            plan=PlanContent(
+                objective=objective[:2000],
+                steps=steps,
+                constraints=constraints,
+                acceptance_criteria=criteria,
+            ),
         )
 
 
