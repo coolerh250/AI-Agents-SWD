@@ -20,11 +20,21 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from shared.sdk.agent_planning.models import PlanContent
 from shared.sdk.agent_team.models import FORBIDDEN_CONTENT_KEY_MARKERS, assert_content_is_safe
 from shared.sdk.llm.prompt_contract import redact_text
 
-ReasoningVerb = Literal["propose", "critique", "summarize_decision"]
-REASONING_VERBS: tuple[str, ...] = ("propose", "critique", "summarize_decision")
+ReasoningVerb = Literal["propose", "critique", "summarize_decision", "decompose_plan"]
+REASONING_VERBS: tuple[str, ...] = (
+    "propose",
+    "critique",
+    "summarize_decision",
+    # AT-M3.4. The verb that gives AT-D14 section 2 -- "the planner producing a draft
+    # PlanRevision's work items and dependencies from a Goal and a discussion outcome" -- a
+    # runtime meaning. Until it existed, no verb produced a plan, so the plan had to come from
+    # a caller, and a caller-supplied plan is not evidence of what the team chose.
+    "decompose_plan",
+)
 
 # The provider CLASSES this slice implements. A future live adapter adds new modes; it never
 # repurposes these two to mean something else (migration 037's CHECK constraint enforces this at
@@ -143,10 +153,27 @@ class DecisionSummaryArtifact(_StrictArtifact):
     dissent_summary: str | None = Field(default=None, max_length=2000)
 
 
+class PlanDraftArtifact(_StrictArtifact):
+    """What ``decompose_plan`` returns: a structured candidate plan, not prose about one.
+
+    ``plan`` is AT-M3.2's own ``PlanContent``, reused verbatim rather than mirrored. That single
+    choice is what makes the artifact usable as the plan a PlanRevision carries: step-key
+    uniqueness, dependency existence, self-dependency and the forbidden-key screen are the
+    validation M3.2 already performs, so a draft that parses here is a plan that can be stored
+    there without a second schema disagreeing with the first.
+
+    The artifact is a reasoning OUTPUT. Producing one decides nothing and accepts nothing -- the
+    same separation ``DecisionSummaryArtifact`` keeps from ``TeamDecision``.
+    """
+
+    plan: PlanContent
+
+
 ARTIFACT_TYPE_FOR_VERB: dict[str, type[_StrictArtifact]] = {
     "propose": ProposalArtifact,
     "critique": CritiqueArtifact,
     "summarize_decision": DecisionSummaryArtifact,
+    "decompose_plan": PlanDraftArtifact,
 }
 
 
@@ -229,6 +256,7 @@ __all__ = [
     "INVOCATION_STATUSES",
     "InvocationStatus",
     "PROVIDER_MODES",
+    "PlanDraftArtifact",
     "ProposalArtifact",
     "ProviderMode",
     "REASONING_VERBS",

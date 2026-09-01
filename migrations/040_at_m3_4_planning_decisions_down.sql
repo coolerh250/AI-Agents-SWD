@@ -5,7 +5,8 @@
 -- discussion_sessions, team_messages and conversation_threads are left exactly as they were.
 --
 -- Note what this deliberately does NOT undo: the TeamDecision rows and accepted PlanRevisions that
--- planning decisions produced stay. They are the team's own decisions and the plans it is working
+-- planning decisions produced stay, and so do the planner-authored candidate plan messages they
+-- selected -- those are ordinary team_messages and belong to the thread, not to this ledger. They are the team's own decisions and the plans it is working
 -- from, not this ledger's private bookkeeping -- the same reason 039's down migration leaves the
 -- threads and messages a discussion produced. Dropping the ledger loses the ability to answer
 -- "which discussion produced this plan", and nothing else.

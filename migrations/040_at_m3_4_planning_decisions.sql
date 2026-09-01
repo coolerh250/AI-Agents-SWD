@@ -1,8 +1,9 @@
 -- Step AT-M3.4 -- formal planning decision: converged discussion -> TeamDecision -> accepted plan.
 --
 -- Implements the slice AT-D14 section 2 authorizes, narrowed by this task to the decision and
--- acceptance half: one converged AT-M3.3 discussion becomes ONE TeamDecision and ONE accepted
--- PlanRevision. Work-item decomposition and dispatch are M3.5 and have no column here.
+-- acceptance half: one converged AT-M3.3 discussion becomes ONE TeamDecision and, when the plan
+-- actually changes, ONE accepted PlanRevision. Work-item decomposition and dispatch are M3.5 and
+-- have no column here.
 --
 -- ONE new table. It adds no column to, and changes no constraint on, any existing table -- for the
 -- same reason migration 039 did not: AT-D14 pre-cleared exactly ONE alteration of an AT-M2 table
@@ -13,42 +14,63 @@
 --   team_decisions        THE formal team planning decision. This slice writes an AT-M2
 --                         TeamDecision row and adds no second decision entity. planning_decisions
 --                         below is a LEDGER, not a decision: it records which discussion was
---                         consumed, by which decision, producing which revision. Same relationship
---                         discussion_sessions has to conversation_threads -- orchestration over an
---                         existing entity, never a parallel copy of it.
+--                         consumed, which candidate plan was selected, by which decision, and
+--                         which revision resulted. Same relationship discussion_sessions has to
+--                         conversation_threads -- orchestration over an existing entity, never a
+--                         parallel copy of it.
 --   plan_revisions        the draft->accepted lifecycle and the compare-and-swap stale protection
 --                         AT-M3.2 already proved. No currency registry and no second lock system.
 --   discussion_sessions   the AT-M3.3 convergence being consumed.
---   team_messages         the convergence-summary message that is the decision's evidence, and the
---                         proposal/challenge messages that are the deliberation behind it.
+--   team_messages         the convergence-summary message that is the decision's evidence, the
+--                         proposal/challenge messages that are the deliberation behind it, and --
+--                         new in this remediation -- the planner's structured CANDIDATE PLAN.
+--
+-- THE CANDIDATE PLAN IS THE LOAD-BEARING ADDITION (AT-M3.4-PLAN-AUTHORSHIP-DECISION-DESIGN-
+-- REVIEW-1). Validation 1 demonstrated that a caller could hand this slice any structurally valid
+-- PlanContent and have it recorded as the plan the team selected: with two callers racing, which
+-- plan became canonical was decided by commit ordering. The fix is not a check -- it is removing
+-- the input. The plan is now authored by the routed planner principal through the AT-M3.1
+-- `decompose_plan` verb, persisted as a `proposal` TeamMessage carrying a PlanDraftArtifact, and
+-- COPIED server-side into the revision. candidate_plan_message_id below is what makes that binding
+-- structural rather than procedural: the decision names the exact immutable message its plan came
+-- from, by foreign key, and no prose comparison is involved anywhere.
+--
+-- WHY `proposal` AND NOT `replan`: collaboration-and-workroom-model.md section 5 defines `replan`
+-- as state-changing -- "yes, new PlanRevision". A candidate plan may exist and never produce one:
+-- the finalization may go stale, may fail, or may conclude no_change. Typing the candidate as
+-- `replan` would make a durable message assert something that did not happen. It is a structured
+-- planning proposal, and `proposal` is what the vocabulary already calls that.
 --
 -- NO PROPOSAL TABLE AND NO CHALLENGE TABLE, deliberately. The approved architecture's own lineage
 -- matrix (source-of-truth-and-lineage-model.md section 2) names every entity in this model, and
 -- neither appears in it. collaboration-and-workroom-model.md section 6 defines propose/challenge/
 -- converge as MESSAGE TYPES over ConversationThread/TeamMessage, and section 7 puts the formal
--- record in TeamDecision's own options_considered / selected_option / dissent_summary. A proposal
--- is therefore already durable and already structured: a TeamMessage of type 'proposal' plus its
--- AT-M3.3 turn-ledger entry. Creating tables for them would invent entities the architecture
--- declined to define, and would give a deliberation two competing records of what was said.
+-- record in TeamDecision's own options_considered / selected_option / dissent_summary. Creating
+-- tables for them would invent entities the architecture declined to define, and would give a
+-- deliberation two competing records of what was said. The candidate plan is stored the same way
+-- for the same reason.
 --
--- ATOMICITY is the load-bearing property, and it is a TRANSACTION, not a mechanism. The successor
--- revision, the TeamDecision, the draft->accepted transition and the ledger row below are written
--- in ONE PostgreSQL transaction by the service. There is therefore no crash window in which an
--- accepted revision exists without its decision, or a decision exists naming a revision that was
--- never accepted. No reconciliation daemon, no repair registry and no compensating workflow exist
--- here, because none is needed once the boundary is a transaction.
+-- ATOMICITY is the load-bearing property, and it is a TRANSACTION, not a mechanism. The revision
+-- (when one is written), the TeamDecision, the draft->accepted transition and the ledger row are
+-- written in ONE PostgreSQL transaction by the service. There is therefore no crash window in
+-- which an accepted revision exists without its decision, or a decision exists naming a revision
+-- that was never accepted. No reconciliation daemon, no repair registry and no compensating
+-- workflow exist here, because none is needed once the boundary is a transaction.
 --
--- EXACTLY ONCE, in three independent layers, none of them a Python lock:
---   uq_planning_decisions_discussion   one formal decision per discussion, forever
---   uq_plan_revisions_one_successor    (AT-M3.2) one successor per predecessor, forever
+-- EXACTLY ONCE, in four independent layers, none of them a Python lock:
+--   uq on discussion_id                 one formal decision per discussion, forever
+--   uq on resulting_plan_revision_id    one decision per resulting revision, forever
+--   uq_plan_revisions_one_successor     (AT-M3.2) one successor per predecessor, forever
 --   uq_plan_revisions_one_root_per_goal (AT-M3.2) one root per planless Goal
--- The middle two already existed; this migration adds the first, which is what makes a retry after
+-- The last two already existed. The second is what makes the "accept the current draft in place"
+-- outcome safe when two discussions reach it at once, and the first is what makes a retry after
 -- success return the canonical decision instead of failing closed as stale.
 --
 -- STORAGE PROHIBITION (AT-D03 R8 / INV-04, restated by AT-D14 section 4): no column below holds a
 -- prompt, a completion, hidden reasoning, a scratchpad, a token trace or a credential. The only
 -- free text is an outcome label and an audit reference. The decision's business rationale lives in
--- team_decisions.rationale_summary, which the AT-M2 contract already screens.
+-- team_decisions.rationale_summary, which the AT-M2 contract already screens, and the plan itself
+-- lives in team_messages.content, which goes through the same screen.
 --
 -- SAFETY: schema only. Starts no container, dispatches nothing, executes nothing, calls no
 -- external provider, creates no Approval. Idempotent / re-runnable; a matching *_down.sql
@@ -57,12 +79,37 @@
 BEGIN;
 
 -- ---------------------------------------------------------------------
+-- 0. Refuse to run against an earlier draft of THIS migration.
+--
+--    040 has never been merged, so a test database may hold the pre-remediation shape: no
+--    candidate column, and resulting_plan_revision_id NOT NULL. Silently leaving that in place
+--    would let a database claim this migration is applied while the binding this file exists to
+--    create is absent.
+-- ---------------------------------------------------------------------
+DO $guard$
+BEGIN
+    IF to_regclass('public.planning_decisions') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1 FROM information_schema.columns
+           WHERE table_name = 'planning_decisions'
+             AND column_name = 'candidate_plan_message_id'
+       ) THEN
+        RAISE EXCEPTION
+            'planning_decisions exists from an earlier draft of migration 040 and has no '
+            'candidate_plan_message_id column. 040 was never merged; drop the table with '
+            '040_at_m3_4_planning_decisions_down.sql and re-apply this file.';
+    END IF;
+END
+$guard$;
+
+-- ---------------------------------------------------------------------
 -- 1. planning_decisions -- the finalization ledger.
 --
---    Answers exactly one question no existing table can: "has this discussion already been
---    formalized, and if so into what?" Without it a retry after success reads the discussion as
---    bound to a now-superseded revision and fails closed as stale -- correct, but indistinguishable
---    from a genuine stale race, and not idempotent. With it, a retry finds its own prior result.
+--    Answers two questions no existing table can: "has this discussion already been formalized,
+--    and if so into what?" and "which exact candidate plan did the team's decision select?"
+--    Without the first, a retry after success reads the discussion as bound to a now-superseded
+--    revision and fails closed as stale -- correct, but indistinguishable from a genuine stale
+--    race, and not idempotent. Without the second, the accepted plan has no provenance at all.
 -- ---------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS planning_decisions (
     planning_decision_id         UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
@@ -81,8 +128,25 @@ CREATE TABLE IF NOT EXISTS planning_decisions (
     result_message_id            UUID NOT NULL REFERENCES team_messages(message_id)
                                       ON DELETE CASCADE,
 
-    -- The revision the discussion was bound to, and which the resulting revision supersedes.
-    -- NULL exactly when the Goal had no plan and the resulting revision is the lineage root.
+    -- THE PLAN'S PROVENANCE. The planner-authored `proposal` TeamMessage whose content is the
+    -- PlanDraftArtifact this decision selected. NOT NULL for both outcomes: a decision that
+    -- accepted a plan must say which one, and a decision that changed nothing must still say what
+    -- it considered and declined to change.
+    --
+    -- NO ACTION (the default) rather than CASCADE or RESTRICT, deliberately:
+    --   CASCADE  would let deleting planning EVIDENCE delete the planning DECISION that cites it,
+    --            which is exactly backwards -- the ledger would lose the row proving what was
+    --            decided because someone removed the message it was decided from.
+    --   RESTRICT is checked row-by-row and would break the project-level cascade every other
+    --            column here already participates in: deleting a project cascades to
+    --            team_messages and to planning_decisions in one statement, and RESTRICT fires
+    --            before the referencing row is gone. NO ACTION defers to end-of-statement, so a
+    --            whole-project delete still works while an isolated message delete is refused.
+    candidate_plan_message_id    UUID NOT NULL REFERENCES team_messages(message_id),
+
+    -- The revision the discussion was bound to. NULL exactly when the Goal had no plan and the
+    -- resulting revision is the lineage root. For a no_change decision this is the revision that
+    -- was confirmed -- under lock, inside the deciding transaction -- to still be current.
     predecessor_plan_revision_id UUID REFERENCES plan_revisions(plan_revision_id)
                                       ON DELETE CASCADE,
 
@@ -90,9 +154,20 @@ CREATE TABLE IF NOT EXISTS planning_decisions (
     -- replace it. UNIQUE so one TeamDecision can never be claimed by two planning decisions.
     team_decision_id             UUID NOT NULL UNIQUE REFERENCES team_decisions(decision_id)
                                       ON DELETE CASCADE,
-    -- The revision the decision selected and which the same transaction accepted. UNIQUE for the
-    -- same reason.
-    resulting_plan_revision_id   UUID NOT NULL UNIQUE
+
+    -- The revision the decision selected and which the same transaction accepted.
+    --
+    -- NULLABLE, which is the second load-bearing change in this remediation. A team that converges
+    -- on keeping the plan it already has changes nothing, and collaboration-and-workroom-model.md
+    -- section 7 makes resulting_plan_revision_id nullable for exactly that decision. The previous
+    -- shape could not express it and minted a superseding revision holding an identical plan --
+    -- which permanently consumed the predecessor's ONE successor slot
+    -- (uq_plan_revisions_one_successor) for a decision that changed nothing.
+    --
+    -- Still UNIQUE where present: PostgreSQL allows repeated NULLs in a unique index, so no_change
+    -- rows do not collide, while two decisions can never claim the same revision. That is what
+    -- makes "accept the current draft in place" safe when two discussions reach it at once.
+    resulting_plan_revision_id   UUID UNIQUE
                                       REFERENCES plan_revisions(plan_revision_id)
                                       ON DELETE CASCADE,
 
@@ -101,19 +176,33 @@ CREATE TABLE IF NOT EXISTS planning_decisions (
     audit_ref                    TEXT,
     created_at                   TIMESTAMPTZ NOT NULL DEFAULT now(),
 
-    -- One outcome, because the input gate admits exactly one situation. M3.4 consumes ONLY a
-    -- converged discussion, and convergence is precisely "the team has something to accept". The
-    -- architecture does permit a TeamDecision that changes no plan -- collaboration-and-workroom-
-    -- model.md section 7 makes resulting_plan_revision_id nullable -- but no admissible M3.4 input
-    -- reaches it, so no code writes it and this CHECK does not pretend otherwise. Adding an
-    -- outcome later is a migration and a decision, which is the correct cost.
-    CONSTRAINT chk_planning_decisions_outcome CHECK (outcome = 'plan_accepted'),
-    -- A revision cannot supersede itself, and a root cannot be its own predecessor.
-    CONSTRAINT chk_planning_decisions_lineage CHECK (
-        predecessor_plan_revision_id IS NULL
-        OR predecessor_plan_revision_id <> resulting_plan_revision_id
+    -- Two outcomes, because the input gate admits exactly two situations and no more. M3.4
+    -- consumes ONLY a converged discussion; the planner then produces one candidate plan; and the
+    -- plan either differs from what the Goal already has or it does not. Nothing else is
+    -- representable, and `rejected` / `deferred` / `unresolved` are absent because no approved
+    -- architecture defines them. Adding one later is a migration and a decision, which is the
+    -- correct cost.
+    CONSTRAINT chk_planning_decisions_outcome CHECK (
+        outcome IN ('plan_accepted', 'no_change')
     ),
+
+    -- The outcome and the columns must agree. This is what stops a no_change decision from quietly
+    -- naming a revision, and a plan_accepted decision from failing to.
+    CONSTRAINT chk_planning_decisions_outcome_shape CHECK (
+        (outcome = 'plan_accepted' AND resulting_plan_revision_id IS NOT NULL)
+        OR (outcome = 'no_change'
+            AND resulting_plan_revision_id IS NULL
+            AND predecessor_plan_revision_id IS NOT NULL)
+    ),
+
     CONSTRAINT chk_planning_decisions_key CHECK (length(btrim(idempotency_key)) > 0)
+
+    -- Deliberately NOT present: a CHECK that predecessor <> resulting. It looked like an invariant
+    -- and is not one. When a Goal's current revision is still `draft` and the planner's candidate
+    -- matches it exactly, the right outcome is to ACCEPT THAT REVISION -- no successor, nothing
+    -- superseded -- and then predecessor and resulting are correctly the same row. The real rule,
+    -- that no revision may supersede itself, is enforced where it belongs, by
+    -- chk_plan_revisions_no_self_supersede on plan_revisions.
 );
 
 CREATE INDEX IF NOT EXISTS idx_planning_decisions_goal
@@ -122,22 +211,26 @@ CREATE INDEX IF NOT EXISTS idx_planning_decisions_project
     ON planning_decisions (project_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_planning_decisions_predecessor
     ON planning_decisions (predecessor_plan_revision_id);
+CREATE INDEX IF NOT EXISTS idx_planning_decisions_candidate
+    ON planning_decisions (candidate_plan_message_id);
 
 -- ---------------------------------------------------------------------
 -- 2. A formal decision is evidence, and evidence is append-only.
 --
---    Every column here names something that already happened: which discussion was consumed, what
---    it produced, and what it superseded. Rewriting any of them would rewrite the record of a
---    decision the team actually made -- the same reasoning plan_revisions applies to an accepted
---    revision and discussion_sessions applies to a terminal discussion.
+--    Every column here names something that already happened: which discussion was consumed, which
+--    candidate plan was selected, what it produced, and what it superseded. Rewriting any of them
+--    would rewrite the record of a decision the team actually made -- the same reasoning
+--    plan_revisions applies to an accepted revision and discussion_sessions applies to a terminal
+--    discussion.
 -- ---------------------------------------------------------------------
-CREATE OR REPLACE FUNCTION planning_decisions_enforce_append_only() RETURNS TRIGGER AS $$
+CREATE OR REPLACE FUNCTION planning_decisions_enforce_append_only() RETURNS TRIGGER AS $fn$
 BEGIN
     IF NEW.planning_decision_id         IS DISTINCT FROM OLD.planning_decision_id
     OR NEW.project_id                   IS DISTINCT FROM OLD.project_id
     OR NEW.goal_id                      IS DISTINCT FROM OLD.goal_id
     OR NEW.discussion_id                IS DISTINCT FROM OLD.discussion_id
     OR NEW.result_message_id            IS DISTINCT FROM OLD.result_message_id
+    OR NEW.candidate_plan_message_id    IS DISTINCT FROM OLD.candidate_plan_message_id
     OR NEW.predecessor_plan_revision_id IS DISTINCT FROM OLD.predecessor_plan_revision_id
     OR NEW.team_decision_id             IS DISTINCT FROM OLD.team_decision_id
     OR NEW.resulting_plan_revision_id   IS DISTINCT FROM OLD.resulting_plan_revision_id
@@ -151,7 +244,7 @@ BEGIN
     END IF;
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$fn$ LANGUAGE plpgsql;
 
 DROP TRIGGER IF EXISTS trg_planning_decisions_append_only ON planning_decisions;
 CREATE TRIGGER trg_planning_decisions_append_only

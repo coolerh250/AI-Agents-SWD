@@ -18432,3 +18432,61 @@ them and missed the other twelve, plus their test-side mirrors.
   deliberations preserved; the stale race failed closed with the predecessor byte-identical; and no
   approval, policy or work-item row changed. No production action, no external call, no secret,
   `production_executed_true_count: 0`.
+
+## Step AT-M3.4-IMPLEMENTATION-REMEDIATION-1 - Planner-Authored Candidate + No-Change + Root Replay (IMPLEMENTED)
+
+**Status: remediation complete, awaiting FINAL Validation 2/2. Branch
+`at-m3.4-proposal-challenge-team-decision-1`, not merged. `origin/main` unchanged at `83ae97f`.**
+
+- **The caller no longer supplies the plan, and that is the whole fix.** AT-M3.4 Validation 1 fed
+  the command a plan reading "REWRITE EVERYTHING IN RUST" against a discussion that had selected
+  something else, and it was recorded as the team's plan; with two callers racing, commit ordering
+  picked the winner. `POST /planning-decisions` now takes `{goal_id, discussion_id}` and nothing
+  else, and `PlanningDecisionService.finalize` has the same two parameters. Substitution is not
+  blocked by a check - it is unrepresentable.
+- **The plan is authored by the team's planner.** A new AT-M3.1 verb, `decompose_plan`, returns a
+  strict `PlanDraftArtifact` carrying AT-M3.2's own `PlanContent` - no second plan schema. The
+  planner principal is resolved from the discussion's own participants (the one the router already
+  selected for `plan_project`), falling back to the AT-M2 capability router, and never from the
+  request. That principal is the candidate message's sender, the TeamDecision's `proposed_by` and
+  the PlanRevision's `created_by`, because it is the principal that actually did the work.
+- **The candidate is a `proposal` TeamMessage, deliberately not a `replan`.**
+  `collaboration-and-workroom-model.md` section 5 defines `replan` as state-changing - "yes, new
+  PlanRevision" - and a candidate may exist and never produce one, because the finalization may go
+  stale, may fail, or may conclude no_change. A durable message must not assert what did not
+  happen. No new table: the architecture's lineage matrix names no candidate-plan entity, and
+  `team_messages.content` already stores structured reasoning artifacts (AT-M3.3 does exactly
+  this).
+- **Exactly one candidate per discussion, without a lock registry or a polling loop.** The
+  discussion row is locked `FOR UPDATE` while the candidate is authored, so eight workers queue on
+  the row they are all consuming; AT-M3.1's correlation claim, keyed deterministically on the
+  discussion, is the second and independent guarantee at the database layer.
+- **Four cases, one derived outcome.** No current plan -> root created and accepted. Candidate
+  differs -> successor created through AT-M3.2's CAS and accepted. Candidate identical and the
+  current revision is still `draft` -> that same revision is accepted, with no successor. Candidate
+  identical and already accepted -> `no_change`, and nothing at all is written to `plan_revisions`.
+  The outcome is computed from the plans; there is no outcome parameter.
+- **`no_change` closes a real defect.** The previous shape minted a superseding revision holding an
+  identical plan, permanently consuming the predecessor's ONE successor slot
+  (`uq_plan_revisions_one_successor`) for a decision that changed nothing. Its currency claim is
+  defended by `PlanningStore.confirm_current_revision`, which is `create_successor_revision`'s
+  lock-and-recheck without the INSERT - reuse, not a second currency system.
+- **The planless replay defect is fixed.** Concurrent root creation used to hand seven of eight
+  workers a raw `PlanLineageError`. The service now asks the same question on that path that it
+  already asked on the successor path - did a ledger row appear for MY discussion? - and replays
+  when it did. Two DIFFERENT planless discussions still conflict, correctly, because the loser has
+  no decision of its own to return.
+- **Migrations.** 040 is unmerged and was amended in place: `candidate_plan_message_id` NOT NULL
+  with NO ACTION (never CASCADE - deleting evidence must not delete the decision citing it),
+  `resulting_plan_revision_id` nullable but still UNIQUE, the `plan_accepted | no_change` CHECK and
+  its column-pairing CHECK, and the append-only trigger extended. 041 is new and widens exactly one
+  constraint, the AT-M3.1 verb CHECK; 037 is canonical history and is not rewritten. 041's down
+  migration REFUSES rather than deleting `decompose_plan` invocations.
+- **Proof.** 81 AT-M3.4 tests pass against real PostgreSQL, stable across three fresh databases
+  with randomized ordering. 387 focused tests pass across M3.4/M3.3/M3.2/M3.1/M2/approval/audit,
+  with the 2 pre-existing AT-M1 window-guard failures unchanged. Migrations 040 and 041 are clean
+  UP / DOWN / UP / UP, and 040's guard refuses to run against its own earlier draft. An independent
+  probe outside the suite confirms every property end to end, including ten database-wide
+  invariants.
+- Still not authorized and not present: production, external model or network (M3.6B), AT-M4
+  execution, production approval bypass, secret changes. `production_executed_true_count: 0`.

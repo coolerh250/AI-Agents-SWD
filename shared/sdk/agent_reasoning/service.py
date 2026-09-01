@@ -32,6 +32,7 @@ from shared.sdk.agent_reasoning.models import (
     CritiqueArtifact,
     DecisionSummaryArtifact,
     ExecutionDisposition,
+    PlanDraftArtifact,
     ProposalArtifact,
     ReasoningRequest,
 )
@@ -42,7 +43,9 @@ from shared.sdk.agent_reasoning.provider import (
 )
 from shared.sdk.agent_reasoning.store import ReasoningInvocationStore
 
-ReasoningArtifact = ProposalArtifact | CritiqueArtifact | DecisionSummaryArtifact
+ReasoningArtifact = (
+    ProposalArtifact | CritiqueArtifact | DecisionSummaryArtifact | PlanDraftArtifact
+)
 
 # Provider modes for which a model identity is meaningful. Neither mode this slice implements
 # (mock, disabled) ever uses a real model, so model_name is nulled out server-side regardless of

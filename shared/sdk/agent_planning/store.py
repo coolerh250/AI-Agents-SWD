@@ -403,6 +403,51 @@ class PlanningStore:
         finally:
             await conn.close()
 
+    async def confirm_current_revision(
+        self, goal_id: Any, expected_revision_id: Any, *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        """Hold ``expected_revision_id`` still and prove it is the goal's tip, or raise.
+
+        The read-only half of :meth:`create_successor_revision`: same ``FOR UPDATE`` on the
+        predecessor, same successor re-check inside that lock, same ``StalePlanRevisionError`` --
+        and then no INSERT. AT-M3.4 needs it for a decision that changes nothing, where there is a
+        currency claim to defend but no row to write. Without it that decision would have to trust
+        an ``is_current()`` pre-read, which can stop being true between the check and the commit.
+
+        Deliberately NOT a new currency mechanism: it holds the same lock the writing path holds,
+        so a concurrent successor either loses the lock race and then fails on
+        ``uq_plan_revisions_one_successor``, or wins it and is visible to the re-check here.
+        Currency still has no stored form anywhere (planning-and-plan-revision-model.md 11b).
+        """
+        expected = _uuid_or_none(expected_revision_id)
+        goal = _uuid_or_none(goal_id)
+        async with self._session(conn) as connection:
+            row = await connection.fetchrow(
+                f"""
+                SELECT {_REVISION_COLUMNS} FROM plan_revisions
+                WHERE plan_revision_id=$1 FOR UPDATE
+                """,
+                expected,
+            )
+            if row is None:
+                raise PlanLineageError(f"unknown revision {expected_revision_id}")
+            if str(row["goal_id"]) != str(goal):
+                raise PlanLineageError(
+                    f"revision {expected_revision_id} belongs to goal {row['goal_id']}, "
+                    f"not {goal_id}"
+                )
+            successor_id = await connection.fetchval(
+                "SELECT plan_revision_id FROM plan_revisions WHERE supersedes_revision_id=$1",
+                expected,
+            )
+            if successor_id is not None:
+                raise StalePlanRevisionError(
+                    expected=expected,
+                    actual=await self._current_revision_id(connection, goal),
+                    goal_id=goal,
+                )
+            return _json_row(row)  # type: ignore[return-value]
+
     async def is_current(self, plan_revision_id: Any) -> bool:
         conn = await self._connect()
         try:

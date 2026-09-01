@@ -1,11 +1,21 @@
 """Step AT-M3.4 -- the formal planning decision surface.
 
-ONE write route, and that is the design rather than an omission. Creating a proposal, recording a
-TeamDecision and accepting a PlanRevision are exposed as a single command because exposing them
-separately would make every invalid partial state reachable from outside: a decision naming a
-revision nobody accepted, an accepted revision no decision ever chose, two decisions for one
-discussion. The stores stay composable internally; the public boundary is where the invariant is
-kept.
+ONE write route taking TWO identifiers, and both halves of that are the design rather than
+omissions.
+
+One route, because authoring a candidate plan, recording a TeamDecision and accepting a
+PlanRevision exposed separately would make every invalid partial state reachable from outside: a
+decision naming a revision nobody accepted, an accepted revision no decision ever chose, two
+decisions for one discussion. The stores stay composable internally; the public boundary is where
+the invariant is kept.
+
+Two identifiers, because AT-M3.4 Validation 1 showed what the third one cost. The command used to
+accept a ``plan`` and a ``decided_by``, and a caller could therefore hand it any structurally valid
+plan and any principal id -- so an arbitrary payload became "the plan the team selected", with
+commit ordering deciding between two racing callers, attributed to whoever the request named. Both
+fields are gone. The plan is authored by the routed planner principal and read back from that
+principal's own durable message; the author is that same principal. Substitution is not blocked by
+a check here, it is unrepresentable.
 
 What is NOT here, and is not an oversight: no route accepts a PlanRevision directly, no route
 creates a TeamDecision on its own, no route edits a decision or a plan once recorded, and there is
@@ -32,6 +42,8 @@ from shared.sdk.agent_planning.models import (
 )
 from shared.sdk.agent_planning_decision.models import (
     DiscussionNotAdmissibleError,
+    PlannerUnavailableError,
+    PlanningDecisionConflictError,
     PlanningDecisionStateError,
 )
 from shared.sdk.agent_planning_decision.service import PlanningDecisionService
@@ -43,47 +55,19 @@ def _service() -> PlanningDecisionService:
     return PlanningDecisionService()
 
 
-class PlanStepRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    step_key: str = Field(min_length=1, max_length=120)
-    title: str = Field(min_length=1, max_length=300)
-    description: str | None = Field(default=None, max_length=4000)
-    required_capabilities: list[str] = Field(default_factory=list)
-    expected_outputs: list[str] = Field(default_factory=list)
-    depends_on: list[str] = Field(default_factory=list)
-    constraints: list[str] = Field(default_factory=list)
-    intended_owner_role: str | None = Field(default=None, max_length=100)
-
-
-class PlanRequest(BaseModel):
-    """The structured plan the decision accepts. Prose is not a plan.
-
-    Mirrors AT-M3.2's ``PlanContent`` so a caller gets a 422 with a field path rather than an
-    opaque store error, and so the accepted revision is diffable against its predecessor by
-    construction. M3.4 does not author this content -- no AT-M3.1 reasoning verb produces a plan,
-    and adding one would be an extension of that contract with its own authorization.
-    """
-
-    model_config = ConfigDict(extra="forbid")
-
-    objective: str = Field(min_length=1, max_length=2000)
-    steps: list[PlanStepRequest] = Field(default_factory=list)
-    constraints: list[str] = Field(default_factory=list)
-    acceptance_criteria: list[str] = Field(default_factory=list)
-
-
 class FinalizeDecisionRequest(BaseModel):
-    """Formalize one converged discussion into one decision and one accepted plan."""
+    """Formalize one converged discussion. Two identifiers, and deliberately nothing else.
+
+    ``extra="forbid"`` is load-bearing rather than tidy: a request that still carries a ``plan`` or
+    a ``decided_by`` -- from an older client, or from someone trying -- is refused with a 422 that
+    names the field, instead of being silently ignored and leaving the sender believing it chose
+    the plan.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     goal_id: str = Field(min_length=1)
     discussion_id: str = Field(min_length=1)
-    #: The principal recording the decision on the team's behalf. Not an approver: this names who
-    #: wrote the decision down, and grants nothing.
-    decided_by: str = Field(min_length=1)
-    plan: PlanRequest
 
 
 def _decision_view(row: dict[str, Any]) -> dict[str, Any]:
@@ -93,13 +77,20 @@ def _decision_view(row: dict[str, Any]) -> dict[str, Any]:
         "goal_id": str(row["goal_id"]),
         "discussion_id": str(row["discussion_id"]),
         "result_message_id": str(row["result_message_id"]),
+        "candidate_plan_message_id": str(row["candidate_plan_message_id"]),
         "predecessor_plan_revision_id": (
             str(row["predecessor_plan_revision_id"])
             if row.get("predecessor_plan_revision_id")
             else None
         ),
         "team_decision_id": str(row["team_decision_id"]),
-        "resulting_plan_revision_id": str(row["resulting_plan_revision_id"]),
+        # None exactly when the outcome is no_change: the team decided, and the plan it decided on
+        # is the one it already had.
+        "resulting_plan_revision_id": (
+            str(row["resulting_plan_revision_id"])
+            if row.get("resulting_plan_revision_id")
+            else None
+        ),
         "outcome": row["outcome"],
         "created_at": row.get("created_at"),
     }
@@ -111,6 +102,7 @@ def _team_decision_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
     return {
         "decision_id": str(row["decision_id"]),
         "thread_id": str(row["thread_id"]),
+        # The principal that authored the plan, resolved from the team. Never a request field.
         "proposed_by": str(row["proposed_by"]),
         "options_considered": list(row["options_considered"] or []),
         "selected_option": row["selected_option"],
@@ -138,6 +130,7 @@ def _revision_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "supersedes_revision_id": (
             str(row["supersedes_revision_id"]) if row.get("supersedes_revision_id") else None
         ),
+        "created_by": str(row["created_by"]) if row.get("created_by") else None,
         "plan": row["plan"],
         "diff": row["diff"],
         "trace_ref": row.get("trace_ref"),
@@ -149,6 +142,8 @@ def _result_view(outcome: dict[str, Any]) -> dict[str, Any]:
     return {
         "created": outcome["created"],
         "detail": outcome["detail"],
+        "outcome": outcome["outcome"],
+        "candidate_plan_message_id": outcome["candidate_plan_message_id"],
         "planning_decision": _decision_view(outcome["planning_decision"]),
         "team_decision": _team_decision_view(outcome.get("team_decision")),
         "plan_revision": _revision_view(outcome.get("plan_revision")),
@@ -157,30 +152,39 @@ def _result_view(outcome: dict[str, Any]) -> dict[str, Any]:
 
 @router.post("")
 async def finalize_planning_decision(payload: FinalizeDecisionRequest) -> dict:
-    """Turn one converged discussion into one TeamDecision and one accepted PlanRevision.
+    """Turn one converged discussion into one TeamDecision and the plan the team decided on.
+
+    The team's planner authors a structured candidate plan from the Goal and the convergence
+    result; the decision then either accepts it as a new revision, accepts the revision the Goal
+    already had, or records that nothing changed. Which of those happens is derived here, never
+    requested.
 
     Safe to retry and safe to call concurrently. A repeat returns the canonical decision with
     ``created=false`` rather than making a second one — that is an outcome, not an error.
 
-    409 means the discussion is not consumable: it did not converge, produced no result, is about
-    another Goal, or is bound to a revision that is no longer current. A stale discussion is never
-    silently rebound to the current revision; it stays evidence about the revision it discussed.
+    409 means the discussion is not consumable, or something else reached the plan first: it did
+    not converge, produced no result, is about another Goal, is bound to a revision that is no
+    longer current, or the revision it wanted to accept was accepted by another decision. A stale
+    discussion is never silently rebound; it stays evidence about the revision it discussed.
     """
     service = _service()
     try:
         outcome = await service.finalize(
-            goal_id=payload.goal_id,
-            discussion_id=payload.discussion_id,
-            decided_by=payload.decided_by,
-            plan=payload.plan.model_dump(),
+            goal_id=payload.goal_id, discussion_id=payload.discussion_id
         )
     except DiscussionNotAdmissibleError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except StalePlanRevisionError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PlanningDecisionConflictError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except (PlanLineageError, PlanRevisionLifecycleError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PlanRevisionAllocationError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except PlannerUnavailableError as exc:
+        # The team has nobody who can plan. Not the caller's request to fix, and not a server
+        # fault: the project's roster is the thing that is wrong.
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     except PlanningDecisionStateError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -211,11 +215,14 @@ async def get_planning_decision(planning_decision_id: str) -> dict:
 
 @router.get("/{planning_decision_id}/evidence")
 async def get_planning_decision_evidence(planning_decision_id: str) -> dict:
-    """What was proposed and what was challenged, read from the thread that actually holds it.
+    """What was proposed, what was challenged, and the exact plan the decision selected.
 
     There is no proposal table and no challenge table to expose: the approved architecture defines
     propose/challenge as message types, so this reads them from the discussion's own messages and
-    labels each with the AT-M3.3 turn intent that produced it.
+    labels each with the AT-M3.3 turn intent that produced it. The candidate plan is read by the id
+    the decision names and verified to belong to that same discussion, thread and Goal, so an
+    unrelated proposal can never appear in its place. No prompt, completion or reasoning trace is
+    exposed — only the structured artifact and the invocation id that produced it.
     """
     evidence = await _service().get_evidence(planning_decision_id)
     if evidence is None:

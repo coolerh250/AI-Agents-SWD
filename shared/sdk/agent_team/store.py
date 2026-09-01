@@ -238,14 +238,24 @@ class TeamStore:
         finally:
             await conn.close()
 
-    async def post_message(self, message: dict[str, Any]) -> dict[str, Any]:
+    async def post_message(
+        self, message: dict[str, Any], *, conn: asyncpg.Connection | None = None
+    ) -> dict[str, Any]:
+        """Append one message. Optionally on a caller's connection.
+
+        The connection parameter exists for the same reason ``record_decision``'s does: AT-M3.4
+        writes the planner's candidate plan while holding a lock on the discussion it belongs to,
+        so that eight workers finalizing one discussion produce one candidate rather than eight.
+        Nothing about what a message MEANS changes with it.
+        """
         # Enforced here too, not just in the DTO: callers build a plain dict, so the model
         # validator alone would leave the prohibition bypassable by construction.
         assert_content_is_safe(message.get("content"), "content")
         assert_content_is_safe(message.get("artifact_refs"), "artifact_refs")
-        conn = await self._connect()
+        own = conn is None
+        connection = await self._connect() if own else conn
         try:
-            row = await conn.fetchrow(
+            row = await connection.fetchrow(
                 """
                 INSERT INTO team_messages
                   (thread_id, project_id, sender_principal_id, recipient_principal_id,
@@ -276,7 +286,8 @@ class TeamStore:
             )
             return self._message_row(row)
         finally:
-            await conn.close()
+            if own:
+                await connection.close()
 
     async def list_messages(
         self, project_id: str, thread_id: str | None = None, limit: int = 200
