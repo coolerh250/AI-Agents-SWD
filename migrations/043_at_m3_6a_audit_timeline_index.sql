@@ -1,0 +1,82 @@
+-- Step AT-M3.6A -- one read-performance index for the Goal audit timeline.
+--
+-- Numbering derived from canonical main, which ends at 042 (AT-M3.5). This is 043.
+--
+-- ------------------------------------------------------------------------------------------
+-- WHAT THIS MIGRATION IS, AND EVERYTHING IT IS NOT
+-- ------------------------------------------------------------------------------------------
+-- One index. No table, no column, no constraint, no trigger, no type, no function, no view and no
+-- materialized view. AT-M3.6A is a read surface, and a read surface that needed a table of its own
+-- would have become a second authority over state the AT-M2 / AT-M3.1-3.5 tables already own.
+-- Nothing derived by that surface -- the autonomy phase, progress, blockers, plan currency, dispatch
+-- state -- is persisted anywhere, here or elsewhere.
+--
+-- ------------------------------------------------------------------------------------------
+-- WHY AN INDEX IS NEEDED AT ALL, MEASURED RATHER THAN ASSUMED
+-- ------------------------------------------------------------------------------------------
+-- The Goal timeline correlates one Goal's audit evidence out of `audit_logs`. It cannot filter on
+-- a column, because the AT-M3 slices do not all record `goal_id`: the delegation events carry
+-- `plan_revision_id`, `execution_unit_id` and `step_key` instead, so a goal_id-only filter would
+-- silently drop every assignment and dispatch event from the timeline. The read therefore probes
+-- `artifact_refs` for a SET of identifiers assembled from the Goal's own rows.
+--
+-- Without an index that is a full scan of an append-only table which only ever grows. Measured on
+-- a real PostgreSQL with 200,243 `audit_logs` rows, EXPLAIN (ANALYZE, BUFFERS) for one bounded
+-- timeline page:
+--
+--     before   Parallel Seq Scan on audit_logs   cost 6781.81   shared hit 5516   27.062 ms
+--     after    Bitmap Index Scan on this index   cost  428.72   shared hit   23    0.033 ms
+--
+-- That is ~240x fewer buffers for a single operator page view, and the gap widens linearly with
+-- the audit chain. This is the "full-table scan where a goal filter should exist" case, and it is
+-- the only one AT-M3.6A found: every other high-value query in the slice already resolves through
+-- an existing index --
+--
+--     plan_execution_units by revision, in step order   uq_peu_revision_step
+--     dependency edges, both endpoints                  idx_peu_work_item + uq_project_dep_pair
+--     the current revision of a Goal                    idx_plan_revisions_goal
+--                                                       + uq_plan_revisions_one_successor
+--     reasoning invocations by thread                   idx_reasoning_invocations_thread
+--     graphs and units by goal                          idx_peg_goal, idx_peu_goal
+--     the canonical dispatch of a unit                  plan_execution_dispatches PRIMARY KEY
+--
+-- so none of them gets an index here. An index nobody demonstrated a need for is schema surface
+-- with a maintenance cost and no evidence behind it.
+--
+-- ------------------------------------------------------------------------------------------
+-- WHY GIN / jsonb_path_ops, AND WHAT IT COSTS
+-- ------------------------------------------------------------------------------------------
+-- The read is a containment probe -- `artifact_refs @> ANY (array-of-jsonb)` -- because one query
+-- has to match several different KEYS (goal, revision, discussion, thread). Three separate
+-- expression indexes would each serve one key and would need the query rewritten as an OR of three
+-- predicates; one GIN index serves all of them, and serves an identifier a later slice adds without
+-- a further migration. `jsonb_path_ops` is chosen over the default operator class because it
+-- indexes only the paths containment actually uses, which is roughly a third smaller.
+--
+-- The cost is stated rather than glossed. On the 200k-row worst case above -- where EVERY row
+-- carried indexable keys -- the index was 21 MB against a 42 MB table. Real audit rows are more
+-- varied than that fixture, so this is an upper bound rather than an expectation. Insert cost on
+-- the audit-worker's append path stays low because GIN `fastupdate` is on by default and buffers
+-- new entries in a pending list rather than descending the tree per row.
+--
+-- NOT created CONCURRENTLY: CREATE INDEX CONCURRENTLY cannot run inside a transaction block, and
+-- every migration in this repository is a single BEGIN/COMMIT. This is a non-production database
+-- and the brief write lock on `audit_logs` is acceptable; a production rollout would take the
+-- concurrent form and would be a separate, explicitly authorized operator action.
+--
+-- SAFETY: index only. Creates no table, alters no column, writes no row, starts no container,
+-- executes nothing, calls no external provider, creates no Approval and grants no production
+-- authorization. Idempotent / re-runnable; a matching *_down.sql reverses it completely, and
+-- reversing it costs nothing but query speed because no data depends on it.
+
+BEGIN;
+
+-- Serves the AT-M3.6A Goal timeline probe:
+--     WHERE artifact_refs @> ANY ($1::jsonb[])
+-- where the probe array is built from the Goal's OWN goal id, plan revision ids, discussion ids
+-- and thread ids. Read-performance only: the timeline is correct without it and merely slow, and
+-- nothing in the product depends on this index existing.
+CREATE INDEX IF NOT EXISTS idx_audit_logs_artifact_refs_gin
+    ON audit_logs USING GIN (artifact_refs jsonb_path_ops);
+
+COMMIT;
