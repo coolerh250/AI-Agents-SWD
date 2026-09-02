@@ -19324,3 +19324,113 @@ CROSS_PARTNER_NOTE: AT-M3.6A's own migration test is written the same way from t
   AT-D22 section 4 confirms it still needs its own implementation report and validation pass, and
   `AI_AGENTS_PM_STATE.md` records it as the next permitted stage requiring no new Product Owner
   decision. This slice is exactly that work, at exactly that scope.
+
+## Step AT-M3.6A-CANONICALIZATION-1 - Observability / Read Surface Product Acceptance & Canonical Merge (CLOSED)
+
+**Status: AT-M3.6A ACCEPTED by the Product Owner and canonically merged into `main` by exact
+fast-forward. `AT-D23` recorded. Branch `at-m3.6a-observability-read-surface-1`,
+implementation_end `7a7baae`, merged from canonical base `f3a85af`.**
+
+- **Independent Validation 1: PASS, first time.** No blocker, no remediation, no Validation 2. The
+  bounded remediation policy AT-M1 established and AT-D18 restated was available and was not
+  needed.
+- **`AT-D23` (`docs/decisions/at-d23-at-m3-6a-acceptance-and-merge-authorization.md`) is the
+  durable record.** AT-D14 authorized the WORK; AT-D23 accepts THIS implementation and authorizes
+  merging THIS commit, which is the same separation AT-D13/AT-D15/AT-D19/AT-D20/AT-D21/AT-D22 made
+  for every earlier slice. AT-D22 section 4 had said in advance that AT-M3.6A would need its own
+  implementation report and its own validation pass before it could be accepted this way; both
+  happened, and AT-D23 records them rather than re-deriving them.
+- **What was accepted, in one line:** the autonomous runtime exposed as a coherent, entity-level,
+  strictly read-only product model at `/operations/autonomy/*` - Goal, Project, primary WorkItem,
+  team, discussion, TeamDecision, current and historical PlanRevisions, the execution graph with
+  its dependency topology, routing explanation, dispatch truth, derived phase and blockers, and a
+  bounded Goal-scoped audit timeline. The full acceptance boundary is AT-D23 section 2.
+
+### The merge
+
+- **Exact fast-forward, no squash, no rebase, no improvised merge commit.** `origin/main` was
+  `f3a85af` at decision time and was the merge-base of the candidate, so the FF was valid without
+  moving anything. `main` advanced `f3a85af -> 7a7baae -> <reconciliation>`, and `7a7baae` is an
+  ancestor of the final canonical `main`.
+- **Post-validation drift: none.** Nothing landed on the candidate branch after `7a7baae`. The
+  reconciliation commit this stage adds is documentation only, verified by comparing tree hashes
+  for `shared/`, `apps/`, `agents/`, `migrations/`, `infra/`, `scripts/` and `tests/` between
+  `7a7baae` and the acceptance tip: every one identical, so **product bytes changed = ZERO**.
+  `AT_M3_6A_IMPLEMENTATION_END` therefore names `7a7baae` and does not follow the branch tip -
+  moving it would silently claim validation coverage the docs commit never had.
+
+### Post-merge verification - bounded, against the pushed canonical main
+
+- **Schema.** Migration 043 canonical; migrations 001-042 byte-identical to the pre-merge canonical
+  main; exactly one index added (`idx_audit_logs_artifact_refs_gin`, GIN / `jsonb_path_ops` on
+  `audit_logs.artifact_refs`) and no table, column, constraint, trigger, function or view.
+- **Read-only surface.** Six routes under `/operations/autonomy/*`, every one GET, no write route
+  anywhere in the slice. Repeated reads of all six against a real PostgreSQL changed zero rows and
+  zero content across twenty canonical tables plus content digests for the seven carrying mutable
+  columns. No read-induced audit event. Redis unnecessary for reads and never written.
+- **Domain.** `/operations` remains the single operational read domain; no competing
+  `/observability` authority exists.
+- **Product truth.** Goal-level autonomy overview present and entity-level; derived phase and
+  blockers remain non-authoritative and unpersisted; current PlanRevision correct; historical and
+  superseded revisions preserved and navigable; a stale graph is never reported as current;
+  current-plan progress excludes historical graphs; dependency topology and routing explanation
+  present; a published dispatch is never labelled `EXECUTING`; terminal AT-M3.5 state remains
+  `internal_control_plane_simulation`.
+- **Information boundary.** No reasoning artifact body, no `attempt_token`, no raw prompt,
+  completion, CoT or scratchpad in any response.
+- **Timeline.** Audit evidence only, Goal-scoped through that Goal's own identifiers, deterministic
+  ordering with a stable secondary key, bounded pagination, and the 043 index serving the actual
+  query shape.
+- **Compatibility and lifecycle.** Existing `/operations` contracts additive and unchanged; partial
+  lifecycle states remain 200 rather than 500.
+- **Tests.** The focused AT-M3.6A suite passes on canonical main, as do the AT-M3.5, AT-M3.4,
+  AT-M3.3, AT-M3.2, AT-M3.1 and AT-M2 regressions. The historical/meta failures that reproduce
+  identically on the pre-merge canonical main remain `NON-BLOCKING` under AT-D18.
+
+### Backlog carried, not remediated
+
+- **One new P3.** `AutonomyReadStore._session()` recurses into itself rather than opening a private
+  connection when no shared session is open - the intended connect/yield/close fallback was
+  overwritten during the session refactor. It is unreachable on every shipped path: all six service
+  entry points open `store.session()` before issuing a query, which sets the shared connection
+  first, and the 77 AT-M3.6A tests exercise all six against a real database. Recorded in AT-D23
+  section 6 item 1 as `P3 / PRODUCT_HARDENING / CURRENT_PRODUCT_PATH_UNREACHABLE / NON_BLOCKING`
+  and deliberately NOT fixed here: no runtime byte may change after validation.
+- **Three carried forward unchanged from AT-D22 section 6**: the privileged raw-SQL DELETE that can
+  erase the AT-M3.5 plan-step mapping (`P3 / DB_HARDENING / OUTSIDE_PRODUCT_API_CONTRACT`), the
+  unbounded `reasoning_invocations.artifact` JSONB (`PRE-M3.6B / PRODUCT_HARDENING`), and the
+  unbounded `PlanContent` step count (`PRE-M3.6B / PRODUCT_HARDENING`). AT-M3.6A does not read the
+  artifact column at all and bounds its own unit reads at 500 per page, which narrows the last two
+  without closing them.
+
+### Boundaries held
+
+- **No runtime, schema or test byte changed by this stage.** The canonicalization commit adds the
+  AT-D23 decision record, the PM state reconciliation and this ledger entry, and nothing else.
+- **No verifier, exemption mechanism, authority registry, canonical activation layer,
+  reconciliation daemon or new governance blocker was introduced.** AT-D18's Minimal Governance
+  Kernel is preserved.
+- **The Step 66UI.4 / 66GOV.1 stage-freeze guards were not repaired.** They fail for any
+  implementation branch - demonstrated by a probe branch whose only change is one empty
+  `shared/sdk` file - and amending another stage's governance artifact from an AT-M3
+  canonicalization would be reaching into that stage's authority. Recorded in AT-D23 section 7 as
+  historical/meta.
+- **AT-M3.6B `NOT AUTHORIZED`. AT-M4 `NOT AUTHORIZED`. Production `NOT GRANTED`.**
+  `production_executed_true_count: 0`. No live provider, no external network call, no execution
+  consumer, no authenticated completion ingress, no HumanApproval mutation, no production action.
+
+### Where the product now stands
+
+- **AT-M3.6A is AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
+  CANONICAL / CLOSED.** The autonomous product flow now runs Goal -> Team -> Discussion ->
+  TeamDecision -> accepted PlanRevision -> plan-driven delegation -> capability-based assignment ->
+  durable dispatch -> **read-only end-to-end observability**, and an operator can finally see the
+  whole of it as entities rather than as counts.
+- **This is still control-plane behaviour.** Nothing executes. The delegation namespace has no
+  consumer, every completion visible through the read surface is an internal control-plane
+  simulation, and no external model has been called.
+- **AT-D14's authorized scope is now fully consumed.** It authorized AT-M3.1 through AT-M3.6A; all
+  six are canonical. There is no next product stage this repository is authorized to start.
+  AT-M3.6B (a real external model call) and AT-M4 (real work execution) are both `NOT AUTHORIZED`,
+  and no record here decides which - if either - should follow. **The next product decision
+  requires Product Owner authorization.**

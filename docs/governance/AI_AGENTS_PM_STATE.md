@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-09-02
-RECONCILED_AGAINST_MAIN:     03ed5748fc5c63860ba76604e92c3682be49dc07
-RECONCILED_BY_STAGE:         AT-M3.5-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_ON:               2026-09-03
+RECONCILED_AGAINST_MAIN:     7a7baaee4f45c2b48579701221d5cd58e063ded8
+RECONCILED_BY_STAGE:         AT-M3.6A-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -33,18 +33,20 @@ is a conflict.
 
 ```text
 CURRENT_MILESTONE:           AT-M3
-CURRENT_MILESTONE_STATE:     IN PROGRESS -- AT-M3.1, AT-M3.2, AT-M3.3, AT-M3.4 and AT-M3.5
-                              MERGED / CLOSED; AT-M3.6A is the next implementation slice
-PREVIOUS_COMPLETED_STAGE:    AT-M3.5 (canonical merge)
-CURRENT_GATE:                NONE -- AT-M3.5 canonically merged; AT-M3.6A is already authorized
-                              under AT-D14 (see section 5a), so no new gate is open for it;
-                              AT-M3.6B, production and AT-M4 remain closed
-CURRENT_STAGE:                AT-M3.5-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        AT-M3.6A IMPLEMENTATION -- Observability / Read Surface. Already
-                              authorized under AT-D14; no new Product Owner decision is required
-                              unless the architecture materially changes, an
-                              authorization/security boundary expands, external network/model use
-                              is introduced, or production becomes involved.
+CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.1, AT-M3.2,
+                              AT-M3.3, AT-M3.4, AT-M3.5 and AT-M3.6A MERGED / CLOSED. AT-D14
+                              authorized M3.1 through M3.6A and nothing further; every slice it
+                              authorized is now canonical
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6A (canonical merge)
+CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's authorized scope is fully
+                              consumed. AT-M3.6B and AT-M4 are both NOT AUTHORIZED, and no record
+                              in this repository decides which (if either) is next
+CURRENT_STAGE:                AT-M3.6A-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. AT-D14 authorized AT-M3.1
+                              through AT-M3.6A; that scope is now exhausted, so the next product
+                              stage requires its own authorization record. AT-M3.6B (a real
+                              external model call) and AT-M4 (real work execution) are both listed
+                              below as NOT AUTHORIZED and neither is implied by this closure.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -313,28 +315,44 @@ AT_M3_5_ACCEPTANCE:            PO ACCEPTED
 AT_M3_5_AUTHORIZED_BY:         AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
 AT_M3_5_MERGE_AUTHORIZED_BY:   AT-D22 / docs/decisions/at-d22-at-m3-5-acceptance-and-merge-authorization.md
 AT_M3_5_IMPLEMENTATION_END:    03ed5748fc5c63860ba76604e92c3682be49dc07
-AT_M3_6A:                      AUTHORIZED (AT-D14) / NOT YET IMPLEMENTED
-PRODUCT_CRITICAL_PATH:         AT-M3.6A
-NEXT_PRODUCT_STAGE:            AT-M3.6A -- Observability / Read Surface
+AT_M3_6A:                      AUTHORIZED / VALIDATED / PO_ACCEPTED / MERGED / CANONICAL / CLOSED
+AT_M3_6A_IMPLEMENTATION:       COMPLETE
+AT_M3_6A_VALIDATION:           PASS / COMPLETE -- 1 of 1 (Validation 1 PASS, no blocker; no
+                                remediation and no Validation 2 were required). One P3 observation
+                                carried as backlog: AutonomyReadStore._session() recurses instead
+                                of opening a private connection when no shared session is open,
+                                unreachable on all six shipped endpoints because each opens
+                                store.session() first
+AT_M3_6A_ACCEPTANCE:           PO ACCEPTED
+AT_M3_6A_AUTHORIZED_BY:        AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
+AT_M3_6A_MERGE_AUTHORIZED_BY:  AT-D23 / docs/decisions/at-d23-at-m3-6a-acceptance-and-merge-authorization.md
+AT_M3_6A_IMPLEMENTATION_END:   7a7baaee4f45c2b48579701221d5cd58e063ded8
+PRODUCT_CRITICAL_PATH:         NONE -- AT-D14's authorized scope is fully consumed
+NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED -- no record in this repository decides
+                                what follows AT-M3.6A
 AT_M3_6B:                      NOT AUTHORIZED
 AT_M4:                         NOT AUTHORIZED
 ```
 
-`AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4` and `AT_M3_5` keep the literal word `AUTHORIZED`
-immediately after the field name for the same reason `AT_M2` does (section 5): it is the live
-authorization state, not a claim that validation is still open. `AT_M3_6A` (narrowed from
-`AT_M3_5_THROUGH_AT_M3_6A` now that AT-M3.5 has its own implementation-complete block, the same
-narrowing `AT_M3_4_THROUGH_AT_M3_6A` underwent at the AT-M3.4 canonicalization and
-`AT_M3_3_THROUGH_AT_M3_6A` at AT-M3.3's) records that AT-D14 already authorizes that work; it is
-not itself an implementation-complete claim, and AT-M3.6A still needs its own implementation report
-and its own validation pass before it can read the way `AT_M3_1` through `AT_M3_5` do here.
-`AT_M3_2_IMPLEMENTATION_END`, `AT_M3_3_IMPLEMENTATION_END`, `AT_M3_4_IMPLEMENTATION_END` and
-`AT_M3_5_IMPLEMENTATION_END` are the exact independently validated commits and do not follow the
-branch tip: the acceptance and reconciliation commit that lands on top of each is documentation,
-and moving the field to name it would silently claim validation coverage the docs commit never
-had. `AT_M3_6B` names the boundary AT-D14 explicitly did not move: no real external LLM/network
-call is authorized by any record in this file, and `AT_M4` names the one after it: AT-M3.5 built
-the delegation of work, not its execution, and no record in this file authorizes AT-M4.
+`AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4`, `AT_M3_5` and `AT_M3_6A` keep the literal word
+`AUTHORIZED` immediately after the field name for the same reason `AT_M2` does (section 5): it is
+the live authorization state, not a claim that validation is still open. `AT_M3_6A` previously read
+`AUTHORIZED (AT-D14) / NOT YET IMPLEMENTED`, narrowed at each earlier canonicalization from
+`AT_M3_5_THROUGH_AT_M3_6A`, `AT_M3_4_THROUGH_AT_M3_6A` and `AT_M3_3_THROUGH_AT_M3_6A`; AT-D23 now
+accepts and merges it, so it reads the way `AT_M3_1` through `AT_M3_5` do and no `THROUGH` field
+remains. `AT_M3_2_IMPLEMENTATION_END` through `AT_M3_6A_IMPLEMENTATION_END` are the exact
+independently validated commits and do not follow the branch tip: the acceptance and reconciliation
+commit that lands on top of each is documentation, and moving the field to name it would silently
+claim validation coverage the docs commit never had.
+
+`PRODUCT_CRITICAL_PATH: NONE` is a statement about AUTHORIZATION, not a claim that the product is
+finished. AT-D14 authorized AT-M3.1 through AT-M3.6A; all six are now canonical, so that scope is
+consumed and there is no next stage this file may name. `AT_M3_6B` names the boundary AT-D14
+explicitly did not move: no real external LLM/network call is authorized by any record in this
+file. `AT_M4` names the one after it: AT-M3.5 built the delegation of work and AT-M3.6A made it
+observable, but neither built its execution, and no record in this file authorizes AT-M4. Choosing
+between them -- or choosing something else entirely -- is a Product Owner decision that has not
+been made, and this file must not be read as implying an order.
 
 Six non-blocking observations were carried out of AT-M3.3 Validation 2 as backlog, not remediated,
 and are recorded in full in AT-D20 section 7: a residual TOCTOU between the post-provider deadline
