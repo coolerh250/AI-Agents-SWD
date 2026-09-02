@@ -38,7 +38,8 @@ from shared.sdk.plan_delegation.store import PlanDelegationStore
 
 from tests.plan_delegation_fixtures import CHAIN_PLAN
 
-pytestmark = pytest.mark.asyncio
+# No module-level asyncio mark: pyproject sets ``asyncio_mode = "auto"``, and two of the tests here
+# are deliberately synchronous (they read files rather than a database).
 
 ROOT = Path(__file__).resolve().parents[1]
 MIGRATIONS = ROOT / "migrations"
