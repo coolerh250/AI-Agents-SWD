@@ -19220,7 +19220,7 @@ AT-M3.2 currentness CAS all stand unchanged.
 
 ### Evidence - real PostgreSQL, every state a team can be in
 
-- **72 AT-M3.6A tests pass** against a real PostgreSQL, built with the REAL upstream machinery: a
+- **77 AT-M3.6A tests pass** against a real PostgreSQL, built with the REAL upstream machinery: a
   real project, a real AT-M2 team from the capability seed, a real AT-M3.3 discussion driven to a
   genuine convergence, a real AT-M3.4 planning decision, real AT-M3.2 revisions through the
   draft -> accepted transition, and real AT-M3.5 materialization, assignment, dispatch and internal
@@ -19245,23 +19245,66 @@ AT-M3.2 currentness CAS all stand unchanged.
 
 ### Regression
 
-- **Full suite on the branch: 77 failed, 7,245 passed, 272 skipped.** Full suite on canonical main
-  `f3a85af` in the same runtime: 73 failed, 7,174 passed, 272 skipped. 71 additional tests pass and
-  no product test regressed.
+- **Full suite on the branch: 75 failed, 7,249 passed, 272 skipped.** Full suite on canonical main
+  `f3a85af` in the same runtime: 73 failed, 7,174 passed, 272 skipped. 75 additional tests pass.
 - **The 73 canonical-main failures are the known historical/meta set** - PCP control-plane tests,
   step66 verifier/merge/branch-head checks, AT-M1 governance-range guards - reproduced identically.
   Under AT-D18-R05 they are `NON-BLOCKING`: none reaches a production-authorization, human-approval,
   external-model, secret-handling, destructive-action, audit-integrity or security-boundary control
   exposed through the product API.
-- **The delta is a working-tree artifact of the same class**, not a product regression.
-  `test_no_runtime_files_changed` and the frozen-range verifiers assert `git diff --name-only HEAD`
-  contains no `apps/` or `migrations/` path; an uncommitted implementation branch necessarily
-  violates that, and the assertions pass again once the work is committed. They are historical
-  scope-freeze checks over ranges that closed long before AT-M3, and they carry no P0/P1 risk.
+- **Exactly three tests fail on the branch that do not fail on canonical main, and all three fail
+  for ANY implementation branch regardless of what it contains.**
+  `test_design_66ui4_fe1c_overview_brief.py::test_no_runtime_paths_changed`,
+  `test_design66ui4_fe1d_navigation_microcopy.py::test_no_runtime_paths_changed` and
+  `test_stage_gate_compliance.py::test_verifier_marker_pass` each run
+  `git diff --name-only origin/main...HEAD` and assert no path under `apps/`, `shared/`,
+  `migrations/`, `infra/`, `services/` or `database/` appears. On canonical main the diff is empty,
+  so they pass vacuously.
+
+  This was demonstrated rather than argued: a branch cut from `f3a85af` whose ONLY change is one
+  empty `shared/sdk/probe_only/__init__.py` - no migration, no API, no AT-M3.6A code at all - fails
+  precisely those three and nothing else. They are Step 66UI.4 / Step 66GOV.1 stage-scoped freeze
+  guards written for docs-and-design stages, and they carry no P0/P1 risk. They were left alone:
+  amending a Step 66 governance artifact from an AT-M3 product slice would be reaching into another
+  stage's authority to make this slice's number look better.
+- **One AT-M3 in-family assertion WAS amended, and a GOVERNANCE_DRIFT_ALERT is recorded for it.**
+  `test_at_m3_5_migration_lifecycle.py::test_no_canonical_migration_001_through_041_was_changed_by_this_slice`
+  asserted the `migrations/` diff against AT-M3.5's canonical main was EXACTLY the two 042 files -
+  a stronger claim than its own name makes, since it also said "and no later migration exists
+  anywhere in the repository". Every future slice's first migration therefore failed an AT-M3.5
+  test. This is the same defect AT-M3.4's numbering assertion had, amended in `72b7a28` for the
+  same stated reason ("a repository-wide numbering claim living inside a slice-scoped file"); that
+  commit fixed AT-M3.4's numbering test and wrote AT-M3.5's numbering test the same way from the
+  start, and missed this one in the lifecycle file. Amended to assert what the name says: no
+  migration at or below 041 appears in the diff, and AT-M3.5's own 042 pair is present and
+  unrenamed. Changing a canonical migration still fails it, and no AT-M3.5 contract, schema,
+  constraint, trigger or behaviour is touched.
+
+```text
+GOVERNANCE_DRIFT_ALERT
+
+RULE_VIOLATED:     a slice-scoped test asserted a repository-wide claim, so AT-M3.5's own scope
+                   assertion failed every later slice's first migration
+EVIDENCE:          tests/test_at_m3_5_migration_lifecycle.py::
+                   test_no_canonical_migration_001_through_041_was_changed_by_this_slice asserted
+                   the migrations/ diff against c9f6001 equalled exactly the two 042 files; the
+                   identical defect in AT-M3.4 was amended in 72b7a28
+RISK_CLASS:        P3
+PRODUCT_IMPACT:    none - a test-scope assertion; no product contract, schema, constraint, trigger
+                   or behaviour is involved
+RECOMMENDATION:    CONTINUE - amended in place to assert the claim its name makes, matching the
+                   72b7a28 precedent exactly
+PO_DECISION_REQUIRED: NO
+CROSS_PARTNER_NOTE: AT-M3.6A's own migration test is written the same way from the start, so it
+                   does not hand AT-M3.7 the identical failure. The three Step 66UI.4 / 66GOV.1
+                   stage-freeze guards that fail for any runtime branch are NOT amended here -
+                   they belong to another stage's authority and are recorded as HISTORICAL_ONLY.
+```
+
 - **`test_audit_timeline.py::test_workflow_timeline_includes_audit_timeline_field` fails on
-  canonical main and passes on the branch.** It is order- and data-dependent on shared `audit_logs`
-  state; it is recorded here rather than claimed as a fix, because nothing in this slice writes to
-  that table or to the workflow timeline it reads.
+  canonical main in a full run and passes on the branch.** Run in isolation it passes on canonical
+  main too, so it is order- and data-dependent on shared `audit_logs` state. Recorded rather than
+  claimed as a fix: nothing in this slice writes to that table or to the workflow timeline it reads.
 - **No P0/P1 regression. No new product failure.**
 
 ### Boundaries held
@@ -19276,7 +19319,8 @@ AT-M3.2 currentness CAS all stand unchanged.
   Discord or SaaS request, no shell, no code edit, no Git write, no PR, no deployment and no tool
   invocation.** HumanApproval is surfaced read-only and never requested, approved, rejected,
   expired or mutated. Production `NOT AUTHORIZED`, `production_executed_true_count: 0`.
-- **No GOVERNANCE_DRIFT_ALERT was raised.** AT-D14 section 2 authorizes AT-M3.6A, AT-D22 section 4
-  confirms it still needs its own implementation report and validation pass, and
+- **One GOVERNANCE_DRIFT_ALERT, recorded above, at P3 / CONTINUE**, for the AT-M3.5 scope assertion
+  that forbade every later migration. Nothing else drifted: AT-D14 section 2 authorizes AT-M3.6A,
+  AT-D22 section 4 confirms it still needs its own implementation report and validation pass, and
   `AI_AGENTS_PM_STATE.md` records it as the next permitted stage requiring no new Product Owner
   decision. This slice is exactly that work, at exactly that scope.
