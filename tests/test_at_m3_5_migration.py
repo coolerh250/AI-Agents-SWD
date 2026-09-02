@@ -249,6 +249,38 @@ def test_the_down_migration_drops_this_slices_tables_and_nothing_else():
     assert "DELETE FROM" not in DOWN
 
 
+def test_the_down_migration_refuses_once_materialization_evidence_exists():
+    """Independent Validation 1: DOWN used to drop the mapping and leave the business work items,
+    so DOWN -> UP -> materialize created a second set of child work items for the same plan steps.
+
+    The sequence is removed rather than repaired -- deleting the work items would destroy
+    execution-lineage rows this slice does not own, and re-adopting orphans on UP would reattach
+    work whose provenance was deleted. The live proof is in
+    ``test_at_m3_5_migration_lifecycle.py``; this asserts the guard is present and unconditional.
+    """
+    assert "RAISE EXCEPTION" in DOWN
+    assert "refusing to reverse migration 042" in DOWN
+    for table in (
+        "goal_execution_lineage",
+        "plan_execution_graphs",
+        "plan_execution_units",
+        "plan_execution_dispatches",
+    ):
+        assert f"SELECT count(*) FROM {table}" in DOWN, table
+    # No override, no force flag, no exemption: the only outcome is refuse-and-change-nothing.
+    # Whole words -- ``plan_execution_dispatches_enforce_append_only`` contains "force".
+    words = set(re.findall(r"[a-z_]+", DOWN.lower()))
+    for escape in ("force", "override", "skip_check", "allow_data_loss", "bypass"):
+        assert escape not in words, escape
+
+
+def test_the_down_migration_still_deletes_no_business_rows():
+    """Refusing is the fix. Deleting the work items would have been the other one, and it would
+    destroy execution-lineage rows -- and, once AT-M4 exists, the Runs resolving to them."""
+    assert "DELETE FROM" not in DOWN
+    assert "TRUNCATE" not in DOWN.upper()
+
+
 def test_the_down_migration_leaves_the_work_items_and_routing_evidence_alone():
     """Child work items, their dependency edges and the routing decisions belong to the project's
     own lineage, not to this ledger -- the same posture 041's down migration takes."""

@@ -22,6 +22,7 @@ Three things this module deliberately does NOT do:
 
 from __future__ import annotations
 
+import re
 from dataclasses import replace
 from typing import Any
 
@@ -92,6 +93,28 @@ _ROUTING_OUTCOME_TO_REASON = {
     "requires_human_approval": UNAVAILABLE_REQUIRES_HUMAN_APPROVAL,
 }
 
+#: The isolated namespace AT-M3.5 stages its delegation commands on.
+#:
+#: AT-M3.5 must NOT publish onto an agent's own ``transport_stream``. Those streams
+#: (``stream.development``, ``stream.qa``, ``stream.design_review`` ...) are live: a ``StreamAgent``
+#: subclass consumes each of them and calls ``handle(payload)`` unconditionally, and the
+#: orchestrator's workflow-event consumer watches several of them too. Putting a
+#: ``plan_step.dispatched`` envelope there would hand an L3 coordination message to an L4 executor
+#: that this slice has no authority to start -- AT-M4 execution reached by accident, through a
+#: stream name.
+#:
+#: So routing and transport are separated, and only transport moves. The AT-M2 router still decides
+#: WHO, from capability over the live team, and its answer -- including the agent's real
+#: ``transport_stream`` -- is recorded unchanged in ``agent_routing_decisions``. What changes is
+#: WHERE the coordination message is staged: a dedicated namespace with no consumer at all until
+#: AT-M4 introduces one.
+DELEGATION_STREAM_PREFIX = "stream.plan_delegation"
+
+#: ``agent_key`` is a ``TEXT`` column, and this is the one place a database value becomes an
+#: addressable Redis key. Keys outside this shape are refused rather than escaped, so a delegation
+#: stream can never be coaxed into naming something else.
+_SAFE_AGENT_KEY = re.compile(r"^[A-Za-z0-9._-]{1,100}$")
+
 #: How a unit's runtime state is mirrored onto the work item that carries it. The work item is the
 #: execution-lineage row every existing reader already knows how to read; leaving it permanently
 #: 'pending' while the unit moved would make the lineage carrier lie. The unit remains canonical --
@@ -136,11 +159,21 @@ class ExecutionUnitStateError(RuntimeError):
 
 
 class DispatchLineageError(RuntimeError):
-    """A completion did not come through the dispatch it claims to be answering.
+    """A result was reported for a unit that has no canonical dispatch.
 
-    The correlation id, the execution unit and the assigned principal must all agree with the one
-    canonical dispatch row. A caller that never received the dispatch cannot produce that triple,
-    which is what keeps an arbitrary external assertion out of the graph.
+    Nothing was ever handed to anyone, so there is no assignment for a result to answer. The
+    identity a result is attributed to -- assigned principal, correlation id, plan revision, step --
+    is READ from that row and is never accepted from a caller, so the only way to be wrong about it
+    is for it not to exist.
+    """
+
+
+class DispatchTransportError(RuntimeError):
+    """A selected agent's key cannot be turned into an isolated delegation stream name.
+
+    Fail closed rather than build an unpredictable Redis key out of arbitrary text: a stream name
+    is the one place where a database value becomes an addressable destination, and an unsanitised
+    one could collide with a stream something else already consumes.
     """
 
 
@@ -150,6 +183,30 @@ class ExecutionLineageCancelledError(RuntimeError):
     Existing dispatches are not withdrawn by this -- cancellation stops NEW work, and the
     already-dispatched command follows the existing work-item cancel semantics.
     """
+
+
+# --- isolated delegation transport ---------------------------------------------------------------
+
+
+def delegation_stream_for(agent_key: str) -> str:
+    """The isolated delegation stream for one selected agent.
+
+    Keyed on ``agent_key`` rather than on ``role`` because ``agent_key`` is the unique one:
+    ``development-agent`` and ``development-agent-autofix`` share the role ``development`` and are
+    two different workers, and giving them one stream would put a command addressed to one of them
+    in the other's reach.
+    """
+    if not agent_key or not _SAFE_AGENT_KEY.match(agent_key):
+        raise DispatchTransportError(
+            f"agent key {agent_key!r} cannot be used to derive a delegation stream name; "
+            "expected 1-100 characters of [A-Za-z0-9._-]"
+        )
+    return f"{DELEGATION_STREAM_PREFIX}.{agent_key}"
+
+
+def is_delegation_stream(stream: str) -> bool:
+    """True for the delegation namespace itself and anything under it."""
+    return stream == DELEGATION_STREAM_PREFIX or stream.startswith(f"{DELEGATION_STREAM_PREFIX}.")
 
 
 # --- graph validation ---------------------------------------------------------------------------
@@ -407,11 +464,13 @@ def build_dispatch_envelope(
 
 
 __all__ = [
+    "DELEGATION_STREAM_PREFIX",
     "DEPENDENCY_SATISFIED_STATES",
     "DISPOSITIONS",
     "DISPOSITION_FAILED",
     "DISPOSITION_SUCCEEDED",
     "DispatchLineageError",
+    "DispatchTransportError",
     "ExecutionLineageCancelledError",
     "ExecutionUnitStateError",
     "PlanGraphInvalidError",
@@ -428,6 +487,8 @@ __all__ = [
     "UNIT_READY",
     "UNIT_STATES",
     "build_dispatch_envelope",
+    "delegation_stream_for",
+    "is_delegation_stream",
     "plan_dependency_edges",
     "resolve_step_assignment",
     "root_step_keys",

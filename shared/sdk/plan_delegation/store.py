@@ -62,6 +62,7 @@ from shared.sdk.plan_delegation.models import (
     ExecutionLineageCancelledError,
     ExecutionUnitStateError,
     PlanRevisionNotDispatchableError,
+    delegation_stream_for,
     unavailable_reason_for,
     validate_plan_graph,
     work_item_status_for,
@@ -520,7 +521,14 @@ class PlanDelegationStore:
                         _uuid(decision.selected_principal_id),
                         decision.selected_role,
                         decision.selected_agent_key,
-                        decision.selected_stream,
+                        # NOT ``decision.selected_stream``. The router's answer -- the agent's own
+                        # live transport stream -- is recorded unchanged in
+                        # agent_routing_decisions.selected_stream, which is AT-M2's evidence and
+                        # stays AT-M2's. What this column holds is where THIS slice stages the
+                        # coordination message: an isolated namespace nothing consumes. Writing the
+                        # live stream here would put a legacy agent input stream one COALESCE away
+                        # from becoming a publish destination.
+                        delegation_stream_for(decision.selected_agent_key or ""),
                         routing_decision_id,
                     )
                 )
@@ -641,18 +649,25 @@ class PlanDelegationStore:
         self,
         *,
         execution_unit_id: Any,
-        reported_by: Any,
-        correlation_id: Any,
         disposition: str,
         result_ref: str | None = None,
         conn: asyncpg.Connection | None = None,
     ) -> dict[str, Any]:
         """Apply one terminal result to a dispatched unit and unlock what it was blocking.
 
-        The result must come through the unit's OWN canonical dispatch: the correlation id and the
-        reporting principal are both checked against the dispatch row. A caller that never received
-        the dispatch cannot produce that pair, which is what keeps an arbitrary external assertion
-        from advancing the graph.
+        **The attributed identity is READ, never accepted.** The assigned principal, the correlation
+        id, the plan revision and the step are taken from the unit's own canonical dispatch row. An
+        earlier shape took ``reported_by`` and ``correlation_id`` as arguments and checked them
+        against that row, which looked equivalent and was not: both values are returned by the read
+        surface, so "check what the caller claims" degrades to "believe anyone who has read the
+        graph" the moment the operation is reachable from outside. Removing the inputs is what makes
+        impersonation unrepresentable rather than merely detected -- the same correction AT-M3.4
+        made when it removed ``plan`` and ``decided_by`` from its finalize command.
+
+        This is an INTERNAL scheduler seam, not authenticated agent ingress. It is not reachable
+        over HTTP. AT-M4 owns the authenticated runtime-execution identity that a real agent-
+        originated completion will need, and this method is what such an ingress would call once it
+        has established WHICH unit is being answered.
 
         Deliberately does NOT check plan currency or lineage cancellation. Work already handed to a
         principal is allowed to finish and be recorded truthfully even after a successor revision
@@ -681,17 +696,6 @@ class PlanDelegationStore:
                     raise DispatchLineageError(
                         f"execution unit {execution_unit_id} has no canonical dispatch; a result "
                         "cannot be reported for work that was never handed over"
-                    )
-                if str(dispatch["correlation_id"]) != str(correlation_id):
-                    raise DispatchLineageError(
-                        f"the correlation id reported for execution unit {execution_unit_id} does "
-                        "not belong to its canonical dispatch"
-                    )
-                if str(dispatch["assigned_principal_id"]) != str(reported_by):
-                    raise DispatchLineageError(
-                        f"execution unit {execution_unit_id} was dispatched to principal "
-                        f"{dispatch['assigned_principal_id']}; a result from another principal is "
-                        "not a result for this unit"
                     )
 
                 terminal = UNIT_COMPLETED if disposition == DISPOSITION_SUCCEEDED else UNIT_FAILED

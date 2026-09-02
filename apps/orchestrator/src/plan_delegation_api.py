@@ -1,6 +1,6 @@
 """Step AT-M3.5 -- the plan-driven delegation surface.
 
-Three write routes, each a whole command that leaves the graph in a valid state, and two read
+Two write routes, each a whole command that leaves the graph in a valid state, and two read
 routes.
 
 What is deliberately NOT here, and is not an oversight: no route sets a unit ready, assigns a
@@ -19,9 +19,26 @@ lesson applied one slice later.
 ``schedule`` is safe to retry and safe to call concurrently. It is the only way work is dispatched,
 it takes no unit list, and it never dispatches anything a dependency still blocks.
 
-``result`` requires the dispatch's own correlation id and the principal it was issued to. It is the
-internal completion seam AT-M4 will fill with a real Run result; it is not a way for an arbitrary
-caller to assert that a step finished.
+**There is no completion route, and its absence is the point.** An earlier shape exposed
+``POST .../result`` guarded by a ``correlation_id`` and a ``reported_by`` the caller supplied and
+the server checked. Both values are returned by the read routes below. Checking a value the caller
+can look up is not authentication, it is a lookup, so any client able to read the graph could
+terminalize any dispatched step and unlock its dependents. Hiding the identifiers would not have
+fixed it either -- that is secrecy standing in for authority, and it fails the first time a graph is
+rendered in an operator console.
+
+The real boundary needs an authenticated runtime-execution identity, and AT-M4 owns it: AT-M4 is not
+authorized, so no such identity exists yet, so this slice must not expose a completion mutation at
+all. Dependency-unlock mechanics are still exercised through
+``PlanDelegationService.record_internal_result``, an internal scheduler seam that takes no principal
+and no correlation id and derives every attributed identity from the canonical dispatch row. When
+AT-M4 introduces authenticated agent ingress it will establish which unit is being answered and then
+call that same operation.
+
+Identifiers appearing on the read routes -- ``correlation_id``, ``assigned_principal_id``,
+``routing_decision_id`` -- are **identifiers, not credentials and not authorization tokens**. They
+exist so an operator can reconstruct a delegation, and nothing in this slice grants authority on the
+strength of holding one.
 
 Nothing here runs code, a shell, a test, a Git or GitHub operation, a deployment or an external
 request, and nothing here creates, reads or bypasses a HumanApproval.
@@ -42,8 +59,6 @@ from shared.sdk.agent_planning.models import (
 )
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.plan_delegation.models import (
-    DISPOSITIONS,
-    DispatchLineageError,
     ExecutionLineageCancelledError,
     ExecutionUnitStateError,
     PlanGraphInvalidError,
@@ -87,21 +102,6 @@ class ScheduleRequest(BaseModel):
     trace_id: str = Field(default="", max_length=200)
 
 
-class StepResultRequest(BaseModel):
-    """A dispatched step's terminal report, presented through its own dispatch."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    #: The principal the dispatch was issued to. Checked against the dispatch row, never trusted.
-    reported_by: str = Field(min_length=1)
-    #: The dispatch's own correlation id. A caller that never received the dispatch cannot produce
-    #: it, which is what keeps an arbitrary external assertion out of the graph.
-    correlation_id: str = Field(min_length=1)
-    disposition: str = Field(pattern="^(succeeded|failed)$")
-    #: A REFERENCE to evidence, never the evidence body.
-    result_ref: str | None = Field(default=None, max_length=500)
-
-
 def _unit_view(row: dict[str, Any]) -> dict[str, Any]:
     return {
         "execution_unit_id": str(row["execution_unit_id"]),
@@ -139,7 +139,12 @@ def _dispatch_view(row: dict[str, Any] | None) -> dict[str, Any] | None:
         "plan_revision_id": str(row["plan_revision_id"]),
         "step_key": row["step_key"],
         "assigned_principal_id": str(row["assigned_principal_id"]),
+        # The isolated delegation stream this command was staged on -- never a live agent input
+        # stream, and nothing consumes it until AT-M4.
         "target_stream": row["target_stream"],
+        # An IDENTIFIER, not a credential. It exists so a delegation can be reconstructed and
+        # so a future AT-M4 consumer can dedupe a redelivery; holding it grants nothing, and no
+        # operation in this slice accepts it as authority.
         "correlation_id": str(row["correlation_id"]),
         # NULL means the canonical dispatch exists but the transport has not carried it yet.
         "published_at": row.get("published_at"),
@@ -175,10 +180,6 @@ def _raise_domain(exc: Exception) -> None:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(exc, PlanLineageError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    if isinstance(exc, DispatchLineageError):
-        # The caller is asserting a result for a dispatch it does not hold. Not a bad request and
-        # not a conflict: it is not entitled to answer for this unit.
-        raise HTTPException(status_code=403, detail=str(exc)) from exc
     if isinstance(exc, ExecutionUnitStateError):
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     if isinstance(exc, (PlanGraphInvalidError, PlanStepDraftError)):
@@ -237,37 +238,6 @@ async def schedule_plan(plan_revision_id: str, payload: ScheduleRequest) -> dict
     except Exception as exc:  # noqa: BLE001 - re-raised unless it is a mapped domain failure
         _raise_domain(exc)
         raise
-
-
-@router.post("/execution-units/{execution_unit_id}/result")
-async def record_step_result(execution_unit_id: str, payload: StepResultRequest) -> dict:
-    """Record a dispatched step's terminal result and unlock what it was blocking.
-
-    Idempotent: reporting the same disposition twice returns the canonical unit with
-    ``outcome='replay'``. Reporting a DIFFERENT disposition for an already-terminal unit is a 409 --
-    a step that finished does not un-finish.
-
-    403 means the report did not come through this unit's own dispatch: the correlation id or the
-    reporting principal does not match the one canonical dispatch record.
-    """
-    if payload.disposition not in DISPOSITIONS:  # pragma: no cover - the pattern already gates it
-        raise HTTPException(status_code=422, detail=f"unknown disposition {payload.disposition!r}")
-    try:
-        applied = await _service().record_step_result(
-            execution_unit_id=execution_unit_id,
-            reported_by=payload.reported_by,
-            correlation_id=payload.correlation_id,
-            disposition=payload.disposition,
-            result_ref=payload.result_ref,
-        )
-    except Exception as exc:  # noqa: BLE001 - re-raised unless it is a mapped domain failure
-        _raise_domain(exc)
-        raise
-    return {
-        "outcome": applied["outcome"],
-        "unit": _unit_view(applied["unit"]),
-        "unblocked": [_unit_view(unit) for unit in applied["unblocked"]],
-    }
 
 
 @router.get("/plan-revisions/{plan_revision_id}/graph")

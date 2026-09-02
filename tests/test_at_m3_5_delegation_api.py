@@ -5,6 +5,12 @@ outside? A surface offering "set this unit ready", "assign this principal", "mar
 or "rebind this to another revision" would make readiness, capability routing and plan binding
 conventions rather than guarantees -- every one of them bypassable by one HTTP call.
 
+Since Independent Validation 1 that list includes COMPLETION. The removed ``POST .../result`` route
+authenticated on a ``correlation_id`` and a ``reported_by`` that these same read routes hand out,
+so any client that could read a graph could terminalize its steps and unlock their dependents.
+Identifiers are not credentials. AT-M4 owns the authenticated runtime identity a real completion
+ingress needs and is not authorized, so this slice exposes no completion mutation at all.
+
 The shape assertions here are therefore the point, and they are written to fail if a later slice
 adds such a route by accident.
 """
@@ -26,6 +32,7 @@ import plan_delegation_api  # noqa: E402
 from tests.plan_delegation_fixtures import (  # noqa: E402
     UNSERVED_PLAN,
     cancel_primary_work_item,
+    complete_unit,
     scenario,
     supersede,
 )
@@ -55,13 +62,48 @@ def test_the_surface_is_append_only():
     assert methods <= {"GET", "POST"}
 
 
-def test_there_are_exactly_three_write_routes_and_each_is_a_whole_command():
+def test_there_are_exactly_two_write_routes_and_each_is_a_whole_command():
     writes = [path for path, methods in _routes() if "POST" in methods]
     assert writes == [
-        "/plan-delegation/execution-units/{execution_unit_id}/result",
         "/plan-delegation/plan-revisions/{plan_revision_id}/materialize",
         "/plan-delegation/plan-revisions/{plan_revision_id}/schedule",
     ]
+
+
+def test_there_is_no_public_completion_mutation_at_all():
+    """The Validation 1 defect, asserted as an absence rather than as a stricter check.
+
+    No route may terminalize an execution unit, however it is spelled. A check on a caller-supplied
+    identifier would not do: every identifier this surface could check is one it also publishes.
+    """
+    paths = " ".join(path for path, _ in _routes())
+    for forbidden in ("result", "complete", "completion", "finish", "report", "callback", "ack"):
+        assert forbidden not in paths, forbidden
+    assert not hasattr(plan_delegation_api, "StepResultRequest")
+    assert not hasattr(plan_delegation_api, "record_step_result")
+
+
+def test_no_route_handler_accepts_a_principal_or_a_correlation_id():
+    """Nothing on this surface can be told who did something, or which dispatch is being answered."""
+    import inspect
+
+    for name, obj in vars(plan_delegation_api).items():
+        if not (inspect.isclass(obj) and hasattr(obj, "model_fields")):
+            continue
+        fields = set(obj.model_fields)
+        for forbidden in ("reported_by", "correlation_id", "assigned_principal_id", "principal_id"):
+            assert forbidden not in fields, f"{name} accepts {forbidden}"
+
+
+def test_the_internal_completion_seam_is_not_reachable_from_this_module():
+    """It exists on the service, deliberately below the HTTP boundary."""
+    from shared.sdk.plan_delegation.service import PlanDelegationService
+
+    assert hasattr(PlanDelegationService, "record_internal_result")
+    source = (ROOT / "apps" / "orchestrator" / "src" / "plan_delegation_api.py").read_text(
+        encoding="utf-8"
+    )
+    assert "record_internal_result(" not in source
 
 
 def test_no_route_can_reach_past_the_schedulers_invariants():
@@ -99,18 +141,6 @@ def test_a_caller_still_sending_a_plan_is_told_so_rather_than_silently_ignored()
     )
     assert response.status_code == 422
     assert "plan" in response.text
-
-
-def test_a_result_must_present_the_dispatch_correlation_id():
-    fields = set(plan_delegation_api.StepResultRequest.model_fields)
-    assert "correlation_id" in fields and "reported_by" in fields
-    assert plan_delegation_api.StepResultRequest.model_config["extra"] == "forbid"
-
-
-def test_a_result_body_is_a_reference_never_the_evidence_itself():
-    fields = set(plan_delegation_api.StepResultRequest.model_fields)
-    for forbidden in ("result", "output", "artifact", "logs", "diff", "stdout"):
-        assert forbidden not in fields, forbidden
 
 
 # --- end to end against a real database ------------------------------------------------------------
@@ -154,17 +184,17 @@ async def test_the_full_command_sequence_works_over_http():
     assert unit["routing_decision_id"]
     assert unit["dispatch"]["plan_revision_id"] == case["plan_revision_id"]
 
-    reported = client.post(
-        f"/plan-delegation/execution-units/{acted[0]['execution_unit_id']}/result",
-        json={
-            "reported_by": unit["dispatch"]["assigned_principal_id"],
-            "correlation_id": unit["dispatch"]["correlation_id"],
-            "disposition": "succeeded",
-            "result_ref": "artifact://design-note",
-        },
-    )
-    assert reported.status_code == 200
-    assert [u["step_key"] for u in reported.json()["unblocked"]] == ["build"]
+    # The dispatch is staged on the ISOLATED delegation namespace, never on the agent's own
+    # live input stream.
+    assert unit["dispatch"]["target_stream"] == "stream.plan_delegation.design-review-agent"
+
+    # Completion is not on this surface. It happens through the internal seam, which takes no
+    # principal and no correlation id.
+    reported = await complete_unit(acted[0]["execution_unit_id"])
+    assert [u["step_key"] for u in reported["unblocked"]] == ["build"]
+
+    after = client.get(f"/plan-delegation/execution-units/{acted[0]['execution_unit_id']}").json()
+    assert after["state"] == "completed"
 
 
 @pytest.mark.asyncio
@@ -213,7 +243,13 @@ async def test_a_cancelled_execution_lineage_is_a_409():
 
 
 @pytest.mark.asyncio
-async def test_a_result_from_the_wrong_correlation_id_is_a_403():
+async def test_a_client_holding_the_real_identifiers_still_cannot_complete_a_step():
+    """The Validation 1 attack, run end to end against the remediated surface.
+
+    The caller reads the graph, obtains the genuine correlation id and the genuine assigned
+    principal -- the exact pair the removed route would have accepted -- and has nowhere to send
+    them. Every plausible spelling of the endpoint 404s, and the unit stays dispatched.
+    """
     case = await scenario()
     client = _client()
     client.post(
@@ -226,15 +262,22 @@ async def test_a_result_from_the_wrong_correlation_id_is_a_403():
     unit_id = scheduled["results"][0]["execution_unit_id"]
     unit = client.get(f"/plan-delegation/execution-units/{unit_id}").json()
 
-    response = client.post(
+    stolen = {
+        "reported_by": unit["dispatch"]["assigned_principal_id"],
+        "correlation_id": unit["dispatch"]["correlation_id"],
+        "disposition": "succeeded",
+    }
+    assert stolen["reported_by"] and stolen["correlation_id"]
+
+    for path in (
         f"/plan-delegation/execution-units/{unit_id}/result",
-        json={
-            "reported_by": unit["dispatch"]["assigned_principal_id"],
-            "correlation_id": str(uuid.uuid4()),
-            "disposition": "succeeded",
-        },
-    )
-    assert response.status_code == 403
+        f"/plan-delegation/execution-units/{unit_id}/complete",
+        f"/plan-delegation/execution-units/{unit_id}/completion",
+        f"/plan-delegation/execution-units/{unit_id}",
+    ):
+        assert client.post(path, json=stolen).status_code in (404, 405)
+
+    assert client.get(f"/plan-delegation/execution-units/{unit_id}").json()["state"] == "dispatched"
 
 
 @pytest.mark.asyncio

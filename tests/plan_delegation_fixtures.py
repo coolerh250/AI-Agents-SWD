@@ -227,14 +227,54 @@ class RecordingBus:
     def dispatches(self) -> list[dict[str, Any]]:
         return [e for _, e in self.published if e.get("event") == "plan_step.dispatched"]
 
+    def streams(self) -> set[str]:
+        return {stream for stream, _ in self.published}
+
+
+class AuditRecorder:
+    """Captures what the delegation runtime claims in the audit chain.
+
+    The audit record has to say what DURABLY happened, not how many network calls were made, so
+    counting these events is how "one canonical dispatch success per canonical dispatch" is
+    asserted under a concurrent publish race.
+    """
+
+    def __init__(self) -> None:
+        self.events: list[dict[str, Any]] = []
+
+    def build_audit_event(self, **kwargs: Any) -> dict[str, Any]:
+        return dict(kwargs)
+
+    async def write_audit_event(self, event: dict[str, Any]) -> str:
+        self.events.append(event)
+        return f"audit-{len(self.events)}"
+
+    def of_type(self, decision_type: str) -> list[dict[str, Any]]:
+        return [e for e in self.events if e.get("decision_type") == decision_type]
+
+
+async def complete_unit(unit_id: Any, disposition: str = "succeeded") -> dict[str, Any]:
+    """Finish a dispatched unit through the INTERNAL seam.
+
+    There is no public completion route to call, and this operation takes no principal and no
+    correlation id -- every attributed identity is read from the canonical dispatch row.
+    """
+    from shared.sdk.plan_delegation.service import PlanDelegationService
+
+    return await PlanDelegationService().record_internal_result(
+        execution_unit_id=str(unit_id), disposition=disposition
+    )
+
 
 __all__ = [
     "CHAIN_PLAN",
     "DEFAULT_TEAM",
     "FAN_IN_PLAN",
+    "AuditRecorder",
     "RecordingBus",
     "UNSERVED_PLAN",
     "cancel_primary_work_item",
+    "complete_unit",
     "scenario",
     "store_or_skip",
     "supersede",

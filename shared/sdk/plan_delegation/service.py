@@ -300,11 +300,24 @@ class PlanDelegationService:
         dispatch: dict[str, Any],
         trace_id: str,
     ) -> bool:
-        """Put the canonical dispatch on the SELECTED agent's own stream.
+        """Stage the canonical dispatch on the selected agent's ISOLATED delegation stream.
 
-        The destination comes from the routing decision, never from a constant: change the team and
-        the same plan step goes somewhere else. ``published_at`` is stamped only after the broker
-        accepted it, so an unpublished dispatch stays visible to the next pass.
+        The destination is still a function of who the router chose -- change the team and the same
+        plan step goes somewhere else -- but it is derived from the winner's ``agent_key`` rather
+        than being the winner's own live ``transport_stream``. Those streams have real consumers,
+        and a ``plan_step.dispatched`` envelope landing on one would reach ``StreamAgent.handle()``:
+        AT-M4 execution started by a stream name. See ``DELEGATION_STREAM_PREFIX``.
+
+        ``published_at`` is stamped only after the broker accepted the message, so an unpublished
+        dispatch stays visible to the next pass.
+
+        **The audit event follows the stamp, not the publish.** Several workers may put a copy of
+        the same canonical dispatch on the wire -- that is the at-least-once transport working -- and
+        each successful ``XADD`` is a delivery ATTEMPT, not a second dispatch. Only the worker whose
+        compare-and-swap actually moves ``published_at`` from NULL to a timestamp emits the canonical
+        dispatch-success event, so the audit chain records one success per durable dispatch rather
+        than one per network call. Auditing every publish would make the record say the team handed
+        the step over three times when it handed it over once.
         """
         lineage = await self.store.get_execution_lineage(unit["goal_id"])
         if lineage is None:  # pragma: no cover - a unit cannot outlive its Goal's lineage row
@@ -324,7 +337,9 @@ class PlanDelegationService:
         )
         if not await self._publish(dispatch["target_stream"], envelope):
             return False
-        await self.store.mark_dispatch_published(unit["execution_unit_id"])
+        # Write-once: exactly one contender wins this, however many published a copy.
+        if not await self.store.mark_dispatch_published(unit["execution_unit_id"]):
+            return True
         await self._audit(
             delegation_events.AUDIT_UNIT_DISPATCHED,
             f"step {unit['step_key']!r} of plan revision {unit['plan_revision_id']} dispatched to "
@@ -344,28 +359,37 @@ class PlanDelegationService:
 
     # --- completion --------------------------------------------------------------------------------
 
-    async def record_step_result(
+    async def record_internal_result(
         self,
         *,
         execution_unit_id: str,
-        reported_by: str,
-        correlation_id: str,
         disposition: str,
-        result_ref: str | None = None,
+        evidence_ref: str | None = None,
     ) -> dict[str, Any]:
-        """Apply a dispatched step's terminal result and unlock whatever it was blocking.
+        """INTERNAL scheduler seam: apply a mock result and unlock whatever it was blocking.
 
-        The caller must present the dispatch's own correlation id and the principal it was issued
-        to. This is the internal completion seam AT-M4 will fill with a real Run result; until then
-        it is the only way a unit reaches a terminal state, and it is not a way for an arbitrary
-        caller to assert one.
+        Not reachable over HTTP, and deliberately so. AT-M4 is not authorized, so no authenticated
+        runtime-agent identity exists yet; a public completion mutation would therefore have had to
+        authenticate on identifiers -- ``reported_by`` and ``correlation_id`` -- that the read
+        surface hands out. Identifiers are not credentials, and a check against a value the caller
+        can look up is not a check. The route is gone and the inputs are gone with it.
+
+        What remains is this: the caller says WHICH unit finished and HOW, and every identity the
+        record is attributed to -- assigned principal, correlation id, plan revision, step -- is read
+        from that unit's own canonical dispatch row. Impersonation is unrepresentable rather than
+        detected.
+
+        ``evidence_ref`` is a REFERENCE to a result, never a result body.
+
+        AT-M4 owns the authenticated agent/runtime completion boundary. When it exists, it
+        establishes which unit is being answered and then calls this; it does not replace it. This
+        remediation deliberately implements no part of that boundary -- no mTLS, no JWT, no API key,
+        no signed callback, no bearer token.
         """
         applied = await self.store.record_result(
             execution_unit_id=execution_unit_id,
-            reported_by=reported_by,
-            correlation_id=correlation_id,
             disposition=disposition,
-            result_ref=result_ref,
+            result_ref=evidence_ref,
         )
         unit = applied["unit"]
         if applied["outcome"] == "recorded":
@@ -379,7 +403,12 @@ class PlanDelegationService:
                     "plan_revision_id": str(unit["plan_revision_id"]),
                     "step_key": unit["step_key"],
                     "execution_unit_id": str(unit["execution_unit_id"]),
-                    "reported_by": str(reported_by),
+                    # Read from the canonical dispatch, never from the caller.
+                    "assigned_principal_id": (
+                        str(unit["assigned_principal_id"])
+                        if unit["assigned_principal_id"]
+                        else None
+                    ),
                     "unblocked_step_keys": [u["step_key"] for u in applied["unblocked"]],
                 },
             )

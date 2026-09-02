@@ -62,12 +62,9 @@ async def _materialize(case, service=None) -> dict:
 
 
 async def _complete(case, unit, disposition="succeeded"):
-    dispatch = await case["store"].get_dispatch(unit["execution_unit_id"])
-    return await _service().record_step_result(
-        execution_unit_id=str(unit["execution_unit_id"]),
-        reported_by=str(dispatch["assigned_principal_id"]),
-        correlation_id=str(dispatch["correlation_id"]),
-        disposition=disposition,
+    """Finish a unit through the INTERNAL seam -- no principal, no correlation id, no HTTP."""
+    return await _service().record_internal_result(
+        execution_unit_id=str(unit["execution_unit_id"]), disposition=disposition
     )
 
 
@@ -358,7 +355,10 @@ class TestAssignment:
 
         acted = [r for r in outcome["results"] if r["outcome"] == "dispatched"]
         assert len(acted) == 1 and acted[0]["step_key"] == "design"
-        assert acted[0]["target_stream"] == "stream.design_review"
+        # The ISOLATED delegation stream for the selected agent -- never that agent's own live
+        # input stream, which a StreamAgent consumes and would execute against.
+        assert acted[0]["target_stream"] == "stream.plan_delegation.design-review-agent"
+        assert acted[0]["target_stream"] != "stream.design_review"
         assert acted[0]["published"] is True
 
         units = await units_by_step(case["store"], case["plan_revision_id"])
@@ -645,7 +645,37 @@ class TestDependencyUnlock:
 
 
 class TestCompletionAuthority:
-    async def test_a_result_without_the_dispatch_correlation_id_is_refused(self):
+    """Identity is READ from the canonical dispatch. There is nothing for a caller to assert.
+
+    The earlier shape took ``reported_by`` and ``correlation_id`` and checked them against the
+    dispatch row. Both are returned by the read surface, so the check was a lookup rather than an
+    authorization, and any client able to read the graph could terminalize any dispatched step.
+    Independent Validation 1 called that a forgeable completion authority and it was right. The
+    parameters are gone, and with them the public route -- so the assertions below are about the
+    ABSENCE of an input, which is the only version of this that cannot be got wrong.
+    """
+
+    async def test_the_internal_result_operation_accepts_no_identity_from_its_caller(self):
+        import inspect
+
+        from shared.sdk.plan_delegation.service import PlanDelegationService
+        from shared.sdk.plan_delegation.store import PlanDelegationStore
+
+        for func in (
+            PlanDelegationService.record_internal_result,
+            PlanDelegationStore.record_result,
+        ):
+            params = set(inspect.signature(func).parameters)
+            for forbidden in (
+                "reported_by",
+                "assigned_principal_id",
+                "correlation_id",
+                "plan_revision_id",
+                "principal_id",
+            ):
+                assert forbidden not in params, f"{func.__qualname__} still accepts {forbidden}"
+
+    async def test_the_recorded_identity_comes_from_the_canonical_dispatch_row(self):
         case = await scenario()
         await _materialize(case)
         await _service(RecordingBus()).schedule_ready_work(
@@ -654,52 +684,41 @@ class TestCompletionAuthority:
         units = await units_by_step(case["store"], case["plan_revision_id"])
         dispatch = await case["store"].get_dispatch(units["design"]["execution_unit_id"])
 
-        with pytest.raises(DispatchLineageError, match="correlation id"):
-            await _service().record_step_result(
-                execution_unit_id=str(units["design"]["execution_unit_id"]),
-                reported_by=str(dispatch["assigned_principal_id"]),
-                correlation_id=str(uuid.uuid4()),
-                disposition="succeeded",
-            )
-        units = await units_by_step(case["store"], case["plan_revision_id"])
-        assert units["design"]["state"] == UNIT_DISPATCHED
-
-    async def test_a_result_from_a_principal_the_step_was_not_dispatched_to_is_refused(self):
-        case = await scenario()
-        await _materialize(case)
-        await _service(RecordingBus()).schedule_ready_work(
-            plan_revision_id=case["plan_revision_id"]
-        )
-        units = await units_by_step(case["store"], case["plan_revision_id"])
-        dispatch = await case["store"].get_dispatch(units["design"]["execution_unit_id"])
+        await _complete(case, units["design"])
 
         conn = await case["store"]._connect()
         try:
-            impostor = await conn.fetchval(
-                "INSERT INTO actor_principals (principal_type,display_name) "
-                "VALUES ('runtime_agent','impostor') RETURNING principal_id"
+            event = await conn.fetchrow(
+                """
+                SELECT actor, correlation_id FROM work_item_events
+                WHERE work_item_id=$1 AND event_type='plan_step.result_recorded'
+                """,
+                units["design"]["work_item_id"],
             )
         finally:
             await conn.close()
-
-        with pytest.raises(DispatchLineageError, match="another principal"):
-            await _service().record_step_result(
-                execution_unit_id=str(units["design"]["execution_unit_id"]),
-                reported_by=str(impostor),
-                correlation_id=str(dispatch["correlation_id"]),
-                disposition="succeeded",
-            )
+        # Both were read from the dispatch, not supplied: there was no way to supply them.
+        assert event["actor"] == str(dispatch["assigned_principal_id"])
+        assert event["correlation_id"] == str(dispatch["correlation_id"])
 
     async def test_a_result_for_a_step_that_was_never_dispatched_is_refused(self):
         case = await scenario()
         result = await _materialize(case)
         design = next(u for u in result["units"] if u["step_key"] == "design")
         with pytest.raises(DispatchLineageError, match="never handed over"):
-            await _service().record_step_result(
-                execution_unit_id=str(design["execution_unit_id"]),
-                reported_by=case["author"],
-                correlation_id=str(uuid.uuid4()),
-                disposition="succeeded",
+            await _service().record_internal_result(
+                execution_unit_id=str(design["execution_unit_id"]), disposition="succeeded"
+            )
+
+    async def test_a_blocked_step_cannot_be_completed_ahead_of_its_dependency(self):
+        """Completion before dispatch fails, which is what keeps the DAG from being short-circuited
+        by whoever can name a unit id."""
+        case = await scenario()
+        result = await _materialize(case)
+        build = next(u for u in result["units"] if u["step_key"] == "build")
+        with pytest.raises(DispatchLineageError, match="never handed over"):
+            await _service().record_internal_result(
+                execution_unit_id=str(build["execution_unit_id"]), disposition="succeeded"
             )
 
     async def test_reporting_the_same_result_twice_replays_rather_than_applying_twice(self):
