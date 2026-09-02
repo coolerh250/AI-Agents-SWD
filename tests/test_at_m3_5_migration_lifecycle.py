@@ -358,6 +358,18 @@ async def test_no_supported_sequence_reaches_an_empty_schema_with_orphaned_work_
 
 
 def test_no_canonical_migration_001_through_041_was_changed_by_this_slice():
+    """AT-M3.5 owns 042 and touched nothing before it.
+
+    Amended by AT-M3.6A, which adds 043. The original asserted the changed set was EXACTLY the two
+    042 files, which is a stronger claim than the test's own name makes: it also said "and no later
+    migration exists anywhere in the repository", so every future slice's first migration failed an
+    AT-M3.5 test. That is the same defect AT-M3.4's numbering assertion had, amended in 72b7a28 for
+    the same reason -- a repository-wide claim living inside a slice-scoped file.
+
+    What this test defends is what it is called: that AT-M3.5 changed no canonical migration in
+    001-041, and that it owns both of its own 042 files. Both are asserted directly now. No AT-M3.5
+    contract, schema, constraint, trigger or behaviour is touched.
+    """
     try:
         changed = subprocess.run(
             ["git", "diff", "--name-only", CANONICAL_MAIN, "--", "migrations/"],
@@ -372,10 +384,20 @@ def test_no_canonical_migration_001_through_041_was_changed_by_this_slice():
         pytest.skip("canonical main is not present in this checkout")
 
     touched = {line.strip() for line in changed.stdout.splitlines() if line.strip()}
-    assert touched == {
+
+    # The claim in the name: nothing at or below 041 moved.
+    canonical = {
+        path
+        for path in touched
+        if (name := path.split("/")[-1])[:3].isdigit() and int(name[:3]) <= 41
+    }
+    assert canonical == set(), canonical
+
+    # And AT-M3.5's own pair is present and unrenamed.
+    assert {
         "migrations/042_at_m3_5_plan_execution_graph.sql",
         "migrations/042_at_m3_5_plan_execution_graph_down.sql",
-    }, touched
+    } <= touched, touched
 
 
 def test_the_down_migration_refuses_before_it_drops_anything():
