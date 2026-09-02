@@ -19038,3 +19038,245 @@ AT-M3.2 currentness CAS all stand unchanged.
   capability-based assignment -> durable dispatch, and stops there: it still does not include real
   work execution. The product critical path advances to AT-M3.6A - Observability / Read Surface,
   which is authorized under AT-D14 and not started here.
+
+## Step AT-M3.6A-OBSERVABILITY-READ-SURFACE-1 - The Autonomous Runtime as a Coherent, Read-Only Product Model (IMPLEMENTED)
+
+**Status: implementation complete, awaiting Independent Validation 1. Branch
+`at-m3.6a-observability-read-surface-1`, branched from exact canonical main `f3a85af`, not merged.
+`origin/main` unchanged at `f3a85af`.**
+
+- **What this slice adds, and what it deliberately cannot.** It makes the lineage the AT-M2 and
+  AT-M3.1-3.5 slices already produce legible in one place: Goal -> Project -> primary WorkItem ->
+  Team -> Discussion -> TeamDecision -> accepted PlanRevision -> execution graph -> step ->
+  assignment/routing -> dispatch -> current state, blocker and evidence. It creates no autonomous
+  behaviour whatsoever. There is no POST, PUT, PATCH or DELETE anywhere in the slice, no assignment,
+  dispatch, completion, replay, retry, cancel, abort, approval, replan, materialization, provider
+  call or Redis publish, and no GET handler mutates canonical state.
+
+### Read strategy - one domain, extended, not a second one beside it
+
+- **`/operations/autonomy/*`, inside the existing `/operations` read domain.** `/operations` is
+  already this repository's canonical operational read surface: 379 routes live under it and the
+  Admin Console calls nothing else (`/operations/admin-console`, `/operations/metrics`,
+  `/operations/delivery`, `/operations/readiness`, `/operations/security`, ...). A `/observability`
+  root would have been two competing representations of one runtime, and the first question any
+  reader would then have to answer is which of the two is right. Six GET routes were added; no
+  existing route, response schema or field was changed, renamed or removed, so an Admin Console
+  reading `/operations` today sees exactly what it saw before.
+- **The AT-M3 command surfaces are left where they are.** `/planning`, `/discussions`,
+  `/planning-decisions` and `/plan-delegation` own the writes and their own reads; this slice
+  duplicates none of them. What it adds is the thing none of them can give: the lineage ACROSS all
+  four, without a client joining six APIs by hand.
+- **No parallel domain model.** No Goal, WorkItem, TeamDecision, PlanRevision, ExecutionUnit,
+  Assignment or Dispatch is copied, cached or re-persisted. `shared/sdk/autonomy_observability/` is
+  a query projection over the canonical tables and nothing else.
+
+### The derived answers, and why none of them is stored
+
+- **`autonomy_phase`, `progress`, `blockers`, `next_work`, `is_current` and `dispatch_state` are
+  DERIVED on every read and persisted nowhere.** This is `planning-and-plan-revision-model.md` 11b
+  applied one slice later: currency has no stored form anywhere in this model, and a stored phase or
+  percent-complete column would have been the first - needing a writer, a race story and a repair
+  path the derived form does not. No observability table exists, and migration 043 adds none.
+- **Twelve phases with a documented, deterministic precedence**, first match wins, every rule
+  reading canonical rows: CANCELLED, TEAM_FORMATION (no team / no discussion), DELIBERATING,
+  BLOCKED (terminal non-converged discussion with no plan), PLANNING, BLOCKED (revision not
+  accepted), PLAN_ACCEPTED, then over the CURRENT graph only - COMPLETED, PARTIALLY_COMPLETED,
+  MATERIALIZED (no unit routed yet), DISPATCHED, READY_TO_DISPATCH, WAITING_FOR_CAPABILITY and
+  BLOCKED as the fall-through. Ambiguity is reported rather than hidden: every answer carries the
+  `reason` that selected it AND the `blocker_codes` that apply at the same time, so "DISPATCHED,
+  and one step nobody can take" stays legible instead of collapsing to one word.
+- **MATERIALIZED was corrected during implementation.** It first meant "every unit is blocked",
+  which is a state AT-M3.5 cannot produce - a validated plan is a DAG, so it always has a root, and
+  materialization leaves that root `ready`. It now means "no unit has been routed yet", derived from
+  the joint absence of `routing_decision_id` and `unavailable_reason`, which is both reachable and
+  the distinction an operator actually needs.
+- **Twelve blocker codes, every one derivable, and the canonical value travels with it.** Where a
+  canonical vocabulary already exists the code IS that value: `capability_unavailable` and
+  `requires_human_approval` are `plan_execution_units.unavailable_reason` verbatim. Where the
+  blocker is the ABSENCE of a row - `materialization_not_started` - `canonical_reason` is null
+  rather than a fabricated stored reason. `reasoning_failed` and `planner_unavailable` are mapped
+  from `discussion_sessions.stop_reason` with the exact stop_reason carried alongside.
+
+### Product truth the read model refuses to blur
+
+- **A dispatch is `DISPATCHED_TO_CONTROL_STREAM`, never `EXECUTING`.** The three possible values are
+  `NOT_DISPATCHED`, `CANONICAL_DISPATCH_RECORDED_UNPUBLISHED` and `DISPATCHED_TO_CONTROL_STREAM`;
+  none of them can say "executing". Every dispatch view carries the caveat in the payload, so a UI
+  cannot render "dispatched" as "running" by omission. The AT-M3.5 namespace still has no consumer.
+- **Every terminal unit and every progress block carries
+  `execution_mode: internal_control_plane_simulation`.** AT-M4 does not exist and
+  `record_internal_result` is an internal seam with no public route, so no completion this surface
+  can see is a real agent execution. The field is mandatory rather than optional precisely because
+  omitting it is how a mocked completion becomes "agent execution completed" on a screen.
+- **`published_at` is transport, not progress.** The completion formula is stated in the payload -
+  `round(100 * completed / total_units, 1)` - and a dispatched unit contributes ZERO. An empty graph
+  returns `null` rather than `0.0`, because "no graph" and "a graph with nothing done" are different
+  facts.
+- **Current-plan progress excludes historical work entirely.** A Goal replanned after completing a
+  step under revision N reports `total_units: 0` for the un-materialized successor and reports N's
+  completed step under `historical_execution_graphs`, labelled `is_current: false` with its own
+  state counts and canonical/published dispatch counts.
+- **A superseded revision's graph is served in full and marked `HISTORICAL_SUPERSEDED`**, with
+  `superseded_by_revision_id`. Its finished units stay finished, its dispatches stay bound to the
+  revision that authorized them, and its unfinished units carry a `stale_plan` blocker while its
+  terminal ones do not. History is never rewritten to look current, and never hidden because
+  something newer exists.
+
+### Scope fails closed, by join rather than by filter
+
+- **Every lookup resolves through canonical FK lineage.** A dependency edge is accepted only when
+  BOTH endpoints belong to the revision being read - without the second predicate,
+  `project_work_item_dependencies` is a project-wide table and another revision's unit could be
+  reported as this graph's topology. Reasoning is reached through the discussion's own `thread_id`.
+  Nothing joins on a title, a description, an agent display name or step prose.
+- **The Goal timeline's scope is assembled from the Goal's OWN rows.** The AT-M3 slices do not all
+  stamp `goal_id` into `artifact_refs` - the delegation events carry `plan_revision_id` and
+  `execution_unit_id` instead - so a goal_id-only filter would have silently dropped every
+  assignment and dispatch event. The probe set is built from `plan_revisions WHERE goal_id=$1` and
+  `discussion_sessions WHERE goal_id=$1`, so another Project's identifier is never in it. Each
+  entry's cross-entity references are additionally validated against this Goal's own id sets and
+  reported only when they resolve.
+- **Audit is evidence, not authority**, and says so in the payload. Nothing is synthesised from
+  current state: an event that was never written produces no entry, so a gap is a real gap.
+  Ordering is `created_at ASC, audit_id ASC` - the UUID primary key is the stable secondary key, so
+  events sharing a timestamp cannot be duplicated or skipped across a page boundary.
+
+### Information boundary
+
+- **Reasoning observability exposes operational metadata only**: verb, provider name and mode,
+  status, attempt, round, timing, token counts, sanitized failure reason, artifact TYPE, and the
+  turn each attempt belonged to. `reasoning_invocations.artifact` is NOT selected - it is AT-M3.4's
+  durable recovery record, and exposing it here would make this endpoint a second business surface
+  for a decision that already has one. The business artifact is read through TeamMessage, the
+  planning candidate and PlanRevision.
+- **No prompt, completion, scratchpad, hidden instruction, token trace or CoT exists in these
+  columns to expose** - AT-D03 R8 / INV-04 keeps them out of the schema. `attempt_token`, AT-M3.4's
+  lease-ownership value, is deliberately not selected either.
+- **Routing explainability is a deterministic rule, not model reasoning.** `candidates_considered`
+  is the recorded AT-M2 evidence: who was looked at, who was eligible, what each ineligible member
+  was missing, and why the winner won. `preferred_role_is_a_filter` is reported as `false` because
+  the plan's role hint never filters and never assigns.
+- **The HumanApproval boundary is read and never touched.** A production-effect capability shows
+  `referred: true` with the canonical `requires_human_approval` reason and `approval_record: null`,
+  because AT-M3.5 creates no approval record and inventing an approval state would be a fiction.
+
+### Migration
+
+- **`migrations/043_at_m3_6a_audit_timeline_index.sql` - one index, and nothing else.** No table,
+  column, constraint, trigger, function, view or materialized view. Numbering derived from canonical
+  main, which ends at 042.
+- **The need was measured, not assumed.** On a real PostgreSQL with 200,243 `audit_logs` rows,
+  EXPLAIN (ANALYZE, BUFFERS) for one bounded timeline page: before, `Parallel Seq Scan` cost 6781.81,
+  5,516 shared buffers, 27.062 ms; after, `Bitmap Index Scan` cost 428.72, 23 shared buffers,
+  0.033 ms. That is ~240x fewer buffers for one operator page view, on an append-only table that
+  only grows.
+- **It is the only index added, because it is the only one that was needed.** Every other
+  high-value query already resolves through an existing index, confirmed by EXPLAIN ANALYZE:
+  units by revision in step order (`uq_peu_revision_step`, index-ordered rather than sorted),
+  dependency edges (`idx_peu_work_item` + `uq_project_dep_pair`, with Memoize), the current revision
+  of a Goal (`idx_plan_revisions_goal` + `uq_plan_revisions_one_successor` anti-join), reasoning by
+  thread (`idx_reasoning_invocations_thread`).
+- **GIN / `jsonb_path_ops` because the probe is containment over several different KEYS.** Cost
+  stated rather than glossed: 21 MB against a 42 MB table in the worst case where every row carried
+  indexable keys. Not created CONCURRENTLY, because every migration here is one BEGIN/COMMIT and
+  this is a non-production database. UP / DOWN / UP / UP is clean, the whole schema is fingerprinted
+  around it, and the DOWN is unconditional - an index holds no information the table does not, so
+  dropping it costs query speed and nothing else.
+
+### Query efficiency
+
+- **One query per collection, and no N+1 anywhere.** The unit read LEFT JOINs the work item, the
+  assigned principal, the AT-M2 routing decision and the canonical dispatch in a single statement -
+  a per-unit follow-up is exactly the N+1 this endpoint exists to spare its callers, and a UI
+  rendering a fifty-step plan would otherwise issue two hundred queries to draw one screen. Graph
+  state counts are one grouped query for all of a Goal's graphs, never one per graph. `unlocks` is
+  inverted from the same edge set in memory rather than by a second query.
+- **`AutonomyReadStore.session()` holds ONE connection across a composite read.** A Goal overview
+  asks roughly seventeen questions; every AT-M3 store connects per call, which is right for a
+  command issuing two or three queries and wrong for one page view issuing seventeen. The per-call
+  default is unchanged and the session is opt-in. It takes no BEGIN and sets no isolation level, so
+  the guarantee is stated rather than accidentally improved.
+- **Every collection is bounded**, capped at 500 with `limit`/`offset`, deterministic ordering, and
+  `total`/`has_more` reported. An absurd `limit` is capped by the store and rejected by the route
+  rather than honoured. No endpoint can return "every event ever".
+
+### Contract
+
+- **Explicit Pydantic response models on every route.** No raw database row dict is the public
+  contract: a column added to `plan_execution_units` tomorrow does not silently become part of this
+  API, and one removed fails at the contract rather than in a consumer. Fields distinguish
+  authoritative from derived from historical where the ambiguity matters (`is_current`,
+  `lineage_status`, `is_derived`, `authority`, `execution_mode`, `dispatch_state`,
+  `artifact_body_exposed`, `reference_scope_verified`).
+- **Entity-first, summary second.** Every block carries real identifiers a caller can follow to the
+  deeper read. The failure this ordering exists to correct is a product that showed aggregate
+  summaries while WorkItem identity, execution evidence and audit lineage stayed invisible.
+- **Partial state is a result, not a fault.** No discussion, a converged discussion with no
+  decision, an accepted plan with no graph, a graph with no assignment, a dispatch with no publish,
+  a cancelled lineage and a superseded graph all return 200 with the truth in them. 404 means an
+  identifier resolved to nothing; a malformed identifier is 422; a driver failure is 503 reporting
+  the exception TYPE only, never its message.
+
+### Evidence - real PostgreSQL, every state a team can be in
+
+- **72 AT-M3.6A tests pass** against a real PostgreSQL, built with the REAL upstream machinery: a
+  real project, a real AT-M2 team from the capability seed, a real AT-M3.3 discussion driven to a
+  genuine convergence, a real AT-M3.4 planning decision, real AT-M3.2 revisions through the
+  draft -> accepted transition, and real AT-M3.5 materialization, assignment, dispatch and internal
+  completion. Every prompt scenario A-K is covered, including the superseded-with-historical-work
+  case, the cancelled lineage, the capability-unavailable step, the failed unit that does not unlock
+  its dependent, and the planless Goal.
+- **Read-only proved by measurement, not asserted.** Row counts for twenty canonical tables PLUS
+  content digests for the seven with mutable columns are snapshotted, every endpoint is hit
+  repeatedly, and the snapshot is taken again: zero rows and zero content change, including
+  `updated_at`, `published_at` and `audit_ref`, which a COUNT would not have caught. Reading a graph
+  that still owes work does not perform that work; reading a stale lineage neither rebinds nor
+  completes it; reading writes no business audit event. The Redis event bus is replaced with a class
+  that raises on construction for the duration of a read, so "no Redis on the read path" is proved
+  by breaking it rather than by inspection.
+- **The read modules are parsed, not grepped**, to confirm every SQL literal is a SELECT: no INSERT,
+  UPDATE, DELETE, FOR UPDATE, DDL, NEXTVAL or advisory lock, and no `execute`/`executemany` call
+  anywhere in the store. Docstrings are excluded deliberately - these modules discuss at length the
+  writes they do not perform, and a text scan would have flagged their own explanation.
+- **The router is asserted to expose GET and nothing else**, no path may name a mutation, and the
+  module is asserted not to import an event bus, an audit client or any AT-M3 write service. Those
+  shape assertions are written to fail if a later slice adds such a route by accident.
+
+### Regression
+
+- **Full suite on the branch: 77 failed, 7,245 passed, 272 skipped.** Full suite on canonical main
+  `f3a85af` in the same runtime: 73 failed, 7,174 passed, 272 skipped. 71 additional tests pass and
+  no product test regressed.
+- **The 73 canonical-main failures are the known historical/meta set** - PCP control-plane tests,
+  step66 verifier/merge/branch-head checks, AT-M1 governance-range guards - reproduced identically.
+  Under AT-D18-R05 they are `NON-BLOCKING`: none reaches a production-authorization, human-approval,
+  external-model, secret-handling, destructive-action, audit-integrity or security-boundary control
+  exposed through the product API.
+- **The delta is a working-tree artifact of the same class**, not a product regression.
+  `test_no_runtime_files_changed` and the frozen-range verifiers assert `git diff --name-only HEAD`
+  contains no `apps/` or `migrations/` path; an uncommitted implementation branch necessarily
+  violates that, and the assertions pass again once the work is committed. They are historical
+  scope-freeze checks over ranges that closed long before AT-M3, and they carry no P0/P1 risk.
+- **`test_audit_timeline.py::test_workflow_timeline_includes_audit_timeline_field` fails on
+  canonical main and passes on the branch.** It is order- and data-dependent on shared `audit_logs`
+  state; it is recorded here rather than claimed as a fix, because nothing in this slice writes to
+  that table or to the workflow timeline it reads.
+- **No P0/P1 regression. No new product failure.**
+
+### Boundaries held
+
+- **No new runtime authority.** No table, no lifecycle, no state machine, no verifier, no exemption
+  registry, no authority registry, no canonical activation layer, no reconciliation daemon and no
+  governance mechanism of any kind was added. Observability derives; it does not become truth.
+- **PostgreSQL is the only source.** Redis is not consulted, not required and not on the read path.
+  "Not in Redis" is never read as "not dispatched", and "a message exists" is never read as "a
+  canonical dispatch happened" - `plan_execution_dispatches` and `published_at` are what is read.
+- **No AT-M4 execution, no AT-M3.6B, no live provider, no external network call, no GitHub, Slack,
+  Discord or SaaS request, no shell, no code edit, no Git write, no PR, no deployment and no tool
+  invocation.** HumanApproval is surfaced read-only and never requested, approved, rejected,
+  expired or mutated. Production `NOT AUTHORIZED`, `production_executed_true_count: 0`.
+- **No GOVERNANCE_DRIFT_ALERT was raised.** AT-D14 section 2 authorizes AT-M3.6A, AT-D22 section 4
+  confirms it still needs its own implementation report and validation pass, and
+  `AI_AGENTS_PM_STATE.md` records it as the next permitted stage requiring no new Product Owner
+  decision. This slice is exactly that work, at exactly that scope.
