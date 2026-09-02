@@ -18963,3 +18963,78 @@ AT-M3.2 currentness CAS all stand unchanged.
 - **AT-M3.5 Independent Validation 2 / 2 FINAL** on branch `at-m3.5-plan-driven-delegation-1`. Not
   merged, not deployed, no production action. `origin/main` remains `c9f6001`. If Validation 2
   materially fails, the next step is AT-M3.5 IMPLEMENTATION REBASELINE, not a Validation 3.
+
+## Step AT-M3.5-CANONICALIZATION-1 - Plan-driven Delegation Product Acceptance & Canonical Merge (CLOSED)
+
+**Status: AT-M3.5 PO ACCEPTED, canonically merged, CLOSED. Marker:
+`AT_M3_5_CANONICALIZATION_VERIFY: PASS`.**
+
+- **Source of truth recovered before anything was written.** `origin/main` was `c9f6001`, the
+  validated base, unchanged. `origin/at-m3.5-plan-driven-delegation-1` was exactly
+  `03ed5748fc5c63860ba76604e92c3682be49dc07` - the SHA AT-M3.5-INDEPENDENT-VALIDATION-2 passed
+  against, with no commit landed after it. The candidate descends from canonical main through seven
+  linear commits, and the working tree was clean. Fast-forward canonicalization was therefore still
+  valid, and no rebase question arose.
+- **AT-D22 records the acceptance.** The decision id was derived from the repository, not assumed:
+  the highest existing record is AT-D21, and no AT-D22 appeared anywhere in the tree. It names the
+  accepted capability list, the exact `implementation_end`, and the full validation chain -
+  Validation 1 FAIL with four blockers (forgeable public completion authority; dispatch colliding
+  with live agent input streams; migration 042's DOWN losing the plan-step mapping and so
+  permitting duplicate rematerialization; duplicate dispatch-success audit claims) ->
+  AT-M3.5-IMPLEMENTATION-REMEDIATION-1 -> Independent Validation 2 / 2 FINAL PASS. Validation 1 is
+  recorded as a FAIL and is not rewritten.
+- **`implementation_end` does not follow the branch tip.** The acceptance and reconciliation commit
+  lands on top of `03ed574` and is documentation; naming it would claim validation coverage the
+  docs commit never had. Both AT-D22 and the PM state say so in as many words.
+- **PM state reconciled, bounded.** Provenance moved to `03ed574` under
+  `AT-M3.5-CANONICALIZATION-1`, position advanced to AT-M3.6A, and section 5a gained the AT_M3_5
+  block plus its own `AT_M3_5_IMPLEMENTATION_END`. `AT_M3_5_THROUGH_AT_M3_6A` narrowed to
+  `AT_M3_6A`, the same narrowing `AT_M3_4_THROUGH_AT_M3_6A` underwent at the AT-M3.4
+  canonicalization, and `AT_M4: NOT AUTHORIZED` was added beside `AT_M3_6B` so the boundary after
+  the one AT-D14 declined to move is stated in the register rather than only in prose. A
+  duplicate-register-key scan was run before and after: 119 keys / 0 conflicts before, 127 keys /
+  0 conflicts after, and `RECONCILED_BY_STAGE` matches `CURRENT_STAGE`.
+- **Three non-blocking backlog items recorded, none remediated.** New: a privileged raw-SQL DELETE
+  of `goal_execution_lineage` can discard the plan-step mapping migration 042's fail-closed DOWN
+  exists to protect, and so reach the duplicate-rematerialization scenario by another route - P3 /
+  DB_HARDENING / OUTSIDE_PRODUCT_API_CONTRACT / NON_BLOCKING, since the product API exposes no such
+  path and reaching it requires direct database privilege. Carried forward unchanged from AT-D21:
+  the reasoning-artifact JSONB size bound and the PlanContent global step-count bound, both
+  PRE-M3.6B / PRODUCT_HARDENING / NON_BLOCKING.
+- **Post-validation diff verified docs-only before merging.** `03ed574` to the acceptance tip
+  touches `docs/decisions/`, `docs/governance/AI_AGENTS_PM_STATE.md` and `source/progress.md` and
+  nothing else. Zero bytes changed under `shared/`, `apps/`, `agents/`, `migrations/`, `infra/`,
+  `scripts/` or `tests/` - checked twice, once by changed-path inspection and once by comparing
+  each of those seven trees' object hashes between the two commits.
+- **Merge was fast-forward only.** No squash, no rebase, no force, no improvised merge commit.
+- **Bounded post-merge verification.** Migration 042 canonical and 001-041 byte-identical against
+  the pre-merge main; all four AT-M3.5 tables present with their identity constraints
+  (`uq_gel_primary_work_item`, `uq_peg_plan_revision`, `uq_peu_revision_step`, `uq_ped_correlation`)
+  and their freeze/append-only triggers; PlanStep resolving to a child `project_work_items` row
+  under one primary Goal WorkItem, with Task neither authoritative nor required and no Workflow/Run
+  entity added; materialization accepting only the accepted, current PlanRevision through AT-M3.2's
+  own `confirm_current_revision` compare-and-swap; the dependency DAG, readiness derivation,
+  capability-conjunction routing, `intended_owner_role` as preference only and the production-effect
+  HumanApproval referral all intact; `stream.plan_delegation.<agent_key>` the canonical transport
+  namespace with no legacy agent input stream receiving an M3.5 envelope and no runtime consumer
+  anywhere in the repository; no public completion mutation on any route, the internal seam deriving
+  identity from canonical dispatch state; one canonical PostgreSQL dispatch per unit with Redis
+  at-least-once duplicates carrying one correlation id; exactly one canonical dispatch-success audit
+  event per dispatch; migration 042's empty DOWN clean and its evidence-bearing DOWN failing closed
+  before the first DROP; stale-plan semantic B, cancellation and restart/replay unchanged; no AT-M4
+  execution path, no AT-M3.6B, no live provider, HumanApproval unchanged. 144 AT-M3.5 tests and a
+  1,316-test focused M3.5/M3.4/M3.3/M3.2/M3.1/M2/approval/audit selection pass, with the same two
+  pre-existing environmental failures reproduced identically on the pre-merge canonical main.
+- **Boundaries held.** No AT-M3.6A runtime, no AT-M3.6B, no AT-M4, no live M3.5 consumer, no
+  authenticated execution ingress, no auth framework or completion token, no DELETE-protection or
+  raw-SQL hardening, no artifact-size/step-count hardening, no P3 or PCP backlog remediation,
+  AT-D16/AT-D17 untouched and still noncanonical, AT-D18 Minimal Governance Kernel preserved.
+  Production `NOT AUTHORIZED`, AT-M3.6B `NOT AUTHORIZED`, AT-M4 `NOT AUTHORIZED`, no external call,
+  `production_executed_true_count: 0`. No verifier, registry, authority mechanism, exemption,
+  reconciliation daemon or canonical-activation mechanism was added.
+- **AT-M3.5 is now AUTHORIZED / IMPLEMENTED / INDEPENDENTLY VALIDATED / PO ACCEPTED / MERGED /
+  CANONICAL / CLOSED.** The autonomous product flow now runs Goal -> Team Discussion ->
+  TeamDecision -> accepted PlanRevision -> plan-driven materialization -> dependency DAG ->
+  capability-based assignment -> durable dispatch, and stops there: it still does not include real
+  work execution. The product critical path advances to AT-M3.6A - Observability / Read Surface,
+  which is authorized under AT-D14 and not started here.
