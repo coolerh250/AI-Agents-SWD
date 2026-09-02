@@ -1,10 +1,13 @@
 """Step AT-M3.5 -- plan-driven delegation runtime.
 
-Three commands, and deliberately only three:
+Two PUBLIC commands, and deliberately only two:
 
 ``materialize_accepted_plan``   an accepted, current PlanRevision becomes a durable execution graph
 ``schedule_ready_work``          ready steps acquire owners and become dispatched commands
-``record_step_result``           a dispatched step reports back, and unlocks what it was blocking
+
+plus one INTERNAL seam, reachable from the scheduler and from tests but from no HTTP route:
+
+``record_internal_result``       a dispatched step's mock result, applied to the graph
 
 There is no ``set_ready``, no ``assign_principal``, no ``mark_dispatched`` and no
 ``rebind_revision``. Every one of those would let a caller reach past the invariants the store
@@ -12,18 +15,28 @@ enforces -- readiness is derived from dependencies, ownership is decided by the 
 the live team, and a dispatch is bound to the revision that authorized it. A command that could
 override any of them would make the guarantee a convention.
 
+Completion is internal for the same reason, arrived at the hard way. It was public, guarded by a
+caller-supplied ``reported_by`` and ``correlation_id`` checked against the dispatch row -- and both
+values are published by the read surface, so the guard was a lookup rather than an authorization.
+AT-M4 owns the authenticated runtime-execution identity a real completion ingress needs; until it
+exists there is no honest public completion, so there is none. What remains takes no identity at
+all and reads every attributed value from the canonical dispatch.
+
 WHAT THIS LAYER DOES NOT DO, and cannot: it runs no code, no shell, no test, no Git operation, no
 GitHub call, no deployment and no external request. ``dispatch`` here means "agent X, this plan
-step is now yours" -- a structured work assignment on an internal stream. Performing the work is
-AT-M4, and nothing in this module could be given that capability without new imports, a new
-migration and a new decision.
+step is now yours" -- a structured work assignment staged on an ISOLATED internal stream that
+nothing consumes. Performing the work is AT-M4, and nothing in this module could be given that
+capability without new imports, a new migration and a new decision.
 
 TRANSPORT IS AT-LEAST-ONCE; CANONICAL STATE IS EXACTLY-ONCE. The dispatch row commits first and is
 published afterwards, because a Redis ``XADD`` cannot join a PostgreSQL transaction. A crash
 between the two leaves a canonical dispatch with ``published_at`` NULL, and the next schedule pass
 re-publishes THAT SAME dispatch -- same row, same correlation id -- rather than minting a second
 one. A consumer may therefore see one command twice and must dedupe on ``correlation_id``; it can
-never see two different commands for one step.
+never see two different commands for one step. The AUDIT record follows the durable state rather
+than the wire: only the worker whose compare-and-swap actually stamps ``published_at`` claims a
+dispatch success, so one canonical dispatch produces one success event however many copies of it
+reached the broker.
 
 Audit and events degrade gracefully, matching ``TeamService`` and ``PlanningService``: a missing
 audit sink must not stop work being delegated, and must not silently turn a recorded dispatch into

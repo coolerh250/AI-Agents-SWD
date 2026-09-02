@@ -18786,3 +18786,180 @@ stranding defect came to be written. Attempts are counted and audited separately
 
 - **AT-M3.5 Independent Validation 1** on branch `at-m3.5-plan-driven-delegation-1`. Not merged,
   not deployed, no production action. `origin/main` remains `c9f6001`.
+
+## Step AT-M3.5-IMPLEMENTATION-REMEDIATION-1 - Completion Boundary + Dispatch Isolation + Migration Safety + Audit Truth (IMPLEMENTED)
+
+**Status: the ONE bounded remediation after AT-M3.5 Independent Validation 1 = FAIL. Branch
+`at-m3.5-plan-driven-delegation-1`, continued from the validated candidate
+`147707a`, not merged. `origin/main` unchanged at `c9f6001`. Next is AT-M3.5 Independent
+Validation 2 / 2 FINAL; there is no Validation 3.**
+
+Four bounded defects, and only those four. The independently accepted architecture was not
+reopened: one primary autonomous WorkItem per Goal, PlanStep to child `project_work_items`, Task not
+an execution authority, PostgreSQL canonical and Redis transport, capability conjunction,
+`intended_owner_role` as preference, stale semantic B, cancellation by primary WorkItem, and the
+AT-M3.2 currentness CAS all stand unchanged.
+
+### A. Forgeable completion authority - the public mutation is removed, not hardened
+
+- **The defect.** `POST .../result` accepted a caller-supplied `reported_by` and `correlation_id`
+  and checked them against the canonical dispatch row. Both values are returned by this slice's own
+  read routes, so the check was a lookup, not an authorization: any client able to read a graph
+  could terminalize any dispatched step and unlock its dependents.
+- **What was NOT done.** Not hidden identifiers, not renamed fields, not a second guessable token.
+  Secrecy standing in for authority fails the first time a graph is rendered in an operator console,
+  and would have left the same defect wearing a disguise.
+- **What was done.** The route is gone. A real boundary needs an authenticated runtime-execution
+  identity; AT-M4 owns that and is not authorized, so this slice exposes no completion mutation at
+  all. The write surface is now exactly `materialize` and `schedule`.
+- **The internal seam that remains.** `PlanDelegationService.record_internal_result(execution_unit_id,
+  disposition, evidence_ref=None)`. It takes no principal and no correlation id -- the parameters
+  were removed from the service AND from `PlanDelegationStore.record_result`, so there is nothing to
+  forge. Assigned principal, correlation id, plan revision and step are all READ from the unit's own
+  canonical dispatch row. Impersonation is unrepresentable rather than detected, which is the same
+  correction AT-M3.4 made when it removed `plan` and `decided_by` from its finalize command.
+- **State safety is unchanged.** A unit still needs a canonical dispatch, still must be in
+  `dispatched`, duplicate completion still replays, a conflicting terminal disposition still fails
+  closed, and dependency unlock still happens exactly once.
+- **M4 boundary, recorded and deliberately not built.** No mTLS, no JWT, no API key, no signed
+  callback, no bearer token, no service-auth framework. AT-M4 must introduce a non-forgeable runtime
+  execution identity before exposing agent-originated completion; when it does, it establishes which
+  unit is being answered and then calls this same operation.
+- **Read surfaces still expose `correlation_id`, `assigned_principal_id` and `routing_decision_id`
+  for observability, and now say so in as many words: identifiers, not credentials, not
+  authorization tokens.** Nothing in the slice grants authority on the strength of holding one.
+
+### B. Dispatch collided with live agent streams - an isolated namespace
+
+- **The defect.** AT-M3.5 published `plan_step.dispatched` onto the selected agent's own
+  `transport_stream`: `stream.development`, `stream.qa`, `stream.design_review`. Those are not inert
+  names -- a `StreamAgent` subclass consumes each and calls `handle(payload)` unconditionally, and
+  the orchestrator's workflow-event consumer watches several of them too. An L3 coordination message
+  landing there is AT-M4 execution started by a stream name.
+- **The fix separates routing from transport, and only transport moves.** The AT-M2 router still
+  decides WHO from capability over the live team, and its answer -- including the agent's real
+  `transport_stream` -- is recorded unchanged in `agent_routing_decisions.selected_stream`. What
+  changed is WHERE the message is staged: `stream.plan_delegation.<agent_key>`.
+- **Keyed on `agent_key`, not role.** `development-agent` and `development-agent-autofix` share the
+  role `development` and are two different workers; a role-keyed namespace would put a command
+  addressed to one within the other's reach. `agent_key` is UNIQUE on `agent_profiles`.
+- **`delegation_stream_for` fails closed on an unusable key.** `agent_key` is a TEXT column and this
+  is the one place a database value becomes an addressable Redis key, so anything outside
+  `[A-Za-z0-9._-]{1,100}` raises rather than being escaped into a name that could collide.
+- **No consumer exists, by design, and that is asserted rather than asserted-in-prose.** A
+  repository-wide AST scan resolves every `input_stream = X` and every `consume_events` /
+  `consume_events_multi` first argument across `agents/`, `apps/`, `shared/`, `scripts/` and
+  `infra/`, resolving module-level `NAME = "stream.*"` constants from source rather than by
+  importing. It asserts the scan finds the known consumers first -- a scan that found nothing would
+  pass for the wrong reason -- and then that none of them is in the delegation namespace. A second
+  scan asserts no delegation stream literal appears anywhere outside
+  `shared/sdk/plan_delegation/` and `tests/`.
+- **The live half.** Against a real Redis, `XLEN` on every legacy agent stream is byte-identical
+  before and after a full schedule -> internal-complete -> schedule cycle, while the isolated stream
+  gains the command. The only consumer groups on a delegation stream are the disposable ones the
+  tests create. No real agent is started as a consumer anywhere.
+- **The envelope is unchanged** and still carries identifiers plus the step's own bounded contract,
+  with every external-effect flag false and no legacy `task_id`.
+
+### C. Migration 042 DOWN lost identity and permitted duplicate business work
+
+- **The defect, in full.** DOWN dropped the four AT-M3.5 tables and deliberately left the child
+  `project_work_items` and their dependency edges, on the reasoning that they belong to the
+  project's execution lineage. That reasoning is right for a ledger and wrong for a MAPPING: the
+  dropped tables were the only record of which work item is which plan step. DOWN -> UP ->
+  materialize the same accepted PlanRevision was therefore not a replay -- `uq_peu_revision_step`
+  had nothing left to collide with -- and produced a second full set of child work items and edges
+  for the same steps, undetectably.
+- **Neither repair was acceptable.** Deleting the work items on DOWN destroys execution-lineage rows
+  this slice does not own (and, once AT-M4 exists, the Runs and artifacts resolving to them).
+  Re-adopting orphans on UP reattaches work whose provenance was deleted -- the quiet reattachment
+  this model refuses everywhere else.
+- **So the sequence is removed rather than its end repaired.** DOWN now counts rows in all four
+  tables and `RAISE EXCEPTION`s if any exist, before the first DROP, with `ERRCODE =
+  restrict_violation`. The transaction rolls back and nothing changes. There is no force flag, no
+  override and no exemption: the only outcome is refuse-and-change-nothing. A non-production
+  environment that genuinely wants the schema gone can drop the database, which is honest about what
+  it costs.
+- **The empty case is untouched.** With all four tables empty there is no identity to lose, so
+  UP / DOWN / UP / UP on a fresh database is clean and re-runnable, and DOWN is safe to run twice.
+- **Verified against real PostgreSQL on throwaway databases**, each migrated from 001 so that
+  reversing a migration cannot disturb another test: DOWN after materialization raises; the schema,
+  graph, units, dispatches, goal lineage, child work items and edges all survive with identical
+  counts; re-materializing the same PlanRevision afterwards returns `created=false` with the same
+  graph id and creates zero additional work items or edges; and a direct query confirms zero
+  work items carrying this slice's metadata marker exist without a unit pointing at them.
+
+### D. Duplicate dispatch-success audit claims
+
+- **The defect.** Under concurrent schedulers several workers legitimately `XADD` the same canonical
+  dispatch, and each then emitted a successful `plan_step_dispatched` audit event. The audit chain
+  therefore said the team handed one step over three times.
+- **The fix uses a mechanism that already existed.** `mark_dispatch_published` is a write-once
+  compare-and-swap and already knows which caller first moved `published_at` from NULL to a
+  timestamp; its boolean was being discarded. The success event now follows that result. A worker
+  whose CAS loses publishes its copy and emits nothing.
+- **The semantics are stated rather than smoothed over.** A duplicate `XADD` is a delivery attempt,
+  not a second canonical dispatch. Under an 8-worker race against real Redis: PostgreSQL holds
+  1 dispatch row and 1 routing decision, Redis may hold 1..N messages, and the audit chain holds
+  exactly 1 canonical dispatch-success event -- all sharing one correlation identity. No PostgreSQL
+  row lock is held across an `XADD` to force a single message; AT-M3.4 refused that for the same
+  reason.
+- **Both publish crash windows re-tested.** Commit-then-die-before-`XADD`: the next pass republishes
+  the same row. `XADD`-then-die-before-the-stamp: the duplicate delivery happens, both copies carry
+  one correlation id, one DB row exists, and exactly one canonical success is audited once a caller
+  finally wins the stamp.
+
+### Forward contract recorded for AT-M4, not implemented
+
+- When AT-M4 introduces a real consumer it MUST dedupe on the canonical dispatch identity
+  (`correlation_id`, equivalently `execution_unit_id`) BEFORE any execution effect, because the
+  transport is at-least-once. No receiver and no dedupe framework is built here.
+
+### Tests
+
+- **144 AT-M3.5 tests pass** against real PostgreSQL 16 and an actual local Redis on the test host,
+  from a fresh database with all migrations applied in order. That includes two new suites:
+  `test_at_m3_5_transport_isolation.py` (static repository-wide scan plus routing-unchanged proofs)
+  and `test_at_m3_5_migration_lifecycle.py` (042 forwards and backwards on throwaway databases).
+- The completion group was rewritten from HTTP tests to internal-service tests: the absence of any
+  public completion route, the absence of identity parameters on both the service and the store
+  (asserted by signature inspection), the recorded identity matching the dispatch row, completion
+  before dispatch refused, duplicate completion replaying, conflicting terminal disposition
+  refused, A->B->C, fan-in, concurrent completion unlocking once, and historical completion of
+  already-dispatched work after supersession still permitted.
+- One test replays the Validation 1 attack end to end: a client reads the graph, obtains the genuine
+  correlation id and assigned principal, and has nowhere to send them -- every plausible spelling of
+  the endpoint 404s and the unit stays dispatched.
+- **Regression selection** (`at_m3 | at_m2 | agent_team | approval | audit | work_item |
+  project_planning | task_graph | dispatch | retry | deadletter | stream_agent`): **1316 passed,
+  32 skipped, 2 failed**, and both failures -- `test_at_d12_successor_freeze_amendment` and
+  `test_audit_timeline` -- reproduce identically on canonical main under the same database. The set
+  failing here but passing on canonical main is empty.
+- `test_no_canonical_migration_001_through_041_was_changed_by_this_slice` diffs `migrations/`
+  against canonical main and asserts the only changed files are 042 and its down.
+
+### Preserved, and deliberately not reopened
+
+- The AT-M3.4 numbering-test amendment from the previous round is untouched; Validation 1 accepted
+  it as P3 / HISTORICAL TEST MAINTENANCE / SEMANTICS-PRESERVING / NON_BLOCKING.
+- Capability conjunction, project membership, active/disabled eligibility, `intended_owner_role`
+  preference, production-effect HumanApproval referral, AT-M2 routing authority and
+  `unavailable_reason` semantics are all unchanged -- only the transport destination after selection
+  moved.
+- Materialization, `goal_execution_lineage`, the dependency tables, the currentness CAS, DAG
+  validation, ready/blocked derivation, root replay and 8-worker materialization idempotency are
+  unchanged apart from the DOWN safety above.
+
+### Boundaries held
+
+- No public completion mutation. No authenticated-agent ingress invented. No auth framework, token
+  or signed callback. No live consumer for the M3.5 namespace. No AT-M4 execution path. No AT-M3.6B.
+  No external network or provider. No production action. No HumanApproval created, read or
+  bypassed. No Task pipeline receives an M3.5 envelope. No unrelated P3/PCP backlog work. No
+  governance machinery added. `production_executed_true_count: 0`.
+
+### Next
+
+- **AT-M3.5 Independent Validation 2 / 2 FINAL** on branch `at-m3.5-plan-driven-delegation-1`. Not
+  merged, not deployed, no production action. `origin/main` remains `c9f6001`. If Validation 2
+  materially fails, the next step is AT-M3.5 IMPLEMENTATION REBASELINE, not a Validation 3.
