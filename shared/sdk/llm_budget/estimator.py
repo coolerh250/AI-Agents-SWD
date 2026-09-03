@@ -37,6 +37,24 @@ DEFAULT_PRICING: dict[str, dict[str, dict[str, float]]] = {
         "claude-3-sonnet": {"prompt": 0.003, "completion": 0.015},
         "claude-3-haiku": {"prompt": 0.00025, "completion": 0.00125},
     },
+    # AT-M3.6B.1 -- the AT-M3 reasoning path's live provider. Keyed by the REASONING provider
+    # identity ("anthropic"), which is a different namespace from the Stage-30 ``external_anthropic``
+    # entry above: that one prices the historical code-workspace plan-only rail, this one prices the
+    # reasoning adapter, and the two subsystems are billed and budgeted separately. Neither entry is
+    # modified by the other's existence.
+    #
+    # Product-Owner-approved baseline for claude-sonnet-5: US$2 per million input tokens and US$10
+    # per million output tokens, expressed here in this table's per-1K-token unit.
+    #
+    # An explicit entry matters beyond arithmetic. Step 65F recorded that a model missing from this
+    # table falls back to the provider's most expensive entry -- deliberately conservative, and it
+    # made that stage's pre-flight estimate undershoot the real cost by roughly ten times, because
+    # the fallback was drawn from a table that did not contain the model actually being called. The
+    # authorized model must be priced correctly; the conservative fallback stays as the safety net
+    # for anything else.
+    "anthropic": {
+        "claude-sonnet-5": {"prompt": 0.002, "completion": 0.010},
+    },
     "mock": {
         "mock-deterministic": {"prompt": 0.0, "completion": 0.0},
     },

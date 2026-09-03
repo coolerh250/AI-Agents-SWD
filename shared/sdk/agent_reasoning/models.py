@@ -15,6 +15,7 @@ duplicated, both on the resolved artifact and on the raw provider output before 
 
 from __future__ import annotations
 
+import json
 from typing import Any, Literal
 from uuid import UUID, uuid4
 
@@ -36,23 +37,47 @@ REASONING_VERBS: tuple[str, ...] = (
     "decompose_plan",
 )
 
-# The provider CLASSES this slice implements. A future live adapter adds new modes; it never
-# repurposes these two to mean something else (migration 037's CHECK constraint enforces this at
-# the database layer too).
-ProviderMode = Literal["mock", "disabled"]
-PROVIDER_MODES: tuple[str, ...] = ("mock", "disabled")
+# The provider CLASSES the runtime implements. AT-M3.6B.1 adds the third and last one this
+# architecture needs. A mode is a CLASS of provider, never a vendor: `live` means "a real external
+# model answered", and WHICH model answered is `model_name`, not the mode. That separation is why
+# adding Anthropic did not add `anthropic_live` -- a vendor-shaped mode would have to be widened
+# again for every vendor, and every reader of `provider_mode` would have to learn the vendor list
+# to answer the only question the column exists for: was this real?
+#
+# migration 037 constrained this to ('mock','disabled') and migration 044 widens it to admit
+# 'live'. Neither of the original two is repurposed.
+ProviderMode = Literal["mock", "disabled", "live"]
+PROVIDER_MODES: tuple[str, ...] = ("mock", "disabled", "live")
+
+#: The one mode in which a real external provider is contacted. Named once, here, so no module has
+#: to spell the string to ask the question.
+PROVIDER_MODE_LIVE = "live"
 
 # started: durably claimed, no terminal outcome yet. succeeded/failed: terminal, reachable only
 # from started (shared/sdk/agent_reasoning/store.py::complete_invocation guards the transition).
 InvocationStatus = Literal["started", "succeeded", "failed"]
 INVOCATION_STATUSES: tuple[str, ...] = ("started", "succeeded", "failed")
 
+# AT-M3.6B.1 adds exactly three. The five AT-M3.1 categories already cover most of the live
+# taxonomy and are reused rather than duplicated under new names: an invalid credential is
+# `provider_unauthorized`, an outage or connection reset is `provider_unavailable`, output that
+# does not parse or does not validate is `malformed_output`, and a forbidden-key artifact is
+# `content_safety_rejected`. What genuinely could not be said before is a call that ran out of
+# time, a call the provider rate-limited, and a call that was refused because it would have cost
+# too much -- the first two are retryable and the third is terminal, so collapsing any of them
+# into `provider_unavailable` would have made retryability underivable.
+#
+# No Anthropic-specific category exists. A vendor's HTTP status codes and error bodies are
+# implementation detail; the canonical taxonomy is what a caller reasons about.
 FailureCategory = Literal[
     "provider_disabled",
     "provider_unauthorized",
     "malformed_output",
     "content_safety_rejected",
     "provider_unavailable",
+    "provider_timeout",
+    "rate_limited",
+    "budget_exceeded",
 ]
 FAILURE_CATEGORIES: tuple[str, ...] = (
     "provider_disabled",
@@ -60,6 +85,16 @@ FAILURE_CATEGORIES: tuple[str, ...] = (
     "malformed_output",
     "content_safety_rejected",
     "provider_unavailable",
+    "provider_timeout",
+    "rate_limited",
+    "budget_exceeded",
+)
+
+#: Categories a later attempt may reasonably re-try, because the failure was about the moment
+#: rather than about the request. Everything else is deterministic given the same input and
+#: re-attempting it would spend money to fail identically.
+RETRYABLE_FAILURE_CATEGORIES: frozenset[str] = frozenset(
+    {"provider_timeout", "rate_limited", "provider_unavailable"}
 )
 
 # What a caller learns about EXECUTION PROVENANCE, distinct from status (the OUTCOME).
@@ -101,6 +136,54 @@ def sanitize_failure_reason(raw: str | None, *, limit: int = 500) -> str | None:
     if any(marker in text.lower() for marker in _FAILURE_REASON_MARKER_MATCH):
         return "reason_redacted:forbidden_marker_detected"
     return text
+
+
+#: The maximum serialized size of ONE durable reasoning artifact, in bytes (256 KiB).
+#:
+#: AT-D23 section 6 recorded the absence of this bound as PRE-M3.6B backlog, and AT-M3.6B.1 is the
+#: slice that makes it load-bearing: until now every artifact was authored by a deterministic
+#: in-process mock, so the column's content was trusted by construction. A real external model's
+#: output is not.
+#:
+#: This is a BACKSTOP, not the binding constraint. The per-verb output token cap
+#: (shared/sdk/agent_reasoning/live_config.py) tops out at 4000 tokens for decompose_plan, which
+#: is on the order of 16 KB of text -- an order of magnitude below this bound. What the byte cap
+#: catches is the case the token cap cannot: a provider that ignores max_tokens entirely. The two
+#: controls fail independently and neither substitutes for the other.
+MAX_ARTIFACT_BYTES = 256 * 1024
+
+
+def serialize_artifact_payload(payload: dict[str, Any]) -> bytes:
+    """The exact bytes an artifact's size is measured in.
+
+    Deterministic (sorted keys, no incidental whitespace) so the measurement is a property of the
+    artifact rather than of who serialized it. Not the bytes PostgreSQL stores -- JSONB has its own
+    representation -- but a stable, reproducible proxy that every caller agrees on.
+    """
+    return json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode(
+        "utf-8"
+    )
+
+
+def artifact_payload_size(payload: dict[str, Any]) -> int:
+    """Serialized size of an artifact payload, in bytes."""
+    return len(serialize_artifact_payload(payload))
+
+
+def assert_artifact_within_size(
+    payload: dict[str, Any], *, limit: int = MAX_ARTIFACT_BYTES, field: str = "artifact"
+) -> None:
+    """Raise when a validated artifact is larger than the durable bound.
+
+    Checked BEFORE the terminal write, never after: an oversized artifact must not become a
+    SUCCEEDED row and then be discovered. Like :func:`assert_content_is_safe` this rejects rather
+    than truncating -- half an artifact is not a smaller artifact, it is a corrupt one.
+    """
+    size = artifact_payload_size(payload)
+    if size > limit:
+        raise ValueError(
+            f"{field} is {size} bytes, which exceeds the durable maximum of {limit} bytes"
+        )
 
 
 class _StrictArtifact(BaseModel):
@@ -270,6 +353,12 @@ class ReasoningInvocation(BaseModel):
 
 __all__ = [
     "ARTIFACT_TYPE_FOR_VERB",
+    "MAX_ARTIFACT_BYTES",
+    "PROVIDER_MODE_LIVE",
+    "RETRYABLE_FAILURE_CATEGORIES",
+    "artifact_payload_size",
+    "assert_artifact_within_size",
+    "serialize_artifact_payload",
     "EXECUTION_DISPOSITIONS",
     "ExecutionDisposition",
     "CritiqueArtifact",

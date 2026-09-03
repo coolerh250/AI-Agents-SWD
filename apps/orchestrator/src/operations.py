@@ -43,6 +43,8 @@ from pydantic import BaseModel, Field
 
 from progress import build_audit_timeline, build_progress, build_retry_timeline
 from shared.sdk.agent_execution.store import AgentExecutionStore
+from shared.sdk.agent_reasoning.live_config import LIVE_PROVIDER_NAME, LiveReasoningConfig
+from shared.sdk.agent_reasoning.models import PROVIDER_MODE_LIVE
 from shared.sdk.audit.store import AuditStore
 from shared.sdk.event_bus.redis_streams import RedisStreamEventBus
 from shared.sdk.incidents import (
@@ -1688,6 +1690,29 @@ async def operations_safety() -> dict:
     if llm_external_call_enabled:
         warnings.append("llm_external_call_enabled")
 
+    # AT-M3.6B.1 -- the AT-M3 REASONING path's own provider posture.
+    #
+    # The Stage-30 fields above describe a different subsystem: LLM_PROVIDER governs the historical
+    # code-workspace plan-only rail, and it knows nothing about REASONING_PROVIDER. Without these
+    # fields a runtime wired for live reasoning would read `llm_provider: mock,
+    # llm_real_enabled: false` on the one surface an operator checks -- a false negative on exactly
+    # the question this surface exists to answer. Additive only: no existing field is renamed,
+    # removed or given a new meaning.
+    #
+    # `reasoning_provider` and `reasoning_live_enabled` are deliberately two facts rather than one.
+    # Naming a provider is not permission to call it: AT-M3.6B.1 ships the adapter with the network
+    # gate closed, so the truthful reading of a fully-configured runtime in this slice is
+    # "Anthropic, and not permitted to call it". Collapsing them would make the surface claim live
+    # external reasoning is active merely because a provider name is set.
+    reasoning_config = LiveReasoningConfig.resolve()
+    reasoning_provider_is_live = reasoning_config.provider_name == LIVE_PROVIDER_NAME
+    reasoning_provider_mode = (
+        PROVIDER_MODE_LIVE if reasoning_provider_is_live else reasoning_config.provider_name
+    )
+    reasoning_live_enabled = reasoning_provider_is_live and reasoning_config.live_network_enabled
+    if reasoning_live_enabled:
+        warnings.append("reasoning_live_external_call_enabled")
+
     # Stage 31 -- approval-policy safety surface. Booleans + counts
     # only; the policy values themselves never leave the API key
     # boundary set by the env reader.
@@ -1847,6 +1872,14 @@ async def operations_safety() -> dict:
         "llm_provider": llm_provider,
         "llm_real_enabled": llm_real_enabled,
         "llm_external_call_enabled": llm_external_call_enabled,
+        # AT-M3.6B.1 -- AT-M3 reasoning provider posture. Names and booleans only; never a key.
+        "reasoning_provider": reasoning_config.provider_name,
+        "reasoning_model": reasoning_config.model_name,
+        "reasoning_provider_mode": reasoning_provider_mode,
+        "reasoning_model_allowlisted": reasoning_config.model_is_authorized,
+        # Whether a NEW live reasoning call may reach the network. False throughout AT-M3.6B.1:
+        # opening this gate is AT-M3.6B.2 and requires its own Product Owner decision.
+        "reasoning_live_enabled": reasoning_live_enabled,
         "llm_policy_enforced": True,
         "llm_requires_human_review": True,
         # Stage 35 -- LLM cost governance + real-LLM plan-only pilot.
@@ -2725,7 +2758,9 @@ def _summarise_real_test_events(
             else (
                 blocked
                 if decision == "github_real_test_blocked"
-                else failed if decision == "github_real_test_failed" else None
+                else failed
+                if decision == "github_real_test_failed"
+                else None
             )
         )
         if bucket is None or bucket:

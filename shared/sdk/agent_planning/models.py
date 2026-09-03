@@ -59,6 +59,31 @@ REPLAN_REASONS: frozenset[str] = frozenset(
 )
 
 
+#: AT-M3.6B.1 global plan bounds. AT-D23 section 6 carried the absence of a step-count bound as
+#: PRE-M3.6B backlog; this is the slice that makes it load-bearing.
+#:
+#: WHY NOW. A plan authored by the deterministic mock was bounded by the mock. A plan authored by a
+#: real external model is not, and `PlanContent` is not a leaf: M3.4 turns each step into a
+#: WorkItem and M3.5 materializes each into an execution unit plus its dependency edges. An
+#: unbounded step list is therefore an unbounded execution graph, an unbounded routing workload and
+#: an unbounded scheduling surface -- reached by one oversized completion.
+#:
+#: WHY THESE NUMBERS. A discussion is already bounded at 3 rounds, 24 messages and a 15-minute
+#: deadline (AT-M3.3); 40 steps is far more than such a discussion should ever conclude with, and
+#: small enough that the graph stays tractable. The per-step list bound is the one that actually
+#: caps the graph: 40 steps x 10 dependencies bounds the edge count at 400, and edges -- not steps
+#: -- are what M3.5 walks.
+#:
+#: These bound NEW plans. Nothing rewrites a historical PlanRevision, and no database constraint is
+#: added: a stored plan that predates this bound must stay readable, because making history
+#: unreadable to enforce a new limit would destroy the evidence the limit exists to protect.
+MAX_PLAN_STEPS = 40
+MAX_STEP_DEPENDENCIES = 10
+MAX_STEP_CAPABILITIES = 10
+MAX_STEP_EXPECTED_OUTPUTS = 10
+MAX_STEP_CONSTRAINTS = 10
+
+
 class PlanStepDraftError(ValueError):
     """A plan is structurally invalid -- duplicate step keys, or a dependency on nothing.
 
@@ -85,11 +110,11 @@ class PlanStep(BaseModel):
     description: str | None = Field(default=None, max_length=4000)
     #: What the step needs a principal to be able to do. Matched by the AT-M2 capability router in
     #: M3.5; here it is declared intent only.
-    required_capabilities: tuple[str, ...] = ()
-    expected_outputs: tuple[str, ...] = ()
+    required_capabilities: tuple[str, ...] = Field(default=(), max_length=MAX_STEP_CAPABILITIES)
+    expected_outputs: tuple[str, ...] = Field(default=(), max_length=MAX_STEP_EXPECTED_OUTPUTS)
     #: step_key values this step depends on. Validated for existence at the plan level below.
-    depends_on: tuple[str, ...] = ()
-    constraints: tuple[str, ...] = ()
+    depends_on: tuple[str, ...] = Field(default=(), max_length=MAX_STEP_DEPENDENCIES)
+    constraints: tuple[str, ...] = Field(default=(), max_length=MAX_STEP_CONSTRAINTS)
     intended_owner_role: str | None = Field(default=None, max_length=100)
 
 
@@ -105,7 +130,7 @@ class PlanContent(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     objective: str = Field(min_length=1, max_length=2000)
-    steps: tuple[PlanStep, ...] = ()
+    steps: tuple[PlanStep, ...] = Field(default=(), max_length=MAX_PLAN_STEPS)
     constraints: tuple[str, ...] = ()
     acceptance_criteria: tuple[str, ...] = ()
 
@@ -372,6 +397,11 @@ class PlanRevisionAllocationError(RuntimeError):
 __all__ = [
     "Goal",
     "GoalStatus",
+    "MAX_PLAN_STEPS",
+    "MAX_STEP_CAPABILITIES",
+    "MAX_STEP_CONSTRAINTS",
+    "MAX_STEP_DEPENDENCIES",
+    "MAX_STEP_EXPECTED_OUTPUTS",
     "PlanContent",
     "PlanDiff",
     "PlanLineageError",

@@ -46,11 +46,15 @@ from __future__ import annotations
 import json
 import os
 import uuid
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 import asyncpg
 
-from shared.sdk.agent_reasoning.models import sanitize_failure_reason
+from shared.sdk.agent_reasoning.models import (
+    assert_artifact_within_size,
+    sanitize_failure_reason,
+)
 
 DEFAULT_DATABASE_URL = "postgresql://postgres@localhost:5432/aiagents"
 
@@ -79,6 +83,33 @@ def _uuid_or_none(value: Any) -> uuid.UUID | None:
     if value is None:
         return None
     return value if isinstance(value, uuid.UUID) else uuid.UUID(str(value))
+
+
+def _int_or_none(value: Any) -> int | None:
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _numeric_or_none(value: Any) -> Decimal | None:
+    """Coerce a cost to the NUMERIC(12,6) the column declares.
+
+    asyncpg binds ``numeric`` to ``Decimal`` and rejects a float outright, so a cost that arrives as
+    a float has to be converted rather than passed through. Via ``str`` deliberately: building a
+    Decimal straight from a float would carry the float's binary-representation noise into a column
+    whose whole purpose is money.
+    """
+    if value is None:
+        return None
+    if isinstance(value, Decimal):
+        return value
+    try:
+        return Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None
 
 
 def _decoded(row: asyncpg.Record | None) -> dict[str, Any] | None:
@@ -228,6 +259,12 @@ class ReasoningInvocationStore:
         """
         safe_reason = sanitize_failure_reason(terminal.get("failure_reason"))
         artifact = terminal.get("artifact")
+        if artifact is not None:
+            # Defense in depth, and the same reason failure_reason is sanitized twice: a direct
+            # store caller bypasses the service entirely, and the one thing that must never be true
+            # of a SUCCEEDED row is that its artifact is unbounded. Rejects rather than truncates --
+            # half an artifact is a corrupt artifact.
+            assert_artifact_within_size(artifact)
         conn = await self._connect()
         try:
             row = await conn.fetchrow(
@@ -235,6 +272,7 @@ class ReasoningInvocationStore:
                 UPDATE reasoning_invocations SET
                     status=$3, failure_category=$4, failure_reason=$5, latency_ms=$6,
                     audit_ref=$7, completed_at=$8, artifact_type=$9, artifact=$10::jsonb,
+                    input_tokens=$11, output_tokens=$12, estimated_cost_usd=$13,
                     lease_expires_at=NULL
                 WHERE invocation_id=$1 AND attempt_token=$2 AND status='started'
                 RETURNING {_COLUMNS}
@@ -249,6 +287,9 @@ class ReasoningInvocationStore:
                 terminal["completed_at"],
                 terminal.get("artifact_type"),
                 json.dumps(artifact) if artifact is not None else None,
+                _int_or_none(terminal.get("input_tokens")),
+                _int_or_none(terminal.get("output_tokens")),
+                _numeric_or_none(terminal.get("estimated_cost_usd")),
             )
             if row is not None:
                 return _decoded(row)

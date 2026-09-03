@@ -33,6 +33,7 @@ result -- said plainly, because the alternative is the guarantee that was assume
 
 from __future__ import annotations
 
+import inspect
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -41,14 +42,19 @@ from typing import Any, cast
 from shared.sdk.agent_reasoning import events as reasoning_events
 from shared.sdk.agent_reasoning.models import (
     ARTIFACT_TYPE_FOR_VERB,
+    PROVIDER_MODE_LIVE,
     CritiqueArtifact,
     DecisionSummaryArtifact,
     ExecutionDisposition,
     PlanDraftArtifact,
     ProposalArtifact,
     ReasoningRequest,
+    assert_artifact_within_size,
 )
 from shared.sdk.agent_reasoning.provider import (
+    LiveProviderError,
+    ProviderResult,
+    ProviderUsage,
     ReasoningProvider,
     ReasoningProviderError,
     get_reasoning_provider,
@@ -59,11 +65,28 @@ ReasoningArtifact = (
     ProposalArtifact | CritiqueArtifact | DecisionSummaryArtifact | PlanDraftArtifact
 )
 
-# Provider modes for which a model identity is meaningful. Neither mode this slice implements
-# (mock, disabled) ever uses a real model, so model_name is nulled out server-side regardless of
-# what a caller supplied -- a row must never read provider_mode='mock' next to a live-model-looking
-# model_name. A future live mode is added here explicitly, not inferred.
-_MODES_WITH_REAL_MODEL_IDENTITY: frozenset[str] = frozenset()
+# Provider modes for which a model identity is meaningful. `mock` and `disabled` never use a real
+# model, so model_name is nulled out server-side regardless of what a caller supplied -- a row must
+# never read provider_mode='mock' next to a live-model-looking model_name. AT-M3.6B.1 adds `live`
+# here explicitly, as this constant was always designed to be extended rather than inferred from.
+#
+# AND THE MODEL NAME COMES FROM THE PROVIDER, NOT FROM THE REQUEST. `ReasoningRequest.model_name` is
+# caller-supplied; honouring it in live mode would let a request choose which model is billed and
+# then have that choice recorded as fact on an immutable row. The resolved provider is asked what it
+# will actually use, and the request's opinion is kept only as `requested_provider_name`.
+_MODES_WITH_REAL_MODEL_IDENTITY: frozenset[str] = frozenset({PROVIDER_MODE_LIVE})
+
+
+def _unwrap(raw: Any) -> tuple[Any, ProviderUsage | None]:
+    """Separate a verb's return value into its artifact and its call metadata.
+
+    An AT-M3.1 provider returns the artifact itself and has nothing to report; a provider that
+    actually called somebody returns a ``ProviderResult`` carrying what the call consumed. Accepting
+    both is what let the usage channel be added without breaking a single existing provider.
+    """
+    if isinstance(raw, ProviderResult):
+        return raw.artifact, raw.usage
+    return raw, None
 
 
 class ReasoningPersistenceError(RuntimeError):
@@ -197,6 +220,63 @@ class ReasoningService:
             return ReasoningResult(artifact=None, invocation=row, disposition="in_progress")
         return ReasoningResult(artifact=self.rehydrate(row), invocation=row, disposition="replay")
 
+    async def _replayed(
+        self, request: ReasoningRequest, result: ReasoningResult
+    ) -> ReasoningResult:
+        """Audit a replay and hand it back. A no-op for any other disposition.
+
+        Deliberately NOT ``reasoning_invoked``: a replay invoked nothing, and counting it as a
+        success would inflate the number of reasoning calls the system believes it made -- which,
+        once a provider bills per call, is the difference between the audit trail and the invoice.
+        """
+        if result.disposition != "replay":
+            return result
+        await self._audit(
+            reasoning_events.AUDIT_REASONING_REPLAYED,
+            f"{request.verb}: replayed the terminal outcome of invocation "
+            f"{result.invocation.get('invocation_id')}",
+            str(result.invocation.get("status")),
+            {
+                "verb": request.verb,
+                "correlation_id": str(request.correlation_id),
+                "invocation_id": str(result.invocation.get("invocation_id")),
+                "attempt": result.invocation.get("attempt"),
+                "artifact_recovered": result.artifact is not None,
+            },
+        )
+        return result
+
+    @staticmethod
+    async def _preflight(
+        provider: ReasoningProvider, request: ReasoningRequest
+    ) -> LiveProviderError | None:
+        """Ask a provider to refuse now, if it can refuse for free. Returns the refusal, if any.
+
+        Optional: only the live adapter implements ``preflight``, and a provider without one is
+        simply not asked. Nothing here raises -- the refusal is returned so the caller can record it
+        against a claimed attempt instead of throwing a new exception type at services that have
+        never had to catch one.
+        """
+        preflight = getattr(provider, "preflight", None)
+        if preflight is None:
+            return None
+        try:
+            outcome = preflight(request)
+            if inspect.isawaitable(outcome):
+                await outcome
+        except LiveProviderError as exc:
+            return exc
+        except ReasoningProviderError as exc:
+            return LiveProviderError(str(exc), failure_category="provider_unauthorized")
+        except Exception as exc:
+            # Same rule as an unknown provider exception anywhere else: the class name is safe to
+            # keep, the message is not.
+            return LiveProviderError(
+                f"unexpected_provider_preflight_error:{type(exc).__name__}",
+                failure_category="provider_unavailable",
+            )
+        return None
+
     async def _recover(self, row: dict[str, Any]) -> dict[str, Any] | ReasoningResult:
         """Resolve a correlation_id this caller did not claim.
 
@@ -265,15 +345,42 @@ class ReasoningService:
         could not be durably recorded. Unlike before the rebaseline, that is recoverable: the
         row's lease expires and a later caller re-attempts it.
         """
+        expected_type = ARTIFACT_TYPE_FOR_VERB[request.verb]
+
+        # REPLAY FIRST, before a provider is even resolved.
+        #
+        # A terminal correlation_id already has its answer, and returning it must not depend on the
+        # runtime's CURRENT posture. Resolving the provider first -- as this method used to -- was
+        # harmless while every provider was in-process, but under AT-M3.6B.1 it would make the
+        # replay of a historical artifact depend on live configuration being valid, the network gate
+        # being open and a credential being resolvable. Work that was already done and already paid
+        # for must stay recoverable when the live path is switched off, which in this slice it always
+        # is. The claim below remains the atomic authority; this read only short-circuits a question
+        # that is already settled.
+        existing = await self.store.get_by_correlation_id(str(request.correlation_id))
+        if existing is not None and existing.get("status") != "started":
+            return await self._replayed(request, self._settled(existing))
+
         resolved_provider = (
             provider if provider is not None else get_reasoning_provider(request.provider_name)
         )
-        expected_type = ARTIFACT_TYPE_FOR_VERB[request.verb]
         model_name = (
-            request.model_name
+            getattr(resolved_provider, "model_name", None)
             if resolved_provider.mode in _MODES_WITH_REAL_MODEL_IDENTITY
             else None
         )
+
+        # PRE-FLIGHT, before the attempt is claimed.
+        #
+        # A provider that can refuse for free says so here: the network gate is closed, the model is
+        # not allowlisted, the outbound context is oversized or carries an unapproved field, no
+        # budget policy is active. Reaching those answers before ownership means a refusal costs no
+        # provider call, no credential read and no spend. The refusal is still RECORDED -- it is
+        # carried down to the terminal write below rather than raised -- because a claimed-and-
+        # refused attempt is evidence, and because that is exactly the shape the `disabled` provider
+        # has always had. Raising instead would hand callers a new exception path for what is, to
+        # them, an ordinary terminal failure with no artifact.
+        preflight_error = await self._preflight(resolved_provider, request)
 
         started_at = datetime.now(timezone.utc)
         clock_start = time.monotonic()
@@ -296,21 +403,7 @@ class ReasoningService:
         if not owned:
             recovered = await self._recover(row)
             if isinstance(recovered, ReasoningResult):
-                if recovered.disposition == "replay":
-                    await self._audit(
-                        reasoning_events.AUDIT_REASONING_REPLAYED,
-                        f"{request.verb}: replayed the terminal outcome of invocation "
-                        f"{recovered.invocation.get('invocation_id')}",
-                        str(recovered.invocation.get("status")),
-                        {
-                            "verb": request.verb,
-                            "correlation_id": str(request.correlation_id),
-                            "invocation_id": str(recovered.invocation.get("invocation_id")),
-                            "attempt": recovered.invocation.get("attempt"),
-                            "artifact_recovered": recovered.artifact is not None,
-                        },
-                    )
-                return recovered
+                return await self._replayed(request, recovered)
             # A takeover: this caller now owns a genuine new attempt of the same invocation.
             row = recovered
             clock_start = time.monotonic()
@@ -338,14 +431,35 @@ class ReasoningService:
         failure_reason: str | None = None
         artifact: ReasoningArtifact | None = None
         artifact_payload: dict[str, Any] | None = None
+        usage: ProviderUsage | None = None
 
         verb_method = getattr(resolved_provider, request.verb, None)
-        if verb_method is None:
+        if preflight_error is not None:
+            # Refused before ownership. No provider call happened, so there is nothing to await,
+            # nothing to parse and nothing billable -- but the attempt was claimed and is recorded.
+            failure_category = preflight_error.failure_category
+            failure_reason = str(preflight_error)
+            usage = preflight_error.usage
+        elif verb_method is None:
             failure_category = "provider_unavailable"
             failure_reason = f"provider has no {request.verb!r} verb"
         else:
             try:
                 raw = verb_method(request)
+                if inspect.isawaitable(raw):
+                    # A provider that performs real I/O returns an awaitable. Awaiting it here --
+                    # rather than letting an adapter block inside a synchronous verb -- is what
+                    # keeps one slow reasoning call from stalling every other request the process
+                    # is serving.
+                    raw = await raw
+                raw, usage = _unwrap(raw)
+            except LiveProviderError as exc:
+                # The raiser already classified this. Trusting its category rather than re-deriving
+                # one from an exception message is the difference between knowing a call timed out
+                # and guessing that it did.
+                failure_reason = str(exc)
+                failure_category = exc.failure_category
+                usage = exc.usage
             except ReasoningProviderError as exc:
                 # Our own controlled exception type -- still routed through the store's
                 # sanitize_failure_reason before persistence (defense-in-depth: its message can
@@ -373,8 +487,17 @@ class ReasoningService:
                         # The same screen a TeamMessage passes -- and now also the exact payload
                         # that gets stored, so nothing can be persisted that was not screened.
                         artifact_payload = raw.as_safe_dict()
+                        # AT-M3.6B.1: and the same payload is measured. A live adapter checks this
+                        # too, but the check belongs on the write path as well: this is the only
+                        # place every artifact passes through, whoever produced it.
+                        assert_artifact_within_size(artifact_payload)
                     except ValueError as exc:
-                        failure_category = "content_safety_rejected"
+                        artifact_payload = None
+                        failure_category = (
+                            "malformed_output"
+                            if "exceeds" in str(exc)
+                            else "content_safety_rejected"
+                        )
                         failure_reason = str(exc)
                     else:
                         # isinstance(raw, expected_type) already proved raw is one of the known
@@ -402,6 +525,14 @@ class ReasoningService:
                 "invocation_id": str(invocation_id),
                 "attempt": row.get("attempt"),
                 "artifact_type": expected_type.__name__ if status == "succeeded" else None,
+                # AT-M3.6B.1 safe live metadata. Counts, money and an opaque provider identifier --
+                # never a prompt, a completion, an artifact body or a credential.
+                "model_name": model_name,
+                "input_tokens": usage.input_tokens if usage else None,
+                "output_tokens": usage.output_tokens if usage else None,
+                "estimated_cost_usd": usage.estimated_cost_usd if usage else None,
+                "provider_request_id": usage.provider_request_id if usage else None,
+                "provider_call_occurred": bool(usage.call_occurred) if usage else False,
             },
         )
 
@@ -418,6 +549,15 @@ class ReasoningService:
                     "completed_at": completed_at,
                     "artifact_type": expected_type.__name__ if status == "succeeded" else None,
                     "artifact": artifact_payload if status == "succeeded" else None,
+                    # Written on BOTH outcomes. A call that reached the provider consumed tokens
+                    # whether or not its output turned out to be usable, and a failed row that
+                    # dropped them would make the audit trail cheaper than the invoice.
+                    # `estimated_cost_usd` keeps the meaning 037 gave it -- the pre-flight ESTIMATE
+                    # that gated the spend. The ACTUAL cost lives in the llm_budget usage ledger,
+                    # which is where this project already records actuals.
+                    "input_tokens": usage.input_tokens if usage else None,
+                    "output_tokens": usage.output_tokens if usage else None,
+                    "estimated_cost_usd": usage.estimated_cost_usd if usage else None,
                 },
             )
         except Exception as exc:

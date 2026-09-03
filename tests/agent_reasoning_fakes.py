@@ -147,6 +147,12 @@ class InMemoryReasoningInvocationStore:
         row["audit_ref"] = terminal.get("audit_ref")
         row["completed_at"] = terminal.get("completed_at") or _now()
         row["lease_expires_at"] = None
+        # AT-M3.6B.1: the real store writes these in the same terminal UPDATE, on BOTH outcomes --
+        # a call that reached a provider consumed tokens whether or not its output was usable. The
+        # fake mirrors that or a test could observe usage accounting the database would not keep.
+        row["input_tokens"] = terminal.get("input_tokens")
+        row["output_tokens"] = terminal.get("output_tokens")
+        row["estimated_cost_usd"] = terminal.get("estimated_cost_usd")
         return dict(row)
 
     async def fail_exhausted_invocation(

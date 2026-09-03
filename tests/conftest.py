@@ -133,3 +133,53 @@ def qa_agent():
 @pytest.fixture
 def devops_agent():
     return _load_agent_module("devops-agent")
+
+
+# --- AT-M3.6B.1 -------------------------------------------------------------------------------
+
+#: Loopback forms a test is allowed to reach. PostgreSQL and Redis run locally; nothing else may be
+#: contacted at all.
+_LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1", "0.0.0.0", ""})
+
+
+@pytest.fixture(autouse=True)
+def _at_m3_6b_1_no_external_network(request, monkeypatch):
+    """Fail any AT-M3.6B.1 test that tries to open a non-loopback socket.
+
+    AT-M3.6B.1 authorizes ZERO live external calls -- official and diagnostic alike, which is the
+    Step 65F-C guardrail carried forward. The adapter is meant to be unreachable in this slice
+    because its network gate is closed, but "meant to be" is an argument and this is evidence: DNS
+    resolution and socket connection are both intercepted, so a provider probe, a credential check
+    or a stray ``httpx`` call with no mock transport fails the test that made it rather than
+    quietly succeeding.
+
+    Scoped to this slice's own modules by filename. Loopback is untouched, so the real-PostgreSQL
+    tests are unaffected.
+    """
+    if "at_m3_6b_1" not in request.node.fspath.basename:
+        return
+
+    import socket
+
+    from tests.at_m3_6b_1_fakes import UnauthorizedExternalCall
+
+    real_getaddrinfo = socket.getaddrinfo
+    real_connect = socket.socket.connect
+
+    def guarded_getaddrinfo(host, *args, **kwargs):
+        if str(host).lower() not in _LOCAL_HOSTS:
+            raise UnauthorizedExternalCall(
+                f"AT-M3.6B.1 authorizes zero external calls; DNS lookup of {host!r} was attempted"
+            )
+        return real_getaddrinfo(host, *args, **kwargs)
+
+    def guarded_connect(self, address, *args, **kwargs):
+        host = address[0] if isinstance(address, tuple) else address
+        if str(host).lower() not in _LOCAL_HOSTS:
+            raise UnauthorizedExternalCall(
+                f"AT-M3.6B.1 authorizes zero external calls; a socket to {host!r} was attempted"
+            )
+        return real_connect(self, address, *args, **kwargs)
+
+    monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(socket.socket, "connect", guarded_connect)
