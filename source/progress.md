@@ -19592,10 +19592,21 @@ a one-model config allowlist is not a model registry and a feature gate is not a
   001-044 applied on the internal test runtime.
 - **AT-M2 + AT-M3.1 through AT-M3.6A regressions: 863 passed, 10 skipped, 0 failed** on the same
   database, including the three narrowed assertions.
-- **Full suite: 7421 passed, 81 failed, 272 skipped.** Every one of the 81 reproduces identically on
-  a canonical-main clone in the same environment - they are the Step 66 verifier, branch-head and
-  `git diff --name-only main...HEAD` guards that fail for any implementation branch, plus the
-  historical/meta failures AT-D18 classifies as `NON_BLOCKING`. No new failure, and no P0/P1.
+- **Full suite: 7428 passed, 75 failed, 272 skipped**, against a canonical-main clone in the same
+  environment scoring 72 failed. **Exactly three failures are branch-only**, and all three are
+  `test_no_runtime_paths_changed` / `test_verifier_marker_pass` stage-scope guards that scan
+  `git diff` for any `shared/`, `apps/` or `migrations/` path. A probe branch cut from `e50d422`
+  whose only change is one EMPTY `shared/sdk/probe_only/__init__.py` trips the same three, which is
+  what establishes that they fail for any runtime branch by construction rather than for anything in
+  this slice. The other 72 reproduce identically on canonical main. No new product failure, and no
+  P0/P1.
+- **Two PCP failures and four Step 66 branch-shape failures seen in an earlier run were setup
+  artifacts, disclosed rather than quietly dropped.** The first test clone had fetched only the
+  branch ref, so its `origin/main` was stale and `verify_pcp_v2_control_plane.py::canonical_main()`
+  -- which reads `origin/main` -- was comparing against the wrong commit; the rest were scanning
+  uncommitted working-tree files that had been synced but not yet committed. With `origin/main`
+  correct and the tree clean, PCP scores 13 failed on both sides and the four branch-shape guards
+  pass.
 - **Zero external calls** before, during and after. `production_executed_true_count: 0`.
 
 ### Boundaries held
