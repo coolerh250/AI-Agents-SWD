@@ -133,10 +133,22 @@ async def _schema_fingerprint(conn: asyncpg.Connection) -> dict[str, list]:
 
 
 def test_the_migration_number_is_derived_from_canonical_main():
-    """042 is the last migration on the exact commit this branched from, so this one is 043."""
+    """042 is the last migration on the exact commit this branched from, so this one is 043.
+
+    ``assert max(numbers) == 43`` is what this used to say, and it is the same shape of assertion
+    AT-D23 section 7 recorded a GOVERNANCE_DRIFT_ALERT about: a stage claiming that its own
+    migration is the last one that will ever exist forbids every later authorized milestone by
+    construction, and AT-M3.6A itself had to repair the identical assertion in the AT-M3.5 suite for
+    exactly this reason. AT-M3.6B.1 adds 044 under AT-D24 and trips it a second time.
+
+    What this test is FOR is that AT-M3.6A picked its number from repository truth rather than
+    assuming one, and that it picked exactly one. Both are still checked; "nothing may follow me"
+    was never the property, and it is removed rather than repaired again.
+    """
     numbers = [int(p.name[:3]) for p in _ordered_migrations()]
-    assert max(numbers) == 43
+    assert 43 in numbers
     assert numbers.count(43) == 1, "one 043, not two files racing for the number"
+    assert max(n for n in numbers if n < 43) == 42, "043 follows 042, the canonical-main tip"
     assert FORWARD.exists() and DOWN.exists()
     assert CANONICAL_MAIN in FORWARD.read_text(encoding="utf-8") or "042" in FORWARD.read_text(
         encoding="utf-8"

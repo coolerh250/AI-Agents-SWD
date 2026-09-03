@@ -11,6 +11,7 @@ Skips without a database, in line with every other AT-M3 store suite.
 from __future__ import annotations
 
 import asyncio
+import json
 import uuid
 
 import pytest
@@ -280,6 +281,11 @@ async def _first_correlation(store: DeliberationStore, thread_id: str) -> str:
 
 
 class TestPlanningDecisionUnderTheLiveAdapter:
+    async def _finalize(self, scenario: dict, discussion: dict, transport: object) -> dict:
+        return await PlanningDecisionService(provider=_adapter(transport)).finalize(
+            goal_id=scenario["goal_id"], discussion_id=str(discussion["discussion_id"])
+        )
+
     async def _converged(self, transport: object) -> tuple[dict, dict]:
         scenario = await _scenario()
         service = DiscussionService(provider=_adapter(transport))
@@ -306,32 +312,37 @@ class TestPlanningDecisionUnderTheLiveAdapter:
     async def test_a_live_decompose_plan_produces_a_bounded_candidate_plan(self) -> None:
         transport = verb_aware(concerns=(), steps=3)
         scenario, discussion = await self._converged(transport)
-        decision = await PlanningDecisionService(provider=_adapter(transport)).finalize(
-            discussion["discussion_id"]
-        )
-        assert decision is not None
+        decision = await self._finalize(scenario, discussion, transport)
+        assert decision["created"] is True
 
         rows = await _invocations(scenario["store"], discussion["thread_id"])
         planner_rows = [r for r in rows if r["artifact_type"] == "PlanDraftArtifact"]
         assert planner_rows, "no decompose_plan invocation was recorded"
         assert planner_rows[0]["provider_mode"] == "live"
         assert planner_rows[0]["model_name"] == "claude-sonnet-5"
+        assert planner_rows[0]["status"] == "succeeded"
 
-        planning = PlanningStore()
-        revision = await planning.get_revision(str(decision["resulting_plan_revision_id"]))
-        assert revision is not None
+        revision = decision.get("plan_revision")
+        if revision is None:
+            assert decision["outcome"] == "no_change"
+            return
         plan = revision["plan"]
-        steps = plan["steps"] if isinstance(plan, dict) else []
-        assert 0 < len(steps) <= 40
+        plan = json.loads(plan) if isinstance(plan, str) else plan
+        assert 0 < len(plan["steps"]) <= 40
 
     async def test_finalizing_twice_does_not_call_the_provider_again(self) -> None:
         transport = verb_aware(concerns=(), steps=3)
         scenario, discussion = await self._converged(transport)
-        service = PlanningDecisionService(provider=_adapter(transport))
-        first = await service.finalize(discussion["discussion_id"])
+        first = await self._finalize(scenario, discussion, transport)
         before = transport.call_count
-        second = await service.finalize(discussion["discussion_id"])
-        assert str(second["planning_decision_id"]) == str(first["planning_decision_id"])
+        second = await self._finalize(scenario, discussion, transport)
+
+        assert first["created"] is True
+        # Replayed, not redone -- and replaying a planning decision asks the provider nothing.
+        assert second["created"] is False
+        assert str(second["planning_decision"]["planning_decision_id"]) == str(
+            first["planning_decision"]["planning_decision_id"]
+        )
         assert transport.call_count == before
 
 

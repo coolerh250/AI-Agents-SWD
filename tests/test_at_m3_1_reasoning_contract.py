@@ -246,14 +246,29 @@ async def test_unknown_and_external_provider_names_fail_closed(requested_name):
     assert result.invocation["requested_provider_name"] == requested_name
 
 
+#: The ONE module permitted to speak to a network, authorized by AT-D24 (AT-M3.6B.1). Named here
+#: rather than assumed, so adding a second one has to change this line and be argued for.
+_AUTHORIZED_NETWORK_MODULE = "anthropic_provider.py"
+
+
 def test_no_network_client_is_importable_from_this_package():
-    """AT-M3.1 ships no live adapter. Nothing in the package imports a network library."""
+    """No reasoning module reaches a network except the single adapter AT-D24 authorizes.
+
+    AT-M3.1 wrote this as "nothing in the package imports a network library", which was exactly
+    right while the package shipped no live adapter. AT-D24 authorizes precisely one, so the
+    assertion is narrowed to name it rather than deleted: for every OTHER module the check is
+    unchanged, and the companion test below asserts that the exclusion list stays at one. What this
+    protects -- that a network dependency cannot appear anywhere in the reasoning package without a
+    Product Owner decision naming it -- is what it always protected.
+    """
     import ast
     from pathlib import Path
 
     package_dir = Path(__file__).resolve().parents[1] / "shared" / "sdk" / "agent_reasoning"
     network_markers = {"httpx", "requests", "aiohttp", "socket", "urllib"}
     for path in package_dir.glob("*.py"):
+        if path.name == _AUTHORIZED_NETWORK_MODULE:
+            continue
         tree = ast.parse(path.read_text(encoding="utf-8"))
         for node in ast.walk(tree):
             if isinstance(node, ast.Import):
@@ -264,6 +279,28 @@ def test_no_network_client_is_importable_from_this_package():
                 continue
             leaked = names & network_markers
             assert not leaked, f"{path.name} imports a network library: {leaked}"
+
+
+def test_exactly_one_module_is_authorized_to_reach_a_network():
+    """The exclusion above is one file, and it is the adapter AT-D24 names."""
+    import ast
+    from pathlib import Path
+
+    package_dir = Path(__file__).resolve().parents[1] / "shared" / "sdk" / "agent_reasoning"
+    network_markers = {"httpx", "requests", "aiohttp", "socket", "urllib"}
+    importers = set()
+    for path in package_dir.glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                names = {alias.name.split(".")[0] for alias in node.names}
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = {node.module.split(".")[0]}
+            else:
+                continue
+            if names & network_markers:
+                importers.add(path.name)
+    assert importers <= {_AUTHORIZED_NETWORK_MODULE}, importers
 
 
 # --- 12: provider refusal never substitutes a mock success -------------------------------------------------

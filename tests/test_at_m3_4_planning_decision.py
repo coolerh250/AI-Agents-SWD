@@ -1329,10 +1329,29 @@ async def test_database_wide_invariants_hold():
             ),
             # 'disabled' is a refusal, not a production action -- a refused provider is exactly
             # what AT-D14 section 3 requires of an unauthorized one, and one test above asserts
-            # that path on purpose. What must not exist is a mode that reached a live model.
-            "an invocation that reached a live provider": (
+            # that path on purpose.
+            #
+            # This read "NOT IN ('mock','disabled')" until AT-D24 authorized a third mode. The
+            # database cannot distinguish a live row produced through an in-process test transport
+            # from one produced over a socket, so it can no longer be the place that proves no
+            # network call happened -- tests/test_at_m3_6b_1_network_proof.py is, by blocking
+            # non-loopback DNS and sockets outright. What this check still says, and says more
+            # precisely than before, is that no invocation carries a mode outside the authorized
+            # vocabulary.
+            "an invocation recording an unrecognised provider mode": (
                 "SELECT count(*) FROM reasoning_invocations "
-                "WHERE provider_mode NOT IN ('mock', 'disabled')"
+                "WHERE provider_mode NOT IN ('mock', 'disabled', 'live')"
+            ),
+            # And no live invocation SUCCEEDED against a model outside the allowlist.
+            #
+            # Scoped to succeeded rows deliberately. A live attempt refused for a misconfigured
+            # model records the model it was CONFIGURED for, which is the diagnostic an operator
+            # needs and is why the row exists at all; what must never exist is a durable artifact
+            # produced by an unauthorized model.
+            "a succeeded live invocation naming an unauthorized model": (
+                "SELECT count(*) FROM reasoning_invocations "
+                "WHERE provider_mode = 'live' AND status = 'succeeded' "
+                "AND (model_name IS NULL OR model_name <> 'claude-sonnet-5')"
             ),
         }
         for label, sql in checks.items():

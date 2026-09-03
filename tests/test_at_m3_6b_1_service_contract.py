@@ -199,6 +199,33 @@ class TestRefusalsAreRecordedNotThrown:
         assert result.invocation["failure_category"] == "budget_exceeded"
         assert transport.call_count == 0
 
+    async def test_a_misconfigured_model_can_never_produce_a_succeeded_row(self) -> None:
+        """A refused attempt records the model it was CONFIGURED for -- that is the diagnostic an
+        operator needs -- but it can never be a success, so no durable artifact is ever attributable
+        to a model outside the allowlist."""
+        from shared.sdk.agent_reasoning.live_config import LiveReasoningConfig
+
+        store = InMemoryReasoningInvocationStore()
+        transport = returning_artifact("propose")
+        adapter = AnthropicReasoningProvider(
+            config=LiveReasoningConfig(
+                provider_name="anthropic",
+                model_name="claude-3-opus",
+                live_network_enabled=True,
+            ),
+            secret_provider=ExplodingSecretProvider(),
+            budget_evaluator=FakeBudgetEvaluator(),
+            transport=transport,
+        )
+        result = await ReasoningService(store=store).invoke(_request(), provider=adapter)
+
+        row = result.invocation
+        assert row["status"] == "failed"
+        assert row["failure_category"] == "provider_unauthorized"
+        assert row["artifact"] is None
+        assert row["model_name"] == "claude-3-opus"
+        assert transport.call_count == 0
+
     async def test_an_unapproved_egress_field_never_reaches_a_provider(self) -> None:
         store = InMemoryReasoningInvocationStore()
         transport = returning_artifact("propose")

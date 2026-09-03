@@ -19434,3 +19434,177 @@ implementation_end `7a7baae`, merged from canonical base `f3a85af`.**
   AT-M3.6B (a real external model call) and AT-M4 (real work execution) are both `NOT AUTHORIZED`,
   and no record here decides which - if either - should follow. **The next product decision
   requires Product Owner authorization.**
+
+## Step AT-M3.6B.1-LIVE-PROVIDER-ADAPTER-LIMITS-1 - Anthropic Live Reasoning Adapter + Limits (READY FOR INDEPENDENT VALIDATION)
+
+**Status: implemented on branch `at-m3.6b.1-live-reasoning-adapter-1`, branched from canonical main
+`e50d422`. NOT merged. `AT-D24` records the Product Owner authorization. Live external calls
+authorized: 0. Live external calls made: 0.**
+
+- **What this slice is.** The reasoning architecture can now be answered by a real external model.
+  One adapter, Anthropic, one model, `claude-sonnet-5`, sitting behind the AT-M3.1
+  `ReasoningProvider` protocol and driven by the same `ReasoningService` that has owned every
+  reasoning call since AT-M3.1. It changes **who authors a typed artifact** and nothing else: the
+  durable claim, the lease, attempt accounting, the terminal write, the replay and the way
+  TeamMessage and PlanRevision consume the result are all untouched. There is no
+  `AnthropicReasoningService`, no second reasoning store and no second invocation table, because a
+  second authority is how two answers to "what did the team decide" get created.
+- **And it calls nobody.** `REASONING_LIVE_NETWORK_ENABLED` defaults to false and stays false for
+  the whole of AT-M3.6B.1. Every one of the 177 tests in this slice drives the adapter through an
+  in-process `httpx.MockTransport`, so the real client, the real request, the real headers and the
+  real fixed URL are all exercised and only the socket is replaced. Opening the gate is AT-M3.6B.2,
+  which is a separate Product Owner decision that has not been made.
+
+### The decisions worth recording
+
+- **Provider identity and provider mode are different facts.** `provider_mode` became
+  `mock | disabled | live`, not `anthropic_live`. Every reader of that column is asking one
+  question - *was this real* - and a vendor-shaped mode would force all of them to learn the vendor
+  list, and would have to be widened again for every vendor. The vendor is
+  `requested_provider_name` and the model is `model_name`, both of which migration 037 already
+  provides and 040 already freezes.
+- **The live adapter is unreachable by name, in both directions.** `ReasoningRequest.provider_name`
+  and `.model_name` are caller-supplied, and until this slice they were harmless because every name
+  other than `mock` refused. The moment a live adapter exists they are a route to paid inference
+  against an arbitrary model. So the factory resolves the live adapter from the environment and from
+  nothing else: a request naming `anthropic` gets the refusing provider, and - the direction that is
+  easier to forget - a request naming `mock` on a live deployment does **not** get the mock, because
+  a caller must not be able to make a live runtime quietly produce mock-authored results that are
+  indistinguishable from real ones. The request's opinion survives only as the truthful
+  `requested_provider_name`.
+- **Replay happens before the provider is resolved.** `invoke` now reads a terminal row and returns
+  it before it resolves a provider at all. This was harmless to skip while every provider was
+  in-process; under a live adapter it would have made the replay of a historical artifact depend on
+  live configuration being valid, the gate being open and a credential being resolvable. Work that
+  is already done and already paid for stays recoverable when the live path is switched off - which,
+  in this slice, it always is. The atomic claim is still the ownership authority; the read only
+  short-circuits a question that is already settled.
+- **A refusal is recorded, not thrown.** Everything knowable for free - the gate is closed, the
+  model is not allowlisted, the outbound context is oversized or carries an unapproved field, no
+  budget policy is active - is decided in a `preflight` the service calls **before** the attempt is
+  claimed, so no provider call, no credential read and no spend can precede it. The refusal is then
+  carried into the terminal write rather than raised, because a claimed-and-refused attempt is
+  evidence, and because that is exactly the shape the `disabled` provider has had since AT-M3.1.
+  Callers keep the contract they already have.
+- **The credential is resolved last.** Reading Vault to discover that live calls are disabled would
+  touch a secret backend for nothing and would make the disabled path depend on that backend being
+  reachable. `ExplodingSecretProvider` in the test suite fails any path that reads a secret before it
+  should.
+- **Timeouts are ordered against the lease, and the lease did not move.** 10s connect, 60s attempt,
+  inside the unchanged 120s database lease. An attempt that outlives its lease is not merely late: it
+  gets taken over, and the takeover is what turns one logical reasoning call into two billable
+  provider calls. The fix for a slower provider is a shorter attempt timeout, never a longer lease -
+  lengthening the lease lengthens how long a genuinely dead worker strands its invocation, which is
+  the failure migration 040 exists to remove.
+- **One retry authority.** `ReasoningService`'s existing attempt/takeover state machine. The adapter
+  never retries and the transport is constructed with `retries=0`; a transport that quietly retried
+  under a three-attempt budget would multiply worst-case spend by a factor nothing in this
+  architecture accounts for.
+- **Usage is recorded even when the output is unusable.** The adapter writes to the existing
+  `llm_budget` ledger immediately after the wire response and **before** parsing, and attaches usage
+  to the failure it raises, so a malformed completion, a content-safety rejection or an attempt that
+  loses an ownership race still accounts for the money it spent. Canonical success and billable-call
+  existence are different facts, and the audit trail must not end up cheaper than the invoice.
+  `reasoning_invocations.estimated_cost_usd` keeps the meaning 037 gave it - the pre-flight estimate
+  that gated the spend - and the actual stays in the usage ledger, which is where this project
+  already records actuals.
+
+### The two PRE-M3.6B bounds close here
+
+- **Artifact size: 256 KiB**, application-level, checked before the durable write in both the adapter
+  and the service. It is a backstop rather than the binding constraint - a 4000-token completion
+  cannot produce a 256 KiB artifact - and it exists for the case the token cap cannot cover: a
+  provider that ignores `max_tokens`. `PlanContent.constraints` is bounded neither in count nor in
+  item length, so a plan can be schema-valid and still be enormous, which is why the two controls are
+  independent rather than derived from one another.
+- **PlanContent: 40 steps**, with `depends_on`, `required_capabilities`, `expected_outputs` and
+  `constraints` each bounded at 10 per step. The per-step bound is the one that actually caps the
+  graph: 40 x 10 bounds the edge count at 400, and edges - not steps - are what M3.5 walks. A live
+  `decompose_plan` otherwise turns one oversized completion into an unbounded execution graph, an
+  unbounded routing workload and an unbounded scheduling surface.
+- **No database constraint was added for either.** A new limit that makes stored history unreadable
+  destroys the evidence the product is made of. Both bound NEW writes; a scan of every persisted
+  `plan_revisions.plan` row and of every committed JSON/SQL fixture found zero violations, and the
+  AT-M3.2/3.4/3.5/3.6A suites - which build plans in Python - all pass unchanged.
+
+### Migration 044
+
+Widens exactly two CHECK constraints on one AT-M3 table and does nothing else: no table, no column,
+no index, no trigger, no function, no backfill, no data change, and no AT-M2 table touched. Three
+failure categories are added because three things genuinely could not be said before -
+`provider_timeout` and `rate_limited` are retryable and distinguishable from an outage, and
+`budget_exceeded` is terminal, which is the whole point of separating it: folding it into
+`provider_unavailable` would make an unaffordable call look retryable and let a runtime re-attempt
+its way through a cost ceiling. **The DOWN migration fails closed**, refusing to run once live
+evidence exists rather than deleting or relabelling it - a reasoning invocation is evidence, and a
+schema rollback is not a licence to edit it.
+
+### /operations/safety
+
+Additive, and load-bearing. The Stage-30 fields describe a different subsystem: `LLM_PROVIDER`
+governs the historical code-workspace plan-only rail and knows nothing about `REASONING_PROVIDER`,
+so a runtime wired for live reasoning would have read `llm_provider: mock, llm_real_enabled: false`
+on the one surface an operator checks. `reasoning_provider` and `reasoning_live_enabled` are
+deliberately two facts: naming a provider is not permission to call it, and the truthful reading of a
+fully configured runtime in this slice is "Anthropic, and not permitted to call it".
+
+### Zero external calls, proven rather than asserted
+
+Step 65F ended as `PASS_WITH_GAPS` because two safe-looking diagnostic probes went round the
+platform's own rail, and the 65F-C guardrail that followed is explicit: every external call counts,
+diagnostic ones included. So this slice does not merely claim zero - a pytest fixture blocks
+non-loopback DNS resolution and non-loopback socket connection for every AT-M3.6B.1 test, three tests
+assert that the guard itself trips (a guard that cannot fail proves nothing), loopback stays open so
+the real-PostgreSQL suites are unaffected, and one test deliberately drives the adapter with the gate
+OPEN and no mock transport to confirm the guard is the last line rather than the only one. No
+credential is validated against Anthropic; no model-list, health, pricing or auth probe exists.
+
+### Three superseded scope assertions, narrowed - and a recurring drift
+
+Three tests written before a live provider existed failed against this branch. None reproduces on
+canonical main, so all three are real, and all three encode a premise AT-D24 supersedes rather than a
+property that broke:
+
+- **AT-M3.1 `test_no_network_client_is_importable_from_this_package`** said "nothing in the package
+  imports a network library", which was exactly right while the package shipped no live adapter. It
+  now names the one module AT-D24 authorizes and is unchanged for every other file, with a companion
+  test asserting the exclusion list stays at one - strictly stronger than before, everywhere else.
+- **AT-M3.4 `test_database_wide_invariants_hold`** asserted no invocation records a mode outside
+  `('mock','disabled')`. The database cannot distinguish a live row produced through an in-process
+  transport from one produced over a socket, so it can no longer be the place that proves no network
+  call happened - the network-proof suite is. It now asserts the mode vocabulary is the authorized
+  one and, additionally, that a live row may only ever name the allowlisted model.
+- **AT-M3.6A `test_the_migration_number_is_derived_from_canonical_main`** asserted
+  `max(numbers) == 43`. **This is a `GOVERNANCE_DRIFT_ALERT`, and the second occurrence of the
+  identical pattern.** AT-D23 section 7 already recorded one: a stage asserting that its own
+  migration is the last that will ever exist forbids every later authorized milestone by
+  construction, and AT-M3.6A itself had to repair exactly this assertion in the AT-M3.5 suite. Rather
+  than repair it a third time, the "nothing may follow me" clause is removed - it was never the
+  property the test was for. What the test checks now is what it was always for: that 043 was derived
+  from repository truth, that there is exactly one of it, and that it follows 042.
+
+No mechanism was added to resolve any of the three. AT-D18's Minimal Governance Kernel is preserved:
+a one-model config allowlist is not a model registry and a feature gate is not a governance platform.
+
+### Verification
+
+- **AT-M3.6B.1 suite: 177 passed, 0 failed, 0 skipped** against a real PostgreSQL with migrations
+  001-044 applied on the internal test runtime.
+- **AT-M2 + AT-M3.1 through AT-M3.6A regressions: 863 passed, 10 skipped, 0 failed** on the same
+  database, including the three narrowed assertions.
+- **Full suite: 7421 passed, 81 failed, 272 skipped.** Every one of the 81 reproduces identically on
+  a canonical-main clone in the same environment - they are the Step 66 verifier, branch-head and
+  `git diff --name-only main...HEAD` guards that fail for any implementation branch, plus the
+  historical/meta failures AT-D18 classifies as `NON_BLOCKING`. No new failure, and no P0/P1.
+- **Zero external calls** before, during and after. `production_executed_true_count: 0`.
+
+### Boundaries held
+
+- **AT-M3.6B.2 `NOT AUTHORIZED`.** No live call, official or diagnostic. The gate is closed by
+  default and nothing in this slice opens it.
+- **AT-M4 `NOT AUTHORIZED`.** No execution, shell, code edit, tool invocation, Git write, PR,
+  deployment, SaaS mutation, M3.5 dispatch consumer or authenticated completion ingress. A static
+  test asserts the slice's modules import no workspace, GitHub, deployment or approval surface and
+  contain no `subprocess`/`eval`/`exec`.
+- **HumanApproval unchanged.** No approval row is created, requested or mutated.
+- **Production `NOT GRANTED`.** No production credential, data, deployment or action.
