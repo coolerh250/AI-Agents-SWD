@@ -23,6 +23,22 @@ EVENT_TYPE_PREFLIGHT = "preflight"
 EVENT_TYPE_RECORDED_USAGE = "recorded_usage"
 EVENT_TYPE_BUDGET_EXCEEDED = "budget_exceeded"
 EVENT_TYPE_BUDGET_WARNING = "budget_warning"
+#: AT-M3.6B.1 remediation. A DURABLE claim on budget, written BEFORE a provider call and counted
+#: against the day and the month from that moment. Independent Validation 1 found the hole it
+#: closes: a call landed, `record_usage` failed, the failure was swallowed, and the money was
+#: counted at zero forever. Reserving first makes a post-call accounting failure unable to erase
+#: a call from future enforcement -- the worst it can do is leave the charge conservative.
+EVENT_TYPE_RESERVED_USAGE = "reserved_usage"
+#: A reservation for a call that PROVABLY never left. Written only where absence can be
+#: established -- a refusal reached before the client was built -- and never as a guess about an
+#: ambiguous failure, because guessing wrong undercounts a real charge.
+EVENT_TYPE_RELEASED_RESERVATION = "released_reservation"
+
+#: The event types that constitute spend. A reserved-but-unsettled attempt counts at its
+#: conservative estimate; a settled one counts at its actual. ONE row carries an attempt from
+#: reservation to settlement, so "include both" cannot double-count -- there is nothing to add up
+#: twice.
+COUNTED_EVENT_TYPES: tuple[str, ...] = (EVENT_TYPE_RECORDED_USAGE, EVENT_TYPE_RESERVED_USAGE)
 
 DECISION_ALLOWED = "allowed"
 DECISION_BLOCKED = "blocked"
@@ -101,10 +117,15 @@ class LLMBudgetEvent:
     reason: str | None
     created_at: datetime | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    #: Present on the ledger row of one provider attempt: the idempotency key its reservation was
+    #: made under. NULL on every historical row and on every event that is not an attempt's own
+    #: accounting (a preflight decision, a breach notice).
+    reservation_key: str | None = None
 
     def to_safe_dict(self) -> dict[str, Any]:
         return {
             "budget_event_id": self.budget_event_id,
+            "reservation_key": self.reservation_key,
             "task_id": self.task_id,
             "workflow_id": self.workflow_id,
             "policy_id": self.policy_id,

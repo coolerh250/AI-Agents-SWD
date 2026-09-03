@@ -517,7 +517,7 @@ class TestBudget:
         )
         assert evaluator.preflights[0]["estimated_cost_usd"] < MAX_COST_PER_CALL_USD / 10
 
-    async def test_usage_is_recorded_even_when_the_response_is_unusable(self) -> None:
+    async def test_usage_is_settled_even_when_the_response_is_unusable(self) -> None:
         """A call that reached the provider is billable whatever the body turns out to contain."""
         evaluator = FakeBudgetEvaluator()
         transport = returning_text("{not json", input_tokens=350, output_tokens=90)
@@ -527,28 +527,40 @@ class TestBudget:
         assert caught.value.failure_category == "malformed_output"
         assert caught.value.usage is not None
         assert caught.value.usage.input_tokens == 350
-        assert evaluator.usages == [
-            {
-                "provider": "anthropic",
-                "model_name": "claude-sonnet-5",
-                "prompt_tokens": 350,
-                "completion_tokens": 90,
-                "policy_id": "policy-test",
-                "metadata": {"provider_request_id": "msg_test_0001"},
-            }
-        ]
+        assert len(evaluator.settlements) == 1
+        assert evaluator.settlements[0]["prompt_tokens"] == 350
+        assert evaluator.settlements[0]["completion_tokens"] == 90
+        assert evaluator.settlements[0]["metadata"] == {"provider_request_id": "msg_test_0001"}
+        # And the ledger counts it, at the actual rather than the reservation.
+        key = caught.value.usage.reservation_key
+        assert key is not None
+        assert evaluator.reservations[key]["state"] == "settled"
+        assert evaluator.counted_usd() > 0
 
     async def test_a_ledger_failure_does_not_discard_a_paid_valid_result(self) -> None:
-        """The money is already spent; failing the call to record that it was spent helps nobody."""
+        """The money is already spent; failing the call to record that it was spent helps nobody.
+
+        AT-M3.6B.1 Independent Validation 1 found what this test used to permit: the artifact
+        survived, and so did a charge counted at ZERO. It now asserts both halves -- the result
+        survives AND the pre-call reservation is still counted, so the next pre-flight cannot
+        authorize spend on the strength of a charge that went missing.
+        """
 
         class _BrokenLedger(FakeBudgetEvaluator):
-            async def record_usage(self, **kwargs: object) -> dict[str, object]:
+            async def settle(self, **kwargs: object) -> dict[str, object]:
                 raise RuntimeError("ledger unavailable")
 
+        evaluator = _BrokenLedger()
         result = await _provider(
-            transport=returning_artifact("propose"), evaluator=_BrokenLedger()
+            transport=returning_artifact("propose"), evaluator=evaluator
         ).propose(_request())
         assert isinstance(result.artifact, ProposalArtifact)
+        assert result.usage is not None
+        assert result.usage.settled is False
+        assert result.usage.reservation_key is not None
+        assert evaluator.reservations[result.usage.reservation_key]["state"] == "reserved"
+        assert evaluator.counted_usd() == pytest.approx(result.usage.reserved_cost_usd)
+        assert evaluator.counted_usd() > 0
 
 
 # --- secrets ---------------------------------------------------------------------------------------

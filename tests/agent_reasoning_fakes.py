@@ -118,6 +118,33 @@ class InMemoryReasoningInvocationStore:
         row["lease_expires_at"] = _now() + timedelta(seconds=self.lease_ttl_seconds)
         return dict(row)
 
+    async def advance_retryable_attempt(
+        self, invocation_id: Any, *, attempt_token: Any, failure_category: str
+    ) -> dict[str, Any] | None:
+        """Mirror of the real compare-and-swap: current owner, still started, budget remaining.
+
+        Note what is NOT mirrored, because the database refuses it: no failure_category or
+        failure_reason is written onto the still-'started' row. Migration 037's
+        ``chk_reasoning_invocations_status_consistency`` makes that state unrepresentable, so a
+        fake that allowed it would let a test pass against semantics PostgreSQL would reject.
+        """
+        from shared.sdk.agent_reasoning.models import RETRYABLE_FAILURE_CATEGORIES
+
+        if failure_category not in RETRYABLE_FAILURE_CATEGORIES:
+            return None
+        row = self.rows_by_invocation.get(str(invocation_id))
+        if row is None or row["status"] != "started":
+            return None
+        if str(row["attempt_token"]) != str(attempt_token):
+            return None
+        if row["attempt"] >= self.max_attempts:
+            return None
+        row["attempt"] += 1
+        row["attempt_token"] = str(uuid.uuid4())
+        row["started_at"] = _now()
+        row["lease_expires_at"] = _now() + timedelta(seconds=self.lease_ttl_seconds)
+        return dict(row)
+
     async def complete_invocation(
         self, invocation_id: Any, *, attempt_token: Any, terminal: dict[str, Any]
     ) -> dict[str, Any] | None:

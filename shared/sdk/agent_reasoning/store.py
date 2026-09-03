@@ -5,7 +5,7 @@ failure_reason sanitization below. Follows the existing store convention (connec
 ``DATABASE_URL`` from the environment, plain dict rows) set by
 ``shared/sdk/agent_team/store.py``.
 
-LIFECYCLE. Three operations, each of which is one atomic statement, because every guarantee here
+LIFECYCLE. Four operations, each of which is one atomic statement, because every guarantee here
 has to hold across processes rather than inside one.
 
 ``try_begin_invocation`` atomically claims a correlation_id -- INSERT ... ON CONFLICT DO NOTHING,
@@ -25,6 +25,13 @@ writes the structured artifact -- in the SAME UPDATE, to the SAME row.
     window rather than narrowing it: there is no ordering between "succeeded" and "the artifact",
     because they are one write. Migration 040's CHECK makes the bad state unrepresentable even for
     a caller that bypasses this module entirely.
+
+``advance_retryable_attempt`` moves a KNOWN-TRANSIENT attempt to the next attempt of the same
+invocation. AT-M3.6B.1 Independent Validation 1 found why it has to exist: a timeout terminalized
+the row, so the next call for that correlation_id replayed a FAILED outcome and the retryable
+failure categories were labels with no behaviour behind them. Deliberately the same compare-and-swap
+shape as takeover rather than a second mechanism -- and deliberately NOT takeover, because takeover
+recovers a worker that has gone silent and a provider answering "429" has not gone silent.
 
 ``try_take_over_invocation`` recovers the OTHER way a call could strand. 037 deferred this
 explicitly ("no lease/takeover recovery is implemented here"), which meant a worker that died
@@ -224,6 +231,76 @@ class ReasoningInvocationStore:
                 RETURNING {_COLUMNS}
                 """,
                 _uuid_or_none(correlation_id),
+                uuid.uuid4(),
+                float(self.lease_ttl_seconds),
+                self.max_attempts,
+            )
+            return _decoded(row)
+        finally:
+            await conn.close()
+
+    async def advance_retryable_attempt(
+        self,
+        invocation_id: Any,
+        *,
+        attempt_token: Any,
+        failure_category: str,
+    ) -> dict[str, Any] | None:
+        """Advance a KNOWN-TRANSIENT attempt to the next attempt of the SAME invocation.
+
+        AT-M3.6B.1 Independent Validation 1 found that ``provider_timeout``, ``rate_limited`` and
+        ``provider_unavailable`` were labels and nothing more: a timeout terminalized the invocation
+        immediately, so the next call for that correlation_id replayed a FAILED row and no second
+        attempt was ever made. Takeover could not supply one either -- it recovers a worker that has
+        gone silent, which a provider returning "429" plainly has not.
+
+        This is the missing transition, and it is deliberately the SAME shape as takeover rather
+        than a second mechanism: one atomic compare-and-swap on the row, which verifies in one
+        statement that
+
+        * the invocation is still in the nonterminal ownership state ('started'),
+        * ``attempt_token`` is the CURRENT owner's -- a superseded worker cannot restart anything,
+        * the attempt budget has room (``attempt < max_attempts``),
+
+        and then increments the attempt, rotates the token and re-leases on the DATABASE clock.
+        Returns the re-leased row when this caller won, ``None`` when it did not -- which is not an
+        error but the honest answer that this attempt no longer owns the invocation.
+
+        ``failure_category`` is checked HERE, against the canonical retryable set, so no caller can
+        turn a deterministic failure into an unbounded series of paid calls by passing it in. It
+        takes no ``failure_reason``: there is nowhere lawful to put one (see below), and a parameter
+        this method could only ignore would suggest the row holds something it does not.
+
+        WHERE ATTEMPT N'S EVIDENCE GOES. Not onto this row: migration 037's
+        ``chk_reasoning_invocations_status_consistency`` requires a 'started' row to carry no
+        failure_category and no failure_reason, and that constraint is right -- a row that is
+        running does not have an outcome. The evidence is therefore recorded where this project
+        already records per-attempt facts: an audit event per attempt (``reasoning_attempt_retried``
+        carries the number, the category and the sanitized reason) and one llm_budget ledger row per
+        attempt (carrying its tokens and its cost). No second reasoning table is introduced to hold
+        what two existing authorities already hold.
+        """
+        from shared.sdk.agent_reasoning.models import RETRYABLE_FAILURE_CATEGORIES
+
+        if failure_category not in RETRYABLE_FAILURE_CATEGORIES:
+            return None
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                f"""
+                UPDATE reasoning_invocations SET
+                    attempt = attempt + 1,
+                    attempt_token = $3,
+                    started_at = now(),
+                    lease_expires_at = now() + make_interval(secs => $4::double precision)
+                WHERE invocation_id = $1
+                  AND attempt_token = $2
+                  AND status = 'started'
+                  AND attempt < $5
+                RETURNING {_COLUMNS}
+                """,
+                _uuid_or_none(invocation_id),
+                _uuid_or_none(attempt_token),
                 uuid.uuid4(),
                 float(self.lease_ttl_seconds),
                 self.max_attempts,

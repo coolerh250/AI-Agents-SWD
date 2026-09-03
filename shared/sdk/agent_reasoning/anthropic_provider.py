@@ -17,12 +17,25 @@ ORDER OF OPERATIONS, and why it is this order:
 
     network gate  ->  provider/model allowlist  ->  generation profile  ->  egress projection
     ->  outbound size  ->  active budget policy          [ preflight, BEFORE the attempt is claimed ]
-    ->  budget evaluator + per-call cost cap  ->  credential  ->  wire  [ inside the verb ]
+    ->  budget evaluator + per-call cost cap  ->  DURABLE BUDGET RESERVATION  ->  credential
+    ->  wire  ->  settlement to actual usage  ->  parse                        [ inside the verb ]
 
 Everything knowable without spending anything happens first, so a refusal costs nothing. The
 credential is resolved LAST, immediately before the request that needs it: reading a real secret in
 order to discover that live calls are disabled would touch Vault for no reason and would make the
 disabled path depend on the secret backend being reachable.
+
+RESERVE BEFORE THE WIRE. AT-M3.6B.1 Independent Validation 1 found the defect this ordering fixes:
+the call landed, the usage write failed, the failure was swallowed, and the day and month totals
+understated that charge permanently -- so a later pre-flight would authorize spend the account could
+not afford. No amount of error handling around the usage write repairs that, because the failure it
+has to survive is its own. Claiming the budget FIRST does: the worst a settlement failure can now do
+is leave the charge at the conservative estimate that gated it. It can no longer leave it at zero.
+
+A reservation is given back in exactly one situation -- a refusal reached before any HTTP client
+exists, where the absence of an external request is provable. Never on a timeout, a reset connection
+or a lost worker: those cannot prove no request arrived, and releasing on that guess is how a real
+charge gets counted at nothing.
 
 WHAT NEVER LEAVES THIS MODULE. The API key -- it exists as a ``SecretRef`` until the moment a header
 is built, is never returned, never logged, never persisted and never placed in an exception. The
@@ -35,6 +48,8 @@ from __future__ import annotations
 
 import asyncio
 import json
+import uuid
+from dataclasses import dataclass, replace
 from typing import Any, Mapping
 
 from shared.sdk.agent_reasoning.egress import (
@@ -63,10 +78,20 @@ from shared.sdk.agent_reasoning.models import (
     assert_artifact_within_size,
 )
 from shared.sdk.agent_reasoning.provider import (
+    AttemptContext,
     LiveProviderError,
     ProviderResult,
     ProviderUsage,
 )
+
+
+@dataclass(frozen=True)
+class _Reservation:
+    """A durable claim on budget, made before the wire. What the call is allowed to spend."""
+
+    key: str
+    amount: float
+
 
 #: The instruction the model is given. Fixed per verb, owned by this repository, never supplied by a
 #: caller and never persisted as business data -- it is code, and the shipped commit is its version.
@@ -128,6 +153,7 @@ class AnthropicReasoningProvider:
         budget_evaluator: Any | None = None,
         budget_store: Any | None = None,
         transport: Any | None = None,
+        attempt: AttemptContext | None = None,
     ) -> None:
         self.config = config if config is not None else LiveReasoningConfig.resolve()
         self._secret_provider = secret_provider
@@ -136,11 +162,45 @@ class AnthropicReasoningProvider:
         #: Test-injected in-process transport. Carries no URL, so injecting one cannot retarget the
         #: adapter at a different host -- the endpoint stays the fixed, runtime-owned constant.
         self._transport = transport
+        #: WHICH durable attempt this instance is spending on. Set by ``for_attempt``, which
+        #: ``ReasoningService`` calls once per attempt; see :meth:`for_attempt`.
+        self._attempt = attempt
 
     @property
     def model_name(self) -> str:
         """The model that will actually answer. Configuration's answer, never the request's."""
         return self.config.model_name
+
+    def for_attempt(self, attempt: AttemptContext) -> "AnthropicReasoningProvider":
+        """Return this adapter bound to ONE durable attempt, so its spend can be reserved to it.
+
+        A NEW instance, deliberately. One adapter serves concurrent invocations -- a discussion and
+        a planner can be in flight at the same moment -- so per-attempt state stored on the shared
+        object would be a race between them, and the loser would settle its charge against the
+        winner's attempt. The collaborators (config, secrets, budget, transport) are shared because
+        they are stateless with respect to the attempt.
+        """
+        return AnthropicReasoningProvider(
+            config=self.config,
+            secret_provider=self._secret_provider,
+            budget_evaluator=self._budget_evaluator,
+            budget_store=self._budget_store,
+            transport=self._transport,
+            attempt=attempt,
+        )
+
+    def _reservation_key(self) -> str:
+        """The idempotency key this attempt's charge is reserved under.
+
+        Under ``ReasoningService`` -- which is every canonical path -- it is the invocation plus the
+        attempt number, so a retry of the SAME attempt reserves once and attempt 2 reserves
+        separately. A verb called directly, outside the service, has no durable attempt to be
+        idempotent about: it gets a fresh key, which still gives that call exactly one reservation
+        and keeps "no provider call without a reservation" true for every path, canonical or not.
+        """
+        if self._attempt is not None:
+            return self._attempt.reservation_key
+        return f"unbound:{uuid.uuid4()}"
 
     # --- lazily-built collaborators ------------------------------------------------------------
 
@@ -261,23 +321,46 @@ class AnthropicReasoningProvider:
         payload = self.build_request(verb, projection, profile)
 
         decision = await self._budget_preflight(verb, payload, profile)
-        api_key = self._resolve_credential()
+        # DURABLE, AND BEFORE THE CREDENTIAL. From here on this attempt's conservative cost is
+        # counted against the day and the month whatever happens next -- including this process
+        # dying between here and the response.
+        reservation = await self._reserve(verb, decision)
 
-        usage, body = await self._call(payload, api_key)
+        try:
+            api_key = self._resolve_credential()
+        except LiveProviderError:
+            # The one place a reservation may be given back: no HTTP client has been built, no
+            # request has been constructed, and the absence of an external call is therefore
+            # provable rather than assumed.
+            await self._release(reservation, "credential_unavailable_before_any_request")
+            raise
+
+        try:
+            wire, body = await self._call(payload, api_key)
+        except LiveProviderError as exc:
+            # A timeout or a transport error cannot prove nothing arrived, so the reservation
+            # STAYS. It is named on the failure so the invocation record and the audit trail can
+            # both point at the charge this attempt may have incurred.
+            exc.usage = self._with_reservation(exc.usage, reservation)
+            raise
+
         usage = ProviderUsage(
-            input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
+            input_tokens=wire.input_tokens,
+            output_tokens=wire.output_tokens,
             estimated_cost_usd=(
                 float(decision.estimated_cost_usd) if decision is not None else None
             ),
-            provider_request_id=usage.provider_request_id,
+            provider_request_id=wire.provider_request_id,
             model_name=self.model_name,
             call_occurred=True,
+            reservation_key=reservation.key,
+            reserved_cost_usd=reservation.amount,
         )
-        # Recorded BEFORE parsing. The call happened and is billable whatever the body turns out to
+        # Settled BEFORE parsing. The call happened and is billable whatever the body turns out to
         # contain, and a parse failure a line later must not make the spend disappear from the
-        # ledger.
-        await self._record_usage(usage, decision)
+        # ledger. If the settlement itself fails, the reservation simply keeps counting at its
+        # conservative amount -- the accounting goes unsynchronized rather than absent.
+        usage = await self._settle(usage)
 
         artifact = self._parse(verb, body, usage)
         return ProviderResult(artifact=artifact, usage=usage)
@@ -357,27 +440,87 @@ class AnthropicReasoningProvider:
             )
         return decision
 
-    async def _record_usage(self, usage: ProviderUsage, decision: Any) -> None:
-        """Write what the call actually consumed to the existing usage ledger.
+    async def _reserve(self, verb: str, decision: Any) -> _Reservation:
+        """Durably claim this attempt's conservative cost BEFORE any request is built.
 
-        Best-effort by design. The money is already spent and the artifact may be perfectly valid;
-        failing the reasoning call because a ledger insert failed would discard a paid result to
-        record that it was paid for. The invocation row still carries the token counts, so a ledger
-        failure degrades the accounting rather than erasing it.
+        The amount is the estimate the pre-flight just gated on, not a second figure derived a
+        second way: two estimates that could disagree would mean the number a call was authorized
+        against and the number it was charged against were different.
+
+        A reservation that cannot be persisted is TERMINAL and not retryable. `budget_exceeded` is
+        the honest category -- the budget authority could not confirm this call is affordable, and
+        re-asking a ledger that just failed is not a reason to spend money.
         """
-        if usage.input_tokens is None and usage.output_tokens is None:
-            return
+        key = self._reservation_key()
+        amount = float(getattr(decision, "estimated_cost_usd", 0.0) or 0.0)
         try:
-            await self._budget().record_usage(
+            await self._budget().reserve(
+                reservation_key=key,
+                provider=self.name,
+                model_name=self.model_name,
+                estimated_prompt_tokens=int(getattr(decision, "estimated_prompt_tokens", 0) or 0),
+                estimated_completion_tokens=int(
+                    getattr(decision, "estimated_completion_tokens", 0) or 0
+                ),
+                estimated_cost_usd=amount,
+                policy_id=getattr(decision, "policy_id", None),
+                metadata={
+                    "reasoning_verb": verb,
+                    "provider_mode": self.mode,
+                    "reasoning_invocation_id": (
+                        self._attempt.invocation_id if self._attempt else None
+                    ),
+                    "reasoning_attempt": self._attempt.attempt if self._attempt else None,
+                },
+            )
+        except Exception as exc:
+            raise LiveProviderError(
+                f"the live reasoning budget reservation could not be persisted: "
+                f"{type(exc).__name__}; no provider call was made",
+                failure_category="budget_exceeded",
+            ) from exc
+        return _Reservation(key=key, amount=amount)
+
+    async def _settle(self, usage: ProviderUsage) -> ProviderUsage:
+        """Replace this attempt's reservation with what the call actually consumed.
+
+        Best-effort, and now safely so. Before the reservation existed, a swallowed failure here
+        meant a paid call counted at zero forever; now it means the day and the month keep counting
+        the conservative reservation instead of the actual. The reasoning result is not discarded
+        for it -- the money is already spent, and failing a valid artifact in order to record that
+        it was paid for helps nobody -- but ``settled=False`` travels with the usage so the
+        invocation's audit metadata says plainly that settlement is outstanding.
+        """
+        if usage.reservation_key is None:
+            return usage
+        try:
+            await self._budget().settle(
+                reservation_key=usage.reservation_key,
                 provider=self.name,
                 model_name=self.model_name,
                 prompt_tokens=int(usage.input_tokens or 0),
                 completion_tokens=int(usage.output_tokens or 0),
-                policy_id=getattr(decision, "policy_id", None),
                 metadata={"provider_request_id": usage.provider_request_id},
             )
         except Exception:
+            return usage
+        return replace(usage, settled=True)
+
+    async def _release(self, reservation: _Reservation, reason: str) -> None:
+        """Give a reservation back. Only ever called where no request can have left this process."""
+        try:
+            await self._budget().release(reservation_key=reservation.key, reason=reason)
+        except Exception:
+            # A release that fails leaves the reservation counted, which is the conservative side of
+            # this decision and needs no compensation.
             return
+
+    def _with_reservation(
+        self, usage: ProviderUsage | None, reservation: _Reservation
+    ) -> ProviderUsage:
+        """Name the retained reservation on a failure's usage, so the charge stays traceable."""
+        base = usage or ProviderUsage(model_name=self.model_name, call_occurred=True)
+        return replace(base, reservation_key=reservation.key, reserved_cost_usd=reservation.amount)
 
     # --- credential ----------------------------------------------------------------------------
 

@@ -161,6 +161,12 @@ class FakeBudgetEvaluator:
         self.force_decision = force_decision
         self.preflights: list[dict[str, Any]] = []
         self.usages: list[dict[str, Any]] = []
+        #: One entry per durable pre-call reservation, keyed by attempt. The AT-M3.6B.1 remediation
+        #: turns "did this call have budget claimed before it left" into something a test can count
+        #: rather than infer.
+        self.reservations: dict[str, dict[str, Any]] = {}
+        self.settlements: list[dict[str, Any]] = []
+        self.releases: list[dict[str, Any]] = []
 
     async def preflight(
         self,
@@ -228,6 +234,107 @@ class FakeBudgetEvaluator:
         }
         self.usages.append(entry)
         return entry
+
+    # --- reservation / settlement ---------------------------------------------------------------
+
+    async def reserve(
+        self,
+        *,
+        reservation_key: str,
+        provider: str,
+        model_name: str,
+        estimated_prompt_tokens: int,
+        estimated_completion_tokens: int,
+        estimated_cost_usd: float,
+        policy_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any]:
+        """Idempotent on ``reservation_key``, exactly like the unique index in migration 045.
+
+        A fake that let the same attempt reserve twice would let a double-charge test pass against
+        semantics the database refuses.
+        """
+        existing = self.reservations.get(reservation_key)
+        if existing is not None:
+            return existing
+        entry = {
+            "reservation_key": reservation_key,
+            "provider": provider,
+            "model_name": model_name,
+            "estimated_prompt_tokens": int(estimated_prompt_tokens),
+            "estimated_completion_tokens": int(estimated_completion_tokens),
+            "reserved_cost_usd": float(estimated_cost_usd),
+            "actual_cost_usd": None,
+            "policy_id": policy_id,
+            "state": "reserved",
+            "metadata": dict(metadata or {}),
+        }
+        self.reservations[reservation_key] = entry
+        return entry
+
+    async def settle(
+        self,
+        *,
+        reservation_key: str,
+        provider: str,
+        model_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        actual_cost_usd: float | None = None,
+        metadata: dict[str, Any] | None = None,
+        **_: Any,
+    ) -> dict[str, Any] | None:
+        entry = self.reservations.get(reservation_key)
+        if entry is None:
+            return None
+        if actual_cost_usd is None:
+            cost = self.estimator.estimate_cost(
+                provider=provider,
+                model_name=model_name,
+                prompt_tokens=int(prompt_tokens),
+                completion_tokens=int(completion_tokens),
+            )
+            actual_cost_usd = float(cost["cost_usd"])
+        record = {
+            "reservation_key": reservation_key,
+            "prompt_tokens": int(prompt_tokens),
+            "completion_tokens": int(completion_tokens),
+            "actual_cost_usd": float(actual_cost_usd),
+            "metadata": dict(metadata or {}),
+        }
+        self.settlements.append(record)
+        if entry["state"] == "reserved":
+            # Mirrors the store's `WHERE event_type = 'reserved_usage'` guard: settling twice
+            # cannot charge twice.
+            entry["state"] = "settled"
+            entry["actual_cost_usd"] = float(actual_cost_usd)
+            entry["prompt_tokens"] = int(prompt_tokens)
+            entry["completion_tokens"] = int(completion_tokens)
+        return record
+
+    async def release(self, *, reservation_key: str, reason: str | None = None, **_: Any) -> Any:
+        self.releases.append({"reservation_key": reservation_key, "reason": reason})
+        entry = self.reservations.get(reservation_key)
+        if entry is not None and entry["state"] == "reserved":
+            entry["state"] = "released"
+        return entry
+
+    def counted_usd(self) -> float:
+        """What the day and the month would count, by the same rule migration 045's totals use.
+
+        Settled rows count at their actual, unsettled reservations at their conservative estimate,
+        released ones at nothing. One row per attempt throughout, so nothing is counted twice.
+        """
+        total = 0.0
+        for entry in self.reservations.values():
+            if entry["state"] == "released":
+                continue
+            if entry["state"] == "settled" and entry["actual_cost_usd"] is not None:
+                total += float(entry["actual_cost_usd"])
+            else:
+                total += float(entry["reserved_cost_usd"])
+        return total
 
 
 def blocked_evaluator(**kwargs: Any) -> FakeBudgetEvaluator:
@@ -415,6 +522,44 @@ def verb_aware(
     return RecordingTransport(handler)
 
 
+class SequencedTransport(httpx.AsyncBaseTransport):
+    """Answers each request with the next entry in a script, so a RETRY can be driven exactly.
+
+    A step is either the literal ``"timeout"`` -- which raises the same ``httpx.TimeoutException``
+    a real read timeout raises, without sleeping for sixty seconds -- or a ``(status_code, body)``
+    pair. Running past the end of the script is an assertion failure rather than a repeat of the
+    last answer: "no fourth call" is the property several of these tests exist to establish, and a
+    transport that silently kept answering would make that property unfalsifiable.
+    """
+
+    def __init__(self, steps: list[Any]) -> None:
+        self.steps = list(steps)
+        self.call_count = 0
+
+    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        if self.call_count >= len(self.steps):
+            raise AssertionError(
+                f"the provider was called {self.call_count + 1} time(s) but the script has "
+                f"{len(self.steps)} step(s); an unexpected extra provider call is exactly what "
+                "these tests are counting"
+            )
+        step = self.steps[self.call_count]
+        self.call_count += 1
+        if step == "timeout":
+            raise httpx.ReadTimeout("simulated provider read timeout", request=request)
+        if step == "connect_error":
+            raise httpx.ConnectError("simulated transport failure", request=request)
+        status, body = step
+        return httpx.Response(status, json=body)
+
+
+def transient_then_artifact(verb: str, *failures: Any, **kwargs: Any) -> SequencedTransport:
+    """``failures`` transient answers, then one valid artifact for ``verb``."""
+    return SequencedTransport(
+        [*failures, (200, anthropic_body(valid_artifact_json(verb), **kwargs))]
+    )
+
+
 class GatedTransport(httpx.AsyncBaseTransport):
     """Holds a response until a test releases it, so a race can be driven deterministically.
 
@@ -452,6 +597,7 @@ __all__ = [
     "FakeSecretProvider",
     "GatedTransport",
     "RecordingTransport",
+    "SequencedTransport",
     "SlowTransport",
     "UnauthorizedExternalCall",
     "anthropic_body",
@@ -461,6 +607,7 @@ __all__ = [
     "returning_artifact",
     "returning_text",
     "secret_name",
+    "transient_then_artifact",
     "valid_artifact_json",
     "verb_aware",
 ]

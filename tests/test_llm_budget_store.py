@@ -66,6 +66,9 @@ def _make_event_row(**overrides):
         "reason": None,
         "created_at": datetime.now(timezone.utc),
         "metadata": {},
+        # AT-M3.6B.1 remediation (migration 045). NULL is the historical value and the value on
+        # every event that is not one provider attempt's own accounting.
+        "reservation_key": None,
     }
     base.update(overrides)
     return _FakeRow(base)

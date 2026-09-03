@@ -220,6 +220,90 @@ class BudgetPolicyEvaluator:
         await self._persist(decision, task_id, workflow_id)
         return decision
 
+    async def reserve(
+        self,
+        *,
+        reservation_key: str,
+        provider: str,
+        model_name: str,
+        estimated_prompt_tokens: int,
+        estimated_completion_tokens: int,
+        estimated_cost_usd: float,
+        policy_id: str | None = None,
+        task_id: str | None = None,
+        workflow_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        """Durably claim budget for one provider attempt, BEFORE the call is made.
+
+        The amount is the SAME conservative estimate :meth:`preflight` just gated on, not a second
+        number computed a second way -- two estimates that could disagree would mean the figure a
+        call was authorized against and the figure it was charged against were different.
+
+        Raises whatever the store raises. That is deliberate and it is the whole point: a
+        reservation that could not be written means the caller must not call the provider, so this
+        failure has to be loud. AT-M3.6B.1's adapter turns it into a ``budget_exceeded`` refusal
+        with zero provider calls.
+        """
+        return await self.store.reserve_attempt_cost(
+            reservation_key=reservation_key,
+            provider=provider,
+            model_name=model_name,
+            policy_id=policy_id,
+            estimated_prompt_tokens=int(estimated_prompt_tokens),
+            estimated_completion_tokens=int(estimated_completion_tokens),
+            estimated_cost_usd=float(estimated_cost_usd),
+            task_id=task_id,
+            workflow_id=workflow_id,
+            metadata=dict(metadata or {}),
+        )
+
+    async def settle(
+        self,
+        *,
+        reservation_key: str,
+        provider: str,
+        model_name: str,
+        prompt_tokens: int,
+        completion_tokens: int,
+        actual_cost_usd: float | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> Any:
+        """Replace an attempt's reservation with what the call actually consumed.
+
+        Idempotent, because the store's UPDATE only matches a still-reserved row. If this fails,
+        the reservation stays exactly as it was and keeps counting at the conservative estimate --
+        the accounting is then unsynchronized, which is a reporting problem, rather than absent,
+        which was the enforcement problem Independent Validation 1 found.
+        """
+        if actual_cost_usd is None:
+            if provider == "mock":
+                actual_cost_usd = 0.0
+            else:
+                try:
+                    cost_info = self.estimator.estimate_cost(
+                        provider=provider,
+                        model_name=model_name,
+                        prompt_tokens=int(prompt_tokens),
+                        completion_tokens=int(completion_tokens),
+                    )
+                    actual_cost_usd = float(cost_info["cost_usd"])
+                except ValueError:
+                    actual_cost_usd = 0.0
+        return await self.store.settle_attempt_cost(
+            reservation_key=reservation_key,
+            actual_prompt_tokens=int(prompt_tokens),
+            actual_completion_tokens=int(completion_tokens),
+            actual_cost_usd=float(actual_cost_usd),
+            metadata=dict(metadata or {}),
+        )
+
+    async def release(self, *, reservation_key: str, reason: str | None = None) -> Any:
+        """Give back a reservation for a call that provably never left. Never called on a guess."""
+        return await self.store.release_attempt_reservation(
+            reservation_key=reservation_key, reason=reason
+        )
+
     async def record_usage(
         self,
         *,

@@ -130,7 +130,8 @@ class TestReplayNeverReachesAProvider:
         assert transport.call_count == 1
         assert len(secrets.lookups) == 1
         assert len(evaluator.preflights) == 1
-        assert len(evaluator.usages) == 1
+        assert len(evaluator.reservations) == 1
+        assert len(evaluator.settlements) == 1
 
     async def test_replay_works_with_the_live_gate_closed_and_no_secret_available(self) -> None:
         """The load-bearing one.

@@ -48,6 +48,31 @@ class ReasoningProviderError(RuntimeError):
 
 
 @dataclass(frozen=True)
+class AttemptContext:
+    """WHICH durable attempt a provider is being invoked for.
+
+    ``ReasoningService`` owns attempt identity -- it claims the invocation, it rotates the attempt
+    token and it decides when attempt N becomes attempt N+1 -- but the thing that spends money is
+    the adapter. AT-M3.6B.1 Independent Validation 1 found the consequence: the adapter had no way
+    to name the attempt it was about to make, so its budget accounting could not be keyed to one,
+    and a failed ledger write left a paid call counted at zero forever.
+
+    This is the minimum the service tells a provider so a spend can be durably RESERVED against an
+    identity that is stable across a retry of the same attempt and distinct across attempts. It
+    deliberately does NOT carry ``attempt_token``: the token is ownership-sensitive, it rotates, and
+    a reservation keyed on it could neither be found again nor be idempotent.
+    """
+
+    invocation_id: str
+    attempt: int
+
+    @property
+    def reservation_key(self) -> str:
+        """The idempotency key for this attempt's budget reservation. One attempt, one charge."""
+        return f"{self.invocation_id}:{int(self.attempt)}"
+
+
+@dataclass(frozen=True)
 class ProviderUsage:
     """What a provider call actually consumed. Safe metadata only -- never content.
 
@@ -68,6 +93,16 @@ class ProviderUsage:
     model_name: str | None = None
     #: True when a request actually reached the provider. False for a refusal that never left.
     call_occurred: bool = False
+    #: The durable budget reservation this call was made under, when one exists. Its presence is
+    #: the evidence that the spend was accounted BEFORE the wire rather than after it.
+    reservation_key: str | None = None
+    #: The conservative amount reserved before the call. Remains the budgeted figure when
+    #: settlement to actual usage fails.
+    reserved_cost_usd: float | None = None
+    #: True once actual usage replaced the reservation in the ledger. False means the conservative
+    #: reservation is still what the day and the month are counting -- accounting is unsynchronized,
+    #: but it cannot undercount.
+    settled: bool = False
 
 
 @dataclass(frozen=True)
@@ -123,6 +158,19 @@ class ReasoningProvider(Protocol):
     is serving. So a verb may return its artifact directly, or return an awaitable of it, and
     ``ReasoningService`` awaits whatever it gets. Existing synchronous providers are unaffected --
     this widens what is accepted rather than changing what is required.
+
+    TWO OPTIONAL HOOKS, both discovered by ``getattr`` so a provider that has neither is simply not
+    asked:
+
+    ``preflight(request)``          refuse, for free, before the attempt is claimed.
+    ``for_attempt(attempt)``        return the provider BOUND to one durable
+                                    :class:`AttemptContext`. A provider that spends money needs to
+                                    know which attempt it is spending on so the charge can be
+                                    reserved against that identity; a provider that spends nothing
+                                    returns itself. Binding returns a NEW object rather than
+                                    mutating the shared one -- one adapter instance serves
+                                    concurrent invocations, and per-attempt state on it would be a
+                                    race.
     """
 
     name: str
@@ -199,6 +247,7 @@ def get_reasoning_provider(name: str | None = None) -> ReasoningProvider:
 
 __all__ = [
     "DEFAULT_REASONING_PROVIDER",
+    "AttemptContext",
     "DisabledReasoningProvider",
     "LiveProviderError",
     "ProviderResult",

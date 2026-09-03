@@ -25,6 +25,17 @@ never recoverable. That is the defect this module was rebaselined around.
 that finds an expired lease takes it over and makes a genuine new attempt, rather than being told
 'in_progress' by a worker that will never return.
 
+AT-M3.6B.1's remediation added the third thing neither of those covers:
+
+**A transient provider failure is retried, here, immediately.** ``provider_timeout``,
+``rate_limited`` and ``provider_unavailable`` were declared retryable and behaved terminally -- the
+first one wrote a FAILED row and every later call replayed it. This service now advances the SAME
+invocation to its next attempt and calls the provider again, inside the same ``invoke``. It is the
+ONLY retry authority: no scheduler, no queue, no daemon, no caller-side loop, and no retry inside
+the adapter or its HTTP transport, so N attempts is exactly N provider calls. Lease takeover stays
+what it always was -- recovery for a worker nobody has heard from -- and is not asked to stand in
+for an answer the provider already gave.
+
 WHAT A CALLER IS PROMISED. Exactly one canonical artifact per correlation_id. NOT exactly one
 provider call: a process can die after the wire response and before the commit, so an external
 provider may be asked twice for one correlation_id. At-least-once attempts, exactly-once canonical
@@ -43,6 +54,7 @@ from shared.sdk.agent_reasoning import events as reasoning_events
 from shared.sdk.agent_reasoning.models import (
     ARTIFACT_TYPE_FOR_VERB,
     PROVIDER_MODE_LIVE,
+    RETRYABLE_FAILURE_CATEGORIES,
     CritiqueArtifact,
     DecisionSummaryArtifact,
     ExecutionDisposition,
@@ -50,8 +62,10 @@ from shared.sdk.agent_reasoning.models import (
     ProposalArtifact,
     ReasoningRequest,
     assert_artifact_within_size,
+    sanitize_failure_reason,
 )
 from shared.sdk.agent_reasoning.provider import (
+    AttemptContext,
     LiveProviderError,
     ProviderResult,
     ProviderUsage,
@@ -87,6 +101,23 @@ def _unwrap(raw: Any) -> tuple[Any, ProviderUsage | None]:
     if isinstance(raw, ProviderResult):
         return raw.artifact, raw.usage
     return raw, None
+
+
+@dataclass
+class _AttemptOutcome:
+    """What ONE attempt produced. Not a public type -- the loop's working state, named.
+
+    A tuple would have done the same job and would have made "which of these six is the artifact
+    payload" a positional question at every call site. Six positions is where that stops being
+    readable.
+    """
+
+    status: str = "failed"
+    failure_category: str | None = None
+    failure_reason: str | None = None
+    artifact: Any | None = None
+    artifact_payload: dict[str, Any] | None = None
+    usage: ProviderUsage | None = None
 
 
 class ReasoningPersistenceError(RuntimeError):
@@ -277,6 +308,117 @@ class ReasoningService:
             )
         return None
 
+    @staticmethod
+    def _bound(provider: ReasoningProvider, invocation_id: Any, attempt: Any) -> ReasoningProvider:
+        """Tell a provider WHICH durable attempt it is about to make, if it wants to know.
+
+        Only a provider that spends money needs this, and only so the spend can be reserved against
+        an identity that survives a failed ledger write. Optional in exactly the way ``preflight``
+        is: a provider without the hook is never asked, and the mock and disabled providers are
+        untouched. The hook returns a NEW bound provider rather than mutating the shared instance,
+        because one adapter serves concurrent invocations and per-attempt state on it would be a
+        race between two discussions.
+        """
+        bind = getattr(provider, "for_attempt", None)
+        if bind is None:
+            return provider
+        return cast(
+            ReasoningProvider,
+            bind(AttemptContext(invocation_id=str(invocation_id), attempt=int(attempt or 1))),
+        )
+
+    async def _attempt(
+        self,
+        provider: ReasoningProvider,
+        request: ReasoningRequest,
+        expected_type: type,
+        row: dict[str, Any],
+        preflight_error: LiveProviderError | None,
+    ) -> _AttemptOutcome:
+        """Run ONE attempt against ``provider`` and classify what came back.
+
+        Extracted from ``invoke`` unchanged in behaviour so the retry loop has a body to call more
+        than once. Every classification below is exactly the one it was before; what is new is that
+        the caller now decides whether the classification means "try again".
+        """
+        outcome = _AttemptOutcome()
+
+        if preflight_error is not None:
+            # Refused before ownership. No provider call happened, so there is nothing to await,
+            # nothing to parse and nothing billable -- but the attempt was claimed and is recorded.
+            outcome.failure_category = preflight_error.failure_category
+            outcome.failure_reason = str(preflight_error)
+            outcome.usage = preflight_error.usage
+            return outcome
+
+        bound = self._bound(provider, row.get("invocation_id"), row.get("attempt"))
+        verb_method = getattr(bound, request.verb, None)
+        if verb_method is None:
+            outcome.failure_category = "provider_unavailable"
+            outcome.failure_reason = f"provider has no {request.verb!r} verb"
+            return outcome
+
+        try:
+            raw = verb_method(request)
+            if inspect.isawaitable(raw):
+                # A provider that performs real I/O returns an awaitable. Awaiting it here --
+                # rather than letting an adapter block inside a synchronous verb -- is what
+                # keeps one slow reasoning call from stalling every other request the process
+                # is serving.
+                raw = await raw
+            raw, outcome.usage = _unwrap(raw)
+        except LiveProviderError as exc:
+            # The raiser already classified this. Trusting its category rather than re-deriving
+            # one from an exception message is the difference between knowing a call timed out
+            # and guessing that it did -- and, since AT-M3.6B.1's remediation, the difference
+            # between another attempt happening and not.
+            outcome.failure_reason = str(exc)
+            outcome.failure_category = exc.failure_category
+            outcome.usage = exc.usage
+        except ReasoningProviderError as exc:
+            # Our own controlled exception type -- still routed through the store's
+            # sanitize_failure_reason before persistence (defense-in-depth: its message can
+            # embed a caller-supplied provider_name).
+            outcome.failure_reason = str(exc)
+            outcome.failure_category = (
+                "provider_disabled"
+                if getattr(provider, "name", "") == "disabled"
+                else "provider_unauthorized"
+            )
+        except Exception as exc:  # a misbehaving provider must not crash the caller
+            # UNTRUSTED: an unknown exception's message can contain anything a misbehaving or
+            # adversarial provider put there, including echoed wire content. Only the
+            # exception's CLASS name is safe to persist as-is; the message itself is dropped
+            # rather than pattern-matched, because "probably safe after redaction" is not the
+            # bar here.
+            outcome.failure_reason = f"unexpected_provider_error:{type(exc).__name__}"
+            outcome.failure_category = "provider_unavailable"
+        else:
+            if not isinstance(raw, expected_type):
+                outcome.failure_category = "malformed_output"
+                outcome.failure_reason = (
+                    f"expected {expected_type.__name__}, got {type(raw).__name__}"
+                )
+            else:
+                try:
+                    # The same screen a TeamMessage passes -- and now also the exact payload
+                    # that gets stored, so nothing can be persisted that was not screened.
+                    outcome.artifact_payload = raw.as_safe_dict()
+                    # AT-M3.6B.1: and the same payload is measured. A live adapter checks this
+                    # too, but the check belongs on the write path as well: this is the only
+                    # place every artifact passes through, whoever produced it.
+                    assert_artifact_within_size(outcome.artifact_payload)
+                except ValueError as exc:
+                    outcome.artifact_payload = None
+                    outcome.failure_category = (
+                        "malformed_output" if "exceeds" in str(exc) else "content_safety_rejected"
+                    )
+                    outcome.failure_reason = str(exc)
+                else:
+                    outcome.artifact = raw
+                    outcome.status = "succeeded"
+        return outcome
+
     async def _recover(self, row: dict[str, Any]) -> dict[str, Any] | ReasoningResult:
         """Resolve a correlation_id this caller did not claim.
 
@@ -410,101 +552,115 @@ class ReasoningService:
 
         invocation_id = row["invocation_id"]
         attempt_token = row["attempt_token"]
+        max_attempts = int(getattr(self.store, "max_attempts", DEFAULT_MAX_ATTEMPTS))
 
-        await self._audit(
-            reasoning_events.AUDIT_REASONING_ATTEMPT_STARTED,
-            f"{request.verb} via {resolved_provider.name} ({resolved_provider.mode}): attempt "
-            f"{row.get('attempt')} claimed",
-            "started",
-            {
-                "verb": request.verb,
-                "provider_name": resolved_provider.name,
-                "provider_mode": resolved_provider.mode,
-                "correlation_id": str(request.correlation_id),
-                "invocation_id": str(invocation_id),
-                "attempt": row.get("attempt"),
-            },
-        )
+        # THE RETRY LOOP -- the one authoritative retry layer in this architecture.
+        #
+        # AT-M3.6B.1 Independent Validation 1 found that `provider_timeout`, `rate_limited` and
+        # `provider_unavailable` were declared retryable and behaved terminally: the first transient
+        # failure wrote a FAILED row, and the next call for that correlation_id replayed it. The
+        # takeover path could not stand in for this, and should not: takeover recovers a worker that
+        # has gone SILENT, and a provider that answered "429" has not gone silent. Waiting out a
+        # 120s lease for an answer already in hand would also make every transient blip cost two
+        # minutes of a discussion's wall clock.
+        #
+        # So a KNOWN transient outcome advances the attempt here and immediately -- same invocation,
+        # same row, same correlation_id, new attempt number, new attempt_token, new database-clock
+        # lease -- and the loop runs the next attempt. Crash recovery is unchanged and still belongs
+        # to the lease. Nothing polls, nothing is scheduled, no daemon exists, and no caller is
+        # asked to retry: the call that owns the attempt is the call that makes the next one.
+        outcome = _AttemptOutcome()
+        while True:
+            await self._audit(
+                reasoning_events.AUDIT_REASONING_ATTEMPT_STARTED,
+                f"{request.verb} via {resolved_provider.name} ({resolved_provider.mode}): attempt "
+                f"{row.get('attempt')} claimed",
+                "started",
+                {
+                    "verb": request.verb,
+                    "provider_name": resolved_provider.name,
+                    "provider_mode": resolved_provider.mode,
+                    "correlation_id": str(request.correlation_id),
+                    "invocation_id": str(invocation_id),
+                    "attempt": row.get("attempt"),
+                },
+            )
 
-        status = "failed"
-        failure_category: str | None = None
-        failure_reason: str | None = None
-        artifact: ReasoningArtifact | None = None
-        artifact_payload: dict[str, Any] | None = None
-        usage: ProviderUsage | None = None
+            outcome = await self._attempt(
+                resolved_provider, request, expected_type, row, preflight_error
+            )
 
-        verb_method = getattr(resolved_provider, request.verb, None)
-        if preflight_error is not None:
-            # Refused before ownership. No provider call happened, so there is nothing to await,
-            # nothing to parse and nothing billable -- but the attempt was claimed and is recorded.
-            failure_category = preflight_error.failure_category
-            failure_reason = str(preflight_error)
-            usage = preflight_error.usage
-        elif verb_method is None:
-            failure_category = "provider_unavailable"
-            failure_reason = f"provider has no {request.verb!r} verb"
-        else:
-            try:
-                raw = verb_method(request)
-                if inspect.isawaitable(raw):
-                    # A provider that performs real I/O returns an awaitable. Awaiting it here --
-                    # rather than letting an adapter block inside a synchronous verb -- is what
-                    # keeps one slow reasoning call from stalling every other request the process
-                    # is serving.
-                    raw = await raw
-                raw, usage = _unwrap(raw)
-            except LiveProviderError as exc:
-                # The raiser already classified this. Trusting its category rather than re-deriving
-                # one from an exception message is the difference between knowing a call timed out
-                # and guessing that it did.
-                failure_reason = str(exc)
-                failure_category = exc.failure_category
-                usage = exc.usage
-            except ReasoningProviderError as exc:
-                # Our own controlled exception type -- still routed through the store's
-                # sanitize_failure_reason before persistence (defense-in-depth: its message can
-                # embed a caller-supplied provider_name).
-                failure_reason = str(exc)
-                failure_category = (
-                    "provider_disabled"
-                    if getattr(resolved_provider, "name", "") == "disabled"
-                    else "provider_unauthorized"
-                )
-            except Exception as exc:  # a misbehaving provider must not crash the caller
-                # UNTRUSTED: an unknown exception's message can contain anything a misbehaving or
-                # adversarial provider put there, including echoed wire content. Only the
-                # exception's CLASS name is safe to persist as-is; the message itself is dropped
-                # rather than pattern-matched, because "probably safe after redaction" is not the
-                # bar here.
-                failure_reason = f"unexpected_provider_error:{type(exc).__name__}"
-                failure_category = "provider_unavailable"
-            else:
-                if not isinstance(raw, expected_type):
-                    failure_category = "malformed_output"
-                    failure_reason = f"expected {expected_type.__name__}, got {type(raw).__name__}"
-                else:
-                    try:
-                        # The same screen a TeamMessage passes -- and now also the exact payload
-                        # that gets stored, so nothing can be persisted that was not screened.
-                        artifact_payload = raw.as_safe_dict()
-                        # AT-M3.6B.1: and the same payload is measured. A live adapter checks this
-                        # too, but the check belongs on the write path as well: this is the only
-                        # place every artifact passes through, whoever produced it.
-                        assert_artifact_within_size(artifact_payload)
-                    except ValueError as exc:
-                        artifact_payload = None
-                        failure_category = (
-                            "malformed_output"
-                            if "exceeds" in str(exc)
-                            else "content_safety_rejected"
-                        )
-                        failure_reason = str(exc)
-                    else:
-                        # isinstance(raw, expected_type) already proved raw is one of the known
-                        # artifact subtypes; expected_type's static type is just too coarse for
-                        # mypy to narrow from.
-                        artifact = cast(ReasoningArtifact, raw)
-                        status = "succeeded"
+            if outcome.status == "succeeded":
+                break
+            if preflight_error is not None:
+                # A pre-flight refusal is a determination about CONFIGURATION, AUTHORIZATION or
+                # BUDGET, reached without asking anybody. Re-running it would produce the same
+                # answer, so it is terminal whatever its category happens to be.
+                break
+            if outcome.failure_category not in RETRYABLE_FAILURE_CATEGORIES:
+                break
+            if int(row.get("attempt") or 1) >= max_attempts:
+                # Budget spent. The recorded failure is the FINAL attempt's own outcome, which is
+                # the truthful account of why this invocation ended.
+                break
+
+            advanced = await self.store.advance_retryable_attempt(
+                invocation_id,
+                attempt_token=attempt_token,
+                failure_category=str(outcome.failure_category),
+            )
+            if advanced is None:
+                # This attempt no longer owns the invocation -- its lease expired and somebody took
+                # it over while the provider was answering. Fall through to the terminal write,
+                # which detects the zombie on the token guard and returns the canonical row.
+                break
+
+            await self._audit(
+                reasoning_events.AUDIT_REASONING_ATTEMPT_RETRIED,
+                f"{request.verb}: attempt {row.get('attempt')} failed with "
+                f"{outcome.failure_category}; advancing invocation {invocation_id} to attempt "
+                f"{advanced.get('attempt')}",
+                "retried",
+                {
+                    "verb": request.verb,
+                    "provider_name": resolved_provider.name,
+                    "provider_mode": resolved_provider.mode,
+                    "correlation_id": str(request.correlation_id),
+                    "invocation_id": str(invocation_id),
+                    "attempt": row.get("attempt"),
+                    "next_attempt": advanced.get("attempt"),
+                    "failure_category": outcome.failure_category,
+                    "failure_reason": sanitize_failure_reason(outcome.failure_reason),
+                    "model_name": model_name,
+                    # A failed transient attempt is still billable-shaped. Its tokens and its
+                    # reservation are named here so the attempt that is about to be discarded is
+                    # not the only place they were ever written down.
+                    "input_tokens": outcome.usage.input_tokens if outcome.usage else None,
+                    "output_tokens": outcome.usage.output_tokens if outcome.usage else None,
+                    "estimated_cost_usd": (
+                        outcome.usage.estimated_cost_usd if outcome.usage else None
+                    ),
+                    "budget_reservation_key": (
+                        outcome.usage.reservation_key if outcome.usage else None
+                    ),
+                    "provider_call_occurred": (
+                        bool(outcome.usage.call_occurred) if outcome.usage else False
+                    ),
+                },
+            )
+
+            row = advanced
+            attempt_token = row["attempt_token"]
+            # Reset, so latency_ms describes the attempt that actually produced the recorded
+            # outcome rather than the sum of every attempt that led to it.
+            clock_start = time.monotonic()
+
+        status = outcome.status
+        failure_category = outcome.failure_category
+        failure_reason = outcome.failure_reason
+        artifact = outcome.artifact
+        artifact_payload = outcome.artifact_payload
+        usage = outcome.usage
 
         latency_ms = int((time.monotonic() - clock_start) * 1000)
         completed_at = datetime.now(timezone.utc)
@@ -533,6 +689,16 @@ class ReasoningService:
                 "estimated_cost_usd": usage.estimated_cost_usd if usage else None,
                 "provider_request_id": usage.provider_request_id if usage else None,
                 "provider_call_occurred": bool(usage.call_occurred) if usage else False,
+                # AT-M3.6B.1 remediation. The reservation is what makes a paid call countable even
+                # when its settlement failed, so the trail names it -- and says plainly when the
+                # ledger is still holding the conservative estimate rather than the actual charge.
+                # `estimated_cost_usd` above remains the pre-flight ESTIMATE that gated the spend;
+                # this does not claim actual-cost precision the ledger does not yet have.
+                "budget_reservation_key": usage.reservation_key if usage else None,
+                "budget_reserved_cost_usd": usage.reserved_cost_usd if usage else None,
+                "usage_settlement_pending": (
+                    bool(usage.call_occurred and not usage.settled) if usage else False
+                ),
             },
         )
 

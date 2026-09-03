@@ -192,9 +192,23 @@ async def _seed_invocation(conn: asyncpg.Connection, **overrides: object) -> str
 
 class TestMigrationNumberIsDerived:
     async def test_044_is_the_next_number_after_canonical_main(self) -> None:
+        """043 is canonical main's last migration, so this slice's is 044 -- derived, not assumed.
+
+        This said ``assert max(numbers) == 44`` when AT-M3.6B.1 was written, which is the third
+        appearance of a pattern AT-D23 section 7 and AT-D24 have both already recorded as
+        GOVERNANCE_DRIFT: a stage asserting that its own migration is the last that will ever exist
+        forbids every later authorized migration by construction. It is worth saying plainly that
+        the second alert did not stop the same hand writing it a third time in the same slice, which
+        is the argument for removing the clause rather than repairing it again -- the remediation's
+        own 045 is what tripped it.
+
+        What the test is FOR is unchanged and still checked: the number was taken from repository
+        truth, there is exactly one file claiming it, and it follows 043.
+        """
         numbers = [int(p.name[:3]) for p in _ordered_migrations()]
-        assert max(numbers) == 44
+        assert 44 in numbers
         assert numbers.count(44) == 1
+        assert max(n for n in numbers if n < 44) == 43, "044 follows 043, the canonical-main tip"
         assert FORWARD.exists() and DOWN.exists()
 
 

@@ -18,6 +18,21 @@ After a real-LLM call lands, the caller records the actual usage:
            budget_exceeded event so an operator sees the breach
            without scanning the whole ledger.
 
+AT-M3.6B.1 adds a stricter path for callers that spend real money on a
+retryable attempt -- RESERVE BEFORE THE WIRE:
+
+    caller -> preflight (as above, and it now sees existing reservations)
+        -> reserve(reservation_key)   durable, counted from this moment
+        -> [provider call]
+        -> settle(reservation_key)    reservation becomes actual usage
+
+One ledger row per attempt carries it from reservation to settlement, so
+the day and month totals count reservations and settlements together
+without any risk of counting an attempt twice. The ordering is the
+guarantee: a post-call accounting failure can leave a charge
+conservative, but it can no longer leave it at zero. ``release`` gives a
+reservation back only where the absence of an external call is provable.
+
 Every public function in this package is safe to log: nothing returns
 or carries an API key value. Pricing tables are conservative
 defaults; an operator can override via the ``LLMCostEstimator``
@@ -40,8 +55,11 @@ from .models import (
     ENFORCEMENT_WARN_ONLY,
     EVENT_TYPE_BUDGET_EXCEEDED,
     EVENT_TYPE_BUDGET_WARNING,
+    COUNTED_EVENT_TYPES,
     EVENT_TYPE_PREFLIGHT,
     EVENT_TYPE_RECORDED_USAGE,
+    EVENT_TYPE_RELEASED_RESERVATION,
+    EVENT_TYPE_RESERVED_USAGE,
     POLICY_STATUS_ACTIVE,
     POLICY_STATUS_EXPIRED,
     POLICY_STATUS_INACTIVE,
@@ -67,8 +85,11 @@ __all__ = [
     "ENFORCEMENT_WARN_ONLY",
     "EVENT_TYPE_BUDGET_EXCEEDED",
     "EVENT_TYPE_BUDGET_WARNING",
+    "COUNTED_EVENT_TYPES",
     "EVENT_TYPE_PREFLIGHT",
     "EVENT_TYPE_RECORDED_USAGE",
+    "EVENT_TYPE_RELEASED_RESERVATION",
+    "EVENT_TYPE_RESERVED_USAGE",
     "POLICY_STATUS_ACTIVE",
     "POLICY_STATUS_EXPIRED",
     "POLICY_STATUS_INACTIVE",

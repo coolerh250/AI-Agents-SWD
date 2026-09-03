@@ -14,7 +14,12 @@ from typing import Any
 import asyncpg
 
 from .models import (
+    COUNTED_EVENT_TYPES,
+    DECISION_ALLOWED,
+    DECISION_RECORDED,
     EVENT_TYPE_RECORDED_USAGE,
+    EVENT_TYPE_RELEASED_RESERVATION,
+    EVENT_TYPE_RESERVED_USAGE,
     POLICY_STATUS_ACTIVE,
     SCOPE_GLOBAL,
     BudgetDecision,
@@ -36,7 +41,7 @@ _EVENT_RETURNING = (
     "event_type, estimated_prompt_tokens, estimated_completion_tokens, "
     "estimated_total_tokens, actual_prompt_tokens, actual_completion_tokens, "
     "actual_total_tokens, estimated_cost_usd, actual_cost_usd, "
-    "budget_remaining_usd, decision, reason, created_at, metadata"
+    "budget_remaining_usd, decision, reason, created_at, metadata, reservation_key"
 )
 
 
@@ -120,6 +125,7 @@ def _row_to_event(row: asyncpg.Record) -> LLMBudgetEvent:
         reason=row["reason"],
         created_at=row["created_at"],
         metadata=_decode_metadata(row["metadata"]),
+        reservation_key=row["reservation_key"],
     )
 
 
@@ -272,6 +278,7 @@ class BudgetPolicyStore:
         budget_remaining_usd: float | None = None,
         reason: str | None = None,
         metadata: dict[str, Any] | None = None,
+        reservation_key: str | None = None,
     ) -> LLMBudgetEvent:
         meta_json = json.dumps(metadata or {})
         conn = await self._connect()
@@ -283,9 +290,10 @@ class BudgetPolicyStore:
                 " estimated_completion_tokens, estimated_total_tokens, "
                 " actual_prompt_tokens, actual_completion_tokens, "
                 " actual_total_tokens, estimated_cost_usd, actual_cost_usd, "
-                " budget_remaining_usd, decision, reason, metadata) "
+                " budget_remaining_usd, decision, reason, metadata, "
+                " reservation_key) "
                 "VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, "
-                " $12, $13, $14, $15, $16, $17, $18::jsonb) "
+                " $12, $13, $14, $15, $16, $17, $18::jsonb, $19) "
                 f"RETURNING {_EVENT_RETURNING}",
                 task_id,
                 workflow_id,
@@ -305,6 +313,7 @@ class BudgetPolicyStore:
                 decision,
                 reason,
                 meta_json,
+                reservation_key,
             )
         finally:
             await conn.close()
@@ -338,6 +347,162 @@ class BudgetPolicyStore:
             await conn.close()
         return [_row_to_event(r) for r in rows]
 
+    # --- attempt-scoped reservation / settlement -----------------------------------------------
+    #
+    # AT-M3.6B.1 Independent Validation 1 found that a provider call could land, `record_usage`
+    # could fail, the failure could be swallowed, and the day and month totals would understate that
+    # charge forever -- so the next preflight would authorize spend the account could not afford.
+    #
+    # The fix is ordering, not error handling: claim the budget BEFORE the wire. One ledger row
+    # carries one attempt from reservation to settlement. While it is unsettled it counts at the
+    # conservative estimate that gated the call; once settled it counts at the actual. Because it is
+    # the SAME row throughout, "count reservations and settlements" cannot double-count -- there is
+    # never a second row to add. And because the reservation is already durable, a settlement
+    # failure can only leave the charge conservative; it can never leave it at zero.
+
+    async def reserve_attempt_cost(
+        self,
+        *,
+        reservation_key: str,
+        provider: str,
+        model_name: str,
+        policy_id: str | None = None,
+        estimated_prompt_tokens: int = 0,
+        estimated_completion_tokens: int = 0,
+        estimated_cost_usd: float = 0.0,
+        task_id: str | None = None,
+        workflow_id: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> LLMBudgetEvent:
+        """Durably claim ``estimated_cost_usd`` for ONE provider attempt. Idempotent.
+
+        ``reservation_key`` identifies the attempt -- invocation plus attempt number, never the
+        attempt token, which is ownership-sensitive and rotates. A unique index makes the identity
+        the database's answer rather than the application's, so eight concurrent callers racing for
+        the same attempt produce exactly one reservation and exactly one charge; the losers are
+        handed the winner's row instead of an error.
+        """
+        total = int(estimated_prompt_tokens) + int(estimated_completion_tokens)
+        meta_json = json.dumps(metadata or {})
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                "INSERT INTO llm_budget_events "
+                "(task_id, workflow_id, policy_id, provider, model_name, event_type, "
+                " estimated_prompt_tokens, estimated_completion_tokens, "
+                " estimated_total_tokens, estimated_cost_usd, decision, metadata, "
+                " reservation_key) "
+                "VALUES ($1, $2, $3::uuid, $4, $5, $6, $7, $8, $9, $10, $11, $12::jsonb, $13) "
+                "ON CONFLICT (reservation_key) WHERE reservation_key IS NOT NULL DO NOTHING "
+                f"RETURNING {_EVENT_RETURNING}",
+                task_id,
+                workflow_id,
+                policy_id,
+                provider,
+                model_name,
+                EVENT_TYPE_RESERVED_USAGE,
+                int(estimated_prompt_tokens),
+                int(estimated_completion_tokens),
+                total,
+                float(estimated_cost_usd),
+                DECISION_ALLOWED,
+                meta_json,
+                reservation_key,
+            )
+            if row is None:
+                # Somebody reserved this exact attempt first. Their row is the reservation.
+                row = await conn.fetchrow(
+                    f"SELECT {_EVENT_RETURNING} FROM llm_budget_events WHERE reservation_key = $1",
+                    reservation_key,
+                )
+        finally:
+            await conn.close()
+        return _row_to_event(row)
+
+    async def settle_attempt_cost(
+        self,
+        *,
+        reservation_key: str,
+        actual_prompt_tokens: int,
+        actual_completion_tokens: int,
+        actual_cost_usd: float,
+        metadata: dict[str, Any] | None = None,
+    ) -> LLMBudgetEvent | None:
+        """Replace a reservation with what the call actually consumed. Idempotent.
+
+        Guarded on ``event_type = 'reserved_usage'``, which is what makes repeating it safe: a
+        second settlement of the same attempt matches no row, so nothing is added and nothing is
+        charged twice. Returns the row's current state either way -- already-settled is an answer,
+        not an error -- or ``None`` when the reservation does not exist at all.
+        """
+        total = int(actual_prompt_tokens) + int(actual_completion_tokens)
+        meta_json = json.dumps(metadata or {})
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                "UPDATE llm_budget_events SET "
+                "  event_type = $2, decision = $3, "
+                "  actual_prompt_tokens = $4, actual_completion_tokens = $5, "
+                "  actual_total_tokens = $6, actual_cost_usd = $7, "
+                "  metadata = metadata || $8::jsonb "
+                "WHERE reservation_key = $1 AND event_type = $9 "
+                f"RETURNING {_EVENT_RETURNING}",
+                reservation_key,
+                EVENT_TYPE_RECORDED_USAGE,
+                DECISION_RECORDED,
+                int(actual_prompt_tokens),
+                int(actual_completion_tokens),
+                total,
+                float(actual_cost_usd),
+                meta_json,
+                EVENT_TYPE_RESERVED_USAGE,
+            )
+            if row is None:
+                row = await conn.fetchrow(
+                    f"SELECT {_EVENT_RETURNING} FROM llm_budget_events WHERE reservation_key = $1",
+                    reservation_key,
+                )
+        finally:
+            await conn.close()
+        return _row_to_event(row) if row is not None else None
+
+    async def release_attempt_reservation(
+        self, *, reservation_key: str, reason: str | None = None
+    ) -> LLMBudgetEvent | None:
+        """Cancel a reservation for a call that PROVABLY never left this process.
+
+        Called only where absence can be established -- a refusal reached before an HTTP client was
+        ever built. Never called on an ambiguous failure: a timeout, a reset connection or a dead
+        worker cannot prove that no request arrived, and releasing on a guess is how a real charge
+        gets counted at zero. The row is relabelled rather than deleted, so the evidence that budget
+        was claimed and given back survives.
+        """
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                "UPDATE llm_budget_events SET event_type = $2, reason = $3 "
+                "WHERE reservation_key = $1 AND event_type = $4 "
+                f"RETURNING {_EVENT_RETURNING}",
+                reservation_key,
+                EVENT_TYPE_RELEASED_RESERVATION,
+                reason,
+                EVENT_TYPE_RESERVED_USAGE,
+            )
+        finally:
+            await conn.close()
+        return _row_to_event(row) if row is not None else None
+
+    async def get_reservation(self, *, reservation_key: str) -> LLMBudgetEvent | None:
+        conn = await self._connect()
+        try:
+            row = await conn.fetchrow(
+                f"SELECT {_EVENT_RETURNING} FROM llm_budget_events WHERE reservation_key = $1",
+                reservation_key,
+            )
+        finally:
+            await conn.close()
+        return _row_to_event(row) if row is not None else None
+
     async def get_daily_usage_usd(
         self, *, provider: str | None = None, day: datetime | None = None
     ) -> float:
@@ -347,11 +512,11 @@ class BudgetPolicyStore:
             value = await conn.fetchval(
                 "SELECT COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) "
                 "FROM llm_budget_events "
-                "WHERE event_type = $1 "
+                "WHERE event_type = ANY($1::text[]) "
                 "  AND ($2::text IS NULL OR provider = $2) "
                 "  AND created_at >= date_trunc('day', $3::timestamptz) "
                 "  AND created_at <  date_trunc('day', $3::timestamptz) + interval '1 day'",
-                EVENT_TYPE_RECORDED_USAGE,
+                list(COUNTED_EVENT_TYPES),
                 provider,
                 day,
             )
@@ -368,11 +533,11 @@ class BudgetPolicyStore:
             value = await conn.fetchval(
                 "SELECT COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) "
                 "FROM llm_budget_events "
-                "WHERE event_type = $1 "
+                "WHERE event_type = ANY($1::text[]) "
                 "  AND ($2::text IS NULL OR provider = $2) "
                 "  AND created_at >= date_trunc('month', $3::timestamptz) "
                 "  AND created_at <  date_trunc('month', $3::timestamptz) + interval '1 month'",
-                EVENT_TYPE_RECORDED_USAGE,
+                list(COUNTED_EVENT_TYPES),
                 provider,
                 month,
             )
@@ -389,8 +554,8 @@ class BudgetPolicyStore:
                 "  COALESCE(SUM(COALESCE(actual_total_tokens, estimated_total_tokens, 0)), 0) AS tokens, "
                 "  COALESCE(SUM(COALESCE(actual_cost_usd, estimated_cost_usd, 0)), 0) AS cost "
                 "FROM llm_budget_events "
-                "WHERE event_type = $1 AND task_id = $2",
-                EVENT_TYPE_RECORDED_USAGE,
+                "WHERE event_type = ANY($1::text[]) AND task_id = $2",
+                list(COUNTED_EVENT_TYPES),
                 task_id,
             )
         finally:
