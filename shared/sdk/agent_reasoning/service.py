@@ -53,6 +53,7 @@ from typing import Any, cast
 from shared.sdk.agent_reasoning import events as reasoning_events
 from shared.sdk.agent_reasoning.models import (
     ARTIFACT_TYPE_FOR_VERB,
+    _StrictArtifact,
     PROVIDER_MODE_LIVE,
     RETRYABLE_FAILURE_CATEGORIES,
     CritiqueArtifact,
@@ -331,7 +332,7 @@ class ReasoningService:
         self,
         provider: ReasoningProvider,
         request: ReasoningRequest,
-        expected_type: type,
+        expected_type: type[_StrictArtifact],
         row: dict[str, Any],
         preflight_error: LiveProviderError | None,
     ) -> _AttemptOutcome:

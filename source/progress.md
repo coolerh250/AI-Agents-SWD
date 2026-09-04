@@ -19619,3 +19619,150 @@ a one-model config allowlist is not a model registry and a feature gate is not a
   contain no `subprocess`/`eval`/`exec`.
 - **HumanApproval unchanged.** No approval row is created, requested or mutated.
 - **Production `NOT GRANTED`.** No production credential, data, deployment or action.
+
+## Step AT-M3.6B.1-IMPLEMENTATION-REMEDIATION-1 - Retry Authority + Durable Budget Reservation (READY FOR VALIDATION 2)
+
+**Status: on branch `at-m3.6b.1-live-reasoning-adapter-1`, continuing from the Independent
+Validation 1 candidate `d1d7bc6`. NOT merged. Closes the two load-bearing defects Validation 1
+found. Live external calls authorized: 0. Live external calls made: 0.**
+
+Both defects were ordering problems wearing the costume of error handling, and both are fixed by
+changing WHEN something happens rather than by adding a layer that watches it. That is the whole
+shape of this remediation: no scheduler, no daemon, no reconciliation job, no second authority.
+
+### A. The retryable failure categories were labels
+
+`provider_timeout`, `rate_limited` and `provider_unavailable` were documented as retryable and
+behaved terminally. Attempt 1 timed out, `complete_invocation` wrote a FAILED row, and the next call
+for that correlation_id replayed the failure. There was never an attempt 2. The public claim was
+false, and the fix is behavioural, not editorial - the approved AT-M3.6B.1 contract requires bounded
+retries for these three.
+
+- **`ReasoningService` retries, and it is still the only thing that does.** `invoke` now loops: a
+  known transient answer advances the SAME invocation to its next attempt and calls the provider
+  again, in the same call, with no caller intervention. No scheduler, no queue, no daemon, no
+  caller-side retry framework, and no retry inside the adapter or its HTTP transport - the
+  transport is still constructed with `retries=0`, so **N attempts is exactly N provider calls**
+  and never a multiple of them.
+- **Takeover was not asked to stand in for it, deliberately.** Lease takeover recovers a worker that
+  has gone SILENT. A provider that answered "429" has not gone silent, and reusing takeover here
+  would have made every transient blip cost 120 seconds of a discussion's wall clock while it waited
+  out a lease for an answer already in hand. The two mechanisms now say two different things:
+  explicit retry handles a known outcome, the lease handles a worker nobody has heard from. Crash
+  recovery is unchanged.
+- **One atomic transition, and it is the same shape as takeover rather than a second mechanism.**
+  `advance_retryable_attempt` is one compare-and-swap that verifies in a single statement that the
+  row is still in the nonterminal ownership state, that the presenting token is the CURRENT owner's,
+  and that the attempt budget has room - then increments the attempt, rotates the token and re-leases
+  on the database clock. Same `invocation_id`, same `correlation_id`, same row, no new status. It
+  refuses any category outside the canonical retryable set, so no caller can turn a parse error into
+  an unbounded series of paid calls by passing one in.
+- **Attempt N's evidence is not erased, and it does not go on the row.** Migration 037's
+  `chk_reasoning_invocations_status_consistency` requires a 'started' row to carry no
+  failure_category, no failure_reason and no completed_at - and that constraint is right, because a
+  row that is running does not have an outcome. So per-attempt evidence goes where this project
+  already keeps per-attempt facts: a `reasoning_attempt_retried` audit event carrying the attempt
+  number, the category, the sanitized reason and the attempt's tokens and cost, and one llm_budget
+  ledger row per attempt. No second reasoning table was created to hold what two existing
+  authorities already hold.
+- **Three attempts, and there is no fourth.** The SQL enforces `attempt < max_attempts`, so
+  exhaustion cannot be talked past. The terminal failure reports the FINAL attempt's own category
+  rather than a synthetic "gave up" label - what actually happened last is the truthful account of
+  why the invocation ended.
+- **Deterministic failures stay terminal after one call.** A closed gate, an unallowlisted model, a
+  missing credential, a budget refusal, malformed JSON, a schema-invalid artifact, a content-safety
+  rejection, a bound violation and every 4xx: none retries, because re-asking would spend money to
+  fail identically. A pre-flight refusal is terminal whatever its category, since it is a
+  determination about configuration reached without asking anybody.
+
+### B. A paid call could be counted at zero, permanently
+
+The call landed, `record_usage` failed, the failure was swallowed, and the daily and monthly totals
+understated that charge forever - so a later pre-flight would authorize spend the account could not
+afford. No amount of error handling around the usage write repairs this, because the failure it
+would have to survive is its own.
+
+- **Reserve before the wire.** The order is now pre-flight -> **durable reservation** -> credential
+  -> call -> settlement to actual usage -> parse. From the moment the reservation is written, the
+  attempt's conservative cost counts against the day and the month whatever happens next, including
+  this process dying between there and the response. The worst a settlement failure can now do is
+  leave the charge at the conservative estimate that gated it. It can no longer leave it at zero.
+- **One row per attempt, for its whole life.** The reservation row is UPDATED into its settlement
+  rather than joined by a second row. That is what lets the totals count reservations and
+  settlements together with no possibility of double counting - unsettled counts at the estimate,
+  settled counts at the actual, and there is never a second row to add. `get_daily_usage_usd` and
+  `get_monthly_usage_usd` were widened in place; no second total API exists and nothing reconstructs
+  spend from `reasoning_invocations`.
+- **The identity is invocation + attempt, and never `attempt_token`.** The token is
+  ownership-sensitive and rotates on every retry and takeover, so a reservation keyed on it could be
+  neither found again nor made idempotent. A partial unique index makes "one attempt, one charge"
+  the database's answer rather than the application's: eight callers racing for one attempt produce
+  one row, and the losers are handed the winner's.
+- **The reserved amount is the estimate the pre-flight gated on** - not a second figure computed a
+  second way, because two estimates that could disagree would mean the number a call was authorized
+  against and the number it was charged against were different.
+- **A reservation that cannot be persisted means zero provider calls.** Terminal, and deliberately
+  not retryable: re-asking a ledger that just failed is not a reason to spend money.
+- **A reservation is given back in exactly one place.** A refusal reached before any HTTP client
+  exists, where the absence of an external request is provable. Never on a timeout or a reset
+  connection - those cannot prove no request arrived, and releasing on that guess is precisely how a
+  real charge gets counted at nothing. A released reservation is relabelled, not deleted, so the
+  record that budget was claimed and given back survives.
+- **A paid call that produced nothing usable still counts.** Malformed JSON, a schema violation, a
+  content-safety rejection, an oversized artifact, a discarded zombie attempt: settlement happens
+  before parsing, and where settlement fails the reservation keeps counting. `settled=False` travels
+  with the usage into the invocation's audit metadata, so the trail says plainly that the ledger is
+  holding the conservative estimate rather than claiming actual-cost precision it does not have.
+- **Three attempts stay inside the authorized envelope.** Each reservation is capped at the approved
+  US$0.50 per call, and the US$1.50 per-invocation ceiling is the per-call cap times the attempt
+  budget rather than a fourth independent number that could drift out of step with the other two.
+
+### Migration 045
+
+Adds `reservation_key` to `llm_budget_events`, a partial unique index on it, one CHECK that a
+reservation-shaped row must name an attempt, and two event types (`reserved_usage`,
+`released_reservation`). No new table, no new subsystem, no FinOps service; `llm_budget` remains the
+single budget source of truth. Migrations 001-044 are untouched.
+
+**The DOWN migration fails closed**, and for a sharper reason than 044's does: `reservation_key` is
+the only thing that makes a charge findable, idempotent and settleable, so dropping the column while
+rows carry one would destroy the record of which attempt each charge belongs to, and narrowing the
+vocabulary while an unsettled reservation exists would erase a claim on money that may already have
+been spent. It refuses rather than deleting the rows to make itself work.
+
+### A third occurrence of the same drift, this time by our own hand
+
+`test_at_m3_6b_1_migration.py` asserted `max(numbers) == 44` - the identical pattern AT-D23 section 7
+recorded once and AT-D24 recorded a second time, written into this slice by the same hand that
+raised the second alert, and tripped by this remediation's own 045. It is worth stating plainly that
+raising the alert did not prevent reproducing the defect. The clause is removed rather than repaired
+again; what the test is for - that the number was derived from repository truth, that there is
+exactly one file claiming it, and that it follows the previous one - is still checked, and the new
+045 test is written the narrowed way from the start.
+
+No mechanism was added in response. AT-D18's Minimal Governance Kernel is preserved: a reservation
+ledger extension is not a budget governance platform, and an explicit retry transition is not a
+scheduler.
+
+### Verification
+
+- **AT-M3.6B.1 suite: 243 passed, 0 failed, 0 skipped** against a real PostgreSQL with migrations
+  001-045 applied on the internal test runtime - 65 new tests over the Validation 1 candidate's 178.
+- **llm_budget + AT-M2 + AT-M3.1 through AT-M3.6A: 729 passed, 10 skipped, 0 failed** on the same
+  database.
+- **Secrets / audit / safety / approval / planning selection: 1584 passed, 9 failed** - and the
+  SAME 9 fail identically on the Validation 1 candidate `d1d7bc6` in the same environment. Zero new
+  failures.
+- **Zero external calls** before, during and after. The live network gate is untouched and still
+  defaults false; every provider answer in every test comes from an in-process transport, and the
+  slice's DNS and socket guard fails any test that reaches for a non-loopback host.
+- `production_executed_true_count: 0`.
+
+### Boundaries held
+
+- **AT-M3.6B.2 `NOT AUTHORIZED`.** No live call, official or diagnostic. No credential validated
+  against Anthropic. Nothing in this remediation opens the gate.
+- **AT-M4 `NOT AUTHORIZED`.** No M3.5 consumer, no execution, shell, Git, deployment, SaaS action or
+  authenticated completion ingress.
+- **HumanApproval unchanged.** No approval row created, requested or mutated.
+- **Production `NOT GRANTED`.**

@@ -453,19 +453,34 @@ class TestReverse:
 
 class TestCanonicalMigrationsUnchanged:
     async def test_001_through_043_are_byte_identical_to_canonical_main(self) -> None:
+        """Nothing at or below canonical main's last migration differs from canonical main.
+
+        This enumerated the two 044 files by name until the AT-M3.6B.1 remediation added 045 and it
+        failed -- the same "nothing may follow me" shape AT-D23 section 7 and AT-D24 have both
+        recorded, arriving for a third time inside this slice. What it is FOR is that no migration
+        at or below 043 was edited, which is the property that keeps a schema and the evidence
+        stored under it agreeing; the file list was only ever a proxy for it. Stated directly now,
+        so an authorized 046 does not have to come back and edit this line again.
+
+        Untracked files are included deliberately: a new migration is untracked before it is
+        committed, and a check that only reads ``git diff`` would pass on exactly the state where a
+        mistake is easiest to make.
+        """
         import subprocess
 
-        changed = subprocess.run(
-            ["git", "diff", "--name-only", f"{CANONICAL_MAIN}", "--", "migrations/"],
-            cwd=str(ROOT),
-            capture_output=True,
-            text=True,
-            check=False,
-        )
-        if changed.returncode != 0:
+        def _git(*args: str) -> list[str] | None:
+            done = subprocess.run(
+                ["git", *args], cwd=str(ROOT), capture_output=True, text=True, check=False
+            )
+            if done.returncode != 0:
+                return None
+            return [line.strip() for line in done.stdout.splitlines() if line.strip()]
+
+        tracked = _git("diff", "--name-only", f"{CANONICAL_MAIN}", "--", "migrations/")
+        untracked = _git("ls-files", "--others", "--exclude-standard", "--", "migrations/")
+        if tracked is None or untracked is None:
             pytest.skip("git unavailable; skipping canonical-migration comparison")
-        touched = {line.strip() for line in changed.stdout.splitlines() if line.strip()}
-        assert touched == {
-            "migrations/044_at_m3_6b_1_live_reasoning_provider.sql",
-            "migrations/044_at_m3_6b_1_live_reasoning_provider_down.sql",
-        }, touched
+        touched = set(tracked) | set(untracked)
+        canonical = {name for name in touched if int(name.rsplit("/", 1)[-1][:3]) <= 43}
+        assert canonical == set(), canonical
+        assert "migrations/044_at_m3_6b_1_live_reasoning_provider.sql" in touched
