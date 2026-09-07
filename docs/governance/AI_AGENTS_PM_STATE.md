@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-09-03
-RECONCILED_AGAINST_MAIN:     7a7baaee4f45c2b48579701221d5cd58e063ded8
-RECONCILED_BY_STAGE:         AT-M3.6A-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_ON:               2026-09-07
+RECONCILED_AGAINST_MAIN:     14c3820b616b4ef2ceacb2dde9c37e5371ec147f
+RECONCILED_BY_STAGE:         AT-M3.6B.1-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,19 +34,27 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M3
 CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.1, AT-M3.2,
-                              AT-M3.3, AT-M3.4, AT-M3.5 and AT-M3.6A MERGED / CLOSED. AT-D14
-                              authorized M3.1 through M3.6A and nothing further; every slice it
-                              authorized is now canonical
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6A (canonical merge)
-CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's authorized scope is fully
-                              consumed. AT-M3.6B and AT-M4 are both NOT AUTHORIZED, and no record
-                              in this repository decides which (if either) is next
-CURRENT_STAGE:                AT-M3.6A-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. AT-D14 authorized AT-M3.1
-                              through AT-M3.6A; that scope is now exhausted, so the next product
-                              stage requires its own authorization record. AT-M3.6B (a real
-                              external model call) and AT-M4 (real work execution) are both listed
-                              below as NOT AUTHORIZED and neither is implied by this closure.
+                              AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A and AT-M3.6B.1 MERGED / CLOSED.
+                              AT-D14 authorized M3.1 through M3.6A; AT-D24 separately authorized
+                              the AT-M3.6B.1 implementation and AT-D25 accepted and merged it.
+                              Every slice authorized by any record in this repository is now
+                              canonical
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.1 (canonical merge)
+CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope is fully consumed and
+                              AT-D24's scope ended at the implementation AT-D25 has now accepted.
+                              AT-M3.6B.2 (the first real external model call) and AT-M4 (real work
+                              execution) are both NOT AUTHORIZED, and no record in this repository
+                              decides which (if either) is next
+CURRENT_STAGE:                AT-M3.6B.1-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. AT-M3.6B.1 delivered a
+                              runtime that is STRUCTURALLY READY for a live provider; it
+                              established nothing about real Anthropic connectivity, credentials,
+                              latency, model behaviour or billing, because zero real external calls
+                              were made. AT-M3.6B.2 (live validation) needs its own authorization
+                              naming provider, model, call count, total and per-call cost ceilings,
+                              allowed verbs, environment, live-gate enablement, credential use and
+                              abort conditions. AT-M4 (real work execution) is likewise NOT
+                              AUTHORIZED, and neither is implied by this closure.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -327,12 +335,44 @@ AT_M3_6A_ACCEPTANCE:           PO ACCEPTED
 AT_M3_6A_AUTHORIZED_BY:        AT-D14 / docs/decisions/at-d14-at-m3-live-reasoning-authorization.md
 AT_M3_6A_MERGE_AUTHORIZED_BY:  AT-D23 / docs/decisions/at-d23-at-m3-6a-acceptance-and-merge-authorization.md
 AT_M3_6A_IMPLEMENTATION_END:   7a7baaee4f45c2b48579701221d5cd58e063ded8
-PRODUCT_CRITICAL_PATH:         NONE -- AT-D14's authorized scope is fully consumed
-NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED -- no record in this repository decides
-                                what follows AT-M3.6A
-AT_M3_6B:                      NOT AUTHORIZED
+AT_M3_6B_1:                    AUTHORIZED / IMPLEMENTED / INDEPENDENTLY_VALIDATED / PO_ACCEPTED /
+                                MERGED / CANONICAL / CLOSED
+AT_M3_6B_1_IMPLEMENTATION:     COMPLETE
+AT_M3_6B_1_VALIDATION:         PASS / COMPLETE -- 2 of 2 (Validation 1 FAIL / 2 load-bearing
+                                findings: RETRY_AUTHORITY_CLAIM_FALSE -- the retryable failure
+                                categories were labels, a timeout terminalized the invocation and
+                                no attempt 2 ever happened; and BUDGET_LEDGER_FAILURE -- a landed
+                                provider call whose post-call usage write failed was swallowed and
+                                counted at zero permanently ->
+                                AT-M3.6B.1-IMPLEMENTATION-REMEDIATION-1 -> Validation 2 / 2 FINAL
+                                PASS; no Validation 3)
+AT_M3_6B_1_ACCEPTANCE:         PO ACCEPTED
+AT_M3_6B_1_AUTHORIZED_BY:      AT-D24 / docs/decisions/at-d24-at-m3-6b-1-live-reasoning-provider-implementation-authorization.md
+AT_M3_6B_1_MERGE_AUTHORIZED_BY: AT-D25 / docs/decisions/at-d25-at-m3-6b-1-live-reasoning-provider-acceptance-and-merge-authorization.md
+AT_M3_6B_1_IMPLEMENTATION_END: 14c3820b616b4ef2ceacb2dde9c37e5371ec147f
+AT_M3_6B_1_REAL_EXTERNAL_CALLS: 0
+AT_M3_6B_2:                    NOT AUTHORIZED
+LIVE_EXTERNAL_VALIDATION:      NOT AUTHORIZED
+LIVE_NETWORK_GATE:             DEFAULT FALSE
+PRODUCT_CRITICAL_PATH:         NONE -- AT-D14's authorized scope is fully consumed, and AT-D24's
+                                ended at the implementation AT-D25 accepted
+NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Live Validation -- no
+                                record in this repository authorizes a real external call, and no
+                                previously discussed call-count or cost envelope is authorized by
+                                having been discussed
 AT_M4:                         NOT AUTHORIZED
 ```
+
+`AT_M3_6B_1` is the one field in this register whose plain reading is dangerous, so it is spelled
+out here. It says the RUNTIME is structurally ready for a live provider: the Anthropic adapter
+exists behind the one reasoning authority, its egress, token, artifact and plan bounds are enforced,
+its transient retries are real and bounded at three attempts, its spend is durably claimed before
+the wire, and its network gate is closed. It does NOT say live reasoning has been exercised.
+`AT_M3_6B_1_REAL_EXTERNAL_CALLS: 0` is not an omission, it is the condition under which AT-D24
+authorized the work, and it was kept -- so nothing about real Anthropic connectivity, credential
+validity, latency, model behaviour or billing has been established by any evidence in this
+repository. That is `AT_M3_6B_2`, and it is `NOT AUTHORIZED`. Reading `AT_M3_6B_1: CLOSED` as
+"live reasoning works" is the single most expensive misreading this file offers.
 
 `AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4`, `AT_M3_5` and `AT_M3_6A` keep the literal word
 `AUTHORIZED` immediately after the field name for the same reason `AT_M2` does (section 5): it is
@@ -346,13 +386,21 @@ commit that lands on top of each is documentation, and moving the field to name 
 claim validation coverage the docs commit never had.
 
 `PRODUCT_CRITICAL_PATH: NONE` is a statement about AUTHORIZATION, not a claim that the product is
-finished. AT-D14 authorized AT-M3.1 through AT-M3.6A; all six are now canonical, so that scope is
-consumed and there is no next stage this file may name. `AT_M3_6B` names the boundary AT-D14
-explicitly did not move: no real external LLM/network call is authorized by any record in this
-file. `AT_M4` names the one after it: AT-M3.5 built the delegation of work and AT-M3.6A made it
-observable, but neither built its execution, and no record in this file authorizes AT-M4. Choosing
-between them -- or choosing something else entirely -- is a Product Owner decision that has not
-been made, and this file must not be read as implying an order.
+finished. AT-D14 authorized AT-M3.1 through AT-M3.6A; all six are canonical, so that scope is
+consumed. AT-D24 separately authorized the AT-M3.6B.1 implementation and AT-D25 accepted and merged
+it, so that scope is consumed too, and there is no next stage this file may name. `AT_M3_6B_2` names
+the boundary that is still standing: AT-D14 declined to move it, AT-D24 authorized code up to it and
+explicitly not through it, and AT-D25 accepted that code without moving it either -- **no real
+external LLM call is authorized by any record in this file**. `AT_M4` names the one after that:
+AT-M3.5 built the delegation of work and AT-M3.6A made it observable, but neither built its
+execution, and no record in this file authorizes AT-M4. Choosing between them -- or choosing
+something else entirely -- is a Product Owner decision that has not been made, and this file must
+not be read as implying an order.
+
+Before the first real external call, a Product Owner decision must name the provider, the model, the
+call count, the total cost ceiling, the per-call ceiling, the allowed verbs, the environment, the
+live-gate enablement, the credential use and the abort conditions. A call-count or cost envelope
+that has been DISCUSSED is not authorized by having been discussed.
 
 Six non-blocking observations were carried out of AT-M3.3 Validation 2 as backlog, not remediated,
 and are recorded in full in AT-D20 section 7: a residual TOCTOU between the post-provider deadline

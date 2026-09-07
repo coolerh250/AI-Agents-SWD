@@ -19766,3 +19766,107 @@ scheduler.
   authenticated completion ingress.
 - **HumanApproval unchanged.** No approval row created, requested or mutated.
 - **Production `NOT GRANTED`.**
+
+## Step AT-M3.6B.1-CANONICALIZATION-1 - Live Reasoning Provider Adapter + Limits (PO ACCEPTED / MERGED / CANONICAL / CLOSED)
+
+**AT-D25 records the Product Owner's acceptance of AT-M3.6B.1 and authorizes the fast-forward
+canonicalization of the exact independently validated candidate
+`14c3820b616b4ef2ceacb2dde9c37e5371ec147f` into `main`, from
+`e50d42294119db4c561ea07ebe42a9382b8e3f68`.**
+
+### The validation chain, recorded as it happened
+
+```text
+AT-M3.6B-PRODUCT-ARCHITECTURE-AUTHORIZATION-REVIEW-1   AUTHORIZED_FOR_IMPLEMENTATION
+AT-D24                                                 implementation authorization (vendor, model,
+                                                       credential path, egress, every limit)
+AT-M3.6B.1-LIVE-PROVIDER-ADAPTER-LIMITS-1  d1d7bc6     READY_FOR_INDEPENDENT_VALIDATION
+AT-M3.6B.1-INDEPENDENT-VALIDATION-1                    FAIL -- 2 load-bearing findings
+AT-M3.6B.1-IMPLEMENTATION-REMEDIATION-1    14c3820     READY_FOR_VALIDATION_2
+AT-M3.6B.1-INDEPENDENT-VALIDATION-2 / 2 FINAL          PASS -- no Validation 3
+AT-D25                                                 product acceptance + merge authorization
+```
+
+**Validation 1 was a FAIL and stays recorded as a FAIL.** It found that
+`provider_timeout` / `rate_limited` / `provider_unavailable` were retryable in name only - the first
+transient failure terminalized the invocation and there was never an attempt 2 - and that a landed
+provider call whose usage write failed was swallowed and counted at zero permanently. One bounded
+remediation followed, and exactly one. Rewriting that FAIL as a PASS because the remediation
+succeeded would delete the only part of the record that explains why the code looks the way it does.
+
+### What became canonical
+
+The whole accepted boundary is in AT-D25 section 2 and is not restated here. The short version: one
+Anthropic adapter behind the existing `ReasoningProvider`, driven by the existing
+`ReasoningService`, with the actual provider and model owned by configuration, one allowlisted model
+(`claude-sonnet-5`), no fallback of any kind, a default-closed network gate, replay ahead of
+provider/secret/budget/network resolution, an explicit per-verb egress projection inside 32 KiB,
+fixed per-verb token profiles, a 256 KiB artifact bound, a 40-step / 10-per-list plan bound, strict
+JSON into closed schemas, no raw completion persistence, a genuinely non-blocking provider path,
+`retries=0` at every layer below the service, real bounded three-attempt retry owned by the service
+alone, and a durable budget reservation written before the wire.
+
+Two migrations became canonical with it: **044** (live provider mode and a bounded live failure
+vocabulary) and **045** (budget reservation and settlement identity). Both have fail-closed DOWN
+migrations that refuse rather than delete the evidence a rollback would destroy.
+
+### The two PRE-M3.6B backlog items are CLOSED
+
+AT-D23 section 6 carried `reasoning_invocations.artifact` having no size bound and `PlanContent`
+having no step-count bound as items to decide "before a live provider can write into the column".
+The accepted implementation decides them: 256 KiB and 40 steps, with per-step lists bounded at 10,
+enforced on new writes at the adapter, the service and the store, and deliberately **not** as a
+database constraint - a limit that makes stored history unreadable destroys the evidence it exists
+to protect. They are not carried forward.
+
+Four items are carried forward unremediated, and AT-D25 section 6 records why none of them blocks:
+the historical stage-freeze/meta failures, `HAZARD_AT_M3_LIVE_DENYLIST` (a separately tracked
+Product Owner item this record does not dispose of), the `AutonomyReadStore._session()` recursion
+and the privileged raw-SQL lineage DELETE.
+
+### The boundary this closure does NOT move
+
+AT-M3.6B.1 proves the runtime is **structurally ready** for live provider use. It proves nothing
+about real Anthropic connectivity, credential validity, latency, model behaviour or billing, because
+**zero real external calls were made** - official and diagnostic alike, across the architecture
+review, the implementation, the remediation, both independent validations and this canonicalization.
+That was the condition AT-D24 authorized the work under, and it was kept.
+
+So the external rail is still **closed**. `REASONING_LIVE_NETWORK_ENABLED` defaults false on
+canonical main. `AT_M3_6B_2` is `NOT AUTHORIZED`, and the next real external call needs a Product
+Owner decision that names the provider, the model, the call count, the total and per-call cost
+ceilings, the allowed verbs, the environment, the gate enablement, the credential use and the abort
+conditions. **A call-count or cost envelope that has been discussed is not authorized by having been
+discussed.**
+
+Reading `AT_M3_6B_1: CLOSED` as "live reasoning works" is the most expensive misreading available at
+this boundary, which is why the PM state now says so in the file rather than only here.
+
+### Product capability at this boundary
+
+```text
+Goal -> Team -> Discussion -> Live-provider-CAPABLE Reasoning -> TeamDecision
+     -> Accepted PlanRevision -> Plan-driven Delegation -> Durable Dispatch
+     -> End-to-End Observability
+```
+
+with the external live rail CLOSED, no AT-M4 execution, HumanApproval unchanged, and
+`production_executed_true_count: 0`.
+
+### Governance drift: the same pattern, three times
+
+AT-M3.6B.1 raised two `GOVERNANCE_DRIFT_ALERT`s, both the same defect AT-D23 section 7 recorded
+once - a slice-scoped test asserting that its own migration is the last that will ever exist, which
+forbids every later authorized migration by construction. The third occurrence was written by the
+same hand that raised the second, in the same session. It is worth recording plainly that raising an
+alert did not prevent reproducing the defect: that is the argument for stating the property instead
+of repairing the list a fourth time, which is what was done, and for adding **no mechanism** in
+response - which is also what was done. A reservation ledger extension is not a budget governance
+platform, and one attempt transition inside `ReasoningService` is not a retry scheduler.
+
+### Merge
+
+Fast-forward only, `e50d422` -> `14c3820`. No squash, no rebase, no force, no merge commit, no
+cherry-pick rewrite. The acceptance and reconciliation commit lands on top of the validated
+candidate; `AT_M3_6B_1_IMPLEMENTATION_END` stays at `14c3820` and does not follow the branch tip,
+because moving it would silently claim validation coverage a documentation commit never had.
