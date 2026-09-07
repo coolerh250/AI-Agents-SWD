@@ -40,7 +40,11 @@ services:
     # reasoning adapter then fails closed. See
     # docs/operations/at-m3-6b-2-vault-runtime-readiness-runbook.md.
     image: hashicorp/vault:1.17
-    command: server -config=/vault/config/vault.hcl
+    # `server`, with no -dev and no explicit -config: the official image's entrypoint always
+    # appends `-config=/vault/config`, so the mounted vault.hcl below is picked up from there.
+    # Passing -config as well loads the same file twice and Vault then fails to start with
+    # "listen tcp4 0.0.0.0:8200: bind: address already in use" -- two identical listener blocks.
+    command: server
     environment:
       # For the CLI *inside* this container only. Not a client credential.
       VAULT_ADDR: http://127.0.0.1:8200

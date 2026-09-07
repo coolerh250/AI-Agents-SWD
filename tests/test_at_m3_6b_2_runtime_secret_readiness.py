@@ -88,10 +88,14 @@ class TestPersistentVaultService:
         """`server -dev` keeps its storage in memory: every restart discarded every secret and
         minted a new root token. A credential an operator provisions by hand cannot live there."""
         vault = _compose()["services"]["vault"]
-        command = vault["command"]
+        command = str(vault["command"])
         assert "-dev" not in command
         assert "VAULT_DEV_LISTEN_ADDRESS" not in (vault.get("environment") or {})
-        assert "-config=/vault/config/vault.hcl" in command
+        # `server` alone: the image entrypoint appends `-config=/vault/config`, so the mounted
+        # vault.hcl is loaded from there. Passing -config as well loads it twice and Vault refuses
+        # to start on a duplicated listener -- found by actually running it, not by reading it.
+        assert command.strip() == "server"
+        assert any("/vault/config/vault.hcl" in m for m in vault["volumes"])
 
     def test_the_server_config_uses_file_storage_and_a_real_listener(self) -> None:
         hcl = VAULT_HCL.read_text(encoding="utf-8")
@@ -520,6 +524,13 @@ class TestOperatorBootstrapIsValueFree:
         assert f".data.data.{FIELD}" not in text
         assert f"-field={FIELD}" not in text
         assert not _looks_like_an_anthropic_key(text)
+
+    def test_the_runbook_enables_the_kv_v2_engine(self) -> None:
+        """`server -dev` auto-mounted `secret/`; a real server does not, so every later write
+        fails with "no handler for route" if this step is missing. Found by running a disposable
+        Vault built from the committed config -- reading the config would not have found it."""
+        text = RUNBOOK.read_text(encoding="utf-8")
+        assert "vault secrets enable -path=secret -version=2 kv" in text
 
     def test_the_runbook_states_the_manual_unseal_limitation(self) -> None:
         text = RUNBOOK.read_text(encoding="utf-8")

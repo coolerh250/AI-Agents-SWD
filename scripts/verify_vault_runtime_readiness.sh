@@ -49,7 +49,19 @@ else
   [ "${storage}" = "file" ] && ok "persistent storage backend: file" || bad "storage backend is '${storage}', expected 'file' (dev mode uses 'inmem')"
 fi
 
-# --- 2. the secret exists, and only its FIELD NAMES are read ---------------------------------
+# --- 2. the KV v2 engine is mounted -----------------------------------------------------------
+# `server -dev` auto-mounted this and a real server does not, so a missing mount is the first thing
+# to check when a write fails with "no handler for route".
+kv_version="$(v vault secrets list -format=json 2>/dev/null | jq -r ".\"${MOUNT}/\".options.version // empty")"
+if [ "${kv_version}" = "2" ]; then
+  ok "KV v2 engine mounted at ${MOUNT}/"
+else
+  note "KV v2 version at ${MOUNT}/ not readable with this token (expected with the scoped runtime"
+  note "token, whose policy grants no sys/mounts access). Run this check with the operator token,"
+  note "or rely on the read below, which is the request the runtime actually makes."
+fi
+
+# --- 3. the secret exists, and only its FIELD NAMES are read ---------------------------------
 if names="$(v vault kv get -mount="${MOUNT}" -format=json "${PATH_}" 2>/dev/null | jq -r '.data.data | keys[]' 2>/dev/null)"; then
   if [ -n "${names}" ]; then
     ok "secret ${MOUNT}/${PATH_} exists"
@@ -77,7 +89,7 @@ else
   fi
 fi
 
-# --- 3. the runtime token is READ-ONLY -------------------------------------------------------
+# --- 4. the runtime token is READ-ONLY -------------------------------------------------------
 # Each of these MUST be refused. A success here is a privilege the runtime should not have.
 if v vault kv patch -mount="${MOUNT}" "${PATH_}" READINESS_PROBE=deny-me >/dev/null 2>&1; then
   bad "runtime token was allowed to WRITE -- the policy is too broad"
@@ -103,7 +115,7 @@ else
   ok "sys/policy refused"
 fi
 
-# --- 4. the token is not root ------------------------------------------------------------------
+# --- 5. the token is not root ------------------------------------------------------------------
 if policies="$(v vault token lookup -format=json 2>/dev/null | jq -r '.data.policies | join(",")')"; then
   case ",${policies}," in
     *,root,*) bad "the supplied token carries the ROOT policy -- never inject root into a runtime" ;;

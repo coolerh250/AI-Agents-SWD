@@ -85,10 +85,19 @@ after any `docker compose restart vault`, host reboot or container recreation, r
 Until you do, `VaultKvSecretProvider` reports every secret as absent and the reasoning adapter fails
 closed. Nothing crashes; nothing silently degrades to a different secret source either.
 
-## Step 4 — load the policy and mint the runtime token (produces a secret — operator only)
+## Step 4 — enable KV v2, load the policy, mint the runtime token (produces a secret — operator only)
 
 ```bash
 export VAULT_TOKEN=<your root token>     # this shell only; step 6 clears it
+
+# Enable the KV v2 secrets engine at `secret/`.
+#
+# NOT OPTIONAL, and easy to miss: `vault server -dev` auto-mounted this, and a real server does
+# not. Skipping it makes every later `kv put`/`kv patch` fail with "no handler for route", and the
+# runtime's own read 404s. This step was added after a disposable verification Vault, built from
+# the committed config, failed here -- reading the config would not have found it.
+docker compose exec -e VAULT_TOKEN vault vault secrets enable -path=secret -version=2 kv
+docker compose exec -e VAULT_TOKEN vault vault secrets list -format=json   | jq -r '."secret/".options.version'                                 # expect: 2
 
 # The policy file is already mounted into the container, read-only.
 docker compose exec -e VAULT_TOKEN vault \
