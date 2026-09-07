@@ -182,9 +182,22 @@ def test_staging_volumes_have_staging_suffix(staging_doc):
 
 
 def test_local_compose_unchanged_by_staging_work(local_doc):
-    """Stage 25 is additive — the local/test compose keeps its trust
-    auth + dev-mode Vault + null-receiver posture."""
+    """Stage 25 is additive — the local/test compose keeps its own posture.
+
+    The Vault clause used to read ``assert "server -dev" in ...``, and AT-M3.6B.2 readiness is
+    where that came due: the test runtime now runs a persistent, non-dev Vault so an operator can
+    provision a credential that survives a restart, authorized by AT-D26.
+
+    What this test is FOR is that STAGING work did not reach into the local compose — that is what
+    its name says and what Stage 25 needed it to protect. It is not, and was never meant to be, a
+    freeze on the local compose against every later authorized change. Trust auth is still asserted
+    because it is genuinely Stage 25's concern; the local Vault's own posture is asserted by
+    AT-M3.6B.2's own suite (tests/test_at_m3_6b_2_runtime_secret_readiness.py), which is where a
+    change to it should have to argue for itself.
+    """
     pg = local_doc["services"]["postgres"]
     assert pg["environment"]["POSTGRES_HOST_AUTH_METHOD"] == "trust"
-    vault = local_doc["services"]["vault"]
-    assert "server -dev" in str(vault.get("command", ""))
+    # Still local, still not staging: no staging port offset and no staging-suffixed volume leaked
+    # back into this file.
+    assert local_doc["name"] != "aiagents-staging"
+    assert not [v for v in local_doc.get("volumes", {}) if str(v).endswith("-staging")]

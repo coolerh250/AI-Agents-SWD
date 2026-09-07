@@ -8,7 +8,7 @@
   "properties": {
     "APP_ENV": {
       "type": "string",
-      "enum": ["local", "staging", "production-check"]
+      "enum": ["local", "staging", "production-check", "test-runtime"]
     },
     "DATABASE_URL": { "type": "string", "minLength": 1 },
     "REDIS_URL":    { "type": "string", "minLength": 1 },
@@ -21,6 +21,13 @@
 
     "VAULT_ADDR":  { "type": "string" },
     "VAULT_TOKEN": { "type": "string" },
+    "SECRET_PROVIDER":  { "type": "string", "enum": ["env", "vault", "mock-vault"] },
+    "VAULT_KV_MOUNT":   { "type": "string" },
+    "VAULT_KV_PATH":    { "type": "string" },
+
+    "REASONING_PROVIDER": { "type": "string" },
+    "REASONING_MODEL":    { "type": "string" },
+    "REASONING_LIVE_NETWORK_ENABLED": { "type": "string", "enum": ["true", "false"] },
 
     "GITHUB_TOKEN":         { "type": "string" },
     "GITHUB_TEST_REPO":     { "type": "string" },
@@ -61,6 +68,18 @@
       "production_executed_count_must_be_zero": true,
       "if_real_github_test_true_require": ["GITHUB_TOKEN", "GITHUB_TEST_REPO"],
       "if_real_discord_test_true_require": ["DISCORD_BOT_TOKEN", "DISCORD_TEST_CHANNEL_ID"]
+    },
+    "test-runtime": {
+      "description": "AT-M3.6B.2 readiness. The internal test runtime is wired to read the live reasoning credential from Vault and is NOT permitted to make a live call.",
+      "require_secret_provider": "vault",
+      "require_vault_kv_mount": "secret",
+      "require_vault_kv_path": "aiagents/test-runtime",
+      "forbid_vault_kv_path": "aiagents/staging",
+      "require_reasoning_provider": "anthropic",
+      "require_reasoning_model": "claude-sonnet-5",
+      "live_reasoning_gate_must_be_false": true,
+      "anthropic_key_forbidden_in_environment": true,
+      "production_executed_count_must_be_zero": true
     }
   }
 }

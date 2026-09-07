@@ -16,6 +16,14 @@ Modes:
   dev mode, no null-receiver, and (when DB credentials are available)
   ``production_executed=true`` count must be ``0``. The validator never
   writes; it only reports.
+* ``test-runtime`` — AT-M3.6B.2 readiness. Asserts the internal test
+  runtime is wired to read the live reasoning credential from Vault and
+  is NOT permitted to make a live call: ``SECRET_PROVIDER=vault``
+  explicitly (never the silent ``EnvSecretProvider`` fallback), the exact
+  KV v2 mount and path, Anthropic/claude-sonnet-5 as the configured
+  reasoning rail, and ``REASONING_LIVE_NETWORK_ENABLED`` false. Added
+  here rather than as a second validator because this file is already
+  the canonical place a runtime posture is asserted.
 
 The validator NEVER prints secret values. Findings reference variable
 names only; the boolean ``present`` flag tells the operator whether a
@@ -50,6 +58,21 @@ SECRET_FIELDS = (
 
 # Stage 26: SECRET_PROVIDER selection.
 SUPPORTED_SECRET_PROVIDERS = ("env", "vault", "mock-vault")
+
+# AT-M3.6B.2 readiness -- the exact test-runtime secret and reasoning contract.
+#
+# These are values, not preferences. The mount and path are where the operator provisions the
+# credential by hand; the provider and model are what AT-D24 authorized and AT-D25 accepted; the
+# gate is the one boolean standing between this runtime and a paid external call.
+TEST_RUNTIME_KV_MOUNT = "secret"
+TEST_RUNTIME_KV_PATH = "aiagents/test-runtime"
+#: The SecretProvider's own built-in default, which names an environment decommissioned at
+#: Step 66A.0. Landing on it silently is the specific mistake this mode exists to catch.
+DEPRECATED_KV_PATH = "aiagents/staging"
+TEST_RUNTIME_REASONING_PROVIDER = "anthropic"
+TEST_RUNTIME_REASONING_MODEL = "claude-sonnet-5"
+LIVE_GATE_ENV = "REASONING_LIVE_NETWORK_ENABLED"
+ANTHROPIC_SECRET_ENV = "ANTHROPIC_API_KEY"
 
 
 @dataclass
@@ -435,6 +458,137 @@ def _check_secret_provider(env: dict[str, str], report: Report, *, mode: str) ->
         )
 
 
+def _check_test_runtime_secret_rail(env: dict[str, str], report: Report) -> None:
+    """AT-M3.6B.2 readiness -- the runtime reads its credential from Vault, at the exact path.
+
+    ``_check_secret_provider`` already fails when ``SECRET_PROVIDER=vault`` is set without an
+    address or a token. What it cannot catch is the failure that matters most here: a runtime
+    that MEANT to use Vault and is quietly using ``os.environ`` instead, because
+    ``provider_from_env`` returns ``EnvSecretProvider`` for any unrecognised value and never
+    raises. That is correct for a library -- a secret backend should not crash a process at import
+    -- and it is the wrong default for a deployment whose whole point is reading Vault. So this
+    mode asserts the value explicitly rather than inferring it.
+    """
+    choice = (env.get("SECRET_PROVIDER") or "").strip().lower()
+    if choice != "vault":
+        report.add(
+            Finding(
+                code="test_runtime_secret_provider_not_vault",
+                message=(
+                    f"SECRET_PROVIDER={choice or '<unset>'!r}: the AT-M3.6B.2 test runtime must "
+                    "read its credential from Vault. An unset or unrecognised value resolves to "
+                    "EnvSecretProvider silently, which would look configured and read os.environ."
+                ),
+                severity="fail",
+                field="SECRET_PROVIDER",
+            )
+        )
+
+    mount = (env.get("VAULT_KV_MOUNT") or "").strip()
+    if mount != TEST_RUNTIME_KV_MOUNT:
+        report.add(
+            Finding(
+                code="test_runtime_kv_mount_wrong",
+                message=(
+                    f"VAULT_KV_MOUNT={mount or '<unset>'!r}; the canonical test-runtime mount is "
+                    f"{TEST_RUNTIME_KV_MOUNT!r}."
+                ),
+                severity="fail",
+                field="VAULT_KV_MOUNT",
+            )
+        )
+
+    path = (env.get("VAULT_KV_PATH") or "").strip()
+    if path == DEPRECATED_KV_PATH:
+        report.add(
+            Finding(
+                code="test_runtime_kv_path_deprecated",
+                message=(
+                    f"VAULT_KV_PATH={path!r} is the SecretProvider's built-in default and names "
+                    "the staging environment decommissioned at Step 66A.0. The test runtime uses "
+                    f"{TEST_RUNTIME_KV_PATH!r}."
+                ),
+                severity="fail",
+                field="VAULT_KV_PATH",
+            )
+        )
+    elif path != TEST_RUNTIME_KV_PATH:
+        report.add(
+            Finding(
+                code="test_runtime_kv_path_wrong",
+                message=(
+                    f"VAULT_KV_PATH={path or '<unset>'!r}; the canonical test-runtime path is "
+                    f"{TEST_RUNTIME_KV_PATH!r}. Unset falls back to the deprecated default."
+                ),
+                severity="fail",
+                field="VAULT_KV_PATH",
+            )
+        )
+
+    if (env.get(ANTHROPIC_SECRET_ENV) or "").strip():
+        # Presence only. The value is never read, compared, measured or rendered.
+        report.add(
+            Finding(
+                code="anthropic_key_in_environment",
+                message=(
+                    f"{ANTHROPIC_SECRET_ENV} is set in the process environment. The live reasoning "
+                    "credential belongs in Vault at the canonical path, not in an env var, a "
+                    "compose file or an env file -- an env-borne copy survives in shell history, "
+                    "`docker inspect` and process listings."
+                ),
+                severity="fail",
+                field=ANTHROPIC_SECRET_ENV,
+            )
+        )
+
+
+def _check_test_runtime_reasoning_rail(env: dict[str, str], report: Report) -> None:
+    """AT-M3.6B.2 readiness -- configured for Anthropic, and not permitted to call it."""
+    provider = (env.get("REASONING_PROVIDER") or "").strip().lower()
+    if provider != TEST_RUNTIME_REASONING_PROVIDER:
+        report.add(
+            Finding(
+                code="test_runtime_reasoning_provider_wrong",
+                message=(
+                    f"REASONING_PROVIDER={provider or '<unset>'!r}; AT-D24 authorized "
+                    f"{TEST_RUNTIME_REASONING_PROVIDER!r} and nothing else."
+                ),
+                severity="fail",
+                field="REASONING_PROVIDER",
+            )
+        )
+
+    model = (env.get("REASONING_MODEL") or "").strip()
+    if model != TEST_RUNTIME_REASONING_MODEL:
+        report.add(
+            Finding(
+                code="test_runtime_reasoning_model_wrong",
+                message=(
+                    f"REASONING_MODEL={model or '<unset>'!r}; the one allowlisted model is "
+                    f"{TEST_RUNTIME_REASONING_MODEL!r}."
+                ),
+                severity="fail",
+                field="REASONING_MODEL",
+            )
+        )
+
+    # THE LOAD-BEARING ONE. AT-M3.6B.2 Live Validation is a separate Product Owner decision that
+    # has not been made, so a readiness runtime that can reach Anthropic is not ready -- it is
+    # already live.
+    if _is_truthy(env.get(LIVE_GATE_ENV)):
+        report.add(
+            Finding(
+                code="live_reasoning_gate_open",
+                message=(
+                    f"{LIVE_GATE_ENV}=true. AT-M3.6B.2 Live Validation is NOT AUTHORIZED; this "
+                    "runtime is prepared for a live rail and must not be able to use one."
+                ),
+                severity="fail",
+                field=LIVE_GATE_ENV,
+            )
+        )
+
+
 def _check_production_executed(env: dict[str, str], report: Report) -> None:
     """Cheap, deferred check the validator can run when DATABASE_URL is
     reachable. Only invoked for ``production-check`` mode. We don't
@@ -468,7 +622,7 @@ def evaluate(mode: str, env: dict[str, str]) -> Report:
         env_keys_present=list(env.keys()),
         secret_provider=(env.get("SECRET_PROVIDER") or "env").strip().lower(),
     )
-    if mode not in ("local", "staging", "production-check"):
+    if mode not in ("local", "staging", "production-check", "test-runtime"):
         report.add(
             Finding(
                 code="invalid_mode",
@@ -505,6 +659,17 @@ def evaluate(mode: str, env: dict[str, str]) -> Report:
         _check_production_executed(env, report)
         return report
 
+    if mode == "test-runtime":
+        # Deliberately NOT _check_vault_mode: that helper judges dev-mode by ADDRESS, and the
+        # canonical internal address http://vault:8200 is exactly what a persistent, non-dev Vault
+        # on the compose network answers on. Dev-ness is a property of how the server was started
+        # -- `server -dev` versus `server -config=` -- and infra/vault/vault.hcl plus the compose
+        # service are where that is asserted, with tests over both.
+        _check_test_runtime_secret_rail(env, report)
+        _check_test_runtime_reasoning_rail(env, report)
+        _check_production_executed(env, report)
+        return report
+
     return report
 
 
@@ -526,7 +691,11 @@ def _render_text(report: Report) -> str:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Stage 24 runtime config validator")
-    parser.add_argument("--mode", required=True, choices=["local", "staging", "production-check"])
+    parser.add_argument(
+        "--mode",
+        required=True,
+        choices=["local", "staging", "production-check", "test-runtime"],
+    )
     parser.add_argument(
         "--env-file",
         type=Path,

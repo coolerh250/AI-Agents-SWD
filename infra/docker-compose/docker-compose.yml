@@ -28,14 +28,47 @@ services:
       retries: 5
 
   vault:
+    # AT-M3.6B.2 readiness. This used to be `server -dev`, whose storage is in memory: every
+    # restart discarded every secret and minted a new root token. A credential an operator
+    # provisions by hand cannot live there, so the test runtime now runs a real server against
+    # persistent file storage. Non-production still: no TLS, no HA, no auto-unseal, and the
+    # limitations are written down in infra/vault/vault.hcl rather than left to be discovered.
+    #
+    # IT STARTS SEALED, ON PURPOSE. Vault is sealed after every restart until an operator unseals
+    # it, and that is the honest cost of not having auto-unseal. Nothing crashes meanwhile:
+    # VaultKvSecretProvider treats an unreachable or sealed Vault as "secret absent", and the
+    # reasoning adapter then fails closed. See
+    # docs/operations/at-m3-6b-2-vault-runtime-readiness-runbook.md.
     image: hashicorp/vault:1.17
-    command: server -dev
+    command: server -config=/vault/config/vault.hcl
     environment:
-      VAULT_DEV_LISTEN_ADDRESS: 0.0.0.0:8200
+      # For the CLI *inside* this container only. Not a client credential.
+      VAULT_ADDR: http://127.0.0.1:8200
     cap_add:
       - IPC_LOCK
+    volumes:
+      - ../vault/vault.hcl:/vault/config/vault.hcl:ro
+      - ../vault/policies:/vault/policies:ro
+      - vault-data:/vault/file
     ports:
+      # Loopback only. Vault is reachable from inside the compose network and from the host's own
+      # shell; it is never published to an interface anything else can reach.
       - "127.0.0.1:8200:8200"
+    healthcheck:
+      # `sealedcode=200&uninitcode=200` deliberately: this asks "is the server up", which is the
+      # question a healthcheck can honestly answer. Seal state is reported separately by
+      # `vault status` and is an operator concern, not a container-liveness one -- a healthcheck
+      # that failed while sealed would mark a correctly-running Vault unhealthy for as long as it
+      # waits to be unsealed.
+      test:
+        - CMD
+        - wget
+        - -qO-
+        - http://127.0.0.1:8200/v1/sys/health?standbyok=true&sealedcode=200&uninitcode=200
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
 
   policy-engine:
     build:
@@ -208,6 +241,34 @@ services:
       GITHUB_TOKEN: ${GITHUB_TOKEN:-}
       RUN_REAL_GITHUB_TEST: ${RUN_REAL_GITHUB_TEST:-false}
       GITHUB_TEST_REPO: ${GITHUB_TEST_REPO:-}
+      # AT-M3.6B.2 readiness -- the secret rail the live reasoning adapter will read through.
+      #
+      # SECRET_PROVIDER=vault is load-bearing. `provider_from_env` falls back to EnvSecretProvider
+      # for any unrecognised value and never raises, which is the right behaviour for a library and
+      # the wrong default for a runtime that is supposed to be reading Vault: a typo here would
+      # silently produce a runtime that looks configured and reads os.environ. The
+      # `test-runtime` mode of scripts/validate_runtime_config.py asserts this value explicitly so
+      # the fallback cannot happen quietly.
+      SECRET_PROVIDER: ${SECRET_PROVIDER:-vault}
+      VAULT_ADDR: ${VAULT_ADDR:-http://vault:8200}
+      # The RUNTIME token: read-only, scoped to the one secret below by the
+      # infra/vault/policies/aiagents-runtime-read.hcl policy. NEVER the root or operator token --
+      # see section 9 of the AT-M3.6B.2 authorization record. It has no default on purpose: an
+      # empty value leaves the provider safe-degraded rather than silently reaching for something
+      # broader.
+      VAULT_TOKEN: ${VAULT_TOKEN:-}
+      VAULT_KV_MOUNT: ${VAULT_KV_MOUNT:-secret}
+      # NOT `aiagents/staging`, which is the SecretProvider's built-in default and names an
+      # environment that was decommissioned at Step 66A.0.
+      VAULT_KV_PATH: ${VAULT_KV_PATH:-aiagents/test-runtime}
+      # AT-M3.6B.2 readiness -- the reasoning rail is CONFIGURED for Anthropic and NOT PERMITTED to
+      # call it. Two facts, deliberately separate: naming a provider is not permission to use it,
+      # and /operations/safety reports them separately so an operator can see the intended rail
+      # while the gate is shut. Opening the gate is AT-M3.6B.2 Live Validation, which is a Product
+      # Owner decision that has not been made.
+      REASONING_PROVIDER: ${REASONING_PROVIDER:-anthropic}
+      REASONING_MODEL: ${REASONING_MODEL:-claude-sonnet-5}
+      REASONING_LIVE_NETWORK_ENABLED: ${REASONING_LIVE_NETWORK_ENABLED:-false}
       # Stage 32 real Discord pilot env -- the orchestrator's
       # /operations/safety + /operations/real-integrations only
       # inspect presence; the bot token value is never read here.
@@ -764,6 +825,11 @@ services:
 
 volumes:
   postgres-data:
+  # AT-M3.6B.2 readiness. Vault's file storage backend. A named volume rather than a bind mount or
+  # the container filesystem: a container is recreated on every `docker compose up`, and storage
+  # that dies with it would be dev mode wearing a different name. Never committed -- it holds
+  # Vault's encrypted store.
+  vault-data:
   prometheus-data:
   grafana-data:
   tempo-data:
