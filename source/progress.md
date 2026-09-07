@@ -19870,3 +19870,137 @@ Fast-forward only, `e50d422` -> `14c3820`. No squash, no rebase, no force, no me
 cherry-pick rewrite. The acceptance and reconciliation commit lands on top of the validated
 candidate; `AT_M3_6B_1_IMPLEMENTATION_END` stays at `14c3820` and does not follow the branch tip,
 because moving it would silently claim validation coverage a documentation commit never had.
+
+## Step AT-M3.6B.2-RUNTIME-SECRET-READINESS-1 - Persistent Vault + Runtime Secret Wiring (OPERATOR BOOTSTRAP REQUIRED)
+
+**Status: on branch `at-m3.6b.2-runtime-secret-readiness-1`, branched from canonical main
+`446f4cc`. NOT merged. `AT-D26` records the Product Owner authorization. Real Anthropic calls: 0.
+Diagnostic external calls: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout. No real
+credential provisioned.**
+
+### What this slice is, and what it deliberately is not
+
+The AT-M3.6B.2 secret-provisioning preflight found three environment facts standing between
+AT-M3.6B.1's structural readiness and a Product Owner being able to provision a key at all: no Vault
+was running on the internal test runtime; the compose file ran `vault server -dev`, whose storage is
+in memory, so a key written there is lost on every restart and the root token changes each start;
+and no deployment config wired the runtime to Vault, or to the reasoning provider, at all - so a
+correctly provisioned key would not have been read by anything.
+
+This slice closes those three and stops. **It prepares a rail; it does not travel it.** No Anthropic
+call, no diagnostic call, no credential validation, no gate enablement, no real key.
+
+### The bootstrap boundary, and why the verdict is a checkpoint rather than a pass
+
+Initializing a Vault produces two things that must never enter a repository, a chat transcript, a
+log or a test fixture: the **unseal key shares** and the **initial root token**. An assistant that
+ran `vault operator init` would render both into its own conversation, and nothing afterwards
+un-renders them.
+
+So the boundary sits immediately before initialization. Everything expressible as configuration is
+prepared, committed and tested; **initialize, unseal and mint the runtime token belong to the
+operator**, in their own terminal, with the material retained outside this repository. The procedure
+is `docs/operations/at-m3-6b-2-vault-runtime-readiness-runbook.md`, and it is value-free: no token,
+no key, no prefix, no length.
+
+The alternative - weakening Vault so no bootstrap secret exists - would trade a process step for a
+permanent security property. That is the wrong trade, and AT-D26 section 4 records the reasoning
+rather than leaving it implied.
+
+### What was built
+
+- **A persistent Vault.** `server -dev` becomes `server` against `file` storage on a named Docker
+  volume, so the store survives container recreation. Loopback-published, never public, no TLS
+  (documented), IPC_LOCK retained so `disable_mlock = false` holds - disabling mlock is the usual
+  shortcut and it puts unsealed key material on disk the moment the host swaps. The healthcheck asks
+  `sys/health?sealedcode=200&uninitcode=200`, which answers "is the server up" honestly rather than
+  marking a correctly-running sealed Vault unhealthy for as long as it waits to be unsealed.
+- **A least-privilege runtime policy.** `read`, on exactly one path,
+  `secret/data/aiagents/test-runtime`. No write, patch, delete, destroy, list or sudo; no `sys/`,
+  `auth/` or `identity/`; no wildcard; and deliberately **not** metadata - the provider never
+  requests it, and granting it to make a human's `vault kv get` convenient is how least privilege
+  erodes. Root and operator authority stay with the operator and are never injected into a service.
+- **Runtime wiring.** `SECRET_PROVIDER=vault`, the internal Vault address, mount `secret`, path
+  `aiagents/test-runtime`, `REASONING_PROVIDER=anthropic`, `REASONING_MODEL=claude-sonnet-5`, and
+  `REASONING_LIVE_NETWORK_ENABLED=false`. The runtime token has **no default** - an empty value
+  leaves the provider safe-degraded rather than quietly reaching for something broader.
+- **A `test-runtime` mode on the EXISTING canonical validator**, not a second validator beside it.
+  It asserts `SECRET_PROVIDER=vault` explicitly, because `provider_from_env` returns
+  `EnvSecretProvider` for anything unrecognised and never raises - correct for a library, and
+  exactly wrong for a deployment whose whole point is reading Vault. It also fails closed on an open
+  live gate, on the deprecated `aiagents/staging` path, on a non-allowlisted model, and on an
+  `ANTHROPIC_API_KEY` found in the process environment.
+- **`ANTHROPIC_API_KEY` declared in the secrets inventory**, metadata only - the gap the preflight
+  reported. No value, no prefix, no length.
+
+### The placeholder is not a credential
+
+The canonical path carries `ANTHROPIC_API_KEY` with the repository's existing sentinel
+`PLACEHOLDER_DO_NOT_COMMIT_REAL_VALUE`, which `SecretProvider` has treated as **absent** since Stage
+24. So the field NAME is visible to a names-only listing while the credential is not present, and
+the adapter stays non-callable. No realistic-looking `sk-ant-...` value was created: a fake that
+looks real is a fake that gets treated as real by the next person to read it.
+
+Provisioning is not, by itself, an enablement either - the adapter checks the network gate **first**,
+so even a runtime holding a real key refuses before the credential is resolved. A test asserts that
+with a secret provider that raises if anything reads it.
+
+### A disposable Vault, and the two defects it caught
+
+The runtime Vault stays operator-owned, so the policy and the integration were proven against an
+**isolated throwaway instance** built from the committed configuration, destroyed after the run, and
+whose own unseal key and root token were never printed - they protect nothing and belong to nothing.
+
+It earned its keep immediately, by finding two defects that reading the configuration would not
+have:
+
+1. **The container would not start.** The official image's entrypoint always appends
+   `-config=/vault/config`, so passing `-config=/vault/config/vault.hcl` as well loaded the same
+   file twice and Vault refused to start on a duplicated listener - `bind: address already in use`.
+2. **The KV v2 engine was never mounted.** `server -dev` auto-mounts `secret/`; a real server does
+   not. Every `kv put`/`kv patch` in the runbook would have failed with "no handler for route" and
+   the runtime's own read would have 404'd.
+
+Both are fixed, both are now asserted by tests, and the runbook enables the engine explicitly.
+
+**22/22 disposable-Vault checks pass**, including: storage backend `file` (dev mode reports
+`inmem`); starts uninitialized and sealed; the committed policy loads verbatim; the runtime token
+CAN read its one path; write, delete, an unrelated path, `sys/policy` and metadata are all **refused
+by Vault policy** rather than by application convention; the token does not carry `root`; a restart
+preserves initialization and data and re-seals as documented; and the canonical `SecretProvider`
+resolves `VaultKvSecretProvider` at the right mount and path, lists `ANTHROPIC_API_KEY` by name, and
+reports it **absent**.
+
+### One superseded assertion, narrowed
+
+`tests/test_staging_compose_project.py::test_local_compose_unchanged_by_staging_work` froze the
+local compose to dev-mode Vault. Its name says what it is for - that Stage 25's STAGING work did not
+reach into the local compose - and it was never meant to be a freeze against every later authorized
+change. Trust auth is still asserted because that is genuinely Stage 25's concern; the local Vault's
+own posture is now asserted by AT-M3.6B.2's own suite, which is where a change to it should have to
+argue for itself.
+
+### Non-production limitations, recorded rather than implied
+
+No TLS. Manual unseal after every restart, because auto-unseal needs a cloud KMS or transit seal
+this project does not have and inventing one is a bigger change than a readiness slice should make.
+Single-node `file` storage. The runtime token delivered by environment variable, visible to
+`docker inspect` on the host, because that is the only distribution mechanism this repository has.
+One operator holding both the unseal key and the root token. **None of these is acceptable for
+production and none is claimed to be** - AT-D26 section 6 lists them with their consequences.
+
+Also not built, on purpose: **no hot-secret-reload subsystem.** The provider caches the KV document
+for the life of the process, so a key written after startup is invisible until a restart. That is
+documented, tested, and handled by the runbook requiring an explicit
+`docker compose restart orchestrator`. A reasoning runtime that could silently change which
+credential it bills to, mid-process, is a worse property than one that needs a restart you can point
+at in a deployment log.
+
+### Boundaries held
+
+- **AT-M3.6B.2 Live Validation `NOT AUTHORIZED`.** This slice prepares for it and performs no part
+  of it. The gate is false, no real key exists, and a call-count or cost envelope that has been
+  discussed is not authorized by having been discussed.
+- **AT-M4 `NOT AUTHORIZED`.** No dispatch consumer, no execution, no Git, no deployment.
+- **HumanApproval unchanged. Production `NOT GRANTED`. `production_executed_true_count: 0`.**
+- **Zero real Anthropic calls. Zero diagnostic external calls.**

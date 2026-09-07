@@ -23,6 +23,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -233,7 +234,9 @@ def _run_validator(env: dict[str, str], tmp_path: Path) -> tuple[int, str]:
     env_file = tmp_path / "runtime.env"
     env_file.write_text("\n".join(f"{k}={v}" for k, v in env.items()), encoding="utf-8")
     done = subprocess.run(
-        ["python", str(VALIDATOR), "--mode", "test-runtime", "--env-file", str(env_file)],
+        # sys.executable, not "python": the internal test runtime ships python3 and no `python`
+        # shim, and hard-coding the name made these pass locally and fail there.
+        [sys.executable, str(VALIDATOR), "--mode", "test-runtime", "--env-file", str(env_file)],
         capture_output=True,
         text=True,
         cwd=str(ROOT),
@@ -307,7 +310,7 @@ class TestReadinessValidator:
         env_file = tmp_path / "local.env"
         env_file.write_text("SECRET_PROVIDER=env\n", encoding="utf-8")
         done = subprocess.run(
-            ["python", str(VALIDATOR), "--mode", "local", "--env-file", str(env_file)],
+            [sys.executable, str(VALIDATOR), "--mode", "local", "--env-file", str(env_file)],
             capture_output=True,
             text=True,
             cwd=str(ROOT),

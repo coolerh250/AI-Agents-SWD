@@ -421,11 +421,34 @@ def test_oidc_still_disabled() -> None:
     assert _git("grep", "-l", "OidcDisabledError", "--", "shared", "apps").strip()
 
 
+#: Vault configuration authorized by a LATER Product Owner decision, listed so this stage-scoped
+#: guard can say "Step 66C4 added no Vault configuration" without also saying "and nobody ever may".
+_AUTHORIZED_VAULT_CONFIG = {
+    # AT-D26 (AT-M3.6B.2 runtime secret readiness): the persistent non-production Vault that
+    # replaced `server -dev`, and the least-privilege read-only runtime policy.
+    "vault.hcl",
+    "aiagents-runtime-read.hcl",
+}
+
+
 def test_vault_directory_still_has_no_configuration() -> None:
+    """Step 66C4 introduced no Vault configuration -- which is what this test is for.
+
+    It asserted an empty list until AT-D26 authorized the AT-M3.6B.2 readiness slice to put a
+    persistent Vault server config and a runtime policy here, and then it failed for a change it
+    has no authority over. "This stage added none" and "no stage may ever add any" are different
+    claims, and only the first is this file's to make. Anything NOT on the authorized list still
+    fails.
+    """
     vault_dir = REPO / "infra" / "vault"
     if not vault_dir.is_dir():
         return
-    assert [p for p in vault_dir.rglob("*") if p.is_file() and p.name != ".gitkeep"] == []
+    unexpected = [
+        p
+        for p in vault_dir.rglob("*")
+        if p.is_file() and p.name != ".gitkeep" and p.name not in _AUTHORIZED_VAULT_CONFIG
+    ]
+    assert unexpected == [], f"unexpected Vault configuration: {unexpected}"
 
 
 # --- no implementation merged ------------------------------------------------------------------------------
