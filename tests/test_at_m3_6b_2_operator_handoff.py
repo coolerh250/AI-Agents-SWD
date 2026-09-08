@@ -324,8 +324,9 @@ class TestOperatorTokenFileValidation:
 @needs_shell
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX file modes and ownership")
 class TestOperatorTokenIsNeverRendered:
-    #: Distinctive enough that a single occurrence anywhere is unambiguous.
-    CANARY = "OPERATOR-TOKEN-CANARY-9f3c1d7b"
+    #: Generated per run rather than written down, so the literal exists nowhere in the repository
+    #: and a `git grep` hit for it can only mean the helper put it there.
+    CANARY = f"OPERATOR-TOKEN-CANARY-{uuid.uuid4().hex}"
 
     def test_the_value_never_appears_in_the_helper_output(self, tmp_path: Path) -> None:
         """Runs the helper for real. It reaches Vault, fails there (no operator authority behind
