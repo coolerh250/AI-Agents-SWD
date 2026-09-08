@@ -20267,3 +20267,82 @@ Fast-forward only, `446f4cc` -> `993e046`. No squash, no rebase, no force, no me
 cherry-pick rewrite. The acceptance and reconciliation commit lands on top of the validated
 candidate; `AT_M3_6B_2_IMPLEMENTATION_END` stays at `993e046` and does not follow the branch tip,
 because moving it would silently claim validation coverage a documentation commit never had.
+
+## Step AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-1 - Orchestrator Deployment Alignment (FAIL -- Safety Surface Load-Bearing Defect)
+
+**AT-D28 authorizes rebuilding/redeploying the internal test orchestrator from canonical main
+`12eda4f` to close the deployment-representativeness gap AT-D27 section 4 recorded. Branch
+`at-m3.6b.2-runtime-image-alignment-1`, not merged.**
+
+The rebuild and redeploy themselves succeeded cleanly: the orchestrator image was rebuilt from
+canonical code with no Dockerfile/build-context defect (`shared/` was already copied in full), the
+reasoning modules (`shared.sdk.agent_reasoning`, `AnthropicReasoningProvider`, `ReasoningService`,
+`live_config`) were independently proven present and importable both before and after deploy, Vault
+and Postgres were left completely untouched (`--no-deps` bounded the blast radius to the orchestrator
+container alone), and every canonical file hash matched byte-for-byte between the repository and the
+running container.
+
+The stage nonetheless returned **FAIL** on its own load-bearing acceptance item: `/operations/safety`
+reported `vault_reachable: false` on the newly aligned runtime, even though the same runtime's Vault
+reads independently succeeded through every other check in this lineage. Root cause, reproduced
+directly rather than inferred: `_secret_provider_status()` in `apps/orchestrator/src/operations.py`
+read a fresh `VaultKvSecretProvider`'s `.status` before anything had triggered a Vault lookup --
+`status["reachable"]` reflects only whether the provider's internal cache is already populated, and
+`provider_from_env()` never returns the same instance twice, so the field read as `False`
+unconditionally, on every call, regardless of whether Vault was actually reachable. Confirmed by
+calling `.status` before and after a lookup on the same fresh instance: `False` then `True`, nothing
+else changed. This predates AT-M3.6B.1/AT-M3.6B.2 (Stage 26 vintage) and was invisible until this
+stage, because the orchestrator had never run current code against a real persistent Vault before.
+
+Fixing `operations.py` was out of this stage's own authorized scope (image rebuild/redeploy only),
+so the stage stopped and reported FAIL rather than silently patching application logic under a
+deployment-only authorization.
+
+## Step AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-SAFETY-SURFACE-REMEDIATION-1 - Truthful Vault Reachability (READY FOR INDEPENDENT VALIDATION)
+
+**Continues branch `at-m3.6b.2-runtime-image-alignment-1` from `94370d2`. Scope authorized: fix
+`/operations/safety` Vault/secret-status truthfulness only. No SecretProvider architecture change,
+no runtime token change, no real key, no live gate, no Anthropic call.**
+
+### The fix
+
+`_secret_provider_status()` now runs the required-secret probe -- the loop that calls
+`provider.has_secret(name)` and is what actually exercises the provider -- **before** reading
+`provider.status`, so the status reflects a real attempt rather than an untouched provider. No
+change to `shared/sdk/secrets/provider.py`, to `SecretProvider` semantics, or to the runtime token
+model: the fix is entirely a statement-ordering correction inside the orchestrator's own safety-view
+helper.
+
+Separately, `VAULT_TOKEN`'s entry in `missing_required_secrets` is now checked directly against the
+environment rather than through `provider.has_secret("VAULT_TOKEN")`. VAULT_TOKEN is the transport
+credential Vault is reached *with*, never a field Vault stores about itself, so asking a Vault-backed
+provider whether it "has" VAULT_TOKEN as a KV document field was always going to answer no,
+independent of whether Vault or the token were actually fine. The other three required secrets
+(`POSTGRES_PASSWORD`, `GITHUB_TOKEN`, `DISCORD_BOT_TOKEN`) are unchanged and still checked through the
+provider.
+
+### Proof
+
+Five new focused tests in `tests/test_operations_secret_safety.py` drive `_secret_provider_status()`
+end to end against a stubbed Vault HTTP layer (no real Vault needed): a reachable Vault reports
+`vault_reachable=True` on a single cold call with no warm-up lookup beforehand; an unreachable Vault
+still correctly reports `False`; `VAULT_TOKEN` present in the environment is no longer reported
+missing even though it is not a KV document field; `VAULT_TOKEN` absent from the environment is still
+correctly reported missing. All 3 pre-existing tests in the same file continue to pass unmodified.
+205 tests passed / 2 skipped across the full focused AT-M3.6B.1/AT-M3.6B.2 safety, adapter, service
+and readiness suite, 0 failures.
+
+Rebuilt and redeployed the orchestrator only (`--no-deps`, Vault and Postgres untouched, confirmed by
+unchanged container `Created` timestamps and an unchanged Vault `initialized`/`sealed` state).
+Post-deploy, `/operations/safety` on the actual running container now reads: `vault_reachable=true`,
+`missing_required_secrets=['POSTGRES_PASSWORD', 'GITHUB_TOKEN', 'DISCORD_BOT_TOKEN']` (VAULT_TOKEN no
+longer present in that list), `reasoning_provider=anthropic`, `reasoning_model=claude-sonnet-5`,
+`reasoning_provider_mode=live`, `reasoning_model_allowlisted=true`, `reasoning_live_enabled=false`,
+`production_executed_true_count=0`. No secret value appears in the response. Every canonical
+reasoning-module file hash still matches byte-for-byte between the repository and the running
+container, and `scripts/verify_vault_runtime_readiness.sh` still returns `VAULT_RUNTIME_READINESS:
+PASS` (11/0).
+
+Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED` false
+throughout. No real Anthropic key requested, read, or provisioned. AT-M4 not touched. HumanApproval
+not touched. Production not touched. `production_executed_true_count: 0` throughout.
