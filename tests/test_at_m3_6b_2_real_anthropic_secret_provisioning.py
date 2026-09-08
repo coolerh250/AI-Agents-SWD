@@ -80,7 +80,7 @@ class TestScriptShapeAndInterface:
     def test_an_unknown_flag_is_rejected(self, tmp_path: Path) -> None:
         """`--api-key VALUE` must not be a supported interface -- this asserts it, rather than the
         absence of the flag from the source, so a future edit cannot silently reintroduce it."""
-        done = _run("--api-key", "sk-ant-not-a-real-key-shape-00000000000000000000")
+        done = _run("--api-key", "sk-ant-NOT-REAL-00000000000000000000")
         assert done.returncode == 2
         assert "file paths only" in (done.stdout + done.stderr)
 
