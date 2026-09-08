@@ -20005,7 +20005,7 @@ at in a deployment log.
 - **HumanApproval unchanged. Production `NOT GRANTED`. `production_executed_true_count: 0`.**
 - **Zero real Anthropic calls. Zero diagnostic external calls.**
 
-## Step AT-M3.6B.2-RUNTIME-SECRET-READINESS-COMPLETION-1 - Hardened Readiness Proof + Operator Authority Handoff (AWAITING OPERATOR TOKEN FILE)
+## Step AT-M3.6B.2-RUNTIME-SECRET-READINESS-COMPLETION-1 - Hardened Readiness Proof + Operator Authority Handoff (READY FOR INDEPENDENT VALIDATION)
 
 **Status: continues branch `at-m3.6b.2-runtime-secret-readiness-1` from candidate `2d6bfbc`.
 Canonical main unchanged at `446f4cc`. NOT merged. Real Anthropic calls: 0. Diagnostic external
@@ -20098,7 +20098,8 @@ environment.
 
 ### What is proven, and where
 
-`tests/test_at_m3_6b_2_operator_handoff.py` - 51 passed, 1 skipped on the internal test runtime.
+`tests/test_at_m3_6b_2_operator_handoff.py` - 52 tests, all passing on the internal test
+runtime once the deployment env file exists (51 passed / 1 skipped before it did).
 Behavioural where it can be: the missing-token FAIL, the gate stopping before the denial checks,
 each of the four diagnostic categories, and every operator-token-file refusal are asserted by
 **executing the real scripts**. The operator-token canary is run through the helper end to end and
@@ -20119,6 +20120,63 @@ operator, and a test that needed it would be a test that could not run.
 - **`REASONING_LIVE_NETWORK_ENABLED` false throughout**, asserted by the helper rather than assumed.
 - **AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
   `production_executed_true_count: 0`.**
+
+### The procedure was executed, and what it produced
+
+The Product Owner supplied an operator-token **file path** in `/dev/shm` and nothing else. The
+helper validated it as metadata only - regular file, not a symlink, mode `600`, owned by the caller,
+outside the working tree - read it into one process, and ran the whole operator half. Every line
+below is a name, a boolean or a Vault status field.
+
+- **Persistent Vault:** `initialized=true`, `sealed=false`, `storage=file`. Not dev mode: the
+  container runs `args=[server]` against the `aiagents-test_vault-data` volume.
+- **Loaded policy:** normalizes to exactly
+  `path "secret/data/aiagents/test-runtime" { capabilities = ["read"] }` - identical to the
+  committed HCL. No wildcard, no `create`/`update`/`patch`/`delete`/`list`/`sudo`, no `sys`/`auth`/
+  `identity`, no metadata.
+- **KV engine:** v2 at `secret/`, confirmed authoritatively through `sys/mounts` rather than
+  inferred from a read that happened to work.
+- **Canonical secret:** `secret/aiagents/test-runtime`, one field name, `ANTHROPIC_API_KEY`.
+  `placeholder_intact=true`, compared inside `jq` so the value never left Vault.
+- **Superseded tokens:** none found bound to `aiagents-runtime-read`; zero unidentified accessors.
+  Nothing was revoked on suspicion.
+- **Runtime token:** one minted, `-no-default-policy`, `period=768h`, self-lookup refused as
+  expected. It is not root.
+- **Allow before deny:** `runtime_canonical_read=PASS` on `secret/data/aiagents/test-runtime`
+  first; only then `write`, `delete`, unrelated path, metadata path, `sys/policy` and
+  `token create` - all six `DENIED`.
+- **Injection:** `infra/docker-compose/.env`, mode `600`, untracked and gitignored, holding exactly
+  one key: `VAULT_TOKEN`. No Anthropic material, no root token, no unseal key.
+- **Orchestrator:** `up -d --force-recreate`. The container was **replaced**, not restarted, which
+  is what an environment change requires.
+- **Runtime configuration, in the running container:** `SECRET_PROVIDER=vault`,
+  `VAULT_ADDR=http://vault:8200`, `VAULT_KV_MOUNT=secret`, `VAULT_KV_PATH=aiagents/test-runtime`,
+  `REASONING_PROVIDER=anthropic`, `REASONING_MODEL=claude-sonnet-5`,
+  `REASONING_LIVE_NETWORK_ENABLED=false`, `VAULT_TOKEN present=yes`,
+  `ANTHROPIC_API_KEY in environment=no`.
+- **Canonical SecretProvider, in the running container:** `provider_from_env()` resolves
+  `VaultKvSecretProvider` at mount `secret`, path `aiagents/test-runtime`;
+  `list_available_secrets() == ["ANTHROPIC_API_KEY"]`; `get_secret(...).present=false` and
+  `has_secret(...)=false`. The name is visible, the credential is not, and the adapter is
+  non-callable. That pair **is** the readiness claim.
+- **`VAULT_RUNTIME_READINESS: PASS`**, 11 checks passed, 0 failed, run through the compose `.env`
+  mechanism the runtime itself uses.
+- **Operator token file:** removed. `operator_token_file_removed=yes`.
+
+The deployed orchestrator image's `shared/sdk/secrets/provider.py` is **byte-identical** to the
+repository's (same SHA-256), so the proof above ran through the canonical code and not a stale copy
+of it. Recorded honestly: that image otherwise **predates AT-M3.6B.1** and does not contain
+`shared.sdk.agent_reasoning`. The live gate is false as deployed configuration, and the adapter that
+would read it is not in the running image at all - so the rail is doubly non-callable. Rebuilding
+the image is a deployment action outside a readiness slice and was not performed.
+
+`tests/test_at_m3_6b_2_runtime_secret_readiness.py::TestAgainstARealVault`, skipped since the slice
+was written because it needs a bootstrapped Vault, now **runs and passes** against the persistent
+Vault with the scoped runtime token.
+
+Zero real Anthropic calls. Zero diagnostic external calls. No real key requested, read, provisioned,
+moved or inspected; no `/dev/shm/anthropic-api-key.*` exists on the runtime.
+`production_executed_true_count: 0`, queried live.
 
 ### Pre-existing, not introduced
 
