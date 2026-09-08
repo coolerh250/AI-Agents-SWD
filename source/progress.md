@@ -20455,3 +20455,85 @@ No squash, no rebase, no force, no merge commit, no cherry-pick rewrite. The acc
 reconciliation commit lands on top of the validated candidate; `AT_M3_6B_2_IMAGE_ALIGNMENT_
 IMPLEMENTATION_END` stays at `158c8a8` and does not follow the branch tip, because moving it would
 silently claim validation coverage a documentation commit never had.
+
+## Step AT-M3.6B.2-REAL-ANTHROPIC-SECRET-PROVISIONING-CANONICALIZATION - Real Credential in the Canonical Vault Rail (PO ACCEPTED / MERGED / CANONICAL / CLOSED)
+
+**Status: `AT-D31` records the Product Owner acceptance and merge authorization. Accepted candidate
+`62bf1e6`, fast-forwarded onto canonical main `04f4bc6`. Independent Validation 1 FAIL -> single
+declared-fake fixture correction -> Independent Validation 2 / 2 FINAL PASS. Validation quota 2 of 2
+consumed; Validation 3 NOT PERMITTED. Real Anthropic calls: 0. Diagnostic Anthropic calls: 0.
+`REASONING_LIVE_NETWORK_ENABLED`: false throughout. `production_executed_true_count: 0`.**
+
+### What landed
+
+A real, non-production Anthropic API key now exists in the canonical Vault rail -- mount `secret`,
+path `aiagents/test-runtime`, field `ANTHROPIC_API_KEY` -- and `VaultKvSecretProvider` reports it
+`present=true` / `has_secret=true`. The repository gained three files and nothing else: `AT-D30`,
+the provisioning helper `scripts/provision_anthropic_key_to_vault.sh`, and its 28-test suite. No
+file under `apps/`, `shared/`, `agents/`, `migrations/` or `infra/` was touched, and the credential
+itself is runtime state that appears nowhere in this repository by construction.
+
+### The one thing this does not mean
+
+The credential has never been used. No Messages API call, no validity probe, no model list, no
+health check, no pricing request, no diagnostic call of any kind. Nothing here establishes that the
+key is even valid -- only that it is where the runtime would look for one. The adapter checks the
+network gate **before** resolving the credential, so a runtime holding a real key still refuses.
+
+Preparing a credential and spending it are different risks. `AT-D26` section 1 drew that line for
+the rail, `AT-D30` section 1 drew it again for the key, and `AT-D31` keeps it: a populated field is
+not permission to use it.
+
+### How the value stayed out of everything
+
+The Product Owner wrote the key into a private file and handed over only the path. The helper
+enforces the handling contract in code rather than by convention: file-path-only interfaces for both
+the credential and the operator token, neither ever in argv, transport into Vault on stdin,
+`kv patch` and never `put` (the field shares its path with others), refusal to run at all while the
+live gate is open, and `docker compose restart` rather than `--force-recreate` because only a secret
+value changed and not the runtime environment. Both handoff files were removed on success. The value
+was never read, printed, hashed, measured or compared at any point, by anyone, including this
+canonicalization.
+
+### Independent Validation 1 was a FAIL, and it stays recorded as one
+
+A synthetic fixture literal in the CLI-rejection test tripped the repository's own secret-hygiene
+scanner: it carried no recognized fixture marker as a contiguous substring. The literal was never a
+credential -- it was an invalid-shape value passed to prove that `--api-key VALUE` is rejected as an
+unsupported flag -- but from outside, a value that cannot be distinguished from a credential is
+correctly treated as one. That is the scanner being right, not noisy.
+
+The remediation was one line. The old literal spelled its disclaimer as "not-a-real", which is not
+one of the scanner's recognized markers; the replacement carries `NOT-REAL` contiguously and
+declares itself. The offending literal is deliberately not reproduced here -- writing a
+scanner-tripping value into the ledger to describe a scanner-tripping value is the same mistake one
+layer up. No production code, no script, no policy, no configuration, no other test. Validation
+2 / 2 returned FINAL PASS.
+
+The FAIL is not rewritten as a PASS. It was a real finding against a real control, and being cheap
+to fix does not make it retroactively a pass.
+
+### Boundaries held
+
+- **AT-M3.6B.2 Live Validation `NOT AUTHORIZED`.** It needs its own decision naming provider, model,
+  call count, total and per-call cost ceilings, allowed verbs, environment, gate enablement,
+  credential use and abort conditions. No previously discussed envelope is authorized by having been
+  discussed.
+- **No runtime action by this canonicalization.** No build, redeploy, restart, Vault mutation, key
+  read, rotation or re-provisioning. The independently validated runtime evidence is carried forward
+  as-is rather than re-queried.
+- **Value-free pre-merge secret check.** Every key-shaped literal in the tracked tree is a
+  self-declaring fixture in a leak-assertion test. No `.env` is tracked; the runtime env file is
+  owner-only, holds `VAULT_TOKEN` alone, and contains no `ANTHROPIC_API_KEY` line. Both temporary
+  handoff files are gone.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+
+### Merge
+
+Fast-forward only, `04f4bc6` -> `62bf1e6`, plus this docs-only reconciliation commit landing on top.
+No squash, no rebase, no force, no merge commit, no cherry-pick rewrite. Guarded implementation trees
+are byte-identical between `implementation_end` and the reconciliation tip.
+`AT_M3_6B_2_PROVISIONING_IMPLEMENTATION_END` stays at `62bf1e6` and does not follow the branch tip,
+because moving it would silently claim validation coverage a documentation commit never had.

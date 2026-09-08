@@ -20,8 +20,8 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-09-08
-RECONCILED_AGAINST_MAIN:     158c8a840a79eb8912420eda63c233c5c4193499
-RECONCILED_BY_STAGE:         AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_AGAINST_MAIN:     62bf1e69d36f810e5444816b4d87a1ea5a0c711f
+RECONCILED_BY_STAGE:         AT-M3.6B.2-REAL-ANTHROPIC-SECRET-PROVISIONING-CANONICALIZATION / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -55,7 +55,7 @@ CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D
                               call) and AT-M4 (real work execution) are all NOT AUTHORIZED, and no
                               record in this repository decides which is next or implies an order
                               among them
-CURRENT_STAGE:                AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+CURRENT_STAGE:                AT-M3.6B.2-REAL-ANTHROPIC-SECRET-PROVISIONING-CANONICALIZATION / PRODUCT ACCEPTANCE
 NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. The AT-M3.6B.2 Runtime Image
                               Alignment slice closed the deployment-representativeness gap
                               AT-D27 section 4 recorded: the deployed test orchestrator now runs the
@@ -417,17 +417,47 @@ AT_M3_6B_2_IMAGE_ALIGNMENT_AUTHORIZED_BY: AT-D28 / docs/decisions/at-d28-at-m3-6
 AT_M3_6B_2_IMAGE_ALIGNMENT_MERGE_AUTHORIZED_BY: AT-D29 / docs/decisions/at-d29-at-m3-6b-2-runtime-image-alignment-ratification-and-merge-authorization.md
 AT_M3_6B_2_IMAGE_ALIGNMENT_IMPLEMENTATION_END: 158c8a840a79eb8912420eda63c233c5c4193499
 AT_M3_6B_2_IMAGE_ALIGNMENT_REAL_EXTERNAL_CALLS: 0
+AT_M3_6B_2_PROVISIONING:       AUTHORIZED / IMPLEMENTED / INDEPENDENTLY_VALIDATED / FINAL_PASS /
+                                PO_ACCEPTED / MERGED / CANONICAL / CLOSED
+AT_M3_6B_2_PROVISIONING_IMPLEMENTATION: COMPLETE
+AT_M3_6B_2_PROVISIONING_VALIDATION: PASS / COMPLETE -- 2 of 2 (Independent Validation 1 FAIL on one
+                                bounded finding: a synthetic test-fixture literal in the
+                                CLI-rejection test tripped the repository's own secret-hygiene
+                                scanner because it carried no recognized fixture marker as a
+                                contiguous substring. It was never a credential -- it was an
+                                invalid-shape value proving that `--api-key VALUE` is rejected as an
+                                unsupported flag -- but a value the scanner cannot distinguish from
+                                a credential is correctly treated as one. Remediation was a single
+                                declared-fake fixture correction in one test line, with no
+                                production code, script, policy, configuration or other test
+                                changed -> Independent Validation 2 / 2 FINAL PASS). Validation
+                                quota: 2 of 2 CONSUMED. Validation 3: NOT PERMITTED
+AT_M3_6B_2_PROVISIONING_ACCEPTANCE: PO ACCEPTED
+AT_M3_6B_2_PROVISIONING_AUTHORIZED_BY: AT-D30 / docs/decisions/at-d30-at-m3-6b-2-real-anthropic-secret-provisioning-authorization.md
+AT_M3_6B_2_PROVISIONING_MERGE_AUTHORIZED_BY: AT-D31 / docs/decisions/at-d31-at-m3-6b-2-real-anthropic-secret-provisioning-acceptance-and-merge-authorization.md
+AT_M3_6B_2_PROVISIONING_IMPLEMENTATION_END: 62bf1e69d36f810e5444816b4d87a1ea5a0c711f
+AT_M3_6B_2_PROVISIONING_REAL_EXTERNAL_CALLS: 0
+AT_M3_6B_2_CREDENTIAL:         PROVISIONED IN VAULT ONLY -- mount `secret`, path
+                                `aiagents/test-runtime`, field `ANTHROPIC_API_KEY`.
+                                VaultKvSecretProvider reports present=true / has_secret=true. The
+                                value has never been read, printed, hashed, measured or recorded in
+                                any artifact. The runtime environment does NOT carry
+                                ANTHROPIC_API_KEY; the credential is reachable only through the
+                                Vault rail. Both temporary handoff files were removed. A populated
+                                field is NOT permission to use it -- see AT_M3_6B_2_LIVE_VALIDATION
 LIVE_EXTERNAL_VALIDATION:      NOT AUTHORIZED
 LIVE_NETWORK_GATE:             DEFAULT FALSE
-PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 REAL ANTHROPIC SECRET PROVISIONING AUTHORIZATION -- the
-                                runtime secret substrate and the deployed reasoning runtime are both
-                                canonical and closed; the standing gap is that no real Anthropic
-                                credential has been provisioned and no live call has been authorized
-NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Real Anthropic Secret
-                                Provisioning before AT-M3.6B.2 Live Validation can be authorized in
-                                turn -- no record in this repository authorizes a real external call,
-                                and no previously discussed call-count or cost envelope is authorized
-                                by having been discussed
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 LIVE VALIDATION AUTHORIZATION -- the runtime secret
+                                substrate, the deployed reasoning runtime and the real credential
+                                are all canonical and closed; the standing gap is that no record in
+                                this repository authorizes a single real external call
+NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Live Validation. It must
+                                name the provider, the model, the call count, the total and per-call
+                                cost ceilings, the allowed verbs, the environment, the gate
+                                enablement, the credential use and the abort conditions. No
+                                previously discussed call-count or cost envelope is authorized by
+                                having been discussed, and the presence of a real key in Vault
+                                authorizes nothing
 AT_M4:                         NOT AUTHORIZED
 ```
 
@@ -471,6 +501,20 @@ Validation 1 returned PASS" would both be misreadings; the former repeats the AT
 one layer further down the stack, and the latter erases a real, if non-blocking, governance finding
 that AT-D29 exists specifically to record honestly rather than launder.
 
+`AT_M3_6B_2_PROVISIONING` is `CLOSED`, and it is the narrowest closure in this family. A real
+non-production Anthropic credential now exists in the canonical Vault rail, and
+`VaultKvSecretProvider` reports it `present=true` / `has_secret=true`. That is the whole of it. The
+credential has never been used: no Messages API call, no validity probe, no model list, no health
+check, no pricing request, no diagnostic call of any kind, and
+`REASONING_LIVE_NETWORK_ENABLED` remains `false`. Nothing here establishes that the key is even
+valid -- only that it is where the runtime would look for one. The adapter checks the gate **before**
+resolving the credential, so the runtime still refuses, and `AT_M3_6B_2_PROVISIONING: CLOSED` must
+not be read as "live reasoning works" or as "the key has been verified". Its Independent Validation
+1 verdict was `FAIL`, on one bounded finding -- a synthetic fixture literal that the repository's own
+secret scanner could not distinguish from a credential -- and that verdict is recorded as it
+happened rather than rewritten, because the scanner was right: a value that cannot be told apart
+from a credential should be treated as one. The remediation was one test line.
+
 `AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4`, `AT_M3_5` and `AT_M3_6A` keep the literal word
 `AUTHORIZED` immediately after the field name for the same reason `AT_M2` does (section 5): it is
 the live authorization state, not a claim that validation is still open. `AT_M3_6A` previously read
@@ -490,12 +534,13 @@ accepted and merged it; AT-D28 separately authorized the AT-M3.6B.2 runtime-imag
 implementation and AT-D29 ratified its bounded safety-surface remediation, accepted the stage and
 authorized its merge. `AT_M3_6B_2_PREREQUISITE` is now satisfied: the deployed test orchestrator
 runs the exact aligned candidate image and truthfully reports its Vault-reachable safety surface.
-The boundary now standing is that no real Anthropic credential has been provisioned -- that is
-`AT-M3.6B.2 Real Anthropic Secret Provisioning Authorization`, a Product Owner decision that has not
-been made. Past it stand two further, still-unmade decisions: `AT_M3_6B_2_LIVE_VALIDATION` (no real
-external LLM call is authorized by any record in this file) and `AT_M4` (AT-M3.5 built the
-delegation of work and AT-M3.6A made it observable, but neither built its execution). This file
-must not be read as implying that any of the three follows automatically from the one before it.
+AT-D30 separately authorized the real-credential provisioning and AT-D31 accepted that stage and
+authorized its merge. The boundary now standing is that **no real external call is authorized by
+any record in this file** -- that is `AT_M3_6B_2_LIVE_VALIDATION`, a Product Owner decision that has
+not been made. Past it stands `AT_M4` (AT-M3.5 built the delegation of work and AT-M3.6A made it
+observable, but neither built its execution). This file must not be read as implying that either
+follows automatically from what precedes it, and least of all that a credential sitting in Vault
+implies permission to spend it.
 
 Before the first real external call, a Product Owner decision must name the provider, the model, the
 call count, the total cost ceiling, the per-call ceiling, the allowed verbs, the environment, the
