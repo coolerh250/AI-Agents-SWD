@@ -1616,15 +1616,38 @@ def _secret_provider_status() -> dict[str, Any]:
         from shared.sdk.secrets import provider_from_env  # type: ignore
 
         provider = provider_from_env()
+        # Probe the canonical required secret list BEFORE reading `.status`.
+        # `VaultKvSecretProvider.status["reachable"]` reflects whatever the
+        # provider's internal cache already holds, and a fresh instance
+        # (provider_from_env() never returns the same object twice) starts
+        # with an empty cache -- so reading `.status` first always reported
+        # `reachable=False`, even against a fully reachable Vault, because
+        # nothing had asked the provider to actually look anything up yet.
+        # `has_secret()` is what triggers that lookup, so it has to run
+        # first for `.status` to describe a real attempt rather than an
+        # untouched provider.
+        #
+        # VAULT_TOKEN is checked directly against the environment rather
+        # than through the provider: it is the transport credential Vault
+        # is reached WITH, never a value Vault stores about itself, so
+        # asking a Vault-backed provider whether it "has" VAULT_TOKEN as a
+        # KV field is a different question than the one this list means to
+        # ask and was always going to answer "no" regardless of whether
+        # Vault, or the token, is actually fine.
+        required = ("POSTGRES_PASSWORD", "GITHUB_TOKEN", "DISCORD_BOT_TOKEN", "VAULT_TOKEN")
+        missing: list[str] = []
+        for name in required:
+            if name == "VAULT_TOKEN":
+                if not bool(os.environ.get("VAULT_TOKEN", "").strip()):
+                    missing.append(name)
+                continue
+            if not provider.has_secret(name):
+                missing.append(name)
+        info["missing_required_secrets"] = missing
         status = provider.status
         info["secret_provider_status"] = status.get("provider", chosen)
         info["vault_reachable"] = bool(status.get("reachable")) if chosen == "vault" else False
         info["mock_vault_file_present"] = bool(status.get("mock_file_present"))
-        # Probe the canonical required secret list (boolean per name).
-        required = ("POSTGRES_PASSWORD", "GITHUB_TOKEN", "DISCORD_BOT_TOKEN", "VAULT_TOKEN")
-        info["missing_required_secrets"] = [
-            name for name in required if not provider.has_secret(name)
-        ]
     except Exception:
         info["secret_provider_status"] = "error"
     return info

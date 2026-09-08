@@ -84,3 +84,98 @@ def test_secret_provider_status_never_returns_value(operations_module, monkeypat
     reset_default_provider()
     info = operations_module._secret_provider_status()
     assert "NEVER-EXPOSE-IN-STATUS" not in repr(info)
+
+
+# AT-M3.6B.2 Runtime Image Alignment Safety Surface Remediation -- a fresh
+# VaultKvSecretProvider's `.status["reachable"]` reflects only whatever its own
+# internal cache already holds. `_secret_provider_status()` used to read
+# `.status` before anything had triggered a lookup, so a brand-new provider
+# (which is what `provider_from_env()` always returns -- never the same
+# instance twice) reported `vault_reachable=False` even against a fully
+# reachable Vault. These tests drive `_secret_provider_status()` itself,
+# end to end, against a stubbed Vault HTTP layer -- no real Vault needed --
+# to prove the fix without relying on a live server.
+
+
+def _install_fake_vault_provider(monkeypatch, *, reachable: bool) -> None:
+    """Make `shared.sdk.secrets.provider_from_env` return a `VaultKvSecretProvider`
+    talking to a stubbed Vault that either answers every read or refuses all of them --
+    a fresh instance, exactly like production's `provider_from_env()` call."""
+    import shared.sdk.secrets as secrets_pkg
+    from shared.sdk.secrets.provider import VaultKvSecretProvider
+    from shared.sdk.secrets.models import SecretRef
+
+    def _getter(url: str, headers: dict, timeout: float) -> tuple[int, dict]:
+        if reachable:
+            return 200, {"data": {"data": {"ANTHROPIC_API_KEY": "PLACEHOLDER_DO_NOT_COMMIT_REAL_VALUE"}}}
+        return 503, {}
+
+    def _fake_provider_from_env(env=None):
+        return VaultKvSecretProvider(
+            addr="http://vault:8200",
+            token_ref=SecretRef(name="VAULT_TOKEN", _value="scoped-token", present=True),
+            mount="secret",
+            path="aiagents/test-runtime",
+            http_getter=_getter,
+        )
+
+    monkeypatch.setattr(secrets_pkg, "provider_from_env", _fake_provider_from_env)
+
+
+def test_secret_provider_status_reachable_vault_reports_true(operations_module, monkeypatch):
+    """A fresh provider against a Vault that actually answers must report reachable=True --
+    not just after some earlier, unrelated call has happened to warm its cache."""
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_TOKEN", "scoped-token")
+    _install_fake_vault_provider(monkeypatch, reachable=True)
+    info = operations_module._secret_provider_status()
+    assert info["vault_reachable"] is True
+
+
+def test_secret_provider_status_unreachable_vault_reports_false(operations_module, monkeypatch):
+    """An actually-unreachable Vault must still report reachable=False -- the fix must not
+    flip the field to an unconditional True."""
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_TOKEN", "scoped-token")
+    _install_fake_vault_provider(monkeypatch, reachable=False)
+    info = operations_module._secret_provider_status()
+    assert info["vault_reachable"] is False
+
+
+def test_secret_provider_status_does_not_depend_on_a_prior_unrelated_lookup(
+    operations_module, monkeypatch
+):
+    """A single, cold call to `_secret_provider_status()` must be truthful on its own -- the
+    result must not depend on some earlier caller having already exercised the provider."""
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_TOKEN", "scoped-token")
+    _install_fake_vault_provider(monkeypatch, reachable=True)
+    # No warm-up call of any kind before this -- the helper must reach the same
+    # truthful answer entirely within its own single invocation.
+    info = operations_module._secret_provider_status()
+    assert info["vault_reachable"] is True
+
+
+def test_vault_token_missing_required_secrets_checks_environment_not_kv_document(
+    operations_module, monkeypatch
+):
+    """VAULT_TOKEN is the credential Vault is reached WITH, never a field Vault stores about
+    itself. A Vault-backed provider whose KV document holds only ANTHROPIC_API_KEY must not
+    report VAULT_TOKEN missing merely because it isn't a KV field."""
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.setenv("VAULT_TOKEN", "scoped-token")
+    _install_fake_vault_provider(monkeypatch, reachable=True)
+    info = operations_module._secret_provider_status()
+    assert "VAULT_TOKEN" not in info["missing_required_secrets"]
+
+
+def test_vault_token_absent_from_environment_is_still_reported_missing(
+    operations_module, monkeypatch
+):
+    """The environment-based check must still fail closed: no VAULT_TOKEN in the environment
+    is still a genuinely missing required secret."""
+    monkeypatch.setenv("SECRET_PROVIDER", "vault")
+    monkeypatch.delenv("VAULT_TOKEN", raising=False)
+    _install_fake_vault_provider(monkeypatch, reachable=True)
+    info = operations_module._secret_provider_status()
+    assert "VAULT_TOKEN" in info["missing_required_secrets"]
