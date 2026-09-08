@@ -20,8 +20,8 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-09-08
-RECONCILED_AGAINST_MAIN:     993e046c3eef6fe380587795a01ae3cb6f8e4cad
-RECONCILED_BY_STAGE:         AT-M3.6B.2-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_AGAINST_MAIN:     158c8a840a79eb8912420eda63c233c5c4193499
+RECONCILED_BY_STAGE:         AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,32 +34,38 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M3
 CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.1, AT-M3.2,
-                              AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A, AT-M3.6B.1 and the AT-M3.6B.2
-                              Runtime Secret Readiness slice MERGED / CLOSED. AT-D14 authorized
-                              M3.1 through M3.6A; AT-D24 separately authorized the AT-M3.6B.1
-                              implementation and AT-D25 accepted and merged it; AT-D26 separately
-                              authorized the AT-M3.6B.2 runtime-secret-readiness implementation and
-                              AT-D27 accepted and merged it. Every slice authorized by any record in
+                              AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A, AT-M3.6B.1, the AT-M3.6B.2
+                              Runtime Secret Readiness slice and the AT-M3.6B.2 Runtime Image
+                              Alignment slice (including its ratified safety-surface remediation)
+                              MERGED / CLOSED. AT-D14 authorized M3.1 through M3.6A; AT-D24
+                              separately authorized the AT-M3.6B.1 implementation and AT-D25
+                              accepted and merged it; AT-D26 separately authorized the AT-M3.6B.2
+                              runtime-secret-readiness implementation and AT-D27 accepted and merged
+                              it; AT-D28 separately authorized the AT-M3.6B.2 runtime-image-alignment
+                              implementation (including the deployment rebuild/redeploy) and AT-D29
+                              ratified the resulting bounded safety-surface remediation, accepted the
+                              stage and authorized its merge. Every slice authorized by any record in
                               this repository is now canonical
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Runtime Secret Readiness (canonical merge)
-CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope and
-                              AT-D26's scope are each fully consumed by their respective acceptances.
-                              AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT (rebuilding the deployed test
-                              orchestrator to carry the canonical reasoning runtime -- see
-                              AT_M3_6B_2_PREREQUISITE in section 5a), AT-M3.6B.2 LIVE VALIDATION
-                              (the first real external model call) and AT-M4 (real work execution)
-                              are all NOT AUTHORIZED, and no record in this repository decides which
-                              is next or implies an order among them
-CURRENT_STAGE:                AT-M3.6B.2-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. The AT-M3.6B.2 readiness
-                              slice delivered a Vault secret substrate independently proven ready
-                              through the actual deployed SecretProvider code path; it established
-                              nothing about the deployed test orchestrator's ability to carry a live
-                              reasoning call, because that image was independently confirmed to
-                              predate AT-M3.6B.1 and cannot import the reasoning adapter at all.
-                              AT-M3.6B.2 Runtime Image Alignment needs its own authorization before
-                              a real key is provisioned or live validation is attempted; live
-                              validation needs a further authorization naming provider, model, call
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Runtime Image Alignment (canonical merge)
+CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope, AT-D26's
+                              scope and AT-D28's scope are each fully consumed by their respective
+                              acceptances. AT-M3.6B.2 REAL ANTHROPIC SECRET PROVISIONING
+                              AUTHORIZATION (provisioning a real key into the now-aligned Vault
+                              substrate), AT-M3.6B.2 LIVE VALIDATION (the first real external model
+                              call) and AT-M4 (real work execution) are all NOT AUTHORIZED, and no
+                              record in this repository decides which is next or implies an order
+                              among them
+CURRENT_STAGE:                AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. The AT-M3.6B.2 Runtime Image
+                              Alignment slice closed the deployment-representativeness gap
+                              AT-D27 section 4 recorded: the deployed test orchestrator now runs the
+                              exact candidate image, independently confirmed to import the reasoning
+                              adapter and to report a truthful Vault-reachable safety surface. It
+                              established nothing about a real Anthropic credential or a live
+                              external call -- the Vault placeholder remains non-callable throughout.
+                              AT-M3.6B.2 Real Anthropic Secret Provisioning needs its own
+                              authorization before a real key is provisioned; AT-M3.6B.2 Live
+                              Validation needs a further authorization naming provider, model, call
                               count, total and per-call cost ceilings, allowed verbs, environment,
                               live-gate enablement, credential use and abort conditions. AT-M4 (real
                               work execution) is likewise NOT AUTHORIZED, and none of the three is
@@ -376,28 +382,52 @@ AT_M3_6B_2_AUTHORIZED_BY:      AT-D26 / docs/decisions/at-d26-at-m3-6b-2-runtime
 AT_M3_6B_2_MERGE_AUTHORIZED_BY: AT-D27 / docs/decisions/at-d27-at-m3-6b-2-runtime-secret-readiness-acceptance-and-merge-authorization.md
 AT_M3_6B_2_IMPLEMENTATION_END: 993e046c3eef6fe380587795a01ae3cb6f8e4cad
 AT_M3_6B_2_REAL_EXTERNAL_CALLS: 0
-AT_M3_6B_2_PREREQUISITE:       REQUIRED_BEFORE_REAL_SECRET_PROVISIONING_OR_LIVE_VALIDATION -- the
-                                internal test orchestrator image must be rebuilt/redeployed from
-                                canonical main (containing shared/sdk/agent_reasoning and the
-                                ReasoningService/live_config path) before a real ANTHROPIC_API_KEY is
-                                provisioned or AT-M3.6B.2 Live Validation is authorized. See AT-D27
-                                section 4. NOT satisfied by this canonicalization and not authorized
-                                for implementation by it -- see AT_M3_6B_2_NEXT_STAGE below
-AT_M3_6B_2_NEXT_STAGE:         AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT -- named as the next PLANNING
-                                target only. Its implementation is NOT AUTHORIZED by this
-                                canonicalization and requires its own authorization exactly as every
-                                other AT-M3 slice has
+AT_M3_6B_2_PREREQUISITE:       REQUIRED_BEFORE_REAL_SECRET_PROVISIONING_OR_LIVE_VALIDATION -- SATISFIED
+                                by AT_M3_6B_2_IMAGE_ALIGNMENT below. Recorded here unchanged as the
+                                historical statement of what AT-D27 section 4 required; see
+                                AT_M3_6B_2_IMAGE_ALIGNMENT for how it was closed
+AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT, named here as the
+                                next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
+                                Recorded unchanged as the historical record of what this field named
+                                at AT-D27's canonicalization
 AT_M3_6B_2_LIVE_VALIDATION:    NOT AUTHORIZED
+AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
+                                INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
+                                CANONICAL / CLOSED
+AT_M3_6B_2_IMAGE_ALIGNMENT_IMPLEMENTATION: COMPLETE
+AT_M3_6B_2_IMAGE_ALIGNMENT_VALIDATION: Independent Validation 1 independently reproduced every
+                                load-bearing technical acceptance item as PASS (deployed image
+                                alignment, reasoning-module presence, byte-for-byte repo/container
+                                hash alignment, the safety-surface root cause and its fix,
+                                /operations/safety truthfulness, VAULT_TOKEN classification, Vault
+                                readiness, SecretProvider end-to-end, the placeholder/real-key
+                                boundary, the fail-closed live gate, data preservation, and 204/204
+                                relevant focused regression tests with 0 candidate regressions). Its
+                                overall verdict was FAIL, on one procedural finding only: the
+                                remediation commit changing apps/orchestrator/src/operations.py had
+                                no citable Product Owner authorization record of its own, which
+                                AT-D28's explicit scope (image rebuild/redeploy only) did not cover.
+                                Classified by the validator as RISK_CLASS P2 / GOVERNANCE / PROCESS
+                                GAP, not P0/P1. AT-D29 ratifies that finding's disposition without
+                                altering any of the independently reproduced technical evidence.
+                                No Validation 2 required or performed. Validation quota: 1 of 2
+                                consumed
+AT_M3_6B_2_IMAGE_ALIGNMENT_ACCEPTANCE: PO ACCEPTED
+AT_M3_6B_2_IMAGE_ALIGNMENT_AUTHORIZED_BY: AT-D28 / docs/decisions/at-d28-at-m3-6b-2-runtime-image-alignment-authorization.md
+AT_M3_6B_2_IMAGE_ALIGNMENT_MERGE_AUTHORIZED_BY: AT-D29 / docs/decisions/at-d29-at-m3-6b-2-runtime-image-alignment-ratification-and-merge-authorization.md
+AT_M3_6B_2_IMAGE_ALIGNMENT_IMPLEMENTATION_END: 158c8a840a79eb8912420eda63c233c5c4193499
+AT_M3_6B_2_IMAGE_ALIGNMENT_REAL_EXTERNAL_CALLS: 0
 LIVE_EXTERNAL_VALIDATION:      NOT AUTHORIZED
 LIVE_NETWORK_GATE:             DEFAULT FALSE
-PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT -- the runtime secret substrate is
-                                canonical and closed; the standing gap is that the deployed test
-                                orchestrator cannot yet execute the reasoning path it is wired for
-NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Runtime Image Alignment
-                                before real-key provisioning or AT-M3.6B.2 Live Validation can be
-                                authorized in turn -- no record in this repository authorizes a real
-                                external call, and no previously discussed call-count or cost
-                                envelope is authorized by having been discussed
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 REAL ANTHROPIC SECRET PROVISIONING AUTHORIZATION -- the
+                                runtime secret substrate and the deployed reasoning runtime are both
+                                canonical and closed; the standing gap is that no real Anthropic
+                                credential has been provisioned and no live call has been authorized
+NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Real Anthropic Secret
+                                Provisioning before AT-M3.6B.2 Live Validation can be authorized in
+                                turn -- no record in this repository authorizes a real external call,
+                                and no previously discussed call-count or cost envelope is authorized
+                                by having been discussed
 AT_M4:                         NOT AUTHORIZED
 ```
 
@@ -417,10 +447,29 @@ secret substrate -- persistence, least-privilege policy, wiring, and the canonic
 reading through it -- is independently proven ready. It does **not** say the runtime can carry a
 live reasoning call. Independent Validation 1 confirmed directly that the currently deployed
 internal test orchestrator image predates AT-M3.6B.1 and cannot import the reasoning adapter at
-all, which is why `AT_M3_6B_2_PREREQUISITE` exists and why `AT_M3_6B_2_LIVE_VALIDATION` stays
-`NOT AUTHORIZED` even though the readiness slice itself is now canonical. Reading `AT_M3_6B_2:
-CLOSED` as "the test runtime can make a live call" would repeat the AT_M3_6B_1 misreading one layer
-further down the stack.
+all, which is why `AT_M3_6B_2_PREREQUISITE` was recorded. That prerequisite is now satisfied --
+see `AT_M3_6B_2_IMAGE_ALIGNMENT` below -- but `AT_M3_6B_2_LIVE_VALIDATION` stays `NOT AUTHORIZED`
+regardless, because closing the prerequisite is not the same act as authorizing a live call.
+
+`AT_M3_6B_2_IMAGE_ALIGNMENT` is now `CLOSED`, and it is a narrow closure in the same family: it
+accepts that the deployed internal test orchestrator runs the exact candidate image, that the
+reasoning modules import and resolve correctly inside it, that repository and container hashes
+align byte-for-byte, and that `/operations/safety` now reports Vault reachability and the reasoning
+posture truthfully -- all independently reproduced by Independent Validation 1, not taken from the
+implementation report. It does **not** say a real Anthropic credential exists, that
+`REASONING_LIVE_NETWORK_ENABLED` is anything other than `false`, or that any external call has been
+authorized -- the Vault placeholder remains non-callable throughout, exactly as before this stage.
+Independent Validation 1's own verdict on this stage was `FAIL`, on one procedural finding: the
+safety-surface remediation commit had no citable Product Owner authorization record when the
+validator ran, because AT-D28 authorized image rebuild/redeploy only and named a Dockerfile/
+build-context defect as the sole exception for a business-logic change. AT-D29 supplies that
+authorization retroactively, ratifying the remediation exactly as independently validated, with no
+code change and no second validation round -- the validator's technical findings are preserved
+verbatim in section 4 of AT-D29 and are not re-litigated by this canonicalization. Reading
+`AT_M3_6B_2_IMAGE_ALIGNMENT: CLOSED` as "the test runtime can make a live call" or as "Independent
+Validation 1 returned PASS" would both be misreadings; the former repeats the AT_M3_6B_1 misreading
+one layer further down the stack, and the latter erases a real, if non-blocking, governance finding
+that AT-D29 exists specifically to record honestly rather than launder.
 
 `AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4`, `AT_M3_5` and `AT_M3_6A` keep the literal word
 `AUTHORIZED` immediately after the field name for the same reason `AT_M2` does (section 5): it is
@@ -437,15 +486,16 @@ claim validation coverage the docs commit never had.
 finished. AT-D14 authorized AT-M3.1 through AT-M3.6A; all six are canonical, so that scope is
 consumed. AT-D24 separately authorized the AT-M3.6B.1 implementation and AT-D25 accepted and merged
 it; AT-D26 separately authorized the AT-M3.6B.2 runtime-secret-readiness implementation and AT-D27
-accepted and merged it. `AT_M3_6B_2_PREREQUISITE` names the boundary that is now standing: the
-secret rail is canonical, but the deployed test orchestrator cannot yet execute the reasoning path
-it is wired for, and no record in this file authorizes rebuilding or redeploying that image. That
-is `AT-M3.6B.2 Runtime Image Alignment`, named here as the next PLANNING target only -- its
-implementation is a Product Owner decision that has not been made. Past it stand two further,
-still-unmade decisions: `AT_M3_6B_2_LIVE_VALIDATION` (no real external LLM call is authorized by any
-record in this file) and `AT_M4` (AT-M3.5 built the delegation of work and AT-M3.6A made it
-observable, but neither built its execution). This file must not be read as implying that any of
-the three follows automatically from the one before it.
+accepted and merged it; AT-D28 separately authorized the AT-M3.6B.2 runtime-image-alignment
+implementation and AT-D29 ratified its bounded safety-surface remediation, accepted the stage and
+authorized its merge. `AT_M3_6B_2_PREREQUISITE` is now satisfied: the deployed test orchestrator
+runs the exact aligned candidate image and truthfully reports its Vault-reachable safety surface.
+The boundary now standing is that no real Anthropic credential has been provisioned -- that is
+`AT-M3.6B.2 Real Anthropic Secret Provisioning Authorization`, a Product Owner decision that has not
+been made. Past it stand two further, still-unmade decisions: `AT_M3_6B_2_LIVE_VALIDATION` (no real
+external LLM call is authorized by any record in this file) and `AT_M4` (AT-M3.5 built the
+delegation of work and AT-M3.6A made it observable, but neither built its execution). This file
+must not be read as implying that any of the three follows automatically from the one before it.
 
 Before the first real external call, a Product Owner decision must name the provider, the model, the
 call count, the total cost ceiling, the per-call ceiling, the allowed verbs, the environment, the

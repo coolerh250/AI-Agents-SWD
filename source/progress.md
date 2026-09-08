@@ -20346,3 +20346,112 @@ PASS` (11/0).
 Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED` false
 throughout. No real Anthropic key requested, read, or provisioned. AT-M4 not touched. HumanApproval
 not touched. Production not touched. `production_executed_true_count: 0` throughout.
+
+## Step AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-CANONICALIZATION-1 - Runtime Image Alignment + Safety-Surface Remediation (PO ACCEPTED / MERGED / CANONICAL / CLOSED)
+
+**AT-D29 records the Product Owner's ratification of the bounded safety-surface remediation, accepts
+AT-M3.6B.2 Runtime Image Alignment (including that remediation) and authorizes the fast-forward
+canonicalization of the exact independently validated candidate
+`158c8a840a79eb8912420eda63c233c5c4193499` into `main`, from
+`12eda4f7b4743293e0de3798652ce637f61e5edb`.**
+
+### The validation chain, recorded as it happened
+
+```text
+AT-D28                                                  runtime-image-alignment implementation
+                                                        authorization (rebuild/redeploy only)
+AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-1           94370d2  rebuild/redeploy succeeded; stage FAIL on
+                                                        /operations/safety vault_reachable=false --
+                                                        out-of-scope fix correctly declined
+AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-SAFETY-SURFACE-REMEDIATION-1
+                                                158c8a8  vault_reachable + VAULT_TOKEN truthfulness
+                                                        fix; READY_FOR_INDEPENDENT_VALIDATION
+AT-M3.6B.2-RUNTIME-IMAGE-ALIGNMENT-INDEPENDENT-VALIDATION-1
+                                                        FAIL -- every load-bearing technical item
+                                                        independently reproduced PASS; sole finding
+                                                        was a P2 missing-authorization-record gap for
+                                                        the remediation, not a technical defect
+AT-D29                                                  ratification + product acceptance + merge
+                                                        authorization
+```
+
+**Independent Validation 1 returned `FAIL`, and stays recorded exactly that way -- this
+canonicalization does not rewrite it as PASS.** It independently reproduced, not trusted from the
+implementation report: the deployed image identity matching the candidate; the reasoning modules
+importing and `LiveReasoningConfig.resolve()` returning the canonical posture with no credential
+touched; byte-for-byte SHA-256 alignment on 5 canonical files between the repository and the running
+container; the safety-surface root cause reproduced directly (a fresh `VaultKvSecretProvider`'s
+`.status["reachable"]` reading `False` before any lookup and `True` immediately after, against the
+actual Vault); three consecutive fresh `/operations/safety` requests all truthful; `VAULT_TOKEN`
+correctly classified as an environment transport credential and absent from
+`missing_required_secrets`; `scripts/verify_vault_runtime_readiness.sh` independently re-run inside
+the orchestrator container returning `PASS` (11/0) with allow-before-deny ordering intact;
+`SecretProvider` end-to-end with the placeholder still non-present/non-callable; the live gate
+reproduced fail-closed live in the running container (`LiveProviderError(failure_category=
+provider_disabled)` raised before budget, credential or network); Vault/Postgres data and
+container-creation timestamps confirming the redeploy was scoped to the orchestrator alone; and 204
+passed / 3 skipped / 0 failed across the six required focused test files, 0 candidate regressions.
+
+Its sole finding, and the reason the round returned `FAIL` rather than `PASS`: commit `d7eda04`,
+modifying `apps/orchestrator/src/operations.py`, had no citable Product Owner authorization record
+of its own. `AT-D28` section 3 authorizes image rebuild/redeploy only and names a Dockerfile/
+build-context defect as the sole exception for touching application business logic -- a
+statement-ordering fix inside a status-reporting function is neither. The validator classified this
+`RISK_CLASS: P2 / GOVERNANCE / PROCESS GAP`, explicitly `PRODUCT SAFETY IMPACT: NONE OBSERVED`,
+recommended the Product Owner supply the missing authorization record rather than a second technical
+validation round, and noted the finding was disclosed rather than concealed: the immediately
+preceding stage entry above already states plainly that "Fixing `operations.py` was out of this
+stage's own authorized scope."
+
+### What became canonical
+
+Everything AT-D27 already canonicalized (the Vault secret substrate) stays unchanged. Newly
+canonical with this stage: the internal test orchestrator image rebuilt from canonical `main`,
+independently confirmed to carry `shared.sdk.agent_reasoning`, `AnthropicReasoningProvider`,
+`ReasoningService` and `live_config`; and the bounded safety-surface fix in
+`apps/orchestrator/src/operations.py` making `/operations/safety` report `vault_reachable` and
+`missing_required_secrets` truthfully. No change to `shared/sdk/secrets/provider.py`, to
+`SecretProvider` semantics, or to the Vault runtime-token model -- `AT-D29` section 2 records this
+boundary explicitly. The full accepted boundary is in `AT-D29` sections 2 and 4 and is not restated
+in full here.
+
+### The ratification
+
+`AT-D29` is the record that closes the sole finding above. It does not alter, soften, or re-derive
+any of Independent Validation 1's independently reproduced technical evidence -- that evidence is
+carried into `AT-D29` section 4 verbatim. It supplies exactly the one thing that was missing: an
+explicit, citable Product Owner authorization naming the remediation, its scope, and its boundaries,
+recorded as a new decision rather than as a retroactive reinterpretation of `AT-D28`. No code changed
+between Independent Validation 1's evidence and this canonicalization. No Validation 2 was required
+or performed. Validation quota: 1 of 2 consumed.
+
+### The prerequisite this stage closes
+
+`AT-D27` section 4's `REQUIRED_BEFORE_REAL_SECRET_PROVISIONING_OR_LIVE_VALIDATION` prerequisite is
+now satisfied: the deployed test orchestrator carries the canonical reasoning runtime and reports a
+truthful safety surface. This does **not** authorize provisioning a real `ANTHROPIC_API_KEY` or any
+AT-M3.6B.2 Live Validation -- both remain separate, still-unmade Product Owner decisions. `AT-D29`
+sections 5-7 state this explicitly and this canonicalization does not narrow it further.
+
+### Boundaries held
+
+- **AT-M3.6B.2 Real Anthropic Secret Provisioning `NOT AUTHORIZED`.** A separate, future Product
+  Owner decision.
+- **AT-M3.6B.2 Live Validation `NOT AUTHORIZED`.** Blocked on the provisioning decision above and on
+  its own future, separate authorization naming provider, model, call count, cost ceilings, allowed
+  verbs, environment, gate enablement, credential use and abort conditions.
+- **No further runtime image rebuild or redeploy performed by this canonicalization.** The
+  orchestrator remains exactly as Independent Validation 1 found it, aligned.
+- **No real Anthropic key provisioned, read, or moved.** The canonical path keeps the placeholder.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`**, as already established by Independent Validation 1's
+  value-free evidence and not re-queried against the live runtime by this canonicalization.
+
+### Merge
+
+Fast-forward only, `12eda4f` -> `158c8a8`, plus this docs-only reconciliation commit landing on top.
+No squash, no rebase, no force, no merge commit, no cherry-pick rewrite. The acceptance and
+reconciliation commit lands on top of the validated candidate; `AT_M3_6B_2_IMAGE_ALIGNMENT_
+IMPLEMENTATION_END` stays at `158c8a8` and does not follow the branch tip, because moving it would
+silently claim validation coverage a documentation commit never had.
