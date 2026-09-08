@@ -43,14 +43,53 @@ secret and would delete every other field stored there, so writes use `patch`.
 
 ## Step 1 — start the persistent Vault
 
+**Check out the readiness branch on the test host first.** The persistent Vault service exists only
+in that branch's compose file. A checkout on any earlier branch still runs `vault server -dev`, and
+every step below would then be addressing an in-memory Vault that discards its contents on restart.
+
 ```bash
-cd ~/AI-Agents-SWD/infra/docker-compose
-docker compose up -d vault
+cd ~/AI-Agents-SWD
+git fetch origin
+git checkout at-m3.6b.2-runtime-secret-readiness-1
+
+cd infra/docker-compose
+docker compose up -d --force-recreate vault
 docker compose exec vault vault status || true
 ```
 
-Expect `Initialized false`, `Sealed true`. That is correct for a Vault that has never been
-initialized, and `vault status` exits non-zero when sealed — hence the `|| true`.
+Expect `Initialized false`, `Sealed true`, **`Storage Type file`**. `vault status` exits non-zero
+while sealed — hence the `|| true`.
+
+**Confirm the posture before going further.** Each of these catches "you are addressing the wrong
+Vault", which is the mistake this step exists to prevent:
+
+```bash
+docker inspect aiagents-test-vault-1 --format 'args={{.Args}}'   # expect [server], NOT [server -dev]
+docker compose exec vault vault status -format=json | jq -r .storage_type   # expect file, NOT inmem
+docker volume ls | grep aiagents-test_vault-data                 # expect one row
+```
+
+A dev-mode Vault reports `Initialized true`, `Sealed false`, `Storage Type inmem`. Read as "already
+initialized, skip ahead", that leads to writing the placeholder into memory, where it verifies green
+and then vanishes on the next restart. **`Initialized true` here means the wrong container, not a
+completed step.**
+
+### If step 1 fails with an HTTPS/TLS error
+
+```text
+Error checking seal status: Get "https://127.0.0.1:8200/v1/sys/seal-status":
+http: server gave HTTP response to HTTPS client
+```
+
+The Vault CLI defaults `VAULT_ADDR` to `https://127.0.0.1:8200`, and this listener runs
+`tls_disable = 1`, so it answers plain HTTP. The readiness compose sets
+`VAULT_ADDR: http://127.0.0.1:8200` on the vault service, so a container created from *it* never
+sees this: the error means the running container predates that change — recreate it as above. To
+confirm the diagnosis without recreating anything:
+
+```bash
+docker compose exec -e VAULT_ADDR=http://127.0.0.1:8200 vault vault status
+```
 
 ## Step 2 — initialize (produces secrets — operator only)
 
@@ -112,9 +151,12 @@ docker compose exec -e VAULT_TOKEN vault \
 
 The last command prints **one value: the runtime token**. Treat it as a secret:
 
-- put it in your gitignored env file as `VAULT_TOKEN=…`,
+- put it in `infra/docker-compose/.env` as `VAULT_TOKEN=…` (gitignored; `chmod 600`),
 - never commit it, never paste it into chat, never echo it in a log,
-- and note that it is *not* the root token — the root token is never given to a service.
+- note that it is *not* the root token — the root token is never given to a service,
+- and recreate the consumer rather than restarting it: `VAULT_TOKEN` is an **environment** change,
+  so `docker compose up -d --force-recreate orchestrator`. See "Restart or recreate?" below for
+  why a plain `restart` would report success and change nothing.
 
 `-no-default-policy` matters: Vault's `default` policy grants a token the ability to look itself up,
 renew itself and — depending on version — reach a handful of `sys/` and `cubbyhole` paths. The
@@ -148,15 +190,90 @@ unset VAULT_TOKEN
 
 ---
 
+## Restart or recreate? The two are not interchangeable
+
+This distinction has already cost one round of "the token is in the file, why is the runtime still
+using the old one", so it is written down rather than left to be rediscovered.
+
+| What changed | What is required | Why |
+| --- | --- | --- |
+| **Environment** — a variable in `.env` or in the compose file changed. `VAULT_TOKEN=…` is the case that matters here. | `docker compose up -d --force-recreate orchestrator` | A container's environment is fixed **when the container is created**. `.env` is read by the Compose *client* at create time to interpolate `${VAULT_TOKEN}`; the value is then baked into the container. |
+| **Secret value only** — the environment is unchanged, and a field inside the Vault secret was rewritten (e.g. a key rotated at the canonical path). | `docker compose restart orchestrator` — a process/container restart is sufficient | `VaultKvSecretProvider` caches the KV document for the life of the process. A restart drops the cache and the next `get_secret` re-fetches. Nothing about the environment needs to change. |
+
+**`docker compose restart` does not re-read `.env`.** It stops and starts the *existing* container
+with the environment it was created with. Run it after a token change and it will report success,
+the container will come up healthy, and it will still be presenting the old token to Vault. That is
+the failure mode this table exists to prevent — a green restart that changed nothing.
+
+`docker compose up -d` on its own is also not enough: with no configuration change Compose
+considers the container up to date and leaves it alone. `.env` interpolation *is* part of the
+config hash, so an edited token usually does trigger a replacement — but `--force-recreate` makes
+it unconditional, which is what an operator following a runbook needs.
+
 ## Verification (value-free — safe to run and safe to paste)
 
 ```bash
-scripts/verify_vault_runtime_readiness.sh
+# With the runtime token in the environment:
+VAULT_TOKEN=<scoped runtime token> scripts/verify_vault_runtime_readiness.sh
+
+# Or, reading it from the compose env file that the runtime itself uses:
+scripts/verify_vault_runtime_readiness.sh --from-compose-env
 ```
 
 It checks seal state, the mount, the path, the presence of the field **name**, that the runtime
-token can read the one secret, and that it is refused a write and an unrelated path. It prints
-booleans and names. It never prints a secret value, a prefix or a length.
+token can read the one secret, and that it is refused a write, a delete, an unrelated path,
+the metadata path and `sys/policy`. It prints booleans, names and diagnostic categories. It never
+prints a secret value, a prefix or a length.
+
+**Two orderings in it are load-bearing**, and both exist because the first version could report
+PASS while proving nothing:
+
+- **No token is a hard FAIL**, evaluated before anything else. Every denial check is "Vault refused
+  this". With no token Vault refuses all of them, for the wrong reason, and counting those
+  refusals as passes would certify an unconfigured runtime as ready.
+- **The canonical read must succeed before any denial counts.** The same failure one step further
+  in: an expired, revoked or wrongly-scoped token is refused everywhere, including where refusal is
+  the desired answer. So `secret/data/aiagents/test-runtime` — the exact request the provider makes
+  — is the gate. If it fails the script prints one of
+
+  ```text
+  READINESS_DIAGNOSTIC: TOKEN_MISSING_OR_DENIED   the token is expired, revoked, or wrongly scoped
+  READINESS_DIAGNOSTIC: NO_HANDLER_FOR_ROUTE      no KV v2 engine at secret/ — step 4 was skipped
+  READINESS_DIAGNOSTIC: NO_VALUE_FOUND            the mount exists, nothing is written — step 5
+  READINESS_DIAGNOSTIC: OTHER_READ_FAILURE        none of the above; check the container logs
+  ```
+
+  and stops. The category is derived from Vault's error text and printed instead of it, because a
+  Vault error can quote the request path and there is no reason to widen what the script emits.
+
+## Completing readiness without handing over the root token
+
+The steps above are the manual path. There is also a bounded helper that performs the whole
+operator half — verify the policy, confirm the mount, revoke a superseded runtime token, mint a new
+one, prove it can read before testing that it cannot write, inject it, recreate the orchestrator,
+and run the verification — **while the token exists only as a file path to whoever invokes it**:
+
+```bash
+# Operator, in their own shell. `set +o history` first; the value is typed, not echoed.
+set +o history
+install -m 600 /dev/null /dev/shm/vault-operator-token.$$
+read -rs -p "Vault operator token: " T; printf '%s' "$T" > /dev/shm/vault-operator-token.$$
+unset T; set -o history
+echo /dev/shm/vault-operator-token.$$     # hand over THIS PATH, never the value
+
+scripts/complete_vault_runtime_readiness.sh \
+  --operator-token-file /dev/shm/vault-operator-token.$$
+```
+
+The helper refuses a path that is a symlink, is not a regular file, is not mode `600`, is not owned
+by the caller, or lives inside the repository working tree — each of those being a way the file
+could be something other than what the operator intended. It reads the value into one shell
+variable, passes it to Vault through a child process's environment (never argv, so it is absent
+from `ps`), writes it nowhere, and deletes the file when the procedure succeeds. On failure it
+keeps the file — operator authority may still be needed — and says so as
+`operator_token_file_removed=no`.
+
+`/dev/shm` is preferred because it is tmpfs: the value never reaches a disk.
 
 ## Later — provisioning the real key (NOT part of this slice)
 
@@ -177,8 +294,10 @@ printf '%s' "$ANTHROPIC_KEY" | docker compose exec -T -e VAULT_TOKEN vault \
 unset ANTHROPIC_KEY
 set -o history
 
+# SECRET VALUE ONLY -- the environment did not change, so a restart is sufficient and correct here.
 # The provider caches the KV document for the life of the process, so a key written after startup
-# is not seen until the process restarts. Restart the consumer, deliberately:
+# is not seen until the process restarts; a restart drops the cache. This is NOT the case where
+# --force-recreate is needed -- that one is a VAULT_TOKEN change. See "Restart or recreate?" above.
 docker compose restart orchestrator
 
 # Names-only confirmation. Never prints the value.

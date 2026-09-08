@@ -20004,3 +20004,125 @@ at in a deployment log.
 - **AT-M4 `NOT AUTHORIZED`.** No dispatch consumer, no execution, no Git, no deployment.
 - **HumanApproval unchanged. Production `NOT GRANTED`. `production_executed_true_count: 0`.**
 - **Zero real Anthropic calls. Zero diagnostic external calls.**
+
+## Step AT-M3.6B.2-RUNTIME-SECRET-READINESS-COMPLETION-1 - Hardened Readiness Proof + Operator Authority Handoff (AWAITING OPERATOR TOKEN FILE)
+
+**Status: continues branch `at-m3.6b.2-runtime-secret-readiness-1` from candidate `2d6bfbc`.
+Canonical main unchanged at `446f4cc`. NOT merged. Real Anthropic calls: 0. Diagnostic external
+calls: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout. No real credential provisioned, and
+the canonical path still holds the placeholder.**
+
+### The governance drift this slice corrects first
+
+The preceding round drifted toward provisioning the real Anthropic key. AT-D26's authorization
+covers **readiness**, and readiness is a rail that is proven able to carry a credential while
+carrying none. Real Anthropic secret provisioning is a separately-authorized later stage. This slice
+therefore finishes with `PLACEHOLDER_DO_NOT_COMMIT_REAL_VALUE` still installed and the reasoning
+adapter still non-callable, and the completion helper **refuses to continue** if it finds anything
+else at the canonical path - a real credential there would mean the boundary was crossed somewhere
+else, and proceeding as though that were readiness would launder it.
+
+### The defect: a readiness proof that could pass while proving nothing
+
+`scripts/verify_vault_runtime_readiness.sh` counted a refusal as a pass. Every one of its
+least-privilege checks asks "did Vault refuse this?", and **with no token Vault refuses
+everything** - so a missing `VAULT_TOKEN` produced four refusals, four passes, and
+`VAULT_RUNTIME_READINESS: PASS` over a runtime that was not configured at all. The same hole sits
+one step further in: an expired, revoked or wrongly-scoped token is also refused everywhere,
+including where refusal is the desired answer.
+
+Two orderings now carry the proof, and both are asserted by running the script rather than by
+reading it - the tests drive it against a stub `docker` placed ahead of the real one on `PATH`:
+
+- **A missing or placeholder token is a hard FAIL**, evaluated before any Vault request. No denial
+  check runs.
+- **The canonical raw read is the gate.** `secret/data/aiagents/test-runtime` - byte for byte the
+  request `VaultKvSecretProvider._load_kv()` issues, not `vault kv get`, whose CLI helper needs a
+  `sys/internal/ui/mounts` preflight a correctly-scoped policy denies for reasons unrelated to
+  readiness. Only after it succeeds do `write`, `delete`, unrelated path, **metadata path** and
+  `sys/policy` denials count.
+
+A read failure is now **classified rather than swallowed**: `TOKEN_MISSING_OR_DENIED`,
+`NO_HANDLER_FOR_ROUTE`, `NO_VALUE_FOUND`, `OTHER_READ_FAILURE`. "Cannot read" has four different
+fixes - a dead token, a missing KV mount, an empty path, everything else - and a bare FAIL sends the
+operator to the wrong one. The **category** is printed and Vault's own error text is not, because a
+Vault error can quote the request path and there is no reason to widen what a pasteable script
+emits. The script is now `100755`; the runbook and the helper both invoke it by path.
+
+### Operator authority as a file path, never as a value
+
+Completing the procedure needs Vault operator authority for four things - read the loaded policy,
+confirm the KV mount authoritatively, revoke a superseded runtime token, mint a new one - and the
+assistant driving it must not come to possess that authority as a value. Pasting a root token into a
+transcript is not undoable.
+
+So `scripts/complete_vault_runtime_readiness.sh --operator-token-file <path>` takes **only a path**.
+Before reading a byte it refuses a path that is a symlink, is not a regular file, is not mode `600`,
+is not owned by the caller, or lives inside the repository working tree - each of those being a way
+the file could be something other than what the operator intended, the last being one `git add -A`
+away from a committed credential. `/dev/shm` is preferred because it is tmpfs and the value never
+reaches a disk. The token is read into one shell variable, handed to Vault through a child process's
+**environment** rather than argv so it is absent from `ps`, written nowhere, and the file is deleted
+on success. On failure the file is retained - operator authority may still be needed - and the
+helper reports `operator_token_file_removed=no` rather than stranding the procedure.
+
+The helper's Vault work is ordered the same way the readiness script is: **prove the new runtime
+token can read before testing that it cannot write**, and stop before injection if it cannot. It
+compares the stored placeholder **inside `jq`** so the comparison emits `true`/`false` and the value
+never becomes a shell variable, an argument, or a line of output.
+
+### Revocation hygiene, deliberately conservative
+
+Superseded runtime tokens are revoked **only when the accessor's policy list positively names
+`aiagents-runtime-read`**. "Not the root token" is not an identification: this Vault is shared with
+whatever else the operator has been doing, and revoking an unidentified accessor is an outage
+looking for somewhere to happen. Unidentified accessors are counted, left alone, and reported
+`NON_BLOCKING` for later hygiene.
+
+### Restart is not recreate, and the runbook now says which is which
+
+A container's environment is fixed **when the container is created**. `.env` is read by the Compose
+client at create time to interpolate `${VAULT_TOKEN}`; the value is then baked in. So
+`docker compose restart orchestrator` after a token change reports success, comes up healthy, and
+still presents the **old** token - a green restart that changed nothing. The runbook now states the
+two cases as a table:
+
+- **environment change** (`VAULT_TOKEN`) -> `docker compose up -d --force-recreate orchestrator`;
+- **secret value only** (a field rewritten at the canonical path, environment unchanged) -> a
+  process/container restart is sufficient, because `VaultKvSecretProvider` caches the KV document
+  per process and a restart drops the cache.
+
+The existing "later, provisioning the real key" step keeps its plain `restart` - correctly, it is
+the second case - and now says so, instead of leaving the reader to infer that restart reloads the
+environment.
+
+### What is proven, and where
+
+`tests/test_at_m3_6b_2_operator_handoff.py` - 51 passed, 1 skipped on the internal test runtime.
+Behavioural where it can be: the missing-token FAIL, the gate stopping before the denial checks,
+each of the four diagnostic categories, and every operator-token-file refusal are asserted by
+**executing the real scripts**. The operator-token canary is run through the helper end to end and
+asserted absent from its output, from `git grep`, and from the compose env file - not even a prefix.
+
+The policy itself is proven against a **disposable dev-mode Vault** in a throwaway container, loaded
+with the committed `aiagents-runtime-read.hcl`: the scoped token makes the read the runtime makes,
+and is refused `write`, `delete`, an unrelated path, the metadata path, `sys/policy` and
+`token create`. Never the test runtime's persistent Vault - that one's root token belongs to the
+operator, and a test that needed it would be a test that could not run.
+
+### Boundaries held
+
+- **No real Anthropic key requested, read, provisioned, moved or inspected.** The canonical path
+  keeps the placeholder; `get_secret` reports it absent and the adapter stays non-callable.
+- **Zero real Anthropic calls. Zero diagnostic external calls.** No file in this slice names an
+  Anthropic endpoint; the only network this slice touches is the local Docker socket.
+- **`REASONING_LIVE_NETWORK_ENABLED` false throughout**, asserted by the helper rather than assumed.
+- **AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+
+### Pre-existing, not introduced
+
+`tests/test_local_secret_scan_baseline.py` reports one critical finding in
+`scripts/verify_step66c4_be3_ra1d_missing_config_json.py`. It fails identically on canonical main
+`446f4cc` and on the prior candidate `2d6bfbc`; it is unrelated to the Vault rail and is recorded
+here rather than fixed inside a readiness slice.
