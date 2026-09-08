@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-09-07
-RECONCILED_AGAINST_MAIN:     14c3820b616b4ef2ceacb2dde9c37e5371ec147f
-RECONCILED_BY_STAGE:         AT-M3.6B.1-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+RECONCILED_ON:               2026-09-08
+RECONCILED_AGAINST_MAIN:     993e046c3eef6fe380587795a01ae3cb6f8e4cad
+RECONCILED_BY_STAGE:         AT-M3.6B.2-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -34,27 +34,36 @@ is a conflict.
 ```text
 CURRENT_MILESTONE:           AT-M3
 CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.1, AT-M3.2,
-                              AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A and AT-M3.6B.1 MERGED / CLOSED.
-                              AT-D14 authorized M3.1 through M3.6A; AT-D24 separately authorized
-                              the AT-M3.6B.1 implementation and AT-D25 accepted and merged it.
-                              Every slice authorized by any record in this repository is now
-                              canonical
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.1 (canonical merge)
-CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope is fully consumed and
-                              AT-D24's scope ended at the implementation AT-D25 has now accepted.
-                              AT-M3.6B.2 (the first real external model call) and AT-M4 (real work
-                              execution) are both NOT AUTHORIZED, and no record in this repository
-                              decides which (if either) is next
-CURRENT_STAGE:                AT-M3.6B.1-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. AT-M3.6B.1 delivered a
-                              runtime that is STRUCTURALLY READY for a live provider; it
-                              established nothing about real Anthropic connectivity, credentials,
-                              latency, model behaviour or billing, because zero real external calls
-                              were made. AT-M3.6B.2 (live validation) needs its own authorization
-                              naming provider, model, call count, total and per-call cost ceilings,
-                              allowed verbs, environment, live-gate enablement, credential use and
-                              abort conditions. AT-M4 (real work execution) is likewise NOT
-                              AUTHORIZED, and neither is implied by this closure.
+                              AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A, AT-M3.6B.1 and the AT-M3.6B.2
+                              Runtime Secret Readiness slice MERGED / CLOSED. AT-D14 authorized
+                              M3.1 through M3.6A; AT-D24 separately authorized the AT-M3.6B.1
+                              implementation and AT-D25 accepted and merged it; AT-D26 separately
+                              authorized the AT-M3.6B.2 runtime-secret-readiness implementation and
+                              AT-D27 accepted and merged it. Every slice authorized by any record in
+                              this repository is now canonical
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Runtime Secret Readiness (canonical merge)
+CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope and
+                              AT-D26's scope are each fully consumed by their respective acceptances.
+                              AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT (rebuilding the deployed test
+                              orchestrator to carry the canonical reasoning runtime -- see
+                              AT_M3_6B_2_PREREQUISITE in section 5a), AT-M3.6B.2 LIVE VALIDATION
+                              (the first real external model call) and AT-M4 (real work execution)
+                              are all NOT AUTHORIZED, and no record in this repository decides which
+                              is next or implies an order among them
+CURRENT_STAGE:                AT-M3.6B.2-CANONICALIZATION-1 / PRODUCT ACCEPTANCE
+NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. The AT-M3.6B.2 readiness
+                              slice delivered a Vault secret substrate independently proven ready
+                              through the actual deployed SecretProvider code path; it established
+                              nothing about the deployed test orchestrator's ability to carry a live
+                              reasoning call, because that image was independently confirmed to
+                              predate AT-M3.6B.1 and cannot import the reasoning adapter at all.
+                              AT-M3.6B.2 Runtime Image Alignment needs its own authorization before
+                              a real key is provisioned or live validation is attempted; live
+                              validation needs a further authorization naming provider, model, call
+                              count, total and per-call cost ceilings, allowed verbs, environment,
+                              live-gate enablement, credential use and abort conditions. AT-M4 (real
+                              work execution) is likewise NOT AUTHORIZED, and none of the three is
+                              implied by this closure.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -351,15 +360,44 @@ AT_M3_6B_1_AUTHORIZED_BY:      AT-D24 / docs/decisions/at-d24-at-m3-6b-1-live-re
 AT_M3_6B_1_MERGE_AUTHORIZED_BY: AT-D25 / docs/decisions/at-d25-at-m3-6b-1-live-reasoning-provider-acceptance-and-merge-authorization.md
 AT_M3_6B_1_IMPLEMENTATION_END: 14c3820b616b4ef2ceacb2dde9c37e5371ec147f
 AT_M3_6B_1_REAL_EXTERNAL_CALLS: 0
-AT_M3_6B_2:                    NOT AUTHORIZED
+AT_M3_6B_2:                     AUTHORIZED / IMPLEMENTED / INDEPENDENTLY_VALIDATED / PO_ACCEPTED /
+                                MERGED / CANONICAL / CLOSED -- RUNTIME SECRET READINESS SLICE ONLY
+AT_M3_6B_2_IMPLEMENTATION:     COMPLETE
+AT_M3_6B_2_VALIDATION:         PASS_WITH_PREREQUISITE / COMPLETE -- 1 of 1 (Independent Validation 1
+                                PASS_WITH_PREREQUISITE; no Validation 2 required). The one
+                                load-bearing finding was deployment representativeness -- the
+                                currently deployed internal test orchestrator image predates
+                                AT-M3.6B.1 and does not contain the canonical reasoning runtime --
+                                classified as a binding PREREQUISITE rather than a defect, because
+                                AT-D26's authorized scope was always the secret substrate only and
+                                the gap was disclosed in source/progress.md rather than concealed
+AT_M3_6B_2_ACCEPTANCE:         PO ACCEPTED / PASS_WITH_PREREQUISITE
+AT_M3_6B_2_AUTHORIZED_BY:      AT-D26 / docs/decisions/at-d26-at-m3-6b-2-runtime-secret-readiness-authorization.md
+AT_M3_6B_2_MERGE_AUTHORIZED_BY: AT-D27 / docs/decisions/at-d27-at-m3-6b-2-runtime-secret-readiness-acceptance-and-merge-authorization.md
+AT_M3_6B_2_IMPLEMENTATION_END: 993e046c3eef6fe380587795a01ae3cb6f8e4cad
+AT_M3_6B_2_REAL_EXTERNAL_CALLS: 0
+AT_M3_6B_2_PREREQUISITE:       REQUIRED_BEFORE_REAL_SECRET_PROVISIONING_OR_LIVE_VALIDATION -- the
+                                internal test orchestrator image must be rebuilt/redeployed from
+                                canonical main (containing shared/sdk/agent_reasoning and the
+                                ReasoningService/live_config path) before a real ANTHROPIC_API_KEY is
+                                provisioned or AT-M3.6B.2 Live Validation is authorized. See AT-D27
+                                section 4. NOT satisfied by this canonicalization and not authorized
+                                for implementation by it -- see AT_M3_6B_2_NEXT_STAGE below
+AT_M3_6B_2_NEXT_STAGE:         AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT -- named as the next PLANNING
+                                target only. Its implementation is NOT AUTHORIZED by this
+                                canonicalization and requires its own authorization exactly as every
+                                other AT-M3 slice has
+AT_M3_6B_2_LIVE_VALIDATION:    NOT AUTHORIZED
 LIVE_EXTERNAL_VALIDATION:      NOT AUTHORIZED
 LIVE_NETWORK_GATE:             DEFAULT FALSE
-PRODUCT_CRITICAL_PATH:         NONE -- AT-D14's authorized scope is fully consumed, and AT-D24's
-                                ended at the implementation AT-D25 accepted
-NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Live Validation -- no
-                                record in this repository authorizes a real external call, and no
-                                previously discussed call-count or cost envelope is authorized by
-                                having been discussed
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT -- the runtime secret substrate is
+                                canonical and closed; the standing gap is that the deployed test
+                                orchestrator cannot yet execute the reasoning path it is wired for
+NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Runtime Image Alignment
+                                before real-key provisioning or AT-M3.6B.2 Live Validation can be
+                                authorized in turn -- no record in this repository authorizes a real
+                                external call, and no previously discussed call-count or cost
+                                envelope is authorized by having been discussed
 AT_M4:                         NOT AUTHORIZED
 ```
 
@@ -371,8 +409,18 @@ the wire, and its network gate is closed. It does NOT say live reasoning has bee
 `AT_M3_6B_1_REAL_EXTERNAL_CALLS: 0` is not an omission, it is the condition under which AT-D24
 authorized the work, and it was kept -- so nothing about real Anthropic connectivity, credential
 validity, latency, model behaviour or billing has been established by any evidence in this
-repository. That is `AT_M3_6B_2`, and it is `NOT AUTHORIZED`. Reading `AT_M3_6B_1: CLOSED` as
-"live reasoning works" is the single most expensive misreading this file offers.
+repository. Reading `AT_M3_6B_1: CLOSED` as "live reasoning works" is the single most expensive
+misreading this file offers.
+
+`AT_M3_6B_2` is now also `CLOSED`, and it is exactly as narrow a closure: it accepts that the Vault
+secret substrate -- persistence, least-privilege policy, wiring, and the canonical `SecretProvider`
+reading through it -- is independently proven ready. It does **not** say the runtime can carry a
+live reasoning call. Independent Validation 1 confirmed directly that the currently deployed
+internal test orchestrator image predates AT-M3.6B.1 and cannot import the reasoning adapter at
+all, which is why `AT_M3_6B_2_PREREQUISITE` exists and why `AT_M3_6B_2_LIVE_VALIDATION` stays
+`NOT AUTHORIZED` even though the readiness slice itself is now canonical. Reading `AT_M3_6B_2:
+CLOSED` as "the test runtime can make a live call" would repeat the AT_M3_6B_1 misreading one layer
+further down the stack.
 
 `AT_M3_1`, `AT_M3_2`, `AT_M3_3`, `AT_M3_4`, `AT_M3_5` and `AT_M3_6A` keep the literal word
 `AUTHORIZED` immediately after the field name for the same reason `AT_M2` does (section 5): it is
@@ -385,17 +433,19 @@ independently validated commits and do not follow the branch tip: the acceptance
 commit that lands on top of each is documentation, and moving the field to name it would silently
 claim validation coverage the docs commit never had.
 
-`PRODUCT_CRITICAL_PATH: NONE` is a statement about AUTHORIZATION, not a claim that the product is
+`PRODUCT_CRITICAL_PATH` is a statement about AUTHORIZATION, not a claim that the product is
 finished. AT-D14 authorized AT-M3.1 through AT-M3.6A; all six are canonical, so that scope is
 consumed. AT-D24 separately authorized the AT-M3.6B.1 implementation and AT-D25 accepted and merged
-it, so that scope is consumed too, and there is no next stage this file may name. `AT_M3_6B_2` names
-the boundary that is still standing: AT-D14 declined to move it, AT-D24 authorized code up to it and
-explicitly not through it, and AT-D25 accepted that code without moving it either -- **no real
-external LLM call is authorized by any record in this file**. `AT_M4` names the one after that:
-AT-M3.5 built the delegation of work and AT-M3.6A made it observable, but neither built its
-execution, and no record in this file authorizes AT-M4. Choosing between them -- or choosing
-something else entirely -- is a Product Owner decision that has not been made, and this file must
-not be read as implying an order.
+it; AT-D26 separately authorized the AT-M3.6B.2 runtime-secret-readiness implementation and AT-D27
+accepted and merged it. `AT_M3_6B_2_PREREQUISITE` names the boundary that is now standing: the
+secret rail is canonical, but the deployed test orchestrator cannot yet execute the reasoning path
+it is wired for, and no record in this file authorizes rebuilding or redeploying that image. That
+is `AT-M3.6B.2 Runtime Image Alignment`, named here as the next PLANNING target only -- its
+implementation is a Product Owner decision that has not been made. Past it stand two further,
+still-unmade decisions: `AT_M3_6B_2_LIVE_VALIDATION` (no real external LLM call is authorized by any
+record in this file) and `AT_M4` (AT-M3.5 built the delegation of work and AT-M3.6A made it
+observable, but neither built its execution). This file must not be read as implying that any of
+the three follows automatically from the one before it.
 
 Before the first real external call, a Product Owner decision must name the provider, the model, the
 call count, the total cost ceiling, the per-call ceiling, the allowed verbs, the environment, the

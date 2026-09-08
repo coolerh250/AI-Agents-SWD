@@ -20184,3 +20184,86 @@ moved or inspected; no `/dev/shm/anthropic-api-key.*` exists on the runtime.
 `scripts/verify_step66c4_be3_ra1d_missing_config_json.py`. It fails identically on canonical main
 `446f4cc` and on the prior candidate `2d6bfbc`; it is unrelated to the Vault rail and is recorded
 here rather than fixed inside a readiness slice.
+
+## Step AT-M3.6B.2-CANONICALIZATION-1 - Runtime Secret Readiness (PO ACCEPTED / MERGED / CANONICAL / CLOSED)
+
+**AT-D27 records the Product Owner's acceptance of AT-M3.6B.2 Runtime Secret Readiness and
+authorizes the fast-forward canonicalization of the exact independently validated candidate
+`993e046c3eef6fe380587795a01ae3cb6f8e4cad` into `main`, from
+`446f4cce517a78463371a57986dbdad67f2470e2`.**
+
+### The validation chain, recorded as it happened
+
+```text
+AT-D26                                                  runtime-secret-readiness implementation
+                                                        authorization (Vault, policy, wiring only)
+AT-M3.6B.2-RUNTIME-SECRET-READINESS-1          69ec856  persistent Vault + runtime secret wiring
+AT-M3.6B.2-RUNTIME-SECRET-READINESS-COMPLETION-1
+                                                993e046  hardened readiness proof + operator
+                                                        authority handoff; READY_FOR_INDEPENDENT_
+                                                        VALIDATION
+AT-M3.6B.2-RUNTIME-SECRET-READINESS-INDEPENDENT-VALIDATION-1
+                                                        PASS_WITH_PREREQUISITE -- no Validation 2
+AT-D27                                                  product acceptance + merge authorization
+```
+
+**Independent Validation 1 was `PASS_WITH_PREREQUISITE`, and stays recorded exactly that way.** It
+independently reproduced the Vault init/seal/storage state, the runtime policy's allow/deny shape
+through live API calls against the actual scoped token (not by reading the committed HCL), the
+canonical `SecretProvider` through the actual running container with a SHA-256 match against the
+repository's own file, and the hardened readiness verifier's missing-token FAIL and
+allow-before-deny PASS by re-running the script rather than re-reading it. It found zero candidate
+regressions by re-running the same failing tests against a fresh worktree at canonical base
+`446f4cc` and getting byte-for-byte the same failures. Its one load-bearing finding was deployment
+representativeness: the currently deployed internal test orchestrator image predates AT-M3.6B.1 and
+cannot import `shared.sdk.agent_reasoning` or `shared.sdk.reasoning` at all, confirmed directly
+inside the running container rather than taken from the implementation report. Because AT-D26's
+authorized scope was always the secret substrate only, and because `source/progress.md` already
+disclosed the gap rather than concealing it, this was classified as a binding prerequisite rather
+than a slice defect. Rewriting the verdict as an unqualified PASS because the substrate itself is
+sound would delete the part of the record that says the runtime cannot yet carry a live call.
+
+### What became canonical
+
+The whole accepted boundary is in AT-D27 section 2 and is not restated here. The short version: a
+persistent, non-dev Vault on `file` storage surviving container recreation; a least-privilege
+runtime policy (`aiagents-runtime-read`) proven by live ACL enforcement to allow exactly the
+canonical raw read and deny everything else, including metadata and `sys/policy`; orchestrator
+wiring naming `vault`/`secret`/`aiagents/test-runtime`/`anthropic`/`claude-sonnet-5` with the live
+gate false; a `test-runtime` mode on the existing canonical runtime-config validator; an
+`ANTHROPIC_API_KEY` entry in the secrets inventory, metadata only; an operator bootstrap runbook
+that correctly distinguishes an environment change (`--force-recreate`) from a secret-value-only
+change (a restart suffices); and a hardened, value-free readiness verifier that fails closed on a
+missing or placeholder token and orders the canonical read before any denial check counts.
+
+### The binding prerequisite, carried forward rather than closed
+
+AT-D27 section 4 records `REQUIRED_BEFORE_REAL_SECRET_PROVISIONING_OR_LIVE_VALIDATION`: the
+internal test orchestrator image must be rebuilt and redeployed from canonical `main` -- carrying
+`shared/sdk/agent_reasoning` and the `ReasoningService`/`live_config` path -- before either a real
+`ANTHROPIC_API_KEY` is provisioned or any AT-M3.6B.2 Live Validation is authorized or attempted.
+This is not a defect in the accepted readiness slice; AT-D26 never authorized deploying a rebuilt
+image as part of this work, and this canonicalization does not retroactively expand that scope, nor
+does it implement the prerequisite itself. `AT-M3.6B.2 Runtime Image Alignment` is named in
+`AI_AGENTS_PM_STATE.md` as the next PLANNING target only; its implementation is a separate,
+still-unmade Product Owner decision.
+
+### Boundaries held
+
+- **AT-M3.6B.2 Live Validation `NOT AUTHORIZED`.** Blocked on the prerequisite above and on its own
+  future, separate authorization naming provider, model, call count, cost ceilings, allowed verbs,
+  environment, gate enablement, credential use and abort conditions.
+- **No runtime image rebuild or redeploy performed by this canonicalization.** The currently
+  deployed test orchestrator remains exactly as Independent Validation 1 found it.
+- **No real Anthropic key provisioned, read, or moved.** The canonical path keeps the placeholder.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`**, as already established by Independent Validation 1's
+  value-free evidence and not re-queried against the live runtime by this canonicalization.
+
+### Merge
+
+Fast-forward only, `446f4cc` -> `993e046`. No squash, no rebase, no force, no merge commit, no
+cherry-pick rewrite. The acceptance and reconciliation commit lands on top of the validated
+candidate; `AT_M3_6B_2_IMPLEMENTATION_END` stays at `993e046` and does not follow the branch tip,
+because moving it would silently claim validation coverage a documentation commit never had.
