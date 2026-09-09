@@ -20,8 +20,8 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-09-09
-RECONCILED_AGAINST_MAIN:     009b1dcbfca36c1020dcfe3f3c077ccf16ffa25f
-RECONCILED_BY_STAGE:         AT-M3.6B.2-LIVE-VALIDATION-BUDGET-POLICY-PROVISIONING-AUTHORIZATION-RECORDING
+RECONCILED_AGAINST_MAIN:     c35a12e518106f7326f915449100814c6856d22e
+RECONCILED_BY_STAGE:         AT-M3.6B.2-TEST-RUNTIME-DATABASE-MIGRATION-ALIGNMENT-AUTHORIZATION-RECORDING
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -49,9 +49,10 @@ CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.
                               Anthropic secret provisioning and AT-D31 accepted and merged it. Every
                               slice authorized by any record in this repository through AT-D31 is now
                               canonical. AT-D32 additionally authorizes one bounded AT-M3.6B.2 Live
-                              Validation execution session; AT-D33 separately authorizes provisioning
-                              the budget-policy row that session's own preflight requires -- see
-                              CURRENT_GATE
+                              Validation execution session; AT-D33 authorized provisioning the
+                              budget-policy row that session's own preflight requires; AT-D34
+                              separately authorizes aligning the test-runtime database schema that
+                              same preflight also requires -- see CURRENT_GATE
 PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Real Anthropic Secret Provisioning (canonical merge, AT-D31)
 CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope, AT-D26's
                               scope, AT-D28's scope and AT-D30's scope are each fully consumed by
@@ -63,25 +64,35 @@ CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D
                               first execution attempt found that session BLOCKED on a runtime
                               prerequisite: `AnthropicReasoningProvider.preflight()` requires an
                               active `llm_budget_policies` row that did not exist. AT-D33 separately
-                              authorizes provisioning exactly that one row -- see
+                              authorized provisioning exactly that one row -- see
                               docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md.
+                              Independent verification then found a second runtime prerequisite gap:
+                              the test-runtime database is missing canonical migrations 039-045, so
+                              `reasoning_invocations` lacks `artifact_type`, `provider_mode` does not
+                              admit `'live'`, and `reasoning_verb` does not admit `'decompose_plan'`.
+                              AT-D34 separately authorizes applying exactly those migrations -- see
+                              docs/decisions/at-d34-at-m3-6b-2-test-runtime-database-migration-alignment-authorization.md.
                               Live Validation execution itself has still NOT yet been performed. AT-M4
-                              (real work execution) remains NOT AUTHORIZED, and neither AT-D32 nor
-                              AT-D33 authorizes AT-M4 or implies any order beyond the sessions they name
-CURRENT_STAGE:                AT-M3.6B.2-LIVE-VALIDATION-BUDGET-POLICY-PROVISIONING-AUTHORIZATION-RECORDING
-                              (docs-only; AT-D33 recorded, no DB mutation performed by this docs stage)
-NEXT_PERMITTED_STAGE:        First, AT-M3.6B.2 LIVE VALIDATION BUDGET POLICY PROVISIONING, strictly
-                              bounded by AT-D33: one `llm_budget_policies` row, scope_type=provider,
-                              provider=anthropic, <=US$5.00/day, <=US$5.00/month, enforcement=block,
-                              zero Anthropic calls. Then, AT-M3.6B.2 LIVE VALIDATION EXECUTION RETRY,
-                              strictly bounded by AT-D32: one session, anthropic / claude-sonnet-5
-                              only, <=12 requests, <=US$5.00 total, <=US$0.50/call, verbs
+                              (real work execution) remains NOT AUTHORIZED, and none of AT-D32,
+                              AT-D33, or AT-D34 authorizes AT-M4 or implies any order beyond the
+                              sessions they name
+CURRENT_STAGE:                AT-M3.6B.2-TEST-RUNTIME-DATABASE-MIGRATION-ALIGNMENT-AUTHORIZATION-RECORDING
+                              (docs-only; AT-D34 recorded, no DB mutation performed by this docs stage)
+NEXT_PERMITTED_STAGE:        First, AT-M3.6B.2 Test Runtime Database Migration Alignment, strictly
+                              bounded by AT-D34: apply exactly migrations 039-045, in order, to the
+                              non-production test runtime only, backup-first, zero Anthropic calls, no
+                              migration-file or application-code change, no AT-D33 policy
+                              reactivation. Then, AT-M3.6B.2 LIVE VALIDATION EXECUTION RETRY, strictly
+                              bounded by AT-D32: one session, anthropic / claude-sonnet-5 only, <=12
+                              requests, <=US$5.00 total, <=US$0.50/call, verbs
                               propose/critique/summarize_decision/decompose_plan only, ephemeral
-                              live-gate only, no Git/GitHub mutation during the session. That session's
-                              own result (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires a further,
-                              separate Product Owner acceptance before being treated as canonical --
-                              AT-D32 authorizes the attempt, not its outcome. AT-M4 remains NOT
-                              AUTHORIZED and is not implied by AT-D32 or AT-D33.
+                              live-gate only, no Git/GitHub mutation during the session -- and, before
+                              that session, its own AT-D33 budget-policy prerequisite must again be
+                              confirmed (not assumed) satisfied. That execution session's own result
+                              (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires a further, separate
+                              Product Owner acceptance before being treated as canonical -- AT-D32
+                              authorizes the attempt, not its outcome. AT-M4 remains NOT AUTHORIZED and
+                              is not implied by AT-D32, AT-D33, or AT-D34.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -402,13 +413,22 @@ AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT,
                                 next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
                                 Recorded unchanged as the historical record of what this field named
                                 at AT-D27's canonicalization
-AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / BLOCKED_ON_BUDGET_POLICY_PREREQUISITE -- a first execution
-                                attempt found `AnthropicReasoningProvider.preflight()` requires an
-                                active `llm_budget_policies` row that did not exist in the test
-                                runtime; AT-D33 now authorizes provisioning it
+AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / BLOCKED_ON_TEST_RUNTIME_SCHEMA_ALIGNMENT -- the budget-
+                                policy prerequisite (AT-D33) is provisioned; independent verification
+                                then found the test-runtime database is also missing canonical
+                                migrations 039-045, which `reasoning_invocations` and the
+                                AT-M3.6B.1/2 reasoning contracts require. AT-D34 now authorizes closing
+                                that gap
 AT_M3_6B_2_LIVE_VALIDATION_AUTHORIZED_BY: AT-D32 / docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md
-AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: AUTHORIZED / NOT YET PROVISIONED -- see AT-D33 /
-                                docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md
+AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: AUTHORIZED / PROVISIONED (AT-D33) -- policy_id
+                                `d29ad073-9f7c-48b4-876d-cd3cb1343b40`, scope=provider/anthropic,
+                                $5/day, $5/month, enforcement=block. Its `status` must be verified
+                                fresh (not assumed) before any subsequent Live Validation execution
+                                attempt -- see docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md
+AT_M3_6B_2_TEST_RUNTIME_DATABASE_MIGRATION_ALIGNMENT: AUTHORIZED / NOT YET EXECUTED -- migrations
+                                039-045 only, in order, non-production test runtime only; migrations
+                                031-035 (a separate, unrelated chain) explicitly out of scope -- see
+                                AT-D34 / docs/decisions/at-d34-at-m3-6b-2-test-runtime-database-migration-alignment-authorization.md
 AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: NOT YET EXECUTED -- no execution session has run
                                 under AT-D32; this stays unset until one does and reports
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
@@ -469,29 +489,31 @@ LIVE_EXTERNAL_VALIDATION:      AUTHORIZED FOR AT-M3.6B.2 BOUNDED RUN ONLY -- AT-
                                 anthropic / claude-sonnet-5 only, <=12 requests, <=US$5.00 total,
                                 <=US$0.50/call, verbs propose/critique/summarize_decision/
                                 decompose_plan only, ephemeral live-gate only. A first execution
-                                attempt BLOCKED before any call on a missing runtime prerequisite (no
-                                active `llm_budget_policies` row); see AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY.
-                                REAL_EXTERNAL_CALLS remains 0 until a subsequent execution session runs
-                                and reports
+                                attempt BLOCKED before any call on a missing budget-policy prerequisite
+                                (AT-D33 closed that); independent verification then found a second
+                                prerequisite gap, missing canonical migrations 039-045 (AT-D34 now
+                                authorizes closing that). REAL_EXTERNAL_CALLS remains 0 until a
+                                subsequent execution session runs and reports
 LIVE_NETWORK_GATE:             DEFAULT FALSE. Temporary ephemeral-process enablement authorized only
                                 during an AT-D32-bounded execution session; the long-lived
-                                orchestrator stays false throughout and after. Untouched by AT-D33
-                                (budget-policy provisioning makes zero Anthropic calls and never opens
-                                this gate)
-PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 LIVE VALIDATION BUDGET POLICY PROVISIONING, then LIVE
+                                orchestrator stays false throughout and after. Untouched by AT-D33 or
+                                AT-D34 (neither makes any Anthropic call or opens this gate)
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 TEST RUNTIME DATABASE MIGRATION ALIGNMENT, then LIVE
                                 VALIDATION EXECUTION RETRY -- the runtime secret substrate, the
-                                deployed reasoning runtime, the real credential and the live validation
-                                authorization (AT-D32) are all canonical; the standing gap is that the
-                                budget-policy prerequisite AT-D33 authorizes has not yet been
-                                provisioned, and no execution session has yet run and reported
-NEXT_PRODUCT_STAGE:            First, AT-M3.6B.2 Live Validation Budget Policy Provisioning under
-                                AT-D33's exact bounds (one `llm_budget_policies` row, scope=provider,
-                                provider=anthropic, <=US$5.00/day, <=US$5.00/month, enforcement=block).
-                                Then AT-M3.6B.2 Live Validation EXECUTION RETRY under AT-D32's exact
-                                bounds. Neither AT-D32 nor AT-D33 itself makes any call. The execution
-                                session's result (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires
-                                its own separate Product Owner acceptance before being treated as
-                                canonical, matching every prior AT-M3.6B.2 implementation/acceptance
+                                deployed reasoning runtime, the real credential, the live validation
+                                authorization (AT-D32), and the budget-policy prerequisite (AT-D33) are
+                                all canonical; the standing gap is that the schema-alignment
+                                prerequisite AT-D34 authorizes has not yet been executed, and no
+                                execution session has yet run and reported
+NEXT_PRODUCT_STAGE:            First, AT-M3.6B.2 Test Runtime Database Migration Alignment under
+                                AT-D34's exact bounds (migrations 039-045 only, in order,
+                                non-production test runtime only, backup-first). Then AT-M3.6B.2 Live
+                                Validation EXECUTION RETRY under AT-D32's exact bounds, re-verifying
+                                (not assuming) the AT-D33 budget-policy prerequisite's actual status
+                                first. None of AT-D32, AT-D33, or AT-D34 itself makes any call. The
+                                execution session's result (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED)
+                                requires its own separate Product Owner acceptance before being treated
+                                as canonical, matching every prior AT-M3.6B.2 implementation/acceptance
                                 split
 AT_M4:                         NOT AUTHORIZED
 ```

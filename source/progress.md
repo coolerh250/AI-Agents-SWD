@@ -20707,3 +20707,93 @@ not by this commit.
 created, drafted uncommitted, reviewed and approved by the Product Owner before commit.
 `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward only onto
 canonical main `009b1dc`. No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
+
+## Step AT-M3.6B.2-TEST-RUNTIME-DATABASE-MIGRATION-ALIGNMENT-AUTHORIZATION-RECORDING - Schema Migration Alignment Authorized, Not Yet Executed (PO ACCEPTED / DOCS-ONLY / CANONICAL)
+
+**Status: `AT-D34` records the Product Owner's authorization of applying exactly canonical migrations
+039-045, in order, to the internal non-production test runtime -- the second runtime prerequisite
+`AnthropicReasoningProvider.preflight()` / the AT-M3.6B.1/2 reasoning contracts require, alongside the
+budget policy AT-D33 already closed. Canonical main at decision: `c35a12e`. This stage is docs-only:
+no DB mutation, no Vault action, no Anthropic request, no live-gate enablement. Real Anthropic calls:
+0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout. `production_executed_true_count: 0`.**
+
+### Why this stage exists, and two claims that did not check out
+
+A task prompt requesting this stage opened by asserting that a prior "AT-M3.6B.2 Live Validation
+Execution Retry 1" session had already run and hit a `reasoning_invocations` schema error
+(`asyncpg.exceptions.UndefinedColumnError` on `artifact_type`). No such session exists: canonical main
+had not moved since the AT-D33 commit, and `source/progress.md` recorded nothing of the kind. Per
+`docs/process/stop-conditions.md` §1 ("prompt conflicts with shared docs"), that claim was not acted
+on as given.
+
+Independent, direct inspection of the test runtime's own database, however, found the underlying
+technical problem was real: `reasoning_invocations` carried only migration 037's original DDL. Full
+migration-state discovery (comparing every migration file's target schema objects against the
+runtime's actual tables/columns/constraints -- no ledger table exists for this migration chain to
+consult instead) found the exact pending set was **039-045**, not the prompt's guessed 038-045: 038
+(`goals`, `plan_revisions`) was already applied. It also found migrations 031-035 (a separate "BE3"
+clarification/resume/replay/production-action-approval chain, wired to its own dedicated tool and
+DSN, explicitly documented as "not wired into any deployment, CI job, or shared runtime") are also
+absent from this runtime, but confirmed zero dependency of 039-045 on any of them -- that gap is
+pre-existing, unrelated to reasoning, and left untouched as out of scope for this stage.
+
+A second unverified claim -- that the AT-D33 budget policy "is currently: inactive" -- turned out to
+be true, but not for a knowable reason: direct inspection found the policy (created `active` by
+AT-D33) had its `status` changed to `inactive` roughly 23 minutes after creation, with zero
+`llm_budget_events` ever recorded against it and zero `reasoning_invocations` rows for provider
+`anthropic` -- confirming no real call or spend occurred, but not explaining who or what flipped the
+column. This is recorded honestly in AT-D34 rather than assumed either way.
+
+Following the same precedent as AT-D32 and AT-D33, Claude Code did not act on either claim at face
+value. It completed independent verification first, then asked the human operator directly whether
+they were personally exercising Product Owner authority to authorize migration alignment with the
+verified (not assumed) scope, drafted AT-D34 to disk uncommitted for review, and proceeded only after
+the operator confirmed that authority and approved the drafted text.
+
+### What AT-D34 authorizes, and what it does not
+
+```text
+Action:                    apply exactly migrations 039-045, in canonical numeric order, via the
+                             repository's existing forward-only `psql -f migrations/NNN_*.sql`
+                             mechanism (each file independently idempotent and self-transactional)
+Environment:                internal non-production test runtime only
+Explicitly out of scope:    migrations 031-035 (separate chain, separate tool/DSN, pre-existing gap)
+Required:                   pre-migration backup with a non-destructive usability check; per-migration
+                             verification; STOP rather than continue past any failure
+Not authorized:             any new migration, any migration-file edit, any application-code change,
+                             any Anthropic call, live-gate enablement, or AT-D33 budget-policy
+                             reactivation/recreation
+```
+
+AT-D34 does not amend AT-D32 or AT-D33. It only authorizes closing a second, independently-discovered
+runtime prerequisite gap alongside the first.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` now
+`AUTHORIZED / BLOCKED_ON_TEST_RUNTIME_SCHEMA_ALIGNMENT`; `AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY`
+updated to record the policy as provisioned but requiring fresh status verification before any future
+execution attempt; new field
+`AT_M3_6B_2_TEST_RUNTIME_DATABASE_MIGRATION_ALIGNMENT: AUTHORIZED / NOT YET EXECUTED`, citing AT-D34;
+`LIVE_EXTERNAL_VALIDATION`, `LIVE_NETWORK_GATE`, `PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`, and the
+section 2 `CURRENT_GATE` / `CURRENT_STAGE` / `NEXT_PERMITTED_STAGE` fields updated to match. `AT_M4`
+unchanged: `NOT AUTHORIZED`. No implementation tree (`apps/`, `shared/`, `agents/`, `migrations/`,
+`infra/`, `scripts/`, `tests/`) touched by this docs-only stage. The actual migrations are applied by
+a separate, subsequent runtime-operation step under this same authorization, not by this commit.
+
+### Boundaries held
+
+- **No DB, Vault, Docker, or runtime action in this commit.** No migration applied, no key read, no
+  restart, no live-gate enablement.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+- **AT-M3.6B.2 Live Validation EXECUTION still `NOT YET PERFORMED`.** AT-D34 unblocks a second
+  prerequisite; it is not itself the validation.
+
+### Merge
+
+`docs/decisions/at-d34-at-m3-6b-2-test-runtime-database-migration-alignment-authorization.md` created,
+drafted uncommitted, reviewed and approved by the Product Owner before commit. `AI_AGENTS_PM_STATE.md`
+and this file updated in the same docs-only commit. Fast-forward only onto canonical main `c35a12e`.
+No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
