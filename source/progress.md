@@ -20797,3 +20797,88 @@ a separate, subsequent runtime-operation step under this same authorization, not
 drafted uncommitted, reviewed and approved by the Product Owner before commit. `AI_AGENTS_PM_STATE.md`
 and this file updated in the same docs-only commit. Fast-forward only onto canonical main `c35a12e`.
 No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
+
+## Step AT-M3.6B.2-LIVE-VALIDATION-BUDGET-POLICY-REACTIVATION-AUTHORIZATION-RECORDING - Budget Policy Reactivation Authorized, Not Yet Executed (PO ACCEPTED / DOCS-ONLY / CANONICAL)
+
+**Status: `AT-D35` records the Product Owner's authorization of transitioning the existing AT-D33
+budget-policy row (policy_id `d29ad073-9f7c-48b4-876d-cd3cb1343b40`) from `status='inactive'` to
+`status='active'`, changing no other column. Canonical main at decision: `58ec92a`. This stage is
+docs-only: no DB mutation, no Vault action, no Anthropic request, no live-gate enablement. Real
+Anthropic calls: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout.
+`production_executed_true_count: 0`.**
+
+### Why this stage exists
+
+The AT-M3.6B.2 Test Runtime Database Migration Alignment stage's own final safety checks (see the
+prior step) found the AT-D33 budget policy -- created `active`, and required for a Live Validation
+execution attempt to reach the Anthropic wire at all -- had its `status` changed to `inactive` roughly
+23 minutes after creation, by something outside this project's own conversation or code history.
+Before drafting AT-D35, Claude Code investigated rather than assumed: it confirmed zero
+`llm_budget_events` and zero `anthropic`-provider `reasoning_invocations` exist (no real call or spend
+occurred), then searched every script in the repository that ever issues an UPDATE against
+`llm_budget_policies.status` (`scripts/verify_llm_cost_governance.sh`,
+`scripts/verify_real_llm_plan_only_pilot.sh`) and confirmed both target only their own
+dynamically-generated `policy_name`/`policy_id`, created earlier in the same script run -- neither
+could have matched this policy's name or id. No crontab exists on the test host, and no
+`BudgetPolicyStore` method deactivates a policy at all (no such method exists in the store). No
+automated or scheduled control in this codebase can explain, or could recur against, this specific
+row. This is recorded as `DEACTIVATION_CAUSE_UNRESOLVED` but `NON_BLOCKING`.
+
+Following the same precedent as AT-D32, AT-D33, and AT-D34, Claude Code did not act on the reversal at
+face value either. It completed this investigation and a full conflict check (confirmed exactly one
+`llm_budget_policies` row exists, total, across every provider and scope) and usage baseline (zero
+`anthropic` events anywhere, full US$5.00/US$5.00 headroom) first, then asked the human operator
+directly whether they were personally exercising Product Owner authority to authorize the exact
+reactivation, drafted AT-D35 to disk uncommitted for review, and proceeded only after the operator
+confirmed that authority and approved the drafted text.
+
+### What AT-D35 authorizes, and what it does not
+
+```text
+Action:                    exactly one UPDATE against llm_budget_policies, predicated on
+                             policy_id='d29ad073-9f7c-48b4-876d-cd3cb1343b40' AND status='inactive',
+                             setting status='active' and no other column; a fail-closed row-count
+                             assertion (exactly 1) guards it
+Environment:                internal non-production test runtime only
+Not authorized:             a new policy; any change to scope, provider, limits, or enforcement;
+                             deleting rows or history; resetting usage/reservations; any Anthropic
+                             call; live-gate enablement; any code change
+Lifecycle:                  this reactivation exists only to permit the immediately-following Live
+                             Validation execution attempt. That execution session must deactivate this
+                             same policy on reaching ANY terminal result (PASS/FAIL/BLOCKED/ABORT/
+                             DESIGN_REVIEW_REQUIRED), never delete it. If that execution does not start
+                             following reactivation, the session that discovers that must deactivate
+                             the policy before stopping.
+```
+
+AT-D35 does not reset, expand, or pre-consume any part of AT-D32's envelope. This stage itself
+consumes 0 calls and $0 of that envelope.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` now
+`AUTHORIZED / BLOCKED_ON_BUDGET_POLICY_REACTIVATION`; `AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY` and
+`AT_M3_6B_2_TEST_RUNTIME_DATABASE_MIGRATION_ALIGNMENT` updated to reflect the migration stage's
+completion and the policy's current inactive status; `LIVE_EXTERNAL_VALIDATION`, `LIVE_NETWORK_GATE`,
+`PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`, and the section 2 `CURRENT_GATE` / `CURRENT_STAGE` /
+`NEXT_PERMITTED_STAGE` fields updated to match. `AT_M4` unchanged: `NOT AUTHORIZED`. No implementation
+tree (`apps/`, `shared/`, `agents/`, `migrations/`, `infra/`, `scripts/`, `tests/`) touched by this
+docs-only stage. The actual reactivation is performed by a separate, subsequent runtime-operation step
+under this same authorization, not by this commit.
+
+### Boundaries held
+
+- **No DB, Vault, Docker, or runtime action in this commit.** No status changed, no key read, no
+  restart, no live-gate enablement.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+- **AT-M3.6B.2 Live Validation EXECUTION still `NOT YET PERFORMED`.** AT-D35 unblocks a re-opened
+  prerequisite; it is not itself the validation.
+
+### Merge
+
+`docs/decisions/at-d35-at-m3-6b-2-live-validation-budget-policy-reactivation-authorization.md`
+created, drafted uncommitted, reviewed and approved by the Product Owner before commit.
+`AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward only onto
+canonical main `58ec92a`. No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
