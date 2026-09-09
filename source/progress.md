@@ -20619,3 +20619,91 @@ fields updated to match. `AT_M4` unchanged: `NOT AUTHORIZED`. No implementation 
 the Product Owner before commit. `AI_AGENTS_PM_STATE.md` and this file updated in the same
 docs-only commit. Fast-forward only onto canonical main `e820d5f`. No squash, no rebase, no force, no
 merge commit, no cherry-pick rewrite.
+
+## Step AT-M3.6B.2-LIVE-VALIDATION-BUDGET-POLICY-PROVISIONING-AUTHORIZATION-RECORDING - Budget Policy Provisioning Authorized, Not Yet Provisioned (PO ACCEPTED / DOCS-ONLY / CANONICAL)
+
+**Status: `AT-D33` records the Product Owner's authorization of provisioning exactly one
+`llm_budget_policies` row -- the runtime prerequisite `AnthropicReasoningProvider.preflight()`
+requires and that a first AT-M3.6B.2 Live Validation execution attempt found missing. Canonical main
+at decision: `009b1dc`. This stage is docs-only: no DB mutation, no Vault action, no Anthropic
+request, no live-gate enablement. Real Anthropic calls: 0. `REASONING_LIVE_NETWORK_ENABLED`: false
+throughout. `production_executed_true_count: 0`.**
+
+### Why this stage exists
+
+The first AT-M3.6B.2 Live Validation execution attempt (against AT-D32) correctly stopped `BLOCKED`
+before any network gate consideration and before any credential resolution: direct, read-only
+inspection of the test runtime's `llm_budget_policies` table found zero rows, for any provider or
+scope, and `BudgetPolicyStore.get_active_policy()` has no fallback -- an empty table means `None`
+unconditionally, and `AnthropicReasoningProvider.preflight()` refuses at `budget_exceeded` without an
+active policy carrying both `max_cost_per_day_usd` and `max_cost_per_month_usd`. Nothing in AT-D32
+authorized creating that row; its dollar caps, scope, and enforcement mode are a Product Owner
+decision AT-D32's envelope (the validation session's own request/cost ceilings) does not specify.
+Claude Code declined to insert it unilaterally and reported `BLOCKED`.
+
+A follow-up prompt then asked Claude Code to provision the missing row, framed as carrying an
+already-granted Product Owner authorization with specific dollar values. Per the same precedent this
+project used for AT-D32 itself -- recorded above -- Claude Code did not author and commit a decision
+record on the strength of a relayed prompt's claim alone. It first completed read-only schema/scope
+discovery (confirming `scope_type=provider` scoped to `provider=anthropic` is the narrowest scope
+canonically matched by the exact lookup `AnthropicReasoningProvider.preflight()` makes, and that this
+table exists only inside the non-production test runtime's own Postgres, carrying no
+cross-environment or production authority), then asked the human operator directly whether they were
+personally exercising Product Owner authority to authorize this provisioning with the exact bounds
+named. The draft record was written to disk uncommitted for the operator's review. The operator
+confirmed they were exercising that authority and approved the drafted text as-is before anything
+touched Git.
+
+### What AT-D33 authorizes, and what it does not
+
+```text
+Action:                   provision exactly ONE `llm_budget_policies` row via the canonical
+                            `BudgetPolicyStore.create_policy()` path
+Scope:                     scope_type=provider, provider=anthropic (narrowest scope matched by
+                            AnthropicReasoningProvider.preflight()'s exact lookup)
+Daily / monthly ceiling:   US$5.00 / US$5.00
+Enforcement:               block (hard-deny; the schema's only such value)
+Status:                    active
+Environment:               internal non-production test runtime only
+Lifecycle:                 deactivate (status='inactive', never delete) once the AT-M3.6B.2 Live
+                            Validation execution session this row unblocks reaches any terminal
+                            result (PASS/FAIL/BLOCKED/ABORT)
+Not authorized:            any Anthropic call, live-gate enablement, credential validation, code or
+                            schema change, a default/fallback policy, AT-M4, HumanApproval mutation,
+                            production action
+```
+
+AT-D33 does not amend, widen, or replace AT-D32. AT-D32's ceilings (12 requests, US$5.00 total,
+US$0.50/attempt, US$1.50/correlation, 3 attempts/correlation, anthropic/claude-sonnet-5 only,
+ephemeral live-gate only) continue to bound any future Live Validation execution session unchanged.
+This record only makes the runtime capable of reaching those ceilings instead of refusing before the
+first attempt.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` now
+`AUTHORIZED / BLOCKED_ON_BUDGET_POLICY_PREREQUISITE`; new field
+`AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: AUTHORIZED / NOT YET PROVISIONED`, citing AT-D33;
+`LIVE_EXTERNAL_VALIDATION`, `LIVE_NETWORK_GATE`, `PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`, and
+the section 2 `CURRENT_GATE` / `CURRENT_STAGE` / `NEXT_PERMITTED_STAGE` fields updated to match.
+`AT_M4` unchanged: `NOT AUTHORIZED`. No implementation tree (`apps/`, `shared/`, `agents/`,
+`migrations/`, `infra/`, `scripts/`, `tests/`) touched by this docs-only stage. The actual database
+row is provisioned by a separate, subsequent runtime-operation step under this same authorization,
+not by this commit.
+
+### Boundaries held
+
+- **No DB, Vault, Docker, or runtime action in this commit.** No row written, no key read, no
+  restart, no live-gate enablement.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+- **AT-M3.6B.2 Live Validation EXECUTION still `NOT YET PERFORMED`.** AT-D33 unblocks a prerequisite;
+  it is not itself the validation.
+
+### Merge
+
+`docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md`
+created, drafted uncommitted, reviewed and approved by the Product Owner before commit.
+`AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward only onto
+canonical main `009b1dc`. No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
