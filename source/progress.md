@@ -20537,3 +20537,85 @@ No squash, no rebase, no force, no merge commit, no cherry-pick rewrite. Guarded
 are byte-identical between `implementation_end` and the reconciliation tip.
 `AT_M3_6B_2_PROVISIONING_IMPLEMENTATION_END` stays at `62bf1e6` and does not follow the branch tip,
 because moving it would silently claim validation coverage a documentation commit never had.
+
+## Step AT-M3.6B.2-LIVE-VALIDATION-AUTHORIZATION-RECORDING - Live Validation Authorization Recorded, Not Executed (PO ACCEPTED / DOCS-ONLY / CANONICAL)
+
+**Status: `AT-D32` records the Product Owner's authorization of one bounded AT-M3.6B.2 Live
+Validation execution session against the real Anthropic API. Canonical main at decision: `e820d5f`.
+This stage is docs-only: no Vault action, no runtime action, no Anthropic request, no live-gate
+enablement. Real Anthropic calls: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout.
+`production_executed_true_count: 0`.**
+
+### Why this stage exists
+
+A prior session attempting AT-M3.6B.2 Live Validation execution correctly `BLOCKED`: the task prompt
+claimed Product Owner authorization, but canonical main -- `AI_AGENTS_PM_STATE.md`,
+`source/progress.md`, and the full `docs/decisions/` ledger through AT-D31 -- stated explicitly that
+`AT_M3_6B_2_LIVE_VALIDATION` was `NOT AUTHORIZED` and that no previously discussed envelope counts as
+authorization by having been discussed. Claude Code raised `GOVERNANCE_DRIFT_ALERT` and stopped
+rather than executing on an unrecorded claim.
+
+A follow-up prompt then asked Claude Code to author and merge the missing decision record itself,
+framed as "docs-only recording of an already-granted authorization." That request was declined as
+presented: a "Product Owner decision record" in this repository's established pattern (AT-D26,
+AT-D30) reflects a real, distinctly-evidenced Product Owner decision -- AT-D30's provisioning, for
+example, was backed by the Product Owner physically handling a real credential through a verified
+handoff procedure. Claude Code authoring and merging a record that asserts Product Owner
+authorization, on the strength of a relayed chat prompt alone, would not have recorded an
+authorization -- it would have manufactured the one artifact whose absence was the actual finding.
+That is the exact "a control validates its own validator" failure this project's execution standard
+exists to stop.
+
+Claude Code instead asked the human operator directly, outside the relayed-prompt flow, whether they
+were personally exercising Product Owner authority to authorize this stage with the exact bounds
+named. The operator confirmed yes, and asked for the record to be drafted for their explicit review
+before anything touched Git. The draft was written to disk uncommitted; the operator reviewed it and
+approved it as-is. This stage is that approved record, committed.
+
+### What AT-D32 authorizes, and what it does not
+
+```text
+Provider / model:        anthropic / claude-sonnet-5 only, no fallback
+Environment:              internal non-production test runtime only
+Allowed verbs:            propose, critique, summarize_decision, decompose_plan
+Max requests:              12 total, every attempt counted
+Max total cost:            US$5.00 (settled + unresolved reservations)
+Max per-attempt cost:      US$0.50
+Per-correlation ceiling:   US$1.50, max 3 attempts per correlation
+Live gate:                 ephemeral-process enablement only; long-lived orchestrator stays
+                             REASONING_LIVE_NETWORK_ENABLED=false throughout and after
+Credential use:            ReasoningService -> AnthropicReasoningProvider -> SecretProvider ->
+                             Vault KV v2 -> ANTHROPIC_API_KEY only; value never rendered
+Git/GitHub mutation during the execution session:  NOT AUTHORIZED
+AT-M4, HumanApproval mutation, production action:  NOT AUTHORIZED / NOT GRANTED
+```
+
+AT-D32 authorizes exactly one bounded execution session. It does not itself make any call, and it
+does not pre-accept that session's result: a PASS, FAIL, BLOCKED, or DESIGN_REVIEW_REQUIRED outcome
+from the execution session still requires its own separate Product Owner acceptance before being
+treated as canonical, matching the implementation/acceptance split every prior AT-M3.6B.2 slice used
+(AT-D26/AT-D27, AT-D28/AT-D29, AT-D30/AT-D31).
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` now `AUTHORIZED / NOT YET EXECUTED`,
+citing AT-D32; `LIVE_EXTERNAL_VALIDATION`, `LIVE_NETWORK_GATE`, `PRODUCT_CRITICAL_PATH`,
+`NEXT_PRODUCT_STAGE`, and the section 2 `CURRENT_GATE` / `CURRENT_STAGE` / `NEXT_PERMITTED_STAGE`
+fields updated to match. `AT_M4` unchanged: `NOT AUTHORIZED`. No implementation tree (`apps/`,
+`shared/`, `agents/`, `migrations/`, `infra/`, `scripts/`, `tests/`) touched.
+
+### Boundaries held
+
+- **No Vault, Docker, or runtime action.** No key read, no restart, no live-gate enablement.
+- **Zero real Anthropic calls. Zero diagnostic external calls. `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.**
+- **AT-M3.6B.2 Live Validation EXECUTION still `NOT YET PERFORMED`.** AT-D32 authorizes the attempt;
+  it is not itself the attempt.
+
+### Merge
+
+`docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md` created, reviewed and approved by
+the Product Owner before commit. `AI_AGENTS_PM_STATE.md` and this file updated in the same
+docs-only commit. Fast-forward only onto canonical main `e820d5f`. No squash, no rebase, no force, no
+merge commit, no cherry-pick rewrite.

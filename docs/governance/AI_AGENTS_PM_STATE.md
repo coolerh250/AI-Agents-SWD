@@ -19,9 +19,9 @@ snapshot, not a history.
 ```text
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
-RECONCILED_ON:               2026-09-08
-RECONCILED_AGAINST_MAIN:     62bf1e69d36f810e5444816b4d87a1ea5a0c711f
-RECONCILED_BY_STAGE:         AT-M3.6B.2-REAL-ANTHROPIC-SECRET-PROVISIONING-CANONICALIZATION / PRODUCT ACCEPTANCE
+RECONCILED_ON:               2026-09-09
+RECONCILED_AGAINST_MAIN:     e820d5fff88d8955e1b947ce80afd4788b96d7f7
+RECONCILED_BY_STAGE:         AT-M3.6B.2-LIVE-VALIDATION-AUTHORIZATION-RECORDING
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -35,8 +35,9 @@ is a conflict.
 CURRENT_MILESTONE:           AT-M3
 CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.1, AT-M3.2,
                               AT-M3.3, AT-M3.4, AT-M3.5, AT-M3.6A, AT-M3.6B.1, the AT-M3.6B.2
-                              Runtime Secret Readiness slice and the AT-M3.6B.2 Runtime Image
+                              Runtime Secret Readiness slice, the AT-M3.6B.2 Runtime Image
                               Alignment slice (including its ratified safety-surface remediation)
+                              and the AT-M3.6B.2 Real Anthropic Secret Provisioning slice are all
                               MERGED / CLOSED. AT-D14 authorized M3.1 through M3.6A; AT-D24
                               separately authorized the AT-M3.6B.1 implementation and AT-D25
                               accepted and merged it; AT-D26 separately authorized the AT-M3.6B.2
@@ -44,32 +45,33 @@ CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.
                               it; AT-D28 separately authorized the AT-M3.6B.2 runtime-image-alignment
                               implementation (including the deployment rebuild/redeploy) and AT-D29
                               ratified the resulting bounded safety-surface remediation, accepted the
-                              stage and authorized its merge. Every slice authorized by any record in
-                              this repository is now canonical
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Runtime Image Alignment (canonical merge)
+                              stage and authorized its merge; AT-D30 separately authorized the real
+                              Anthropic secret provisioning and AT-D31 accepted and merged it. Every
+                              slice authorized by any record in this repository through AT-D31 is now
+                              canonical. AT-D32 additionally authorizes one bounded AT-M3.6B.2 Live
+                              Validation execution session -- see CURRENT_GATE
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Real Anthropic Secret Provisioning (canonical merge, AT-D31)
 CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope, AT-D26's
-                              scope and AT-D28's scope are each fully consumed by their respective
-                              acceptances. AT-M3.6B.2 REAL ANTHROPIC SECRET PROVISIONING
-                              AUTHORIZATION (provisioning a real key into the now-aligned Vault
-                              substrate), AT-M3.6B.2 LIVE VALIDATION (the first real external model
-                              call) and AT-M4 (real work execution) are all NOT AUTHORIZED, and no
-                              record in this repository decides which is next or implies an order
-                              among them
-CURRENT_STAGE:                AT-M3.6B.2-REAL-ANTHROPIC-SECRET-PROVISIONING-CANONICALIZATION / PRODUCT ACCEPTANCE
-NEXT_PERMITTED_STAGE:        NONE WITHOUT A NEW PRODUCT OWNER DECISION. The AT-M3.6B.2 Runtime Image
-                              Alignment slice closed the deployment-representativeness gap
-                              AT-D27 section 4 recorded: the deployed test orchestrator now runs the
-                              exact candidate image, independently confirmed to import the reasoning
-                              adapter and to report a truthful Vault-reachable safety surface. It
-                              established nothing about a real Anthropic credential or a live
-                              external call -- the Vault placeholder remains non-callable throughout.
-                              AT-M3.6B.2 Real Anthropic Secret Provisioning needs its own
-                              authorization before a real key is provisioned; AT-M3.6B.2 Live
-                              Validation needs a further authorization naming provider, model, call
-                              count, total and per-call cost ceilings, allowed verbs, environment,
-                              live-gate enablement, credential use and abort conditions. AT-M4 (real
-                              work execution) is likewise NOT AUTHORIZED, and none of the three is
-                              implied by this closure.
+                              scope, AT-D28's scope and AT-D30's scope are each fully consumed by
+                              their respective acceptances. AT-D32 now authorizes one bounded
+                              AT-M3.6B.2 LIVE VALIDATION execution session (the first real external
+                              model call), naming provider, model, call count, cost ceilings, allowed
+                              verbs, environment, gate enablement, credential use and abort
+                              conditions -- see docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md.
+                              That session has NOT yet been executed. AT-M4 (real work execution)
+                              remains NOT AUTHORIZED, and AT-D32 authorizing the session does not by
+                              itself authorize AT-M4 or imply any order beyond the session it names
+CURRENT_STAGE:                AT-M3.6B.2-LIVE-VALIDATION-AUTHORIZATION-RECORDING (docs-only; AT-D32
+                              recorded, no execution performed by this stage)
+NEXT_PERMITTED_STAGE:        AT-M3.6B.2 LIVE VALIDATION EXECUTION, strictly bounded by AT-D32: one
+                              session, anthropic / claude-sonnet-5 only, <=12 requests, <=US$5.00
+                              total, <=US$0.50/call, verbs propose/critique/summarize_decision/
+                              decompose_plan only, ephemeral live-gate only, no Git/GitHub mutation
+                              during the session. That session's own result (PASS/FAIL/BLOCKED/
+                              DESIGN_REVIEW_REQUIRED) requires a further, separate Product Owner
+                              acceptance before being treated as canonical -- AT-D32 authorizes the
+                              attempt, not its outcome. AT-M4 remains NOT AUTHORIZED and is not
+                              implied by AT-D32.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -390,7 +392,10 @@ AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT,
                                 next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
                                 Recorded unchanged as the historical record of what this field named
                                 at AT-D27's canonicalization
-AT_M3_6B_2_LIVE_VALIDATION:    NOT AUTHORIZED
+AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / NOT YET EXECUTED
+AT_M3_6B_2_LIVE_VALIDATION_AUTHORIZED_BY: AT-D32 / docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md
+AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: NOT YET EXECUTED -- no execution session has run
+                                under AT-D32; this stays unset until one does and reports
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
                                 INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
                                 CANONICAL / CLOSED
@@ -445,19 +450,26 @@ AT_M3_6B_2_CREDENTIAL:         PROVISIONED IN VAULT ONLY -- mount `secret`, path
                                 ANTHROPIC_API_KEY; the credential is reachable only through the
                                 Vault rail. Both temporary handoff files were removed. A populated
                                 field is NOT permission to use it -- see AT_M3_6B_2_LIVE_VALIDATION
-LIVE_EXTERNAL_VALIDATION:      NOT AUTHORIZED
-LIVE_NETWORK_GATE:             DEFAULT FALSE
-PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 LIVE VALIDATION AUTHORIZATION -- the runtime secret
-                                substrate, the deployed reasoning runtime and the real credential
-                                are all canonical and closed; the standing gap is that no record in
-                                this repository authorizes a single real external call
-NEXT_PRODUCT_STAGE:            PO AUTHORIZATION REQUIRED for AT-M3.6B.2 Live Validation. It must
-                                name the provider, the model, the call count, the total and per-call
-                                cost ceilings, the allowed verbs, the environment, the gate
-                                enablement, the credential use and the abort conditions. No
-                                previously discussed call-count or cost envelope is authorized by
-                                having been discussed, and the presence of a real key in Vault
-                                authorizes nothing
+LIVE_EXTERNAL_VALIDATION:      AUTHORIZED FOR AT-M3.6B.2 BOUNDED RUN ONLY -- AT-D32. One session,
+                                anthropic / claude-sonnet-5 only, <=12 requests, <=US$5.00 total,
+                                <=US$0.50/call, verbs propose/critique/summarize_decision/
+                                decompose_plan only, ephemeral live-gate only. Not yet executed;
+                                REAL_EXTERNAL_CALLS remains 0 until an execution session runs and
+                                reports
+LIVE_NETWORK_GATE:             DEFAULT FALSE. Temporary ephemeral-process enablement authorized only
+                                during an AT-D32-bounded execution session; the long-lived
+                                orchestrator stays false throughout and after
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 LIVE VALIDATION EXECUTION -- the runtime secret substrate,
+                                the deployed reasoning runtime, the real credential and now the live
+                                validation authorization (AT-D32) are all canonical; the standing gap
+                                is that no execution session has yet run and reported against that
+                                authorization
+NEXT_PRODUCT_STAGE:            AT-M3.6B.2 Live Validation EXECUTION under AT-D32's exact bounds.
+                                AT-D32 authorizes one bounded session; it does not itself make any
+                                call. Its result (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires
+                                its own separate Product Owner acceptance before being treated as
+                                canonical, matching every prior AT-M3.6B.2 implementation/acceptance
+                                split
 AT_M4:                         NOT AUTHORIZED
 ```
 
@@ -535,9 +547,12 @@ implementation and AT-D29 ratified its bounded safety-surface remediation, accep
 authorized its merge. `AT_M3_6B_2_PREREQUISITE` is now satisfied: the deployed test orchestrator
 runs the exact aligned candidate image and truthfully reports its Vault-reachable safety surface.
 AT-D30 separately authorized the real-credential provisioning and AT-D31 accepted that stage and
-authorized its merge. The boundary now standing is that **no real external call is authorized by
-any record in this file** -- that is `AT_M3_6B_2_LIVE_VALIDATION`, a Product Owner decision that has
-not been made. Past it stands `AT_M4` (AT-M3.5 built the delegation of work and AT-M3.6A made it
+authorized its merge. AT-D32 now separately authorizes one bounded AT-M3.6B.2 Live Validation
+execution session -- provider, model, call count, cost ceilings, allowed verbs, environment, gate
+enablement, credential use and abort conditions all named explicitly, per docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md.
+AT-D32 authorizes the session; it does not execute it, and `AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS`
+stays unset (no execution has occurred) until a future execution session reports real evidence, which
+then requires its own separate Product Owner acceptance to canonicalize. Past it stands `AT_M4` (AT-M3.5 built the delegation of work and AT-M3.6A made it
 observable, but neither built its execution). This file must not be read as implying that either
 follows automatically from what precedes it, and least of all that a credential sitting in Vault
 implies permission to spend it.
