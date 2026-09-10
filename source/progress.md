@@ -21297,3 +21297,70 @@ US$0.016086 retained unresolved reservation (not released, settled, or altered).
 AT-M3.6B.2 LIVE VALIDATION EXECUTION -- Combined Budget Activation and Terminal Cleanup, under its
 own next durable AT-D (expected AT-D39, to be confirmed from repository truth at that time, not
 assumed here).
+
+---
+
+## Stage AT-M3.6B.2 — Live Validation Execution Combined Authorization (AT-D39)
+
+Docs-only authorization stage, run at session start of the combined execution to satisfy AT-D38's
+own condition: the combined execution "must still create its own next durable AT-D ... before any
+budget-policy activation or Anthropic call." **No implementation change, no runtime mutation, no
+database mutation, no budget-policy mutation, no live-gate enablement, and no Anthropic call (real
+or diagnostic) was performed by this stage.**
+
+### Verification performed before authorizing
+
+```text
+1. git fetch; origin/main = 6818111b38488002520159d995c6fbd8fdd492b4, matching the short form
+   reported at session start; local main == origin/main; working tree clean
+2. AT-D38 read directly from docs/decisions/ -- confirms AT_M3_6B_2_RUNTIME_IMAGE
+   REDEPLOYED/VERIFIED/CLOSED and AT_M3_6B_2_LIVE_VALIDATION AUTHORIZED/READY_FOR_COMBINED_EXECUTION
+3. AI_AGENTS_PM_STATE.md read directly -- confirms budget policy AUTHORIZED/PROVISIONED, CURRENTLY
+   INACTIVE; AT-D32 real requests 1 of 12 consumed, 11 remaining; retained unresolved reservation
+   US$0.016086; AT_M4 NOT AUTHORIZED; production NOT GRANTED
+4. Next unused AT-D number derived from docs/decisions/ listing (highest existing = AT-D38) ->
+   AT-D39, not assumed in advance
+```
+
+### Authorization recorded
+
+`docs/decisions/at-d39-at-m3-6b-2-live-validation-execution-combined-budget-activation-and-terminal-cleanup-authorization.md`
+created: RESOLVED/BINDING, authorizes the following execution session to (a) reactivate exact
+policy `d29ad073-9f7c-48b4-876d-cd3cb1343b40` strictly inside that session, (b) run propose -> a
+same-correlation replay adding zero external calls -> decompose_plan as mandatory evidence, with
+critique/summarize_decision executed only if the full remaining 3-attempt/US$1.50 envelope still
+fits every applicable ceiling, and (c) return the policy to inactive as part of the same bounded
+transaction regardless of terminal outcome. It authorizes no implementation patch, no migration, no
+runtime rebuild/redeploy, no credential change, no failure-taxonomy remediation, no
+structured-output redesign, no AT-M3.5 dispatch, no AT-M4, and no production action. It does not
+itself activate the policy or make any Anthropic call -- 0 performed by this record.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` -> `AUTHORIZED / EXECUTION_READY`
+(references AT-D39); new field `AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION` ->
+`AUTHORIZED / EXECUTION_READY`, restating the 1/12 consumed, 11 remaining, US$0.016086 retained
+reservation, budget-policy inactive, live gate default false, AT-M4 not authorized, and production
+not granted facts already canonical from AT-D38. No other field changed.
+
+### Boundaries held
+
+- **Zero implementation change.** Only `docs/decisions/`, `AI_AGENTS_PM_STATE.md`, and this file
+  changed.
+- **Zero runtime, database, or budget-policy mutation.** No rebuild, redeploy, restart, SQL write,
+  or live-gate enablement performed by this stage.
+- **Zero Anthropic calls, real or diagnostic.** `REASONING_LIVE_NETWORK_ENABLED` false throughout.
+  AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.
+- **This stage authorizes but does not itself execute.** The bounded live-execution session,
+  including budget-policy activation, live-gate enablement, and any Anthropic call, is a separate
+  step performed after this authorization commit lands, per AT-D32 section 3 and AT-D39 section 3
+  (no further Git mutation once real calls are in flight or pending).
+
+### Next
+
+AT-M3.6B.2 Live Validation Execution itself: zero-call preflight, exact wire-counter establishment,
+budget-policy activation, ephemeral live gate, propose / replay / decompose_plan (and
+critique/summarize_decision if the envelope allows), then mandatory terminal policy cleanup. Result
+requires its own separate Product Owner acceptance
+(`AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE`) before further canonicalization.

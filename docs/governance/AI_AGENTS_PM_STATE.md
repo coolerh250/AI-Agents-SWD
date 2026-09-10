@@ -466,17 +466,17 @@ AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT,
                                 next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
                                 Recorded unchanged as the historical record of what this field named
                                 at AT-D27's canonicalization
-AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / READY_FOR_COMBINED_EXECUTION -- both original
-                                prerequisites closed (AT-D34 migrations 039-045 applied and
-                                independently verified; AT-D35 policy reactivation performed), and an
-                                execution session then ran under AT-D32 and REACHED THE WIRE for the
-                                first time. It issued exactly ONE real Anthropic request, which
-                                returned HTTP 400 and produced zero reasoning artifacts. That session's
-                                own hypothesis -- "most likely the API key or its format" -- was tested
-                                by a subsequent fresh read-only design review and found NOT SUPPORTED:
-                                HTTP 400 is invalid_request_error, not authentication_error (which is
-                                401). The review found a deterministic local request-contract defect
-                                that fully explains the 400 -- `AnthropicReasoningProvider.build_request()`
+AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / EXECUTION_READY -- both original prerequisites closed
+                                (AT-D34 migrations 039-045 applied and independently verified; AT-D35
+                                policy reactivation performed), and an execution session then ran
+                                under AT-D32 and REACHED THE WIRE for the first time. It issued
+                                exactly ONE real Anthropic request, which returned HTTP 400 and
+                                produced zero reasoning artifacts. That session's own hypothesis --
+                                "most likely the API key or its format" -- was tested by a subsequent
+                                fresh read-only design review and found NOT SUPPORTED: HTTP 400 is
+                                invalid_request_error, not authentication_error (which is 401). The
+                                review found a deterministic local request-contract defect that fully
+                                explains the 400 -- `AnthropicReasoningProvider.build_request()`
                                 emitted a top-level `temperature` (0.2), and Claude Sonnet 5 rejects
                                 non-default sampling-parameter values (temperature/top_p/top_k) with
                                 HTTP 400. AT-D36 authorized the bounded remediation; it was
@@ -489,10 +489,13 @@ AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / READY_FOR_COMBINED_EXECUTION -- both
                                 old temperature-emitting path no longer served, zero-network
                                 build_request() PASS for all four authorized verbs, live-network gate
                                 false, AT-D33/AT-D35 policy confirmed inactive -- see
-                                AT_M3_6B_2_RUNTIME_IMAGE below. Live Validation remains NOT YET
-                                SUCCESSFUL -- no retry has been attempted -- but is no longer blocked on
-                                a runtime gap: a fresh budget-policy reactivation authorization is the
-                                only remaining prerequisite before a retry attempt
+                                AT_M3_6B_2_RUNTIME_IMAGE below. AT-D39 then authorized the combined
+                                budget-activation-and-terminal-cleanup execution as one bounded
+                                transaction -- see AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION below.
+                                Live Validation remains NOT YET SUCCESSFUL -- no retry has completed --
+                                but is no longer blocked on any runtime, migration, or authorization
+                                gap; the combined execution session itself is the next and only
+                                remaining step
 
 AT_M3_6B_2_SONNET_5_REQUEST_CONTRACT_REMEDIATION: CLOSED / CANONICAL -- implemented on branch
                                 at-m3.6b.2-sonnet5-request-contract-remediation-1, ending d1deae9;
@@ -560,6 +563,23 @@ AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: 1 of 12 CONSUMED -- one executio
                                 `provider_request_id` was not captured: the adapter reads the message
                                 id from the response body, which an error body does not carry, and it
                                 does not read the `request-id` response header
+AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION: AUTHORIZED / EXECUTION_READY -- AT-D39 authorizes one
+                                bounded session: exact policy d29ad073-9f7c-48b4-876d-cd3cb1343b40
+                                reactivated strictly inside that session, live validation run
+                                (propose, same-correlation replay, decompose_plan mandatory;
+                                critique/summarize_decision conditional on full remaining envelope),
+                                policy returned to inactive as part of the same bounded transaction
+                                before the session's terminal result. Authorized by AT-D39 /
+                                docs/decisions/at-d39-at-m3-6b-2-live-validation-execution-combined-budget-activation-and-terminal-cleanup-authorization.md.
+                                Not yet executed by this record. AT_D32_REAL_REQUESTS: 1 of 12
+                                CONSUMED. AT_D32_REAL_REQUESTS_REMAINING: 11.
+                                AT_D32_RETAINED_UNRESOLVED_RESERVATION: US$0.016086 (preserved,
+                                unresolved). AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: INACTIVE /
+                                COMBINED_EXECUTION_ACTIVATION_AUTHORIZED. LIVE_NETWORK_GATE: DEFAULT
+                                FALSE. AT_M4: NOT AUTHORIZED. PRODUCTION: NOT GRANTED. Result of the
+                                execution session itself requires its own separate
+                                AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE before this field is
+                                updated further
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
                                 INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
                                 CANONICAL / CLOSED
