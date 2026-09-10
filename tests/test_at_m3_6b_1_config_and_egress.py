@@ -157,7 +157,13 @@ class TestGenerationProfiles:
             profile = generation_profile(verb)
             assert profile.verb == verb
             assert profile.max_output_tokens == MAX_OUTPUT_TOKENS_BY_VERB[verb]
-            assert profile.temperature == 0.2
+
+    def test_a_profile_models_no_sampling_parameter(self) -> None:
+        """Sonnet 5 rejects sampling parameters, so there is nothing here to accidentally send."""
+        for verb in REASONING_VERBS:
+            profile = generation_profile(verb)
+            for forbidden in ("temperature", "top_p", "top_k"):
+                assert not hasattr(profile, forbidden)
 
     def test_an_unknown_verb_has_no_profile(self) -> None:
         with pytest.raises(LiveReasoningConfigError):

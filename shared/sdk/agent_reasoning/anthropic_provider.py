@@ -384,10 +384,13 @@ class AnthropicReasoningProvider:
             "CONTEXT:\n"
             f"{json.dumps(projection, sort_keys=True, ensure_ascii=False, default=str)}"
         )
+        # NO SAMPLING PARAMETERS. Claude Sonnet 5 removed them: temperature, top_p and top_k are
+        # rejected with HTTP 400 invalid_request_error, so sending one does not merely go ignored --
+        # it makes every request this adapter can build fail deterministically. AT-M3.6B.2's first
+        # real call proved that at the wire. Adding one back here re-breaks the live path.
         return {
             "model": self.model_name,
             "max_tokens": profile.max_output_tokens,
-            "temperature": profile.temperature,
             "system": _SYSTEM_INSTRUCTION,
             "messages": [{"role": "user", "content": user_content}],
         }

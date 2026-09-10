@@ -131,8 +131,27 @@ class TestRequestBuilder:
         )
         payload = transport.payload()
         assert payload["max_tokens"] == MAX_OUTPUT_TOKENS_BY_VERB[verb]
-        assert payload["temperature"] == 0.2
         assert payload["model"] == "claude-sonnet-5"
+
+    @pytest.mark.parametrize(
+        "verb", ["propose", "critique", "summarize_decision", "decompose_plan"]
+    )
+    async def test_no_sampling_parameter_reaches_the_wire(self, verb: str) -> None:
+        """Claude Sonnet 5 rejects sampling parameters with HTTP 400. Every verb, every time.
+
+        This is a wire-shape assertion, not a configuration one: AT-M3.6B.2's first real call spent
+        a request from the authorized envelope discovering that a ``temperature`` this adapter set
+        from its own config -- never from a caller -- is enough to make the request invalid. The
+        check therefore reads the payload that actually left, so reintroducing the field ANYWHERE
+        between the profile and the transport fails here rather than at the provider.
+        """
+        transport = returning_artifact(verb)
+        await getattr(_provider(transport=transport), verb)(
+            _request(verb, context=_plan_context(verb))
+        )
+        payload = transport.payload()
+        for forbidden in ("temperature", "top_p", "top_k"):
+            assert forbidden not in payload
 
     async def test_the_schema_asked_for_is_the_canonical_pydantic_model(self) -> None:
         """Derived rather than restated, so what is requested and what is enforced cannot drift."""

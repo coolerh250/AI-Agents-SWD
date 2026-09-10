@@ -90,11 +90,15 @@ LEASE_TTL_SECONDS_REFERENCE = 120.0
 
 # --- generation ------------------------------------------------------------------------------
 
-#: Fixed sampling temperature for every reasoning verb. Low rather than zero: these verbs ask for
-#: judgement, and this is not a determinism claim. Canonical reproducibility in this architecture
-#: means "the same invocation replays the same durable artifact" -- which migration 040 guarantees
-#: by storing the artifact -- and never "asking the model again returns the same text".
-GENERATION_TEMPERATURE = 0.2
+#: NO SAMPLING PARAMETER IS CONFIGURED, DELIBERATELY. Claude Sonnet 5 removed sampling controls:
+#: ``temperature``, ``top_p`` and ``top_k`` are rejected with HTTP 400 invalid_request_error. This
+#: file previously carried a fixed ``GENERATION_TEMPERATURE = 0.2``, and AT-M3.6B.2's first real
+#: call failed at the wire because of it. It is removed rather than kept-and-unused: a configured
+#: sampling value that cannot legally be sent is an invitation to wire it back up.
+#:
+#: Reproducibility never depended on it anyway. In this architecture reproducibility means "the same
+#: invocation replays the same durable artifact" -- which migration 040 guarantees by storing the
+#: artifact -- and never "asking the model again returns the same text".
 
 #: Per-verb output ceiling. The provider default is never used: an unbounded completion is an
 #: unbounded bill and an unbounded artifact. ``decompose_plan`` gets more because it returns a
@@ -132,14 +136,16 @@ class LiveReasoningConfigError(ValueError):
 class GenerationProfile:
     """The generation settings for ONE verb. Configuration-owned; never caller-supplied.
 
-    A caller cannot set temperature, max_tokens or any other sampling parameter: none of them are
-    read from ``ReasoningRequest.context``, and the egress projector rejects a context carrying a
-    key it does not recognise, so a generation-parameter injection attempt does not reach the wire.
+    The output ceiling is the only generation setting there is. Sampling parameters are not modelled
+    here because Claude Sonnet 5 does not accept them -- see the note above ``MAX_OUTPUT_TOKENS_BY_VERB``.
+
+    A caller cannot set max_tokens, or smuggle in a sampling parameter: none of them are read from
+    ``ReasoningRequest.context``, and the egress projector rejects a context carrying a key it does
+    not recognise, so a generation-parameter injection attempt does not reach the wire.
     """
 
     verb: str
     max_output_tokens: int
-    temperature: float
 
 
 def generation_profile(verb: str) -> GenerationProfile:
@@ -149,7 +155,6 @@ def generation_profile(verb: str) -> GenerationProfile:
     return GenerationProfile(
         verb=verb,
         max_output_tokens=MAX_OUTPUT_TOKENS_BY_VERB[verb],
-        temperature=GENERATION_TEMPERATURE,
     )
 
 
@@ -225,7 +230,6 @@ __all__ = [
     "ENV_LIVE_NETWORK_ENABLED",
     "ENV_REASONING_MODEL",
     "ENV_REASONING_PROVIDER",
-    "GENERATION_TEMPERATURE",
     "GenerationProfile",
     "LEASE_TTL_SECONDS_REFERENCE",
     "LIVE_PROVIDER_NAME",
