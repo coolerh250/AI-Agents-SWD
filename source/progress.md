@@ -21044,3 +21044,142 @@ unchanged: `NOT AUTHORIZED`. No implementation tree (`apps/`, `shared/`, `agents
 created. `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward
 only onto canonical main `92d7fa7`. No squash, no rebase, no force, no merge commit, no cherry-pick
 rewrite.
+
+---
+
+## Step AT-M3.6B.2-SONNET-5-REQUEST-CONTRACT-PRODUCT-ACCEPTANCE-CANONICALIZATION-1 - Request Contract Remediation Implemented, Independently Validated PASS, Accepted and Merged (PO ACCEPTED / CANONICAL)
+
+**Status: the AT-D36 remediation was implemented on branch
+`at-m3.6b.2-sonnet5-request-contract-remediation-1`, ending commit `d1deae9`. A fresh, read-only
+Independent Implementation Validation session returned **PASS** on round 1 of the 2-round quota
+(round 2 not required). `AT-D37` records the Product Owner's acceptance and authorizes the merge.
+The candidate was fast-forward merged onto `main`: `fc9608d` -> `d1deae9`. Real Anthropic calls by
+this stage: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout. Budget policy: inactive throughout.
+`production_executed_true_count: 0`.**
+
+### What was implemented
+
+Exactly AT-D36's bounded scope, touching exactly the four files it named:
+
+```text
+shared/sdk/agent_reasoning/anthropic_provider.py   -- "temperature" removed from build_request()'s
+                                                        outbound payload
+shared/sdk/agent_reasoning/live_config.py          -- GENERATION_TEMPERATURE and
+                                                        GenerationProfile.temperature retired (field
+                                                        removed, not set to None-and-serialized)
+tests/test_at_m3_6b_1_anthropic_adapter.py         -- test_no_sampling_parameter_reaches_the_wire
+                                                        added for all four authorized verbs
+tests/test_at_m3_6b_1_config_and_egress.py         -- test_a_profile_models_no_sampling_parameter
+                                                        added
+```
+
+4 files, +46/-14. No migration, no `ReasoningService`/`BudgetPolicyStore`/`SecretProvider` change, no
+failure-taxonomy change, no structured-output change, no runtime action, no Anthropic call.
+
+### Independent Implementation Validation 1 — PASS
+
+A fresh, read-only validation session (no prior context, no implementation-session trust) performed:
+
+```text
+Provenance         candidate SHA and branch matched AT-D36's exact expectation; descends from base;
+                     main had not merged it; working tree clean
+Diff provenance     exactly the four expected files; zero unexpected paths under migrations/,
+                     shared/sdk/llm_budget/, shared/sdk/secrets/, ReasoningService, apps/, infra/
+Base defect         independently reproduced by direct inspection of the pre-remediation blob --
+                     temperature=profile.temperature (=GENERATION_TEMPERATURE=0.2) present; top_p and
+                     top_k confirmed absent
+Candidate contract  independently proven absent -- temperature/top_p/top_k -- from the payload
+                     reaching an injected transport, for all four verbs, through the real
+                     AnthropicReasoningProvider request-builder path (no synthetic bypass)
+Non-regression      model, endpoint, headers, messages/system, max_tokens, retry/replay authority,
+                     budget reservation/settlement, and credential handling all independently
+                     confirmed unchanged (0-line diff outside the four named files)
+Official API check  platform.claude.com fetched live (read-only, no Messages API call): Sonnet 5
+                     rejects non-default temperature/top_p/top_k values with HTTP 400; omitting the
+                     parameter is the explicitly documented, recommended migration path -- confirms
+                     the remediation premise
+Test reproduction   298 passed across adapter, config/egress, service-contract, retry-authority,
+                     budget-reservation, network-proof, bounds/compatibility, safety-surface,
+                     migration, and relevant M3.1/M3.4 durability suites (remaining tests SKIPPED --
+                     no local Postgres in the validation environment, consistent with the known
+                     AT-M3 harness constraint). Zero candidate-caused failures. One pre-existing
+                     failure (test_at_m3_4_planning_decision_api.py::test_an_unknown_planning_decision_is_a_404_on_every_read_route,
+                     500 instead of 404) was independently reproduced identically against the
+                     unmodified base commit and classified PRE_EXISTING / ENVIRONMENT / NON_BLOCKING
+Quality gates       ruff and black clean on all four changed files. mypy clean on the two changed
+                     implementation files; four pre-existing union-attr findings in
+                     shared/sdk/agent_team/store.py (0-line diff vs base, unrelated path) classified
+                     PRE_EXISTING / NON_BLOCKING
+Secret scan         one pre-existing critical finding at
+                     scripts/verify_step66c4_be3_ra1d_missing_config_json.py:129, independently
+                     classified as a synthetic test-fixture DSN (fake user/password, loopback host,
+                     deliberately unreachable port) used to exercise the script's own
+                     unreachable-DSN error path -- not a real credential. File untouched by the
+                     candidate; classified PRE_EXISTING / NON_BLOCKING
+Network safety      zero real Anthropic calls, zero diagnostic calls, live gate false throughout,
+                     budget policy inactive throughout, production count 0
+```
+
+No blockers were found. Verdict: **PASS**. Validation quota: 1 of 2 consumed; round 2 not required.
+
+### What AT-D37 accepts, and what it does not
+
+```text
+Accepts:        the remediation candidate d1deae9, on the strength of the PASS validation above;
+                  authorizes its fast-forward merge to main
+Does NOT do:     authorize any Anthropic call; authorize live-gate enablement; reactivate the
+                  AT-D33/AT-D35 budget policy; release, settle or alter the retained US$0.016086
+                  reservation; authorize credential access; authorize a failure-taxonomy or
+                  structured-output change; authorize AT-M3.5, AT-M4, HumanApproval mutation, or
+                  production action; claim Live Validation has succeeded
+```
+
+### Merge
+
+Following the same precedent as every prior AT-M3.6B.2 acceptance-and-merge record, the merge was
+performed only after the Product Owner explicitly confirmed acceptance of this specific candidate SHA
+and validation result. Pre-merge source-of-truth was re-verified immediately before mutation:
+`origin/main` == `fc9608d` (unchanged since AT-D36), candidate branch HEAD == `d1deae9` (unrewritten,
+matching the independently validated SHA exactly), working tree clean.
+
+```text
+Method              git merge --ff-only d1deae9
+Result               fc9608d -> d1deae9, fast-forward, no merge commit
+Push                 origin main updated; local/origin verified matching post-push
+```
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: new field `AT_M3_6B_2_SONNET_5_REQUEST_CONTRACT_REMEDIATION: CLOSED
+/ CANONICAL`; new field `AT_M3_6B_2_SONNET_5_REQUEST_CONTRACT_INDEPENDENT_VALIDATION: PASS / ROUND_1`;
+new field `AT_M3_6B_2_RUNTIME_IMAGE: REDEPLOY_REQUIRED`; `AT_M3_6B_2_LIVE_VALIDATION` updated to
+`AUTHORIZED / BLOCKED_ON_RUNTIME_IMAGE_REDEPLOY` (Live Validation itself has NOT been retried and has
+NOT succeeded -- only the code defect that caused its prior HTTP 400 is now fixed on main);
+`PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`, `PREVIOUS_COMPLETED_STAGE`, `CURRENT_STAGE`, and
+`RECONCILED_AGAINST_MAIN` all updated to match. `AT_M4` unchanged: `NOT AUTHORIZED`. Historical
+evidence preserved exactly: 1 of 12 AT-D32 requests consumed, 11 remaining, US$0.016086 retained
+unresolved reservation (not released, settled, or altered), budget policy inactive, live gate false,
+production count 0.
+
+### Boundaries held
+
+- **Zero implementation change in this reconciliation commit.** The accepted candidate `d1deae9` was
+  merged byte-for-byte; only `docs/decisions/`, `AI_AGENTS_PM_STATE.md` and this file changed in the
+  documentation-reconciliation commit that follows it.
+- **Zero real Anthropic calls. Zero diagnostic external calls.** `REASONING_LIVE_NETWORK_ENABLED`
+  false throughout. Budget policy `inactive` throughout, untouched. AT-M4 `NOT AUTHORIZED`.
+  HumanApproval unchanged. Production `NOT GRANTED`. `production_executed_true_count: 0`.
+- **No runtime action.** No rebuild, no redeploy, no restart. The deployed test-runtime checkout
+  (`158c8a8`) is independently confirmed NOT an ancestor of `d1deae9` and does not carry this fix --
+  `RUNTIME_REDEPLOY_REQUIRED = YES`, and it must not be used for another live call until redeployed
+  from the new canonical `main`.
+- **AT-M3.6B.2 Live Validation remains NOT YET SUCCESSFUL.** This stage closes the request-contract
+  remediation as canonical; it does not retry, and does not claim to have retried, the live call
+  itself.
+
+### Merge
+
+`docs/decisions/at-d37-at-m3-6b-2-sonnet-5-request-contract-product-acceptance-and-merge-authorization.md`
+created. `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only reconciliation commit,
+landing on top of the fast-forwarded implementation tip `d1deae9`. No squash, no rebase, no force, no
+merge commit, no cherry-pick rewrite.
