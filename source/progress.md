@@ -21183,3 +21183,117 @@ production count 0.
 created. `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only reconciliation commit,
 landing on top of the fast-forwarded implementation tip `d1deae9`. No squash, no rebase, no force, no
 merge commit, no cherry-pick rewrite.
+
+## Stage AT-M3.6B.2 — Runtime Image Redeploy Evidence Reconciliation (AT-D38)
+
+A runtime image rebuild/redeploy of the internal non-production test orchestrator -- the action
+`NEXT_PERMITTED_STAGE` named after AT-D37 -- was carried out in a prior execution session, but that
+session's result had not been durably reconciled into canonical PM state: `AI_AGENTS_PM_STATE.md`
+still read `AT_M3_6B_2_RUNTIME_IMAGE: REDEPLOY_REQUIRED` as of the AT-D37 canonicalization commit.
+This stage did not repeat the redeploy. It treated the prior report as a CLAIM and independently
+re-derived every required fact directly from the currently running system, then reconciled the
+result. **No rebuild, redeploy, restart, application code change, database mutation, migration,
+budget-policy mutation, live-gate enablement, or Anthropic call (real or diagnostic) was performed
+by this stage.**
+
+### Independent runtime proofs, reproduced this session
+
+```text
+1.  Health           aiagents-test-orchestrator-1 Up (healthy), created 2026-09-10T04:01:49Z;
+                     GET /health -> {"service":"orchestrator","status":"ok"}
+2.  Source identity  test-runtime checkout HEAD = 4282cda794be55203be6b65a47d43a18bdf93e76 (a
+                     descendant of d1deae9, the AT-D37-accepted implementation), working tree
+                     clean, `git diff 4282cda -- shared/ apps/ agents/ migrations/ infra/ scripts/
+                     tests/` empty. sha256 of anthropic_provider.py and live_config.py identical
+                     between the checkout and the running container
+3.  Old defect path  running container source carries no `temperature`/`top_p`/`top_k` emission in
+                     build_request()'s return payload -- only the explanatory comment recording why
+                     they were removed
+4.  build_request()  executed inside the running container with PYTHONPATH=/app, zero network (the
+                     method is a pure dict-builder, confirmed by direct source read first), for all
+                     four authorized verbs -- propose, critique, summarize_decision, decompose_plan.
+                     Every verb: keys={max_tokens,messages,model,system}, temperature/top_p/top_k
+                     absent, model=claude-sonnet-5. Verification script copied in via `docker cp`
+                     and deleted from container and host after use
+5.  Live gate        REASONING_LIVE_NETWORK_ENABLED=false in the container environment;
+                     /operations/safety reasoning_live_enabled=false
+6.  Budget policy    Postgres SELECT (read-only) on llm_budget_policies WHERE
+                     policy_id='d29ad073-9f7c-48b4-876d-cd3cb1343b40' -> status=inactive;
+                     /operations/safety llm_budget_policy_active=false
+7.  AT-D32 evidence   exactly one `reserved_usage` budget-ledger event for provider=anthropic
+                     against this policy, ever: $0.016086, reservation_key
+                     75795266-bd86-4760-b2df-b119266402f4:1, 2026-09-09 09:32:14 UTC, tied to
+                     invocation 75795266-... (verb=propose, status=failed,
+                     failure_category=provider_unauthorized, latency_ms=796). No actual_cost_usd,
+                     no released_reservation -- retained and unresolved, unchanged. No anthropic
+                     budget event exists after that timestamp, i.e. none during the redeploy and
+                     none during this reconciliation
+8.  Schema alignment  reasoning_invocations.artifact_type present with its per-verb CHECK;
+                     provider_mode admits 'live'; reasoning_verb admits 'decompose_plan' -- read
+                     directly from `\d reasoning_invocations`, migrations 039-045 confirmed applied
+9.  Vault             `vault status`: Initialized=true, Sealed=false; /operations/safety
+                     vault_reachable=true, vault_configured=true
+10. SecretProvider    container env SECRET_PROVIDER=vault, which shared/sdk/secrets/provider.py's
+                     factory resolves to VaultKvSecretProvider; /operations/safety
+                     secret_provider=vault, mock_vault_enabled=false
+11. Credential        ANTHROPIC_API_KEY absent from the container's long-lived environment (only
+                     REASONING_PROVIDER=anthropic present, a provider selector not a credential);
+                     no secret value read, rendered, hashed, or measured
+12. Real calls (this session)         0
+13. Diagnostic calls (this session)   0
+14. production_executed_true_count    0 (/operations/safety)
+```
+
+No runtime proof contradicted the prior report's specific claims about the redeployed image's
+content, the request contract, the live-gate posture, the budget-policy state, or the AT-D32
+historical evidence. The redeploy is therefore reconciled as **CLOSED / CANONICAL**, not reopened
+with `REDEPLOY_REQUIRED`.
+
+### Disclosed observation -- not a blocker
+
+Direct inspection of `reasoning_invocations` in the runtime's own `aiagents` database (confirmed via
+`DATABASE_URL` to be the database the running orchestrator actually uses) found roughly thirty
+additional `provider_mode='live'` rows distinct from the one real call above, dated 2026-09-09, with
+markers consistent with the AT-M3.6B.1 test suite's documented injected in-process transport
+(uniform input_tokens=400/output_tokens=300, single-digit-to-low-double-digit millisecond latencies,
+mostly NULL project_id/principal_id) rather than real external calls. Cross-checked against the
+complete budget ledger: exactly one `reserved_usage` event for provider=anthropic exists in this
+database's entire history -- the one named in proof 7 above -- confirming these extra rows carry no
+budget reservation and, per the adapter's own enforced ordering (reservation strictly precedes the
+wire), never reached the wire. Classified INFORMATIONAL / non-blocking: not a production action, not
+an authorization bypass, not a secrets exposure, and not a budget-integrity break. Recorded here for
+transparency; maps to the already-deferred P2 test-DB isolation cleanup item, which this stage
+confirms is still accurate and still non-blocking.
+
+### Reconciliation
+
+`docs/decisions/at-d38-at-m3-6b-2-runtime-image-redeploy-evidence-reconciliation.md` created.
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_RUNTIME_IMAGE` -> `REDEPLOYED / VERIFIED / CLOSED`;
+`AT_M3_6B_2_LIVE_VALIDATION` -> `AUTHORIZED / READY_FOR_COMBINED_EXECUTION`; budget-policy field
+reconfirmed `inactive` via fresh read; `PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`,
+`PREVIOUS_COMPLETED_STAGE`, `CURRENT_STAGE`, `CURRENT_MILESTONE_STATE`, and `RECONCILED_AGAINST_MAIN`
+(now `4282cda794be55203be6b65a47d43a18bdf93e76`) all updated to match. `AT_M4` unchanged: `NOT
+AUTHORIZED`. Historical AT-D32 evidence preserved exactly: 1 of 12 requests consumed, 11 remaining,
+US$0.016086 retained unresolved reservation (not released, settled, or altered).
+
+### Boundaries held
+
+- **Zero implementation change.** Nothing under `apps/`, `shared/`, `agents/`, `migrations/`,
+  `infra/`, `scripts/`, or `tests/` was touched by this stage; only `docs/decisions/`,
+  `AI_AGENTS_PM_STATE.md`, and this file changed.
+- **Zero runtime mutation.** No rebuild, no redeploy, no restart performed by this stage -- the
+  redeploy being reconciled here was already complete before this session started.
+- **Zero database mutation.** Every Postgres access in this stage was `SELECT`-only.
+- **Zero real Anthropic calls. Zero diagnostic external calls.**
+  `REASONING_LIVE_NETWORK_ENABLED` false throughout. Budget policy `inactive` throughout, untouched.
+  AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.
+- **This stage does not authorize the next stage.** AT-M3.6B.2 Live Validation Execution (combined
+  budget activation and retry) still requires its own separate AT-D before any budget-policy
+  activation or Anthropic call. AT-D38 is the redeploy-reconciliation decision only.
+
+### Next
+
+AT-M3.6B.2 LIVE VALIDATION EXECUTION -- Combined Budget Activation and Terminal Cleanup, under its
+own next durable AT-D (expected AT-D39, to be confirmed from repository truth at that time, not
+assumed here).
