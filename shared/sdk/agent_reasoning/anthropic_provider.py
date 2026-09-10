@@ -133,6 +133,74 @@ def _http_failure_category(status_code: int) -> str:
     return "provider_unavailable"
 
 
+#: AT-D40 bounds on the safe validation-error diagnostic appended to a malformed_output message.
+#: Both deliberately small: this is a diagnostic breadcrumb, not a log, and the whole message still
+#: passes through ``sanitize_failure_reason``'s 500-char bound at persistence time regardless.
+_MAX_VALIDATION_ERRORS_REPORTED = 8
+_MAX_VALIDATION_DIAGNOSTIC_CHARS = 300
+
+
+def _sanitize_validation_errors(exc: Exception, artifact_type: type[Any]) -> str:
+    """A bounded, schema-only summary of a Pydantic ``ValidationError``, or ``""``.
+
+    Reports WHERE validation failed and WHAT KIND of failure it was -- never a value, never
+    provider-authored text. A ``loc`` path's first segment is compared against the artifact's OWN
+    top-level schema (``artifact_type.model_fields``) -- local, code-owned vocabulary the provider
+    does not control -- and kept only on a match; every other segment (a name Pydantic did not
+    expect, any nested segment, a list index) is a name the PROVIDER effectively chose and is
+    replaced with a fixed placeholder rather than persisted verbatim. ``type`` is Pydantic's own
+    fixed error-kind string (``missing``, ``extra_forbidden``, ``string_too_long``, ...) -- closed
+    vocabulary the provider does not control either.
+
+    Defensive by construction: ``exc`` is whatever ``model_validate`` raised, which this module does
+    not otherwise trust, so any unexpected shape here degrades to ``""`` rather than ever raising
+    past this function -- a diagnostic that cannot be built must never block the failure it was
+    trying to describe.
+    """
+    errors_fn = getattr(exc, "errors", None)
+    if not callable(errors_fn):
+        return ""
+    try:
+        raw_errors = errors_fn()
+    except Exception:
+        return ""
+    if not isinstance(raw_errors, list) or not raw_errors:
+        return ""
+
+    trusted_top_level_fields = frozenset(getattr(artifact_type, "model_fields", None) or {})
+    reported = raw_errors[:_MAX_VALIDATION_ERRORS_REPORTED]
+
+    entries: list[str] = []
+    for error in reported:
+        if not isinstance(error, dict):
+            continue
+        loc = error.get("loc") or ()
+        segments: list[str] = []
+        for index, segment in enumerate(loc):
+            if isinstance(segment, bool):
+                segments.append("<extra-field>")
+            elif isinstance(segment, int):
+                segments.append("<index>")
+            elif isinstance(segment, str) and index == 0 and segment in trusted_top_level_fields:
+                segments.append(segment)
+            else:
+                segments.append("<extra-field>")
+        loc_repr = ".".join(segments) if segments else "<root>"
+        kind = str(error.get("type") or "unknown")[:40]
+        entries.append(f"{loc_repr}:{kind}")
+
+    if not entries:
+        return ""
+
+    summary = "validation_errors=[" + ",".join(entries) + "]"
+    if len(raw_errors) > len(reported):
+        summary += f"(+{len(raw_errors) - len(reported)}_more)"
+    if len(summary) > _MAX_VALIDATION_DIAGNOSTIC_CHARS:
+        marker = "...[truncated]"
+        summary = summary[: _MAX_VALIDATION_DIAGNOSTIC_CHARS - len(marker)] + marker
+    return summary
+
+
 class AnthropicReasoningProvider:
     """Live reasoning against Anthropic, for the one authorized model.
 
@@ -690,9 +758,16 @@ class AnthropicReasoningProvider:
             # Covers a missing field, a wrong type, an extra field rejected by extra="forbid", and
             # every PlanContent bound -- step count, dependency count, capability count, output
             # count, constraint count, duplicate keys, unknown or self dependency.
+            #
+            # AT-D40: which of those it was used to be lost -- only the exception CLASS survived
+            # to the durable record. `_sanitize_validation_errors` recovers Pydantic's own safe,
+            # schema-only field-path/violation-type detail (never a value, never provider text) so
+            # a future occurrence is self-diagnosing without raw-completion inspection.
+            diagnostic = _sanitize_validation_errors(exc, artifact_type)
+            suffix = f" [{diagnostic}]" if diagnostic else ""
             raise LiveProviderError(
                 f"the live reasoning response does not satisfy {artifact_type.__name__} "
-                f"({type(exc).__name__})",
+                f"({type(exc).__name__}){suffix}",
                 failure_category="malformed_output",
                 usage=usage,
             ) from exc

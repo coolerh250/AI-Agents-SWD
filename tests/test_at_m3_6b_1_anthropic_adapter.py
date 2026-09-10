@@ -312,6 +312,147 @@ class TestStrictParsing:
         assert error.failure_category == "malformed_output"
 
 
+class TestValidationErrorSafeDiagnostics:
+    """AT-D40 -- a schema-validation failure now names WHERE and WHAT KIND, safely.
+
+    Before this slice, every ValidationError collapsed to the same message regardless of which
+    field or constraint actually failed: only the exception CLASS name survived to the durable
+    failure_reason. These tests protect the bounded, schema-only diagnostic that replaces that
+    blindness -- and, just as importantly, protect the boundary that stops it from ever becoming a
+    channel for provider-authored text.
+    """
+
+    async def _refusal(
+        self, payload: dict[str, object], verb: str = "critique"
+    ) -> LiveProviderError:
+        provider = _provider(transport=returning_text(json.dumps(payload)))
+        with pytest.raises(LiveProviderError) as caught:
+            await getattr(provider, verb)(_request(verb, context=_plan_context(verb)))
+        return caught.value
+
+    async def test_success_path_carries_no_diagnostic_suffix(self) -> None:
+        """AT-D40 touches only the ValidationError branch -- a valid artifact is untouched."""
+        provider = _provider(transport=returning_artifact("critique"))
+        result = await provider.critique(_request("critique"))
+        assert isinstance(result, ProviderResult)
+        assert result.artifact.recommendation == "proceed with changes"
+
+    async def test_a_missing_required_field_names_itself(self) -> None:
+        payload = valid_artifact_json("critique")
+        del payload["recommendation"]
+        error = await self._refusal(payload)
+        assert error.failure_category == "malformed_output"
+        assert "recommendation:missing" in str(error)
+
+    async def test_a_wrong_type_names_itself(self) -> None:
+        payload = {**valid_artifact_json("critique"), "concerns": "not-a-list"}
+        error = await self._refusal(payload)
+        assert "concerns:tuple_type" in str(error)
+
+    async def test_a_bound_violation_names_the_field_never_the_value(self) -> None:
+        oversized = "x" * 1001  # CritiqueArtifact.recommendation caps at max_length=1000
+        payload = {**valid_artifact_json("critique"), "recommendation": oversized}
+        error = await self._refusal(payload)
+        message = str(error)
+        assert "recommendation:" in message
+        assert oversized not in message
+
+    async def test_an_unexpected_extra_field_name_is_never_persisted_verbatim(self) -> None:
+        """The one case this slice exists for: extra="forbid" fires on a name the PROVIDER chose,
+        and that name must not become the diagnostic -- only a fixed placeholder may."""
+        sentinel = "zzz_unexpected_provider_invented_field_name_9f3c"
+        payload = {**valid_artifact_json("critique"), sentinel: True}
+        error = await self._refusal(payload)
+        message = str(error)
+        assert sentinel not in message
+        assert "<extra-field>:extra_forbidden" in message
+        assert error.failure_category == "malformed_output"
+
+    async def test_a_credential_shaped_extra_field_name_is_never_persisted_verbatim(self) -> None:
+        """A defense-in-depth case: even a forbidden-marker-shaped field NAME must not leak,
+        independent of the separate marker scan sanitize_failure_reason applies downstream."""
+        payload = {**valid_artifact_json("critique"), "chain_of_thought_and_api_key": "irrelevant"}
+        error = await self._refusal(payload)
+        message = str(error)
+        assert "chain_of_thought" not in message
+        assert "api_key" not in message
+        assert "<extra-field>:extra_forbidden" in message
+
+    async def test_a_list_index_is_normalized_not_persisted_as_a_number(self) -> None:
+        plan = {
+            "objective": "o",
+            "steps": [
+                {"step_key": "a", "title": "ok"},
+                {"step_key": "b", "title": 12345},  # wrong type at index 1
+            ],
+        }
+        payload = {**valid_artifact_json("decompose_plan"), "plan": plan}
+        error = await self._refusal(payload, verb="decompose_plan")
+        message = str(error)
+        assert "<index>" in message
+        assert ".1." not in message  # the literal index must never appear
+        assert "plan.<extra-field>.<index>.<extra-field>:string_type" in message
+
+    async def test_only_a_nested_top_level_field_name_is_trusted(self) -> None:
+        """A trusted name is trusted only at position 0. `plan` (PlanDraftArtifact's own field) may
+        appear; `steps` (PlanContent's field, one level down) must not, because this parser derives
+        trust from `artifact_type.model_fields` -- the ARTIFACT's schema, not its nested models'."""
+        payload = {**valid_artifact_json("decompose_plan"), "plan": {"objective": "o"}}
+        # 'steps' has a default, so this is actually valid -- force a real nested failure instead:
+        payload["plan"] = {"objective": "o", "steps": [{"title": "missing step_key"}]}
+        error = await self._refusal(payload, verb="decompose_plan")
+        message = str(error)
+        assert "plan." in message
+        assert "steps" not in message
+        assert "step_key" not in message
+
+    async def test_more_than_the_ceiling_of_errors_is_truncated_with_a_count(self) -> None:
+        ceiling = adapter_module._MAX_VALIDATION_ERRORS_REPORTED
+        payload = {f"unexpected_field_{i}": True for i in range(ceiling + 4)}
+        payload.update(valid_artifact_json("critique"))
+        error = await self._refusal(payload)
+        message = str(error)
+        assert message.count("<extra-field>:extra_forbidden") == ceiling
+        assert "(+4_more)" in message
+
+    async def test_the_diagnostic_never_exceeds_its_fixed_length_ceiling(self) -> None:
+        """Unit-level, direct: a field NAME cannot inflate the diagnostic (it always collapses to
+        the same short placeholder), so this forces the ceiling the only way that is possible --
+        Pydantic's own `type` string, independently already capped per-entry at 40 chars -- through
+        the private helper directly rather than hoping a realistic payload happens to be long
+        enough."""
+
+        class _FakeValidationError:
+            def errors(self) -> list[dict[str, object]]:
+                return [
+                    {"loc": ("plan", "steps", i, "some_field"), "type": "x" * 40}
+                    for i in range(adapter_module._MAX_VALIDATION_ERRORS_REPORTED)
+                ]
+
+        diagnostic = adapter_module._sanitize_validation_errors(
+            _FakeValidationError(), PlanDraftArtifact
+        )
+        assert len(diagnostic) <= adapter_module._MAX_VALIDATION_DIAGNOSTIC_CHARS
+        assert diagnostic.endswith("...[truncated]")
+
+    async def test_pydantic_error_input_and_context_are_never_persisted(self) -> None:
+        """errors()['input'] and errors()['ctx'] can carry the offending VALUE -- must never leak."""
+        sentinel_value = "sentinel_value_that_must_never_appear_anywhere_c8f1"
+        payload = {**valid_artifact_json("critique"), "recommendation": sentinel_value * 50}
+        error = await self._refusal(payload)
+        assert sentinel_value not in str(error)
+
+    async def test_a_non_pydantic_exception_degrades_to_no_diagnostic_rather_than_crash(
+        self,
+    ) -> None:
+        """_sanitize_validation_errors must never itself raise -- it degrades to "" instead."""
+        assert (
+            adapter_module._sanitize_validation_errors(ValueError("not a pydantic error"), object)
+            == ""
+        )
+        assert adapter_module._sanitize_validation_errors(RuntimeError(), None) == ""
+
+
 def _plan_context(verb: str) -> dict[str, object]:
     if verb == "decompose_plan":
         return {"goal_statement": "ship", "acceptance_criteria": ["a"]}
