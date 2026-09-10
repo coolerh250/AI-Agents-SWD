@@ -55,8 +55,14 @@ CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.
                               same preflight also requires; AT-D35 separately authorizes reactivating
                               that budget policy after it was independently found deactivated -- see
                               CURRENT_GATE
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Test Runtime Database Migration Alignment (canonical, AT-D34;
-                              migrations 039-045 applied and independently verified)
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Anthropic Sonnet 5 Request Compatibility Design Review
+                              (read-only; verdict IMPLEMENTATION_REMEDIATION_REQUIRED, root cause
+                              `temperature` emitted to claude-sonnet-5, credential rotation NOT
+                              justified, zero Anthropic calls). Preceded by the AT-D32 Live Validation
+                              execution session that consumed 1 of 12 real requests and returned HTTP
+                              400, and before that AT-M3.6B.2 Test Runtime Database Migration Alignment
+                              (canonical, AT-D34; migrations 039-045 applied and independently
+                              verified)
 CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D24's scope, AT-D26's
                               scope, AT-D28's scope and AT-D30's scope are each fully consumed by
                               their respective acceptances. AT-D32 authorizes one bounded AT-M3.6B.2
@@ -78,28 +84,50 @@ CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D
                               -- applied and verified. During that stage's final checks, the AT-D33
                               policy was independently found `status='inactive'` (zero associated spend
                               or events; cause outside this project's own history and unresolved).
-                              AT-D35 separately authorizes reversing exactly that status change -- see
+                              AT-D35 separately authorized reversing exactly that status change -- see
                               docs/decisions/at-d35-at-m3-6b-2-live-validation-budget-policy-reactivation-authorization.md.
-                              Live Validation execution itself has still NOT yet been performed. AT-M4
-                              (real work execution) remains NOT AUTHORIZED, and none of AT-D32,
-                              AT-D33, AT-D34, or AT-D35 authorizes AT-M4 or implies any order beyond
-                              the sessions they name
-CURRENT_STAGE:                AT-M3.6B.2-LIVE-VALIDATION-BUDGET-POLICY-REACTIVATION-AUTHORIZATION-RECORDING
-                              (docs-only; AT-D35 recorded, no DB mutation performed by this docs stage)
-NEXT_PERMITTED_STAGE:        First, AT-M3.6B.2 Live Validation Budget Policy Reactivation, strictly
-                              bounded by AT-D35: exactly one status transition (inactive -> active) on
-                              policy_id d29ad073-9f7c-48b4-876d-cd3cb1343b40, no other column changed,
-                              zero Anthropic calls. Then, AT-M3.6B.2 LIVE VALIDATION EXECUTION RETRY,
+                              That reactivation was performed and a Live Validation execution session
+                              THEN RAN and reached the wire for the first time: exactly ONE real
+                              Anthropic request, HTTP 400, zero artifacts, policy returned to
+                              `inactive` on terminal result. A fresh read-only design review found the
+                              cause is NOT the credential but a deterministic local request-contract
+                              defect -- the canonical request emits `temperature`, which Claude Sonnet
+                              5 rejects with HTTP 400. AT-D36 authorizes exactly that bounded
+                              implementation remediation, with the HTTP-400 failure-taxonomy defect and
+                              the structured-output mechanism both explicitly DEFERRED -- see
+                              docs/decisions/at-d36-at-m3-6b-2-anthropic-sonnet-5-request-contract-remediation-authorization.md.
+                              AT-M4 (real work execution) remains NOT AUTHORIZED, and none of AT-D32,
+                              AT-D33, AT-D34, AT-D35, or AT-D36 authorizes AT-M4 or implies any order
+                              beyond the sessions they name
+CURRENT_STAGE:                AT-M3.6B.2-ANTHROPIC-SONNET-5-REQUEST-CONTRACT-REMEDIATION-AUTHORIZATION-RECORDING
+                              (docs-only; AT-D36 recorded and the prior live-attempt evidence durably
+                              reconciled -- 1 of 12 requests consumed, HTTP 400, US$0.016086 retained
+                              reservation. No implementation file touched by this docs stage)
+NEXT_PERMITTED_STAGE:        First, AT-M3.6B.2 Anthropic Sonnet 5 Request Contract Remediation,
+                              strictly bounded by AT-D36: remove `temperature` from the outbound
+                              claude-sonnet-5 payload, retire GENERATION_TEMPERATURE and
+                              GenerationProfile.temperature, and regression-protect all four authorized
+                              verbs against temperature/top_p/top_k. Zero Anthropic calls, no live-gate
+                              enablement, no budget mutation, no credential access, no failure-taxonomy
+                              change, no migration, no runtime deploy, and NO merge to main by the
+                              implementation session itself. Then
+                              AT_M3_6B_2_SONNET_5_REQUEST_CONTRACT_INDEPENDENT_VALIDATION_1, a separate
+                              fresh session. Then a separate PO acceptance and merge authorization.
+                              Then runtime rebuild/redeploy (REQUIRED -- the change is in shared/sdk/,
+                              which the runtime image carries; the existing image must NOT serve
+                              another live call). Then a fresh budget-policy reactivation
+                              authorization. Only then AT-M3.6B.2 LIVE VALIDATION EXECUTION RETRY,
                               strictly bounded by AT-D32: one session, anthropic / claude-sonnet-5
-                              only, <=12 requests, <=US$5.00 total, <=US$0.50/call, verbs
-                              propose/critique/summarize_decision/decompose_plan only, ephemeral
-                              live-gate only, no Git/GitHub mutation during the session, and that
-                              session must deactivate the AT-D33/AT-D35 policy on reaching any
-                              terminal result. That execution session's own result
-                              (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires a further, separate
-                              Product Owner acceptance before being treated as canonical -- AT-D32
-                              authorizes the attempt, not its outcome. AT-M4 remains NOT AUTHORIZED and
-                              is not implied by AT-D32, AT-D33, AT-D34, or AT-D35.
+                              only, <=11 remaining requests of the original 12, <=US$5.00 total,
+                              <=US$0.50/call, verbs propose/critique/summarize_decision/decompose_plan
+                              only, ephemeral live-gate only, no Git/GitHub mutation during the
+                              session, and that session must deactivate the AT-D33/AT-D35 policy on
+                              reaching any terminal result. Each stage's own result requires a further,
+                              separate Product Owner acceptance before being treated as canonical --
+                              AT-D36 authorizes an implementation, not its acceptance, exactly as
+                              AT-D32 authorizes an attempt, not its outcome. AT-M4 remains NOT
+                              AUTHORIZED and is not implied by AT-D32, AT-D33, AT-D34, AT-D35, or
+                              AT-D36.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -420,20 +448,41 @@ AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT,
                                 next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
                                 Recorded unchanged as the historical record of what this field named
                                 at AT-D27's canonicalization
-AT_M3_6B_2_LIVE_VALIDATION:    AUTHORIZED / BLOCKED_ON_BUDGET_POLICY_REACTIVATION -- the schema
-                                prerequisite (AT-D34) is applied and independently verified (migrations
-                                039-045, zero-network ReasoningStore/ReasoningService proofs both
-                                clean); the budget-policy prerequisite (AT-D33) was found
-                                `status='inactive'` during that stage's final checks, cause unresolved
-                                but confirmed harmless (zero associated spend/events). AT-D35 now
-                                authorizes reactivating it
+AT_M3_6B_2_LIVE_VALIDATION:    EXECUTED / FAILED_ON_REQUEST_CONTRACT / DESIGN_REVIEW_COMPLETED /
+                                IMPLEMENTATION_REMEDIATION_AUTHORIZED -- both prerequisites closed
+                                (AT-D34 migrations 039-045 applied and independently verified; AT-D35
+                                policy reactivation performed), and an execution session then ran under
+                                AT-D32 and REACHED THE WIRE for the first time. It issued exactly ONE
+                                real Anthropic request, which returned HTTP 400 and produced zero
+                                reasoning artifacts. That session's own hypothesis -- "most likely the
+                                API key or its format" -- was tested by a subsequent fresh read-only
+                                design review and found NOT SUPPORTED: HTTP 400 is
+                                invalid_request_error, not authentication_error (which is 401). The
+                                review found a deterministic local request-contract defect that fully
+                                explains the 400 -- `AnthropicReasoningProvider.build_request()` emits
+                                a top-level `temperature` (0.2), and Claude Sonnet 5 rejects sampling
+                                parameters (temperature/top_p/top_k) with HTTP 400. AT-D36 authorizes
+                                the bounded remediation. Live Validation must be RETRIED after that
+                                remediation is independently validated, PO-accepted, merged, and the
+                                runtime redeployed
 AT_M3_6B_2_LIVE_VALIDATION_AUTHORIZED_BY: AT-D32 / docs/decisions/at-d32-at-m3-6b-2-live-validation-authorization.md
+AT_M3_6B_2_LIVE_VALIDATION_ROOT_CAUSE: REQUEST CONTRACT -- `temperature` emitted to claude-sonnet-5.
+                                Credential NOT inspected and NOT implicated;
+                                CREDENTIAL_ROTATION_NOT_JUSTIFIED. Separately confirmed and DEFERRED:
+                                `_http_failure_category()` maps every 4xx to `provider_unauthorized`,
+                                so this 400 was recorded as an authorization failure -- a real but
+                                SEPARABLE taxonomy defect that did not cause a retry (that category is
+                                outside RETRYABLE_FAILURE_CATEGORIES) and does not block the request
+                                fix -- see AT-D36 section 4
 AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: AUTHORIZED / PROVISIONED, CURRENTLY INACTIVE -- policy_id
                                 `d29ad073-9f7c-48b4-876d-cd3cb1343b40`, scope=provider/anthropic,
-                                $5/day, $5/month, enforcement=block. AT-D35 authorizes reactivation
-                                (inactive -> active, no other column). Its `status` must still be
-                                verified fresh (not assumed) before any subsequent Live Validation
-                                execution attempt -- see docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md
+                                $5/day, $5/month, enforcement=block. AT-D35's reactivation was
+                                performed, the execution session ran, and the policy was returned to
+                                `inactive` on that session reaching its terminal result, as AT-D35's
+                                lifecycle clause requires. Its `status` must still be verified fresh
+                                (not assumed) before any subsequent Live Validation execution attempt,
+                                and reactivating it again requires its own authorization -- AT-D36 does
+                                NOT authorize it -- see docs/decisions/at-d33-at-m3-6b-2-live-validation-budget-policy-provisioning-authorization.md
                                 and docs/decisions/at-d35-at-m3-6b-2-live-validation-budget-policy-reactivation-authorization.md
 AT_M3_6B_2_TEST_RUNTIME_DATABASE_MIGRATION_ALIGNMENT: COMPLETED / CANONICAL -- migrations 039-045
                                 applied and independently verified (all target columns/constraints
@@ -441,8 +490,20 @@ AT_M3_6B_2_TEST_RUNTIME_DATABASE_MIGRATION_ALIGNMENT: COMPLETED / CANONICAL -- m
                                 zero-network ReasoningStore/ReasoningService dry runs clean). Migrations
                                 031-035 (a separate, unrelated chain) remain explicitly out of scope and
                                 untouched -- see AT-D34 / docs/decisions/at-d34-at-m3-6b-2-test-runtime-database-migration-alignment-authorization.md
-AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: NOT YET EXECUTED -- no execution session has run
-                                under AT-D32; this stays unset until one does and reports
+AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: 1 of 12 CONSUMED -- one execution session ran under
+                                AT-D32 and issued exactly ONE real Anthropic request to
+                                api.anthropic.com/v1/messages. HTTP result 400. Successful real
+                                provider correlations: 0. Successful reasoning artifacts: 0. Eleven
+                                requests remain in AT-D32's envelope. Effective unresolved RETAINED
+                                budget reservation: US$0.016086 -- deliberately NOT released, settled,
+                                deleted or rewritten. The adapter releases a reservation only where the
+                                absence of an external request is provable; this call reached the wire,
+                                so the conservative estimate stands as spend evidence. No settlement or
+                                token usage is recorded because the provider returned no usage block on
+                                the error response, and none is fabricated here.
+                                `provider_request_id` was not captured: the adapter reads the message
+                                id from the response body, which an error body does not carry, and it
+                                does not read the `request-id` response header
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
                                 INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
                                 CANONICAL / CLOSED
@@ -504,31 +565,54 @@ LIVE_EXTERNAL_VALIDATION:      AUTHORIZED FOR AT-M3.6B.2 BOUNDED RUN ONLY -- AT-
                                 each BLOCKED before any call on prerequisites: a missing budget-policy
                                 row (AT-D33 closed that), then missing canonical migrations 039-045
                                 (AT-D34 closed that). The AT-D33 policy was then found deactivated by
-                                something outside this project's history; AT-D35 now authorizes
-                                reactivating it. REAL_EXTERNAL_CALLS remains 0 until a subsequent
-                                execution session runs and reports
+                                something outside this project's history; AT-D35 authorized reactivating
+                                it. A third attempt then RAN and reached the wire: exactly ONE real
+                                request, HTTP 400, zero artifacts. REAL_EXTERNAL_CALLS is now 1 of 12;
+                                eleven remain. Root cause is a local request-contract defect
+                                (`temperature` emitted to claude-sonnet-5), NOT the credential --
+                                AT-D36 authorizes the bounded remediation. A RETRY requires the
+                                remediation to be independently validated, PO-accepted, merged and the
+                                runtime redeployed first, and a fresh budget-policy reactivation
+                                authorization
 LIVE_NETWORK_GATE:             DEFAULT FALSE. Temporary ephemeral-process enablement authorized only
                                 during an AT-D32-bounded execution session; the long-lived
-                                orchestrator stays false throughout and after. Untouched by AT-D33,
-                                AT-D34, or AT-D35 (none makes any Anthropic call or opens this gate)
-PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 LIVE VALIDATION BUDGET POLICY REACTIVATION, then LIVE
+                                orchestrator stays false throughout and after. It was opened
+                                ephemerally for the one executed session described above and is false
+                                again now. Untouched by AT-D33, AT-D34, AT-D35, or AT-D36 (none makes
+                                any Anthropic call or opens this gate)
+PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 SONNET 5 REQUEST CONTRACT REMEDIATION, then its Independent
+                                Validation and PO acceptance, then runtime redeploy, then LIVE
                                 VALIDATION EXECUTION RETRY -- the runtime secret substrate, the
                                 deployed reasoning runtime, the real credential, the live validation
-                                authorization (AT-D32), the budget-policy prerequisite (AT-D33,
-                                provisioned), and the schema-alignment prerequisite (AT-D34, applied
-                                and verified) are all canonical; the standing gap is that the policy
-                                AT-D33 provisioned is currently inactive and AT-D35's reactivation has
-                                not yet been executed, and no execution session has yet run and reported
-NEXT_PRODUCT_STAGE:            First, AT-M3.6B.2 Live Validation Budget Policy Reactivation under
-                                AT-D35's exact bounds (one status transition, inactive -> active, on
-                                policy_id d29ad073-9f7c-48b4-876d-cd3cb1343b40, no other column
-                                changed). Then AT-M3.6B.2 Live Validation EXECUTION RETRY under
-                                AT-D32's exact bounds -- that session must deactivate the policy again
-                                on reaching any terminal result. None of AT-D32, AT-D33, AT-D34, or
-                                AT-D35 itself makes any call. The execution session's result
-                                (PASS/FAIL/BLOCKED/DESIGN_REVIEW_REQUIRED) requires its own separate
-                                Product Owner acceptance before being treated as canonical, matching
-                                every prior AT-M3.6B.2 implementation/acceptance split
+                                authorization (AT-D32), the budget-policy prerequisite (AT-D33/AT-D35)
+                                and the schema-alignment prerequisite (AT-D34) are all canonical, and
+                                the wire has now been reached. The standing gap is no longer a
+                                prerequisite but a CODE DEFECT: the canonical request carries a
+                                `temperature` field that Claude Sonnet 5 rejects with HTTP 400, so every
+                                request this adapter builds fails deterministically. AT-D36 authorizes
+                                the bounded fix
+NEXT_PRODUCT_STAGE:            First, AT-M3.6B.2 Anthropic Sonnet 5 Request Contract Remediation under
+                                AT-D36's exact bounds (remove `temperature` from the outbound payload;
+                                retire GENERATION_TEMPERATURE and GenerationProfile.temperature;
+                                regression-protect all four verbs against temperature/top_p/top_k;
+                                zero Anthropic calls). Then
+                                AT_M3_6B_2_SONNET_5_REQUEST_CONTRACT_INDEPENDENT_VALIDATION_1, a
+                                separate fresh validation session. Then a separate PO acceptance and
+                                merge authorization. Then runtime rebuild/redeploy --
+                                RUNTIME_REDEPLOY_REQUIRED_AFTER_CANONICAL_ACCEPTANCE = YES, because the
+                                change is inside shared/sdk/, which the runtime image carries; the
+                                existing runtime image MUST NOT be used for another live call. Then a
+                                fresh budget-policy reactivation authorization, and only then
+                                AT-M3.6B.2 Live Validation EXECUTION RETRY under AT-D32's remaining
+                                envelope of 11 requests -- that session must deactivate the policy again
+                                on reaching any terminal result. None of AT-D32, AT-D33, AT-D34, AT-D35
+                                or AT-D36 itself makes any call. Each stage result requires its own
+                                separate Product Owner acceptance before being treated as canonical,
+                                matching every prior AT-M3.6B.2 implementation/acceptance split.
+                                DEFERRED and not on this path: the HTTP-400 -> provider_unauthorized
+                                taxonomy correction (needs a migration; AT-D36 section 4), the
+                                structured-output migration to output_config.format, and the P2
+                                test-DB isolation cleanup
 AT_M4:                         NOT AUTHORIZED
 ```
 

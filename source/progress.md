@@ -20882,3 +20882,165 @@ under this same authorization, not by this commit.
 created, drafted uncommitted, reviewed and approved by the Product Owner before commit.
 `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward only onto
 canonical main `58ec92a`. No squash, no rebase, no force, no merge commit, no cherry-pick rewrite.
+
+---
+
+## Step AT-M3.6B.2-ANTHROPIC-SONNET-5-REQUEST-CONTRACT-REMEDIATION-AUTHORIZATION-RECORDING - Live Validation Executed and Failed on Request Contract; Bounded Remediation Authorized (PO ACCEPTED / DOCS-ONLY / CANONICAL)
+
+**Status: the AT-D32 Live Validation execution session RAN and reached the Anthropic wire for the
+first time. It issued exactly ONE real request, received HTTP 400, and produced zero reasoning
+artifacts. A fresh read-only design review found the cause is NOT the credential but a deterministic
+local request-contract defect. `AT-D36` records the Product Owner's authorization of the bounded
+remediation. Canonical main at decision: `92d7fa7`. This stage is docs-only: no implementation file,
+no DB mutation, no Vault action, no Anthropic request, no live-gate enablement. Real Anthropic calls
+by this stage: 0. `REASONING_LIVE_NETWORK_ENABLED`: false throughout.
+`production_executed_true_count: 0`.**
+
+### What actually happened at the wire
+
+After AT-D35's reactivation was performed, the execution session authorized by AT-D32 ran. Unlike the
+two prior attempts -- each of which was BLOCKED before any call on a prerequisite -- this one passed
+preflight and reached the Anthropic Messages endpoint.
+
+```text
+Real Anthropic requests:               1 of 12 (eleven remain in AT-D32's envelope)
+HTTP result:                           400
+Adapter failure classification:        provider_unauthorized
+Successful real provider correlations: 0
+Successful reasoning artifacts:        0
+Response body persisted/exposed:       none
+Effective unresolved retained reservation: US$0.016086
+Budget policy after session:           inactive (returned per AT-D35's lifecycle clause)
+Live gate after session:               false
+production_executed_true_count:        0
+```
+
+The reservation is **retained deliberately**. The adapter gives a reservation back only where the
+absence of an external request is provable; this call reached the wire, so the conservative estimate
+stands as spend evidence rather than being released to zero. No settlement or token usage is recorded
+because the provider returned no usage block on the error response, and none is fabricated here.
+
+### Why the session's own hypothesis was rejected
+
+That session reported the failure as "most likely the API key or its format". A fresh read-only
+design review (`AT-M3.6B.2-ANTHROPIC-SONNET-5-REQUEST-COMPATIBILITY-DESIGN-REVIEW-1`) tested that
+claim against the official Anthropic Messages API contract and against canonical source, and found
+it **NOT SUPPORTED**:
+
+```text
+HTTP 400 = invalid_request_error   malformed or unsupported request content (and some
+                                     organization/workspace spend-limit conditions)
+HTTP 401 = authentication_error    malformed, expired, or revoked API key
+```
+
+A credential fault surfaces as **401**, not 400. The review additionally noted positive evidence the
+credential resolved: the adapter resolves the secret LAST, immediately before the wire, and a missing
+or unusable secret refuses without issuing any HTTP request at all -- so a real request reaching the
+API and being evaluated *as a request* is itself evidence against the credential hypothesis. The
+credential was never read, and `CREDENTIAL_ROTATION_NOT_JUSTIFIED` was recorded.
+
+### The deterministic defect
+
+```text
+Defect:      AnthropicReasoningProvider.build_request() unconditionally emits a top-level
+               "temperature" field, value GENERATION_TEMPERATURE = 0.2, carried via
+               GenerationProfile.temperature, for every reasoning verb
+Contract:    Claude Sonnet 5 REMOVED sampling parameters -- temperature, top_p and top_k are
+               rejected with HTTP 400 invalid_request_error
+Consequence: every request this adapter can build fails deterministically. The observed 1-of-12
+               HTTP 400 is fully accounted for without any account, credential or network hypothesis
+```
+
+The review cleared every other known Sonnet 5 breaking change: `top_p`, `top_k`, legacy
+`thinking`/`budget_tokens`, assistant-message prefill, `tools` and `tool_choice` are all **absent**
+from the canonical request, and endpoint, model id, `anthropic-version` header, `max_tokens` and the
+single-user-message/top-level-system role shape are all **correct**.
+
+### What AT-D36 authorizes, and what it does not
+
+```text
+Authorized:     (1) remove "temperature" from the Anthropic Messages payload in
+                      shared/sdk/agent_reasoning/anthropic_provider.py
+                (2) retire GENERATION_TEMPERATURE and GenerationProfile.temperature in
+                      shared/sdk/agent_reasoning/live_config.py, including dataclass field,
+                      generation_profile() construction, annotations, docstrings and comments
+                (3) direct adapter/provider tests protecting the contract -- for all four authorized
+                      verbs, the payload must contain none of temperature, top_p, top_k
+Not authorized: any Anthropic call; live-gate enablement; budget-policy reactivation or any budget
+                mutation; release/settlement/deletion of the retained US$0.016086 reservation;
+                credential access of any kind; a new FailureCategory or any migration; a
+                structured-output migration to output_config.format; ReasoningService retry
+                semantics; BudgetPolicyStore; SecretProvider; Vault scripts; runtime rebuild or
+                redeploy; test-DB cleanup; AT-M3.5; AT-M4; production; merging the candidate to main
+```
+
+Dead configuration is **removed** rather than retained. `temperature=None` left in place and still
+serialized is explicitly unacceptable -- the field must be absent from the outbound payload, and a
+configured sampling value that cannot legally be sent is an attractive misconfiguration trap for the
+next reader.
+
+### Two things deliberately deferred
+
+The same review confirmed a second real defect: `_http_failure_category()` maps every `4xx` to
+`provider_unauthorized`, which is exactly what pointed the previous investigation at the credential.
+It is **CONFIRMED / SEPARABLE / NON_BLOCKING_FOR_THIS_FIX / DEFERRED**. Correcting it needs a new
+`FailureCategory` member plus a forward and down migration amending
+`chk_reasoning_invocations_failure_category` (migration 044) -- it touches the canonical taxonomy and
+the schema, it is not required for a Sonnet 5 request to be *accepted*, and retryability is already
+correct today (`provider_unauthorized` sits outside `RETRYABLE_FAILURE_CATEGORIES`, so the mis-label
+caused no retry and multiplied no spend).
+
+The structured-output mechanism is likewise deferred: the review classified the existing
+prompt-embedded JSON Schema plus strict client-side parser as **valid but suboptimal**, and
+explicitly **not** the HTTP 400 root cause. It must not be improved opportunistically inside this
+slice.
+
+This is the point where the standard's "stop rather than build another layer" rule was applied rather
+than cited: the taxonomy correction would be a second mechanism over the same root problem, so it was
+separated into its own future stage instead of being folded in here.
+
+### Runtime drift, and the test-DB finding
+
+The runtime checkout (`158c8a8`) was independently confirmed **byte-identical to canonical main for
+every file participating in the reasoning path** -- `git diff` across `shared/sdk/agent_reasoning/`,
+`shared/sdk/llm_budget/` and `shared/sdk/secrets/` returns empty. Classified **P3 /
+NON_BLOCKING_FOR_ROOT_CAUSE**. That said, the remediation lands squarely inside those files, so
+`RUNTIME_REDEPLOY_REQUIRED_AFTER_CANONICAL_ACCEPTANCE = YES` and the existing image must not serve
+another live call.
+
+The 26 fake `provider_mode=live` `reasoning_invocations` rows and 4 dangling `STARTED` rows are
+classified **P2 / AUDIT-CLARITY / NON_ROOT_CAUSE** and left in place. They are consistent with
+deterministic tests driving the adapter through an injected in-process transport, which opens no
+socket while still writing `provider_mode='live'` (that column is the provider *class*, not evidence
+of a network call). Isolating live-shaped regression tests into an ephemeral test database is
+recommended as PRE_PRODUCTION remediation in its own stage, deliberately not mixed into this one.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION` now `EXECUTED /
+FAILED_ON_REQUEST_CONTRACT / DESIGN_REVIEW_COMPLETED / IMPLEMENTATION_REMEDIATION_AUTHORIZED`;
+`AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS` moved from `NOT YET EXECUTED` to `1 of 12 CONSUMED`
+with the retained reservation recorded; a new `AT_M3_6B_2_LIVE_VALIDATION_ROOT_CAUSE` field added;
+`AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY`, `LIVE_EXTERNAL_VALIDATION`, `LIVE_NETWORK_GATE`,
+`PRODUCT_CRITICAL_PATH`, `NEXT_PRODUCT_STAGE`, `PREVIOUS_COMPLETED_STAGE`, and the section 2
+`CURRENT_GATE` / `CURRENT_STAGE` / `NEXT_PERMITTED_STAGE` fields all updated to match. `AT_M4`
+unchanged: `NOT AUTHORIZED`. No implementation tree (`apps/`, `shared/`, `agents/`, `migrations/`,
+`infra/`, `scripts/`, `tests/`) touched by this docs-only stage.
+
+### Boundaries held
+
+- **No code, DB, Vault, Docker, or runtime action in this commit.** No status changed, no key read,
+  no restart, no live-gate enablement, no reservation released.
+- **Zero real Anthropic calls and zero diagnostic external calls by this stage.**
+  `REASONING_LIVE_NETWORK_ENABLED` false throughout. Budget policy `inactive` throughout. AT-M4
+  `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+  `production_executed_true_count: 0`.
+- **The remediation itself is authorized but NOT YET PERFORMED by this commit.** AT-D36 unblocks an
+  implementation session; it is neither that implementation nor its acceptance.
+
+### Merge
+
+`docs/decisions/at-d36-at-m3-6b-2-anthropic-sonnet-5-request-contract-remediation-authorization.md`
+created. `AI_AGENTS_PM_STATE.md` and this file updated in the same docs-only commit. Fast-forward
+only onto canonical main `92d7fa7`. No squash, no rebase, no force, no merge commit, no cherry-pick
+rewrite.
