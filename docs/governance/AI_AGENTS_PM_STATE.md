@@ -20,8 +20,9 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-09-10
-RECONCILED_AGAINST_MAIN:     4282cda794be55203be6b65a47d43a18bdf93e76
-RECONCILED_BY_STAGE:         AT-M3.6B.2-RUNTIME-IMAGE-REDEPLOY-EVIDENCE-RECONCILIATION-1
+RECONCILED_AGAINST_MAIN:     310a787e3b4acb29c50fdb0c1048fd18a27df004
+RECONCILED_BY_STAGE:         AT-M3.6B.2-CRITIQUE-VALIDATIONERROR-SAFE-DIAGNOSTIC-METADATA-REMEDIATION-1
+                              (AT-D40)
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -61,8 +62,22 @@ CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.
                               `main`; AT-D38 then independently re-verified, from the running
                               non-production test orchestrator, that a runtime image redeploy executed
                               in a prior session actually carries that remediation, and reconciled it
-                              CLOSED / CANONICAL -- see CURRENT_GATE
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Runtime Image Redeploy Evidence Reconciliation (AT-D38;
+                              CLOSED / CANONICAL; AT-D39 then authorized the combined
+                              budget-activation-and-terminal-cleanup execution as one bounded
+                              transaction, which RAN: propose PASS, a same-correlation replay PASS
+                              with zero additional external calls, decompose_plan PASS, summarize_decision
+                              PASS, and critique TERMINAL FAILURE (HTTP 200, malformed_output,
+                              CritiqueArtifact not persisted). A fresh read-only design review
+                              root-caused the critique failure to a Pydantic schema-validation failure
+                              on an otherwise complete, non-truncated JSON response, but could not name
+                              the exact violated field because the parser discards Pydantic's own safe
+                              per-field error detail; AT-D40 authorizes a bounded diagnostic-capture
+                              remediation to close that gap -- see CURRENT_GATE
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Live Validation Execution Combined Authorization (AT-D39;
+                              docs-only authorization of the combined budget-activation-and-retry
+                              execution, performing zero Anthropic calls and zero runtime mutation
+                              itself). Preceded by AT-M3.6B.2 Runtime Image Redeploy Evidence
+                              Reconciliation (AT-D38;
                               independently re-verified fourteen runtime proofs against the running
                               test orchestrator -- deployed source byte-identical to canonical main
                               4282cda (a descendant of d1deae9), the old temperature-emitting request
@@ -124,28 +139,24 @@ CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D
                               the AT-D33/AT-D35 budget policy stays inactive. AT-M4 (real work
                               execution) remains NOT AUTHORIZED, and none of AT-D32 through AT-D38
                               authorizes AT-M4 or implies any order beyond the sessions they name
-CURRENT_STAGE:                AT-M3.6B.2-RUNTIME-IMAGE-REDEPLOY-EVIDENCE-RECONCILIATION-1 (AT-D38
-                              recorded; the runtime image redeploy executed in a prior session was
-                              independently re-verified against the currently running non-production
-                              test orchestrator and reconciled as CLOSED / CANONICAL. No rebuild, no
-                              redeploy, no restart, no application code change, no database mutation,
-                              no budget-policy mutation, no live-gate enablement and no Anthropic call
-                              (real or diagnostic) were performed by this stage -- see AT-D38 section 2
-                              for the fourteen independently reproduced runtime proofs)
-NEXT_PERMITTED_STAGE:        AT-M3.6B.2 LIVE VALIDATION EXECUTION -- Combined Budget Activation and
-                              Terminal Cleanup. The previously granted Product Owner authorization for
-                              that combined live execution remains conceptually valid, but that
-                              execution must still create its own next durable AT-D (expected AT-D39,
-                              to be confirmed from repository truth at that time) before any
-                              budget-policy activation or Anthropic call. Strictly bounded by AT-D32:
-                              one session, anthropic / claude-sonnet-5 only, <=11 remaining requests of
-                              the original 12, <=US$5.00 total, <=US$0.50/call, verbs
-                              propose/critique/summarize_decision/decompose_plan only, ephemeral
-                              live-gate only, no Git/GitHub mutation during the session, and that
-                              session must deactivate the AT-D33/AT-D35 policy on reaching any terminal
-                              result. AT-D38 (this reconciliation) and that next live-execution AT-D
-                              are NOT combined into one decision. AT-M4 remains NOT AUTHORIZED and is
-                              not implied by AT-D32 through AT-D38.
+CURRENT_STAGE:                AT-M3.6B.2-CRITIQUE-VALIDATIONERROR-SAFE-DIAGNOSTIC-METADATA-REMEDIATION-1
+                              (AT-D40 recorded; authorizes a bounded diagnostic-capture remediation to
+                              AnthropicReasoningProvider._parse()'s ValidationError branch only, so a
+                              future malformed_output outcome on a schema-validation failure persists
+                              safe, schema-only field-path/violation-type detail instead of only an
+                              exception class name. No CritiqueArtifact schema change, no critique
+                              prompt change, no migration, no runtime mutation, no budget-policy
+                              mutation, no live-gate enablement and no Anthropic call (real or
+                              diagnostic) authorized or performed by this docs-only reconciliation
+                              commit -- implementation happens on a separate candidate branch)
+NEXT_PERMITTED_STAGE:        AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION_1
+                              -- a fresh Independent Implementation Validation session against the
+                              AT-D40-authorized candidate branch. Separately, AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE
+                              (canonicalizing the AT-D39-authorized execution's overall reported
+                              result) remains outstanding and is not supplied by AT-D40. Any future
+                              critique-only live revalidation is a separate, later authorization under
+                              AT-D32's remaining envelope (7 of 12 requests). AT-M4 remains NOT
+                              AUTHORIZED and is not implied by AT-D32 through AT-D40.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -563,23 +574,55 @@ AT_M3_6B_2_LIVE_VALIDATION_REAL_EXTERNAL_CALLS: 1 of 12 CONSUMED -- one executio
                                 `provider_request_id` was not captured: the adapter reads the message
                                 id from the response body, which an error body does not carry, and it
                                 does not read the `request-id` response header
-AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION: AUTHORIZED / EXECUTION_READY -- AT-D39 authorizes one
-                                bounded session: exact policy d29ad073-9f7c-48b4-876d-cd3cb1343b40
-                                reactivated strictly inside that session, live validation run
-                                (propose, same-correlation replay, decompose_plan mandatory;
-                                critique/summarize_decision conditional on full remaining envelope),
-                                policy returned to inactive as part of the same bounded transaction
-                                before the session's terminal result. Authorized by AT-D39 /
-                                docs/decisions/at-d39-at-m3-6b-2-live-validation-execution-combined-budget-activation-and-terminal-cleanup-authorization.md.
-                                Not yet executed by this record. AT_D32_REAL_REQUESTS: 1 of 12
-                                CONSUMED. AT_D32_REAL_REQUESTS_REMAINING: 11.
+AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION: EXECUTED / PARTIAL_TECHNICAL_SUCCESS -- the AT-D39
+                                bounded session ran: exact policy d29ad073-9f7c-48b4-876d-cd3cb1343b40
+                                was reactivated strictly inside that session and returned to
+                                `inactive` on terminal result, independently reconfirmed by direct
+                                read-only Postgres SELECT. Reported and independently corroborated
+                                (via safe, non-content invocation-row columns) outcome: propose PASS,
+                                a same-correlation replay PASS with zero additional external calls,
+                                decompose_plan PASS (durable PlanDraftArtifact, not dispatched),
+                                summarize_decision PASS, and critique TERMINAL FAILURE -- HTTP 200,
+                                failure_category=malformed_output, CritiqueArtifact NOT persisted
+                                (correlation_id 65496538-621c-4c22-99e0-f510507b358f). See
+                                AT_M3_6B_2_CRITIQUE_COMPATIBILITY below for the root-cause finding.
+                                AT_D32_REAL_REQUESTS: 5 of 12 CONSUMED.
+                                AT_D32_REAL_REQUESTS_REMAINING: 7.
                                 AT_D32_RETAINED_UNRESOLVED_RESERVATION: US$0.016086 (preserved,
-                                unresolved). AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: INACTIVE /
-                                COMBINED_EXECUTION_ACTIVATION_AUTHORIZED. LIVE_NETWORK_GATE: DEFAULT
-                                FALSE. AT_M4: NOT AUTHORIZED. PRODUCTION: NOT GRANTED. Result of the
-                                execution session itself requires its own separate
-                                AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE before this field is
-                                updated further
+                                unresolved, unchanged by this session). AT_D32_EFFECTIVE_VALIDATION_COST:
+                                US$0.060134 (settled actual + all unresolved retained reservations).
+                                AT_M3_6B_2_LIVE_VALIDATION_BUDGET_POLICY: INACTIVE (independently
+                                reconfirmed post-session). LIVE_NETWORK_GATE: DEFAULT FALSE
+                                (independently reconfirmed post-session). AT_M4: NOT AUTHORIZED.
+                                PRODUCTION: NOT GRANTED. `production_executed_true_count: 0`
+                                (independently reconfirmed post-session). Full Product Owner
+                                acceptance of this execution's overall result --
+                                AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE -- remains a SEPARATE,
+                                not-yet-recorded decision; this entry states the observed technical
+                                facts only and does not itself canonicalize them as accepted
+AT_M3_6B_2_CRITIQUE_COMPATIBILITY: DESIGN_REVIEW_COMPLETED / DIAGNOSTIC_OBSERVABILITY_REMEDIATION_AUTHORIZED
+                                -- a fresh read-only design review
+                                (AT-M3.6B.2-CRITIQUE-ARTIFACT-COMPATIBILITY-DESIGN-REVIEW-1)
+                                root-caused the critique failure above using only safe durable
+                                evidence (bounded read-only SELECT of non-content invocation columns,
+                                plus an offline no-network local reproduction against the canonical
+                                CritiqueArtifact model). Finding: the response reached the wire (HTTP
+                                200), was billed and settled, and was a complete, syntactically valid
+                                JSON object well inside its token ceiling (671/1500 output tokens) --
+                                deterministically ruling out truncation, markdown fencing, and prose
+                                preamble as the cause, because each of those produces a different
+                                persisted message ("...is not valid JSON") than the one actually
+                                recorded ("...does not satisfy CritiqueArtifact (ValidationError)").
+                                The response failed Pydantic schema validation against
+                                CritiqueArtifact -- a missing field, wrong type, forbidden extra
+                                field, or bound violation -- but WHICH of those occurred could not be
+                                determined, because `_parse()` persists only the exception class name
+                                and discards Pydantic's own safe, schema-only `errors()` detail
+                                (field path and violation type, never a value). AT-D40 authorizes a
+                                bounded diagnostic-capture remediation to close exactly that gap. No
+                                CritiqueArtifact schema change, no critique prompt change, and no
+                                Anthropic call (real or diagnostic) are authorized or were performed.
+                                See docs/decisions/at-d40-at-m3-6b-2-critique-validationerror-safe-diagnostic-metadata-remediation-authorization.md
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
                                 INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
                                 CANONICAL / CLOSED
@@ -668,20 +711,21 @@ PRODUCT_CRITICAL_PATH:         AT-M3.6B.2 SONNET 5 REQUEST CONTRACT REMEDIATION 
                                 remaining path is purely authorization: a fresh budget-policy
                                 reactivation, then LIVE VALIDATION EXECUTION RETRY, both under one new
                                 combined AT-D that this reconciliation does not itself supply
-NEXT_PRODUCT_STAGE:            AT-M3.6B.2 LIVE VALIDATION EXECUTION -- Combined Budget Activation and
-                                Terminal Cleanup. A fresh budget-policy reactivation authorization is
-                                required (AT-D35's reactivation was already consumed and the policy
-                                returned to inactive on that session's terminal result -- confirmed
-                                inactive again by AT-D38 -- so a new authorization is required, not a
-                                reuse), then AT-M3.6B.2 Live Validation EXECUTION RETRY under AT-D32's
-                                remaining envelope of 11 requests -- that session must deactivate the
-                                policy again on reaching any terminal result. This combined stage
-                                requires its own next durable AT-D (expected AT-D39, to be confirmed
-                                from repository truth at that time, not assumed here) before any
-                                budget-policy activation or Anthropic call; AT-D38 (this reconciliation)
-                                does not supply that authorization. Each stage result requires its own
-                                separate Product Owner acceptance before being treated as canonical,
-                                matching every prior AT-M3.6B.2 implementation/acceptance split.
+NEXT_PRODUCT_STAGE:            AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION_1
+                                -- a fresh Independent Implementation Validation session against the
+                                AT-D40-authorized candidate branch (bounded diagnostic-capture
+                                remediation to AnthropicReasoningProvider._parse()'s ValidationError
+                                branch only). After that validation, a further separate Product Owner
+                                acceptance-and-merge decision is required, matching every prior
+                                AT-M3.6B.2 implementation/acceptance split. Separately and not
+                                combined with the above: AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE
+                                remains outstanding -- a Product Owner decision to canonicalize the
+                                AT-D39-authorized execution's overall reported result (propose PASS,
+                                replay PASS, decompose_plan PASS, summarize_decision PASS, critique
+                                TERMINAL FAILURE / malformed_output) is still needed and is not
+                                supplied by AT-D40. Any future critique-only live revalidation is a
+                                separate, later authorization under AT-D32's remaining envelope (7 of
+                                12 requests) and is not implied or granted by AT-D40.
                                 DEFERRED and not on this path: the HTTP-400 -> provider_unauthorized
                                 taxonomy correction (needs a migration; AT-D36 section 4), the
                                 structured-output migration to output_config.format, and the P2 test-DB

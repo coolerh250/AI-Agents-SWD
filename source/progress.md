@@ -21364,3 +21364,99 @@ budget-policy activation, ephemeral live gate, propose / replay / decompose_plan
 critique/summarize_decision if the envelope allows), then mandatory terminal policy cleanup. Result
 requires its own separate Product Owner acceptance
 (`AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE`) before further canonicalization.
+
+## Stage AT-M3.6B.2 — Critique ValidationError Safe Diagnostic Metadata Remediation Authorization (AT-D40)
+
+The AT-D39-authorized combined execution ran. Reported and independently corroborated result (via
+safe, non-content columns on the relevant `reasoning_invocations` rows): `propose` PASS, a
+same-correlation replay PASS with zero additional external calls, `decompose_plan` PASS (durable
+`PlanDraftArtifact`, not dispatched), `summarize_decision` PASS, and `critique` TERMINAL FAILURE --
+HTTP 200, `failure_category=malformed_output`, `CritiqueArtifact` not persisted, correlation_id
+`65496538-621c-4c22-99e0-f510507b358f`. `AT_D32_REAL_REQUESTS` is now 5 of 12 consumed (7 remaining);
+effective AT-D32 validation cost US$0.060134; budget policy and live-network gate both independently
+reconfirmed back to `inactive`/`false` on session end; `production_executed_true_count: 0`.
+
+A fresh read-only design review (`AT-M3.6B.2-CRITIQUE-ARTIFACT-COMPATIBILITY-DESIGN-REVIEW-1`)
+root-caused the critique failure using only safe, durable evidence: a bounded read-only Postgres
+`SELECT` of non-content columns on the failed invocation, and an offline, no-network local
+reproduction against the canonical `CritiqueArtifact` Pydantic model. **No implementation change, no
+runtime mutation, no database mutation, no budget-policy mutation, no live-gate enablement, and no
+Anthropic call (real or diagnostic) was performed by either the review or this authorization stage.**
+
+### Root-cause finding
+
+```text
+Correlation             65496538-621c-4c22-99e0-f510507b358f
+HTTP                    200 (billed and settled; ledger event recorded_usage,
+                        actual_cost_usd=0.007958)
+attempt                 1 (malformed_output is non-retryable; correctly terminal)
+input/output tokens     624 / 671, against a 1500-token ceiling (44.7%) -- not near truncation,
+                        and in the same proportion as the successful decompose_plan (1770/4000,
+                        44.25%) and below the successful propose (883/1500, 58.9%)
+Persisted failure text  "the live reasoning response does not satisfy CritiqueArtifact
+                        (ValidationError)" -- reachable only AFTER json.loads() succeeds
+```
+
+Local reproduction against the real `CritiqueArtifact` model confirmed that markdown fencing,
+truncation, and prose-before-JSON each produce a DIFFERENT persisted message
+(`"...is not valid JSON (JSONDecodeError)"`) than what was actually recorded. This deterministically
+rules out truncation, markdown framing, and prose preamble, and confirms the response was a
+complete, syntactically valid JSON object that failed Pydantic schema validation against
+`CritiqueArtifact` -- a missing field, wrong type, forbidden extra field, or bound violation. Which
+of those four occurred could not be determined, because `AnthropicReasoningProvider._parse()`
+persists only the exception's class name (`ValidationError`) and discards Pydantic's own safe,
+schema-only `errors()` detail (field path and violation type, never a value, never raw provider
+text).
+
+### Authorization recorded
+
+`docs/decisions/at-d40-at-m3-6b-2-critique-validationerror-safe-diagnostic-metadata-remediation-authorization.md`
+created: RESOLVED/BINDING, authorizes a bounded implementation remediation confined to the existing
+`ValidationError` except-branch of `_parse()` in
+`shared/sdk/agent_reasoning/anthropic_provider.py` (plus a small private helper in the same module if
+mechanically convenient, and the direct adapter tests needed to protect the new contract). The
+captured diagnostic must be bounded (a fixed maximum error count and a fixed maximum serialized
+length), must derive trusted field names only from the artifact's own Pydantic model, must normalize
+any unrecognised/provider-controlled field-name or index segment to a fixed placeholder, and must
+never persist a value, `errors()["input"]`, `errors()["ctx"]`, the full untruncated Pydantic message,
+raw provider output, or any credential. `failure_category` stays `malformed_output`; no new category,
+no taxonomy change, no migration. The success path and every other `malformed_output` trigger in
+`_parse()` are explicitly out of scope and must remain byte-for-byte unchanged. No CritiqueArtifact
+(or any other artifact) schema change, no critique prompt change, no structured-output migration, no
+runtime rebuild/redeploy, no budget-policy mutation, no live-gate enablement, and no Anthropic call of
+any kind are authorized by this record.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_LIVE_VALIDATION_COMBINED_EXECUTION` ->
+`EXECUTED / PARTIAL_TECHNICAL_SUCCESS` with the corrected 5-of-12/7-remaining/US$0.060134 figures
+(superseding the stale AT-D39-era placeholder numbers); new field
+`AT_M3_6B_2_CRITIQUE_COMPATIBILITY` -> `DESIGN_REVIEW_COMPLETED /
+DIAGNOSTIC_OBSERVABILITY_REMEDIATION_AUTHORIZED`; `CURRENT_STAGE`, `NEXT_PERMITTED_STAGE`,
+`PREVIOUS_COMPLETED_STAGE`, `CURRENT_MILESTONE_STATE`, `NEXT_PRODUCT_STAGE`, and
+`RECONCILED_AGAINST_MAIN` (now `310a787e3b4acb29c50fdb0c1048fd18a27df004`) updated to match. Budget
+policy, live gate, and `production_executed_true_count` reconfirmed unchanged. `AT_M4` unchanged:
+`NOT AUTHORIZED`. The full `AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` (canonicalizing the
+AT-D39-authorized execution's overall result) is explicitly recorded as still outstanding and is not
+supplied by this stage.
+
+### Boundaries held
+
+- **Zero implementation change in this commit.** Only `docs/decisions/`, `AI_AGENTS_PM_STATE.md`, and
+  this file changed. The authorized remediation itself is implemented on a separate candidate branch
+  based on the canonical main this record advances.
+- **Zero runtime, database, or budget-policy mutation.** The two read-only Postgres `SELECT`s and the
+  `/operations/safety` read performed during the preceding design review were non-mutating, scoped to
+  non-content columns, and independently reconfirmed policy=inactive, live gate=false,
+  production_executed_true_count=0.
+- **Zero Anthropic calls, real or diagnostic.** `REASONING_LIVE_NETWORK_ENABLED` false throughout.
+  AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+- **This stage does not accept or merge anything.** It authorizes a bounded implementation
+  remediation on a future candidate branch and requires its own separate Independent Implementation
+  Validation and Product Owner acceptance before any merge.
+
+### Next
+
+`AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION_1` against the
+AT-D40-authorized candidate branch, once implemented. Separately and not combined: the outstanding
+`AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` for the AT-D39-authorized execution's overall result.
