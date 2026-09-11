@@ -21460,3 +21460,122 @@ supplied by this stage.
 `AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION_1` against the
 AT-D40-authorized candidate branch, once implemented. Separately and not combined: the outstanding
 `AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` for the AT-D39-authorized execution's overall result.
+
+## Stage AT-M3.6B.2 — Critique ValidationError Safe Diagnostic Metadata Independent Validation 1
+
+A fresh, read-only Independent Implementation Validation session
+(`AT-M3.6B.2-CRITIQUE-VALIDATIONERROR-SAFE-DIAGNOSTIC-METADATA-INDEPENDENT-VALIDATION-1`) ran against
+the AT-D40-authorized candidate branch `at-m3.6b.2-critique-validationerror-safe-diagnostics-1`,
+ending commit `767c5b1`. The full candidate SHA
+(`767c5b149ae8090345267ce83a0d39292618f50b`) was independently resolved from the remote branch rather
+than trusted from the reported short form; ancestry from canonical base `6cf72e9` was independently
+confirmed via `git merge-base --is-ancestor`.
+
+The diff was recomputed independently and matched exactly: two files,
+`shared/sdk/agent_reasoning/anthropic_provider.py` and `tests/test_at_m3_6b_1_anthropic_adapter.py`,
++217/-1. The new private helper `_sanitize_validation_errors` was read line-by-line and confirmed to
+derive trusted field names only from `artifact_type.model_fields` (checked at `loc` index 0 only),
+normalize every other segment -- unknown root field, any nested segment, any list index -- to a fixed
+`<extra-field>`/`<index>` placeholder, read only Pydantic's own closed-vocabulary `type` string, and
+never touch `errors()["input"]`, `errors()["ctx"]`, `str(exc)`, or `repr(exc)`. Bounds (8 errors, 300
+local chars) are enforced with a value-free overflow marker, and normalization happens before
+truncation so truncation cannot leak partial unsanitized content. The pre-existing downstream
+`sanitize_failure_reason` (500-char bound, marker scan) was confirmed unchanged and still applied at
+persistence time.
+
+64 validator-owned adversarial checks (independent of the candidate's own 12 new tests) were run
+directly against `_sanitize_validation_errors` using real Pydantic `ValidationError`s from all four
+artifact types (`CritiqueArtifact`, `ProposalArtifact`, `DecisionSummaryArtifact`,
+`PlanDraftArtifact`): credential-shaped field names, long Unicode, RTL-override/newline/CR/tab/
+ANSI-escape/zero-width control characters in field names, nested and unknown-root `loc` shapes, and
+error counts of 0/1/8/9/100/1000. All 64 passed with zero leaks. Deterministic reproduction on the
+test host (isolated worktree + throwaway Postgres database, since the validating workstation has no
+local Postgres) returned 263 passed / 0 failed / 0 skipped across the adapter, service-contract,
+retry-authority, budget-reservation, config/egress, M3.1 reasoning-contract/store, and
+bounds-and-compatibility suites. `ruff` and `black` were clean on both changed files; `mypy` was clean
+on the changed implementation file (four pre-existing `union-attr` findings in an unrelated file were
+independently reproduced identically against canonical main). The one critical secret-scan finding
+(`scripts/verify_step66c4_be3_ra1d_missing_config_json.py:129`) was independently confirmed
+pre-existing and untouched by the candidate (0-line diff for that file). Zero Anthropic calls, real or
+diagnostic, were made at any point.
+
+**VERDICT: PASS.** Validation quota 1 of 2 consumed; round 2 not required.
+
+## Stage AT-M3.6B.2 — Critique ValidationError Safe Diagnostic Metadata Product Acceptance and Canonical Merge (AT-D41)
+
+The Product Owner accepted the AT-D40-authorized remediation on the strength of the PASS Independent
+Validation above and authorized its fast-forward merge to `main`.
+
+### Source-of-truth preflight
+
+`git fetch` confirmed `origin/main` at exactly the expected canonical base `6cf72e9`, the candidate
+remote branch's HEAD at exactly the expected `767c5b1`, and a clean working tree. Ancestry was
+reconfirmed (`git merge-base --is-ancestor` succeeded) and the base-to-candidate diff was recomputed
+one more time immediately before merge, matching the validated diff exactly (same two files, +217/-1)
+-- confirming nothing changed on the candidate branch between validation and acceptance.
+
+### Merge
+
+`git merge --ff-only 767c5b149ae8090345267ce83a0d39292618f50b` on `main` (pre-merge HEAD `6cf72e9`,
+matching `origin/main`), resulting in a clean fast-forward: no merge commit, no rebase, no squash, no
+cherry-pick. Pushed to `origin/main` normally (`6cf72e9..767c5b1 main -> main`). Re-fetched and
+reconfirmed `local main == origin/main == 767c5b1`, working tree clean.
+
+### Authorization recorded
+
+`docs/decisions/at-d41-at-m3-6b-2-critique-validationerror-safe-diagnostic-metadata-product-acceptance-and-merge-authorization.md`
+created: RESOLVED/BINDING. Records PO acceptance of the diagnostic-capture remediation, the PASS
+Independent Validation (round 1 of 2, round 2 not required), and the exact fast-forward merge. Explicit
+about what it does NOT do: it does not retry, resolve, or reopen the AT-D39 critique failure
+(correlation_id `65496538-621c-4c22-99e0-f510507b358f` stays terminal and unretried); does not touch
+the retained US$0.016086 reservation or the US$0.060134 effective validation cost; does not reactivate
+the AT-D33/AT-D35 budget policy; does not authorize any Anthropic call, live-gate enablement, runtime
+rebuild/redeploy, migration, or schema/prompt/structured-output change; and does not authorize AT-M3.5,
+AT-M4, HumanApproval mutation, or production action.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: new field `AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTICS` ->
+`CLOSED / CANONICAL`; new field
+`AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION` -> `PASS /
+ROUND_1`; new field `AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE` -> `REDEPLOY_REQUIRED`
+(the currently deployed test-runtime image predates `767c5b1`); `AT_M3_6B_2_CRITIQUE_COMPATIBILITY` ->
+`DIAGNOSTIC_OBSERVABILITY_AVAILABLE / LIVE_CRITIQUE_REVALIDATION_REQUIRED`; `AT_M3_6B_2_LIVE_VALIDATION`
+status line -> `EXECUTED / PARTIAL_TECHNICAL_SUCCESS / CRITIQUE_REVALIDATION_PENDING`, explicit that
+propose/replay/decompose_plan/summarize_decision stay PASS and are NOT reopened, and critique stays a
+terminal, unretried `malformed_output` result. `CURRENT_STAGE`, `NEXT_PERMITTED_STAGE`,
+`PREVIOUS_COMPLETED_STAGE`, `CURRENT_MILESTONE_STATE`, `NEXT_PRODUCT_STAGE`, `RECONCILED_ON` (now
+`2026-09-11`), and `RECONCILED_AGAINST_MAIN` (now `767c5b149ae8090345267ce83a0d39292618f50b`) updated
+to match. The pre-existing `AT_M3_6B_2_RUNTIME_IMAGE` field (recording the AT-D38 redeploy that
+carried the temperature-contract fix) was left untouched -- it remains a true historical record of
+that separate, already-closed redeploy -- and a new, distinctly-named field carries this stage's
+redeploy requirement instead. Budget policy (`inactive`), live gate (`false`), the 5-of-12/7-remaining
+AT-D32 request count, the US$0.016086 retained reservation, the US$0.060134 effective validation cost,
+and `production_executed_true_count` (`0`) are all reconfirmed unchanged and were not recomputed or
+resettled by this record. `AT_M4` unchanged: `NOT AUTHORIZED`. Production unchanged: `NOT GRANTED`. The
+full `AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` (canonicalizing the AT-D39-authorized execution's
+overall result) remains explicitly outstanding and is not supplied by this stage.
+
+### Boundaries held
+
+- **Zero implementation change in this docs commit.** Only `docs/decisions/`,
+  `AI_AGENTS_PM_STATE.md`, and this file change here; the accepted implementation itself landed on
+  `main` via the fast-forward merge described above, byte-identical to the independently validated
+  candidate `767c5b1`.
+- **Zero runtime, database, or budget-policy mutation.** No rebuild, redeploy, restart, SQL write, or
+  live-gate enablement performed by this stage.
+- **Zero Anthropic calls, real or diagnostic.** `REASONING_LIVE_NETWORK_ENABLED` false throughout.
+  AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production `NOT GRANTED`.
+- **No history rewrite.** The merge was `--ff-only`; no squash, rebase, cherry-pick, or force push was
+  used at any point.
+- **Critique stays unresolved.** This stage accepts and merges the diagnostic-capture *capability*; it
+  does not retry the critique call the capability would apply to.
+
+### Next
+
+`AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE_REDEPLOY` -- the deployed test-runtime image must be
+rebuilt from the new canonical `main` (containing `767c5b1`) before any further critique-only Live
+Validation attempt. After that redeploy, a fresh, critique-only, bounded Live Validation authorization
+(policy activation -> one critique call -> terminal policy deactivation) is still required, under
+AT-D32's remaining envelope (7 of 12 requests). Separately and not combined: the outstanding
+`AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` for the AT-D39-authorized execution's overall result.
