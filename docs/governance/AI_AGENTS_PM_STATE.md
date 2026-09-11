@@ -20,9 +20,9 @@ snapshot, not a history.
 PM_STATE_VERSION:            1
 PM_STATE_SCHEMA:             pcp-v2
 RECONCILED_ON:               2026-09-11
-RECONCILED_AGAINST_MAIN:     767c5b149ae8090345267ce83a0d39292618f50b
-RECONCILED_BY_STAGE:         AT-M3.6B.2-CRITIQUE-VALIDATIONERROR-SAFE-DIAGNOSTIC-METADATA-PRODUCT-ACCEPTANCE-CANONICALIZATION-1
-                              (AT-D41)
+RECONCILED_AGAINST_MAIN:     05a80f65e015204c8086ce166488cafa9ec57277
+RECONCILED_BY_STAGE:         AT-M3.6B.2-CRITIQUE-SAFE-DIAGNOSTIC-RUNTIME-IMAGE-REDEPLOY-AUTHORIZATION-1
+                              (AT-D42)
 ```
 
 `RECONCILED_AGAINST_MAIN` is the commit this snapshot was verified against. It is expected to fall
@@ -77,15 +77,21 @@ CURRENT_MILESTONE_STATE:     AT-M3 COMPLETE for every authorized slice -- AT-M3.
                               and fast-forward merges it (767c5b1) to main -- the deployed test-runtime
                               image still predates it and a redeploy is required before any further
                               critique-only Live Validation attempt -- see CURRENT_GATE
-PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Critique ValidationError Safe Diagnostic Metadata
+PREVIOUS_COMPLETED_STAGE:    AT-M3.6B.2 Critique ValidationError Safe Diagnostic Metadata Product
+                              Acceptance and Canonicalization (AT-D41; PO-accepted the PASS
+                              Independent Validation 1 result and fast-forward merged 767c5b1 to
+                              main -- the diagnostic-capture remediation is now canonical, but the
+                              deployed test-runtime image still predates it; docs-only, zero
+                              Anthropic calls and zero runtime mutation itself). Preceded by
+                              AT-M3.6B.2 Critique ValidationError Safe Diagnostic Metadata
                               Remediation Authorization (AT-D40; docs-only authorization of the
                               bounded diagnostic-capture remediation to
                               AnthropicReasoningProvider._parse()'s ValidationError branch, performing
                               zero Anthropic calls and zero runtime mutation itself; independently
                               validated PASS by
                               AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION_1
-                              -- round 1 of 2, round 2 not required -- and accepted/merged by this
-                              record, AT-D41). Preceded by AT-M3.6B.2 Live Validation Execution
+                              -- round 1 of 2, round 2 not required -- and accepted/merged by AT-D41).
+                              Preceded by AT-M3.6B.2 Live Validation Execution
                               Combined Authorization (AT-D39; docs-only authorization of the combined
                               budget-activation-and-retry execution, performing zero Anthropic calls
                               and zero runtime mutation itself). Preceded by AT-M3.6B.2 Runtime Image
@@ -151,25 +157,26 @@ CURRENT_GATE:                PRODUCT OWNER AUTHORIZATION -- AT-D14's scope, AT-D
                               the AT-D33/AT-D35 budget policy stays inactive. AT-M4 (real work
                               execution) remains NOT AUTHORIZED, and none of AT-D32 through AT-D38
                               authorizes AT-M4 or implies any order beyond the sessions they name
-CURRENT_STAGE:                AT-M3.6B.2-CRITIQUE-VALIDATIONERROR-SAFE-DIAGNOSTIC-METADATA-PRODUCT-ACCEPTANCE-CANONICALIZATION-1
-                              (AT-D41 recorded; accepts the AT-D40-authorized diagnostic-capture
-                              remediation on the strength of a PASS Independent Implementation
-                              Validation -- round 1 of 2, round 2 not required -- and fast-forward
-                              merges the exact validated candidate 767c5b1 to main. No implementation
-                              change, no migration, no runtime rebuild/redeploy, no budget-policy
-                              mutation, no live-gate enablement and no Anthropic call (real or
-                              diagnostic) authorized or performed by this docs-only reconciliation
-                              commit. The critique verb remains NOT revalidated against the live
-                              provider)
-NEXT_PERMITTED_STAGE:        AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE_REDEPLOY -- the deployed
-                              test-runtime image predates 767c5b1 and must be rebuilt from this new
-                              canonical main before any further critique-only Live Validation attempt.
-                              Separately, AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE (canonicalizing
-                              the AT-D39-authorized execution's overall reported result) remains
-                              outstanding and is not supplied by AT-D41. Any future critique-only live
-                              revalidation is a separate, later authorization under AT-D32's remaining
-                              envelope (7 of 12 requests). AT-M4 remains NOT AUTHORIZED and is not
-                              implied by AT-D32 through AT-D41.
+CURRENT_STAGE:                AT-M3.6B.2-CRITIQUE-SAFE-DIAGNOSTIC-RUNTIME-IMAGE-REDEPLOY-1
+                              (AT-D42 recorded; authorizes exactly one bounded internal
+                              non-production orchestrator rebuild/redeploy from canonical main
+                              05a80f6, so the deployed test runtime actually contains the
+                              AT-D41-accepted diagnostic-capture remediation, 767c5b1. No application
+                              code change, no migration, no budget-policy activation, no live-gate
+                              enablement, no credential read/rotation, and no Anthropic call (real or
+                              diagnostic) authorized by this record. Execution/evidence reported
+                              separately; this record does not itself grant authority to reconcile
+                              that evidence back into this snapshot -- see NEXT_PERMITTED_STAGE)
+NEXT_PERMITTED_STAGE:        AT_M3_6B_2_CRITIQUE_RUNTIME_REDEPLOY_EVIDENCE_RECONCILIATION -- a
+                              separate decision canonicalizing the AT-D42-authorized redeploy
+                              execution's reported evidence (deployed source SHA, in-container
+                              sanitizer proof, request-contract non-regression, health/schema/
+                              Vault/budget/live-gate state). Separately, AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE
+                              (canonicalizing the AT-D39-authorized execution's overall reported
+                              result) remains outstanding and is not supplied by AT-D42. Any future
+                              critique-only live revalidation is a separate, later authorization under
+                              AT-D32's remaining envelope (7 of 12 requests). AT-M4 remains NOT
+                              AUTHORIZED and is not implied by AT-D32 through AT-D42.
 ```
 
 AT-M2 was canonicalized by AT-D13 (`docs/decisions/at-d13-at-m2-merge-authorization.md`), which authorized
@@ -490,13 +497,15 @@ AT_M3_6B_2_NEXT_STAGE:         SUPERSEDED -- AT-M3.6B.2 RUNTIME IMAGE ALIGNMENT,
                                 next PLANNING target, is now AT_M3_6B_2_IMAGE_ALIGNMENT below.
                                 Recorded unchanged as the historical record of what this field named
                                 at AT-D27's canonicalization
-AT_M3_6B_2_LIVE_VALIDATION:    EXECUTED / PARTIAL_TECHNICAL_SUCCESS / CRITIQUE_REVALIDATION_PENDING --
+AT_M3_6B_2_LIVE_VALIDATION:    EXECUTED / PARTIAL_TECHNICAL_SUCCESS / BLOCKED_ON_CRITIQUE_DIAGNOSTIC_RUNTIME_REDEPLOY --
                                 propose, replay, decompose_plan and summarize_decision are PASS and
                                 NOT reopened by this record; critique remains a TERMINAL,
                                 unretried malformed_output result (correlation_id
-                                65496538-621c-4c22-99e0-f510507b358f) and requires its own future
-                                critique-only bounded Live Validation authorization -- see
-                                AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTICS above. Both
+                                65496538-621c-4c22-99e0-f510507b358f). A critique-only revalidation
+                                requires both the AT-D42-authorized runtime redeploy (see
+                                AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE above) and its own
+                                separate, future, critique-only bounded Live Validation authorization
+                                -- see AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTICS above. Both
                                 original prerequisites closed (AT-D34 migrations 039-045 applied and
                                 independently verified; AT-D35
                                 policy reactivation performed), and an execution session then ran
@@ -670,13 +679,17 @@ AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTICS: CLOSED / CANONICAL -- impl
                                 rebuild/redeploy performed by this record
 AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTIC_METADATA_INDEPENDENT_VALIDATION: PASS / ROUND_1 --
                                 validation quota 1 of 2 consumed; round 2 NOT required
-AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE: REDEPLOY_REQUIRED -- the currently deployed
-                                test-runtime image predates commit 767c5b1 and does NOT contain the
-                                diagnostic-capture change. No rebuild or redeploy was performed by
-                                AT-D41 or this reconciliation. The next stage is
-                                AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE_REDEPLOY, scoped to
-                                the internal non-production test orchestrator only, with zero Anthropic
-                                calls
+AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE: REDEPLOY_AUTHORIZED / NOT_YET_EXECUTED -- the
+                                currently deployed test-runtime image predates commit 767c5b1 and does
+                                NOT contain the diagnostic-capture change. No rebuild or redeploy was
+                                performed by AT-D41 or this reconciliation. AT-D42 authorizes exactly
+                                one bounded internal non-production orchestrator rebuild/redeploy from
+                                canonical main 05a80f6 (containing 767c5b1) -- see
+                                docs/decisions/at-d42-at-m3-6b-2-critique-safe-diagnostic-runtime-image-redeploy-authorization.md.
+                                Execution and its evidence are reported separately by
+                                AT-M3.6B.2-CRITIQUE-SAFE-DIAGNOSTIC-RUNTIME-IMAGE-REDEPLOY-1; this
+                                field is not advanced to CLOSED by that report alone -- a further
+                                evidence-reconciliation decision is expected first
 AT_M3_6B_2_IMAGE_ALIGNMENT:    AUTHORIZED / IMPLEMENTED / BOUNDED_REMEDIATION_RATIFIED /
                                 INDEPENDENTLY_TECHNICALLY_VALIDATED / PO_ACCEPTED / MERGED /
                                 CANONICAL / CLOSED

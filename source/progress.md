@@ -21579,3 +21579,63 @@ Validation attempt. After that redeploy, a fresh, critique-only, bounded Live Va
 (policy activation -> one critique call -> terminal policy deactivation) is still required, under
 AT-D32's remaining envelope (7 of 12 requests). Separately and not combined: the outstanding
 `AT_M3_6B_2_LIVE_VALIDATION_PRODUCT_ACCEPTANCE` for the AT-D39-authorized execution's overall result.
+
+## Stage AT-M3.6B.2 — Critique Safe Diagnostic Runtime Image Redeploy Authorization (AT-D42)
+
+### Pre-mutation source-of-truth
+
+`git fetch` confirmed `origin/main` at exactly `05a80f65e015204c8086ce166488cafa9ec57277` (the AT-D41
+docs-reconciliation tip), local main matching, working tree clean. `git merge-base --is-ancestor`
+reconfirmed the AT-D41-accepted implementation (`767c5b149ae8090345267ce83a0d39292618f50b`) is an
+ancestor of canonical main. `AI_AGENTS_PM_STATE.md` was independently re-read and matched the expected
+state exactly: `AT_M3_6B_2_CRITIQUE_VALIDATIONERROR_SAFE_DIAGNOSTICS` CLOSED/CANONICAL,
+`AT_M3_6B_2_CRITIQUE_COMPATIBILITY` DIAGNOSTIC_OBSERVABILITY_AVAILABLE/LIVE_CRITIQUE_REVALIDATION_REQUIRED,
+`AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE` REDEPLOY_REQUIRED. No drift found.
+
+### Authorization recorded
+
+`docs/decisions/at-d42-at-m3-6b-2-critique-safe-diagnostic-runtime-image-redeploy-authorization.md`
+created: RESOLVED/BINDING. Authorizes exactly one bounded internal non-production orchestrator
+rebuild/redeploy from canonical main `05a80f6` (containing `767c5b1`), so the deployed test runtime
+actually contains the AT-D41-accepted diagnostic-capture remediation. Explicit about what it does NOT
+authorize: any application code change, DB migration, budget-policy activation, live-gate enablement,
+credential read/rotation, real or diagnostic Anthropic call, a critique-only Live Validation attempt,
+or reopening propose/replay/decompose_plan/summarize_decision. Explicit that the pre-existing
+`AT_M3_6B_2_RUNTIME_IMAGE` field (the separate, already-closed AT-D38 redeploy) is not to be
+overwritten.
+
+### Reconciliation
+
+`AI_AGENTS_PM_STATE.md` updated: `AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE` ->
+`REDEPLOY_AUTHORIZED / NOT_YET_EXECUTED`; `AT_M3_6B_2_LIVE_VALIDATION` status line ->
+`EXECUTED / PARTIAL_TECHNICAL_SUCCESS / BLOCKED_ON_CRITIQUE_DIAGNOSTIC_RUNTIME_REDEPLOY`;
+`CURRENT_STAGE`, `NEXT_PERMITTED_STAGE`, `PREVIOUS_COMPLETED_STAGE`, `RECONCILED_ON` (now
+`2026-09-11`), and `RECONCILED_AGAINST_MAIN` (now `05a80f65e015204c8086ce166488cafa9ec57277`) updated
+to match. `AT_M3_6B_2_RUNTIME_IMAGE` (the AT-D38 record) left untouched. Historical AT-D32 accounting
+(5 of 12 consumed, 7 remaining, US$0.016086 retained reservation, US$0.060134 effective cost), budget
+policy (`inactive`), live gate (`false`), and `production_executed_true_count` (`0`) all reconfirmed
+unchanged and not recomputed by this record. `AT_M4` unchanged: `NOT AUTHORIZED`. Per this stage's own
+governance note, this authorization record does not itself grant authority to reconcile the redeploy
+*execution's* evidence back into these files -- a separate evidence-reconciliation decision is
+expected next, after the bounded rebuild/redeploy executes under this authorization.
+
+### Boundaries held
+
+- **Zero implementation change.** Only `docs/decisions/`, `AI_AGENTS_PM_STATE.md`, and this file
+  changed by this authorization commit.
+- **Zero runtime mutation by this authorization commit itself.** The Docker rebuild/redeploy this
+  record authorizes is a separate execution step, reported by
+  `AT-M3.6B.2-CRITIQUE-SAFE-DIAGNOSTIC-RUNTIME-IMAGE-REDEPLOY-1`.
+- **Zero Anthropic calls, real or diagnostic.** `REASONING_LIVE_NETWORK_ENABLED` false throughout.
+  Budget policy `inactive`, untouched. AT-M4 `NOT AUTHORIZED`. HumanApproval unchanged. Production
+  `NOT GRANTED`.
+- **No history rewrite.** Docs-only commit, pushed normally.
+
+### Next
+
+Execute the AT-D42-authorized redeploy: canonical-source verification on the deployment host, targeted
+`orchestrator` image rebuild, bounded `--force-recreate` redeploy of only that service, and in-container
+zero-network proof that the running code contains the accepted sanitizer behavior and the request
+contract remains regression-free. Reported separately. Per AT-D42 section 5/6, a further
+evidence-reconciliation decision -- not this authorization -- is what closes
+`AT_M3_6B_2_CRITIQUE_SAFE_DIAGNOSTIC_RUNTIME_IMAGE` to CLOSED.
